@@ -10,6 +10,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from core.constants import MAX_RESPONSE_LENGTH
 from core.dependencies import get_current_channel_id, get_trigger_service, require_activated
 from services.message_trigger_service import MessageTriggerService
 from shared.errors import InvalidInputError, NotFoundError
@@ -55,7 +56,7 @@ class TriggerCreate(BaseModel):
     match_type: str = "startswith"
     pattern: str
     case_sensitive: bool = False
-    response: str
+    response: str = Field(max_length=MAX_RESPONSE_LENGTH)
     min_role: str = "everyone"
     cooldown: int | None = None
     priority: int = Field(default=0, ge=0, le=100)
@@ -66,7 +67,7 @@ class TriggerUpdate(BaseModel):
     match_type: str | None = None
     pattern: str | None = None
     case_sensitive: bool | None = None
-    response: str | None = None
+    response: str | None = Field(default=None, max_length=MAX_RESPONSE_LENGTH)
     min_role: str | None = None
     cooldown: int | None = None
     priority: int | None = None

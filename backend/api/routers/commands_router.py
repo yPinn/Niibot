@@ -4,9 +4,9 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from core.constants import VALID_ROLES
+from core.constants import MAX_RESPONSE_LENGTH, VALID_ROLES
 from core.dependencies import (
     get_command_config_service,
     get_current_channel_id,
@@ -65,7 +65,7 @@ class CommandConfigResponse(BaseModel):
 
 class CommandConfigUpdate(BaseModel):
     enabled: bool | None = None
-    custom_response: str | None = None
+    custom_response: str | None = Field(default=None, max_length=MAX_RESPONSE_LENGTH)
     cooldown: int | None = None
     min_role: str | None = None
     aliases: str | None = None
@@ -77,7 +77,7 @@ class CommandConfigToggle(BaseModel):
 
 class CustomCommandCreate(BaseModel):
     command_name: str
-    custom_response: str | None = None
+    custom_response: str | None = Field(default=None, max_length=MAX_RESPONSE_LENGTH)
     cooldown: int | None = None
     min_role: str = "everyone"
     aliases: str | None = None

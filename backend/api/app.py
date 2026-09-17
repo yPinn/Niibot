@@ -29,6 +29,7 @@ from routers import (
     channels_router,
     checkin_router,
     client_errors_router,
+    command_import_router,
     commands_router,
     community_overlay_router,
     crosshairs_router,
@@ -48,6 +49,7 @@ from routers import (
 )
 from routers.bots_router import close_bots_http_client
 from routers.client_errors_router import client_error_retention_loop
+from routers.command_import_router import close_command_import_http_client
 from routers.video_queue_router import video_queue_history_retention_loop
 from shared.cache_invalidation import (
     clear_config_caches,
@@ -277,6 +279,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await notify_hub.stop()
         await close_twitch_api()
         await close_bots_http_client()
+        await close_command_import_http_client()
         await db_manager.disconnect()
         LOGGER.info("Database disconnected")
     except Exception:
@@ -428,6 +431,10 @@ def create_app() -> FastAPI:
     app.include_router(bots_router.router, dependencies=_activated)
     app.include_router(releases_router.router, dependencies=_activated)
     # Mixed routers — public overlay endpoints exempt; activation enforced per-endpoint inside
+    # Registered before commands_router so /api/commands/import/* is matched first, and
+    # without the blanket activation dependency because the Nightbot OAuth callback is a
+    # browser redirect that carries its identity in a signed state, not a JWT cookie.
+    app.include_router(command_import_router.router)
     app.include_router(commands_router.router)
     app.include_router(game_queue_router.router)
     app.include_router(video_queue_router.router)
