@@ -76,6 +76,7 @@ class _StubMixin(_NotifyMixin):
         enabled_channel = MagicMock()
         enabled_channel.enabled = True
         self.channels.get_channel = AsyncMock(return_value=enabled_channel)
+        self._components: dict[str, object] = {}
 
     def _ch(self, cid: str) -> str:
         return self.subs.ch(cid)
@@ -83,6 +84,27 @@ class _StubMixin(_NotifyMixin):
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
     return json.dumps({"channel_id": channel_id, "enabled": enabled})
+
+
+class TestConfigChangeMemoryInvalidation:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_refresh_clears_component_channel_memory(self) -> None:
+        mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+
+        await mixin._refresh_channel_cache("ch1")
+
+        component.clear_channel_memory.assert_called_once_with("ch1")
+
+    async def test_refresh_tolerates_components_without_memory_hook(self) -> None:
+        mixin = _StubMixin()
+        mixin._components["components.other"] = object()
+
+        await mixin._refresh_channel_cache("ch1")
+
+        mixin.command_configs.warm_cache.assert_awaited_once_with("ch1")
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +117,8 @@ class TestHandleChannelToggleDisable:
 
     async def test_disable_discards_bot_is_mod(self):
         mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
         mixin.subs._subscribed = {"ch1"}
         mixin._bot_is_mod = {"ch1"}
         mixin._needs_reauth = {"ch1"}
@@ -110,6 +134,7 @@ class TestHandleChannelToggleDisable:
         assert "ch1" not in mixin._mod_check_pending
         assert "ch1" not in mixin.subs._names
         mixin.subs.unsubscribe.assert_awaited_once_with("ch1")
+        component.clear_channel_memory.assert_called_once_with("ch1")
 
     async def test_disable_not_subscribed_still_cleans_up_state(self):
         """DISABLE for a channel already unsubscribed skips the unsubscribe

@@ -78,6 +78,9 @@ def _contains_bias(text: str) -> bool:
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
+TonePreset = Literal["neutral", "witty", "energetic", "tsundere", "calm"]
+CatchphraseFrequency = Literal["off", "rare", "occasional"]
+
 
 class AISettingsEmptyPatchError(InvalidInputError):
     code = "AI_SETTINGS.EMPTY_PATCH"
@@ -89,12 +92,17 @@ class AISettingsResponse(BaseModel):
     bot_name: str
     persona: str
     self_pronoun: str
+    audience_reference: str
+    tone_preset: TonePreset
     catchphrase: str
+    catchphrase_frequency: CatchphraseFrequency
+    example_replies: list[str]
     response_lang: str
     refusal_style: str
     max_tokens: int
     enabled_emotes: list[str]
     enabled: bool
+    memory_enabled: bool
     cooldown: int
     min_role: str
 
@@ -109,21 +117,53 @@ class AISettingsPatch(BaseModel):
     bot_name: str | None = Field(None, min_length=1, max_length=50)
     persona: str | None = Field(None, max_length=300)
     self_pronoun: str | None = Field(None, max_length=20)
+    audience_reference: str | None = Field(None, min_length=1, max_length=20)
+    tone_preset: TonePreset | None = None
     catchphrase: str | None = Field(None, max_length=50)
+    catchphrase_frequency: CatchphraseFrequency | None = None
+    example_replies: list[str] | None = Field(None, max_length=3)
     response_lang: Literal["zh-tw", "en", "auto"] | None = None
     refusal_style: Literal["humorous", "polite"] | None = None
     max_tokens: int | None = Field(None, ge=50, le=500)
     enabled_emotes: list[str] | None = None
     enabled: bool | None = None
+    memory_enabled: bool | None = None
     cooldown: int | None = Field(None, ge=5, le=300)
     min_role: Literal["everyone", "subscriber", "vip", "moderator", "broadcaster"] | None = None
 
-    @field_validator("persona", "catchphrase", mode="before")
+    @field_validator("persona", "catchphrase", "audience_reference", mode="before")
     @classmethod
     def reject_biased_text(cls, v: object) -> object:
         if isinstance(v, str) and _contains_bias(v):
             raise ValueError("內容含有歧視性或偏見性語句，請修改後重試")
         return v
+
+    @field_validator("audience_reference")
+    @classmethod
+    def normalize_audience_reference(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            raise ValueError("觀眾稱呼不能為空")
+        return value
+
+    @field_validator("example_replies")
+    @classmethod
+    def validate_example_replies(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        cleaned: list[str] = []
+        for item in v:
+            value = item.strip()
+            if not value:
+                raise ValueError("示例回覆不能為空")
+            if len(value) > 120:
+                raise ValueError("每則示例回覆最多 120 字")
+            if _contains_bias(value):
+                raise ValueError("內容含有歧視性或偏見性語句，請修改後重試")
+            cleaned.append(value)
+        return cleaned
 
 
 class EmoteItem(BaseModel):

@@ -42,12 +42,12 @@ api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的
 | `ERROR_WEBHOOK_URL`           | (選用) ERROR 以上 log 推送的 Discord webhook（於 shared.env 設一次，三服務共用）                                  |
 | `FRONTEND_URL`                | OAuth redirect origin、CORS allow-list，以及 Discord Tarot embed 的公開牌圖 base URL（api／twitch／discord 共用） |
 | `GEMINI_API_KEY`              | AI provider（AI Studio key，非 GCP service account）                                                              |
-| `GEMINI_MODEL`                | (選用) Gemini 模型；空值走程式預設                                                                                |
-| `GROQ_API_KEY`                | AI provider（速度優先，Twitch 預設首選）                                                                          |
-| `GROQ_MODEL`                  | (選用) Groq 模型；空值走程式預設                                                                                  |
+| `GEMINI_MODEL`                | Gemini 模型（設定 GEMINI_API_KEY 時必填）                                                                         |
+| `GROQ_API_KEY`                | AI provider（Twitch／Discord 預設首選）                                                                           |
+| `GROQ_MODEL`                  | Groq 模型（設定 GROQ_API_KEY 時必填）                                                                             |
 | `LOG_LEVEL`                   | log 等級，預設 INFO（api/twitch/discord 共用）                                                                    |
 | `OPENROUTER_API_KEY`          | AI provider（free-tier 備援）                                                                                     |
-| `OPENROUTER_MODEL`            | (選用) OpenRouter 模型                                                                                            |
+| `OPENROUTER_MODEL`            | OpenRouter 免費模型（設定 OPENROUTER_API_KEY 時必填）                                                             |
 | `OWNER_ID`                    | 擁有者的 Twitch user ID                                                                                           |
 | `TWITCH_CLIENT_ID`            | Twitch App Client ID（dev.twitch.tv/console）                                                                     |
 | `TWITCH_CLIENT_SECRET`        | Twitch App Client Secret                                                                                          |

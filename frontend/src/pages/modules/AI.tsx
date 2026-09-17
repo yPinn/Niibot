@@ -25,22 +25,25 @@ import {
   Skeleton,
   Switch,
 } from '@/components/ui'
+import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
 import {
+  CATCHPHRASE_FREQUENCY_OPTIONS,
   COMMAND_INFO,
   LANG_OPTIONS,
   PERSONA_PRESETS,
-  PROVIDERS,
   REFUSAL_OPTIONS,
   ROLE_OPTIONS,
+  TONE_OPTIONS,
 } from './ai/constants'
 import { EmoteSection } from './ai/EmoteSection'
 import { longestCommonPrefix } from './ai/utils'
 
 export default function AIModule() {
   useDocumentTitle('AI Assistant')
+  const { twitch } = useServiceStatus()
 
   const [saved, setSaved] = useState<AISettings>(AI_SETTINGS_DEFAULT)
   const [draft, setDraft] = useState<AISettings>(AI_SETTINGS_DEFAULT)
@@ -61,8 +64,13 @@ export default function AIModule() {
           ...s,
           persona: s.persona ?? '',
           self_pronoun: s.self_pronoun ?? '我',
+          audience_reference: s.audience_reference ?? '大家',
+          tone_preset: s.tone_preset ?? 'neutral',
           catchphrase: s.catchphrase ?? '',
+          catchphrase_frequency: s.catchphrase_frequency ?? 'rare',
+          example_replies: s.example_replies ?? [],
           enabled_emotes: s.enabled_emotes ?? [],
+          memory_enabled: s.memory_enabled ?? false,
         }
         setSaved(normalized)
         setDraft(normalized)
@@ -87,9 +95,14 @@ export default function AIModule() {
     draft.bot_name !== saved.bot_name ||
     draft.persona !== saved.persona ||
     draft.self_pronoun !== saved.self_pronoun ||
+    draft.audience_reference !== saved.audience_reference ||
+    draft.tone_preset !== saved.tone_preset ||
     draft.catchphrase !== saved.catchphrase ||
+    draft.catchphrase_frequency !== saved.catchphrase_frequency ||
+    JSON.stringify(draft.example_replies) !== JSON.stringify(saved.example_replies) ||
     draft.response_lang !== saved.response_lang ||
-    draft.refusal_style !== saved.refusal_style
+    draft.refusal_style !== saved.refusal_style ||
+    draft.memory_enabled !== saved.memory_enabled
 
   const isCmdDirty = draft.cooldown !== saved.cooldown || draft.min_role !== saved.min_role
 
@@ -97,9 +110,14 @@ export default function AIModule() {
     draft.bot_name === AI_SETTINGS_DEFAULT.bot_name &&
     draft.persona === AI_SETTINGS_DEFAULT.persona &&
     draft.self_pronoun === AI_SETTINGS_DEFAULT.self_pronoun &&
+    draft.audience_reference === AI_SETTINGS_DEFAULT.audience_reference &&
+    draft.tone_preset === AI_SETTINGS_DEFAULT.tone_preset &&
     draft.catchphrase === AI_SETTINGS_DEFAULT.catchphrase &&
+    draft.catchphrase_frequency === AI_SETTINGS_DEFAULT.catchphrase_frequency &&
+    draft.example_replies.length === 0 &&
     draft.response_lang === AI_SETTINGS_DEFAULT.response_lang &&
-    draft.refusal_style === AI_SETTINGS_DEFAULT.refusal_style
+    draft.refusal_style === AI_SETTINGS_DEFAULT.refusal_style &&
+    draft.memory_enabled === AI_SETTINGS_DEFAULT.memory_enabled
 
   const channelPrefix = useMemo(
     () => longestCommonPrefix(emotes.filter(e => e.emote_type !== 'globals').map(e => e.name)),
@@ -139,11 +157,20 @@ export default function AIModule() {
         bot_name: draft.bot_name,
         persona: draft.persona,
         self_pronoun: draft.self_pronoun,
+        audience_reference: draft.audience_reference,
+        tone_preset: draft.tone_preset,
         catchphrase: draft.catchphrase,
+        catchphrase_frequency: draft.catchphrase_frequency,
+        example_replies: draft.example_replies.map(reply => reply.trim()).filter(Boolean),
         response_lang: draft.response_lang,
         refusal_style: draft.refusal_style,
+        memory_enabled: draft.memory_enabled,
       })
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(prev => ({ ...normalized, cooldown: prev.cooldown, min_role: prev.min_role }))
       toast.success('角色設定已儲存')
@@ -158,7 +185,11 @@ export default function AIModule() {
     setSaving(true)
     try {
       const updated = await resetAISettings()
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(normalized)
       toast.success('已重設為預設值')
@@ -176,16 +207,25 @@ export default function AIModule() {
         cooldown: draft.cooldown,
         min_role: draft.min_role,
       })
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(prev => ({
         ...normalized,
         bot_name: prev.bot_name,
         persona: prev.persona,
         self_pronoun: prev.self_pronoun,
+        audience_reference: prev.audience_reference,
+        tone_preset: prev.tone_preset,
         catchphrase: prev.catchphrase,
+        catchphrase_frequency: prev.catchphrase_frequency,
+        example_replies: prev.example_replies,
         response_lang: prev.response_lang,
         refusal_style: prev.refusal_style,
+        memory_enabled: prev.memory_enabled,
       }))
       toast.success('指令設定已儲存')
     } catch (e) {
@@ -287,7 +327,7 @@ export default function AIModule() {
                 />
               </div>
 
-              {/* Self pronoun + catchphrase side by side */}
+              {/* Identity references */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-section">
                 <div className="flex flex-col gap-element">
                   <div className="flex flex-col gap-0.5">
@@ -305,6 +345,23 @@ export default function AIModule() {
                 </div>
                 <div className="flex flex-col gap-element">
                   <div className="flex flex-col gap-0.5">
+                    <Label htmlFor="audience-reference">觀眾稱呼</Label>
+                    <p className="text-label text-muted-foreground">一起稱呼聊天室觀眾</p>
+                  </div>
+                  <Input
+                    id="audience-reference"
+                    value={draft.audience_reference}
+                    onChange={e => patch('audience_reference', e.target.value)}
+                    maxLength={20}
+                    placeholder="大家"
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.35fr] gap-section">
+                <div className="flex flex-col gap-element">
+                  <div className="flex flex-col gap-0.5">
                     <Label htmlFor="catchphrase">口頭禪</Label>
                     <p className="text-label text-muted-foreground">句尾習慣用語（留空則不加）</p>
                   </div>
@@ -315,6 +372,18 @@ export default function AIModule() {
                     maxLength={50}
                     placeholder="懂嗎、喔！…"
                     disabled={disabled}
+                  />
+                </div>
+                <div className="flex flex-col gap-element">
+                  <div className="flex flex-col gap-0.5">
+                    <Label>使用頻率</Label>
+                    <p className="text-label text-muted-foreground">限制重複出現，避免每句硬塞</p>
+                  </div>
+                  <OptionPicker
+                    options={CATCHPHRASE_FREQUENCY_OPTIONS}
+                    value={draft.catchphrase_frequency}
+                    onChange={v => patch('catchphrase_frequency', v)}
+                    disabled={disabled || !draft.catchphrase.trim()}
                   />
                 </div>
               </div>
@@ -342,6 +411,32 @@ export default function AIModule() {
                   className="w-full rounded-md border border-input bg-transparent dark:bg-input/30 px-3 py-2 leading-relaxed resize-none shadow-xs focus:outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
                 />
               </div>
+
+              <div className="flex flex-col gap-element">
+                <div className="flex flex-col gap-0.5">
+                  <Label>示例回覆</Label>
+                  <p className="text-label text-muted-foreground">
+                    最多三句理想答案，只教說話方式，不放規則或觀眾資料
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  {[0, 1, 2].map(index => (
+                    <Input
+                      key={index}
+                      aria-label={`示例回覆 ${index + 1}`}
+                      value={draft.example_replies[index] ?? ''}
+                      onChange={event => {
+                        const examples = [...draft.example_replies]
+                        examples[index] = event.target.value
+                        patch('example_replies', examples)
+                      }}
+                      maxLength={120}
+                      placeholder={`示例 ${index + 1}${index === 0 ? '：簡單來說，重點是這個。' : '（選填）'}`}
+                      disabled={disabled}
+                    />
+                  ))}
+                </div>
+              </div>
               {(isDirty || !isDefault) && (
                 <div className="flex justify-end gap-2 border-t pt-section">
                   {isDirty && (
@@ -354,9 +449,14 @@ export default function AIModule() {
                           bot_name: saved.bot_name,
                           persona: saved.persona,
                           self_pronoun: saved.self_pronoun,
+                          audience_reference: saved.audience_reference,
+                          tone_preset: saved.tone_preset,
                           catchphrase: saved.catchphrase,
+                          catchphrase_frequency: saved.catchphrase_frequency,
+                          example_replies: saved.example_replies,
                           response_lang: saved.response_lang,
                           refusal_style: saved.refusal_style,
+                          memory_enabled: saved.memory_enabled,
                         }))
                       }
                       disabled={saving}
@@ -387,6 +487,20 @@ export default function AIModule() {
             <CardContent className="flex flex-col gap-section">
               <div className="flex flex-col gap-element">
                 <div className="flex flex-col gap-0.5">
+                  <Label>基礎語氣</Label>
+                  <p className="text-label text-muted-foreground">
+                    選一個穩定基調，再用上方個性描述補充細節
+                  </p>
+                </div>
+                <OptionPicker
+                  options={TONE_OPTIONS}
+                  value={draft.tone_preset}
+                  onChange={v => patch('tone_preset', v)}
+                  disabled={disabled}
+                />
+              </div>
+              <div className="flex flex-col gap-element">
+                <div className="flex flex-col gap-0.5">
                   <Label>語言</Label>
                   <p className="text-label text-muted-foreground">
                     用什麼語言跟大家聊？「自動」會跟著觀眾的語言切換
@@ -410,6 +524,21 @@ export default function AIModule() {
                   options={REFUSAL_OPTIONS}
                   value={draft.refusal_style}
                   onChange={v => patch('refusal_style', v)}
+                  disabled={disabled}
+                />
+              </div>
+              <div className="flex items-start justify-between gap-section rounded-md border p-3">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="short-term-memory">短期對話記憶（實驗性）</Label>
+                  <p className="text-label text-muted-foreground">
+                    只記住同一位觀眾透過 !ai 的最近 2 輪，10
+                    分鐘後失效；不讀一般聊天、不永久保存，服務重啟即清空。
+                  </p>
+                </div>
+                <Switch
+                  id="short-term-memory"
+                  checked={draft.memory_enabled}
+                  onCheckedChange={value => patch('memory_enabled', value)}
                   disabled={disabled}
                 />
               </div>
@@ -472,7 +601,7 @@ export default function AIModule() {
                 <div className="flex items-center justify-between py-2.5">
                   <Label className="text-muted-foreground">模型</Label>
                   <span className="font-mono text-label truncate max-w-[55%] text-right">
-                    {PROVIDERS[0].model}
+                    {twitch.ai_model ?? '—'}
                   </span>
                 </div>
               </div>

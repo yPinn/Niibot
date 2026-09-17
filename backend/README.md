@@ -38,24 +38,24 @@ legacy 的 `get_current_channel_id`。完整設計與遷移進度見
 
 ### `shared/` 模組
 
-| 模組                         | 說明                                                         |
-| ---------------------------- | ------------------------------------------------------------ |
-| `database.py`                | asyncpg 連線池管理、`pool_heartbeat_loop`                    |
-| `cache.py`                   | `AsyncTTLCache`（LRU + TTL）；搭配 `pg_notify` 即時失效      |
-| `config_base.py`             | `BaseServiceSettings`：三服務共用 config 基底                |
-| `health_server_base.py`      | `BaseHealthServer`：Discord／Twitch health server 基底       |
-| `logging_setup.py`           | 結構化 logging（含 Discord webhook error handler）           |
-| `builtin_commands.py`        | 內建指令定義與別名映射                                       |
-| `builtin_timers.py`          | 內建定時訊息定義                                             |
-| `ai_provider.py`             | 多 AI Provider 鏈（Groq／Gemini／OpenRouter），自動 fallback |
-| `crypto.py`                  | OAuth token／金流金鑰加解密（AES）                           |
-| `discord_webhook_handler.py` | 將 ERROR 以上 log 推送至 Discord webhook                     |
-| `packs.py`                   | AI 知識包（`data/packs/`）載入、key 比對與 token 預算        |
-| `retry_utils.py`             | 通用 async 重試／backoff helper                              |
-| `twitch_scopes.py`           | Twitch OAuth scope 常數與分組                                |
-| `models/`                    | Pydantic 資料模型                                            |
-| `repositories/`              | 資料庫存取層（per-domain）                                   |
-| `migrations/`                | 自製 migration runner；版本腳本在 `versions/`                |
+| 模組                         | 說明                                                           |
+| ---------------------------- | -------------------------------------------------------------- |
+| `database.py`                | asyncpg 連線池管理、`pool_heartbeat_loop`                      |
+| `cache.py`                   | `AsyncTTLCache`（LRU + TTL）；搭配 `pg_notify` 即時失效        |
+| `config_base.py`             | `BaseServiceSettings`：三服務共用 config 基底                  |
+| `health_server_base.py`      | `BaseHealthServer`：Discord／Twitch health server 基底         |
+| `logging_setup.py`           | 結構化 logging（含 Discord webhook error handler）             |
+| `builtin_commands.py`        | 內建指令定義與別名映射                                         |
+| `builtin_timers.py`          | 內建定時訊息定義                                               |
+| `assistant/`                 | 有界 AI harness：prompt、provider registry、fallback、輸出合約 |
+| `crypto.py`                  | OAuth token／金流金鑰加解密（AES）                             |
+| `discord_webhook_handler.py` | 將 ERROR 以上 log 推送至 Discord webhook                       |
+| `packs.py`                   | AI 知識包（`data/packs/`）載入、key 比對與 token 預算          |
+| `retry_utils.py`             | 通用 async 重試／backoff helper                                |
+| `twitch_scopes.py`           | Twitch OAuth scope 常數與分組                                  |
+| `models/`                    | Pydantic 資料模型                                              |
+| `repositories/`              | 資料庫存取層（per-domain）                                     |
+| `migrations/`                | 自製 migration runner；版本腳本在 `versions/`                  |
 
 ## 服務架構
 

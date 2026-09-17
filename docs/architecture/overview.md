@@ -100,22 +100,29 @@ LISTEN（不佔用 pool），斷線自動重連。
 
 ---
 
-## AI Provider 鏈
+## [AI Assistant Harness](ai-assistant-harness.md)
 
-`shared/ai_provider.py` 建一條依序嘗試的 provider 鏈，缺金鑰者靜默跳過：
+`shared/assistant/` 將 prompt 編譯、provider adapter、有界 fallback、circuit breaker 與輸出整理分開。
+呼叫端只提交 provider-neutral 的 typed sections；registry 要求 key 與 model 都明確設定，不再使用退役模型的
+隱性預設值。health/status 直接呈現實際 registry 與 circuit 狀態，但不包含 key、prompt 或聊天內容。
 
 ```text
-build_provider_chain(provider_order=...)
-  Groq ──fail──▶ Gemini ──fail──▶ OpenRouter（最多 3 個 free 備援模型）
+core policy → product contract → channel persona → retrieved context → history → user input
+       │
+       ▼
+PromptCompiler → BoundedRouter → OutputProcessor → Twitch / Discord renderer
 ```
 
-`provider_order` 可依服務調整優先序：
+固定免費路由依 qualification 的成功率、限流與延遲排序：
 
-- Twitch — `("groq", "gemini", "openrouter")` **速度優先**（聊天需低延遲）
-- Discord — `("gemini", "groq", "openrouter")` **品質優先**
+- Twitch — Groq `openai/gpt-oss-120b` → OpenRouter `inclusionai/ling-3.0-flash-vl:free`；
+  8 秒總 deadline、每次最多 4 秒、最多 2 次 attempt。
+- Discord — Groq `openai/gpt-oss-120b` → Gemini `gemini-3.5-flash` → OpenRouter
+  `inclusionai/ling-3.0-flash-vl:free`；40 秒總 deadline、每次最多 15 秒、最多 3 次 attempt。
 
-OpenRouter 的 free-tier 備援名單來自 `backend/data/free_models.json`，由
-`npm run nb -- models update` 定期刷新。AI 知識包（`backend/data/packs/`）注入見
+只有 timeout、429、網路／5xx 與 model unavailable 會 fallback；驗證錯誤與安全拒答不會藉下一模型繞過，
+401/403 會把 provider circuit 標成 unhealthy。OpenRouter adapter 強制零價格限制，不允許靜默切到付費模型。
+`backend/data/free_models.json` 只保留為手動研究清單，不參與 production 動態路由。AI 知識包注入見
 [static-data.md](../reference/static-data.md)。
 
 ---

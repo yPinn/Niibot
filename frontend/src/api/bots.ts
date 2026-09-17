@@ -15,6 +15,35 @@ export interface CacheGauge {
   maxsize: number
 }
 
+export interface AIProviderStatus {
+  provider: 'groq' | 'gemini' | 'openrouter'
+  state: 'ready' | 'disabled' | 'misconfigured'
+  model?: string | null
+  reason?: string | null
+}
+
+export interface AICircuitStatus {
+  provider: string
+  model: string
+  state: 'closed' | 'open' | 'half_open' | 'unhealthy'
+  consecutive_failures: number
+}
+
+export interface AIMemoryStatus {
+  active_sessions: number
+  total_chars: number
+  ttl_evictions: number
+  lru_evictions: number
+  budget_evictions: number
+  oversized_turn_rejections: number
+}
+
+export interface AIRuntimeStatus {
+  providers: AIProviderStatus[]
+  circuits: AICircuitStatus[]
+  memory?: AIMemoryStatus
+}
+
 export interface BotStatus {
   online: boolean
   service?: string
@@ -33,6 +62,7 @@ export interface BotStatus {
   ws_latency_ms?: number
   // AI
   ai_model?: string
+  ai_status?: AIRuntimeStatus | null
   // Runtime gauges (twitch only — memory is per-channel in-process state, has
   // no API-side equivalent)
   db_pool?: DbPoolGauge

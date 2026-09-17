@@ -20,20 +20,9 @@ def _make_bot(*, is_ready: bool, latency: float) -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def _patch_settings_and_ai():
-    with (
-        patch(
-            "discord.core.health_server.get_settings",
-            return_value=MagicMock(
-                port=8080,
-                groq_api_key="",
-                groq_model="",
-                gemini_api_key="",
-                gemini_model="",
-                openrouter_api_key="",
-                openrouter_model="",
-            ),
-        ),
-        patch("discord.core.health_server.get_primary_model_label", return_value="none"),
+    with patch(
+        "discord.core.health_server.get_settings",
+        return_value=MagicMock(port=8080),
     ):
         yield
 
@@ -77,3 +66,29 @@ class TestGetMetrics:
         metrics = await server.get_metrics()
         assert metrics["ws_latency_ms"] is None
         assert math.isnan(bot.latency)
+
+    async def test_ai_status_comes_from_loaded_cog_registry(self):
+        from discord.core.health_server import HealthCheckServer
+
+        bot = _make_bot(is_ready=True, latency=0.01)
+        ai_status = {
+            "providers": [
+                {
+                    "provider": "groq",
+                    "state": "ready",
+                    "model": "openai/gpt-oss-120b",
+                    "reason": None,
+                }
+            ],
+            "circuits": [],
+        }
+        cog = MagicMock()
+        cog.ai_health.return_value = ai_status
+        bot.get_cog.return_value = cog
+        server = HealthCheckServer.__new__(HealthCheckServer)
+        server.bot = bot
+
+        metrics = await server.get_metrics()
+
+        assert metrics["ai_model"] == "groq/openai/gpt-oss-120b"
+        assert metrics["ai_status"] == ai_status

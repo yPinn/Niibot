@@ -112,6 +112,7 @@ class _NotifyMixin:
                 self._needs_reauth.discard(channel_id)  # type: ignore[attr-defined]
                 self._mod_check_pending.discard(channel_id)  # type: ignore[attr-defined]
                 self.subs.forget(channel_id)  # type: ignore[attr-defined]
+                self._clear_component_channel_memory(channel_id)
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
@@ -304,6 +305,18 @@ class _NotifyMixin:
     # Cache management
     # ------------------------------------------------------------------
 
+    def _clear_component_channel_memory(self, channel_id: str) -> None:
+        """Best-effort removal of optional per-channel component state."""
+        components = getattr(self, "_components", {})
+        for component in components.values():
+            hook = getattr(component, "clear_channel_memory", None)
+            if not callable(hook):
+                continue
+            try:
+                hook(channel_id)
+            except Exception:
+                LOGGER.exception("[NOTIFY] Failed to clear component memory for %s", channel_id)
+
     async def _refresh_channel_cache(self, channel_id: str) -> None:
         """Reload all config caches for a single channel from DB.
 
@@ -315,6 +328,7 @@ class _NotifyMixin:
         stale rows back into the cache (see cache_invalidation.py docstring).
         """
         invalidate_channel_config(channel_id)
+        self._clear_component_channel_memory(channel_id)
         try:
             await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
         except Exception as e:

@@ -1,26 +1,34 @@
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import httpx
-from openai import (
-    APITimeoutError,
-    AuthenticationError,
-    PermissionDeniedError,
-    RateLimitError,
-)
-from openai.types.chat import ChatCompletionMessageParam
 from pypinyin import lazy_pinyin
 from twitchio.ext import commands
 
 from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import has_role, is_on_cooldown, record_cooldown
-from shared.ai_provider import ProviderEntry, build_provider_chain, call_provider_chain
+from shared.assistant import (
+    AssistantOutcome,
+    AssistantRequest,
+    BoundedConversationMemoryStore,
+    ConversationKey,
+    ConversationTurn,
+    FailureKind,
+    InputSection,
+    InputSectionKind,
+    OutputPolicy,
+    PromptBudget,
+    RouterPolicy,
+    build_assistant_harness,
+)
+from shared.assistant.providers.registry import ProviderConfig, ProviderKind
 from shared.packs import Pack, load_packs
 from shared.packs import match_entries as match_pack_entries
-from shared.repositories.ai_settings import AISettingsRepository, build_system_prompt
+from shared.repositories.ai_settings import AISettingsRepository, build_assistant_sections
 from shared.repositories.module_config import ModuleConfigRepository
 
 if TYPE_CHECKING:
@@ -104,24 +112,97 @@ class AIComponent(BotComponent):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.ai_settings_repo = AISettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.module_config_repo = ModuleConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.memory_store = BoundedConversationMemoryStore(
+            ttl_seconds=600,
+            max_sessions=500,
+            max_turns_per_session=2,
+            max_chars_per_session=1_000,
+            max_total_chars=500_000,
+        )
 
         settings = get_settings()
-        self.provider_chain: list[ProviderEntry] = build_provider_chain(
-            groq_api_key=settings.groq_api_key,
-            groq_model=settings.groq_model,
-            gemini_api_key=settings.gemini_api_key,
-            gemini_model=settings.gemini_model,
-            openrouter_api_key=settings.openrouter_api_key,
-            openrouter_model=settings.openrouter_model,
-            data_dir=DATA_DIR,
-            timeout=20.0,
-            provider_order=("groq", "gemini", "openrouter"),  # speed-first for live chat
+        self.harness = build_assistant_harness(
+            configs={
+                ProviderKind.GROQ: ProviderConfig(
+                    settings.groq_api_key,
+                    settings.groq_model,
+                ),
+                ProviderKind.OPENROUTER: ProviderConfig(
+                    settings.openrouter_api_key,
+                    settings.openrouter_model,
+                ),
+            },
+            provider_order=(ProviderKind.GROQ, ProviderKind.OPENROUTER),
+            provider_timeout_seconds=4.0,
+            router_policy=RouterPolicy(
+                total_timeout_seconds=8.0,
+                per_attempt_timeout_seconds=4.0,
+                max_attempts=2,
+                failure_threshold=2,
+                cooldown_seconds=60.0,
+            ),
+            prompt_budget=PromptBudget(
+                max_total_chars=8_000,
+                max_persona_chars=1_500,
+                max_context_chars=5_000,
+                max_history_chars=1_200,
+                max_user_chars=500,
+            ),
+            output_policy=OutputPolicy(max_chars=500),
+            scanner=_scan_response,
         )
-        LOGGER.info(f"AIComponent initialized: {len(self.provider_chain)} provider entries")
+        labels = [
+            f"{spec.kind.value}/{spec.model}"
+            for spec in (self.harness.registry.specs if self.harness.registry else ())
+        ]
+        LOGGER.info("AIComponent initialized: providers=%s", labels)
 
     def refresh_pool(self, pool) -> None:
         self.ai_settings_repo.pool = pool
         self.module_config_repo.pool = pool
+
+    def ai_health(self) -> dict:
+        registry = self.harness.registry
+        memory = self.memory_store.stats()
+        return {
+            "providers": [
+                {
+                    "provider": registration.kind.value,
+                    "state": registration.state.value,
+                    "model": registration.model,
+                    "reason": registration.reason,
+                }
+                for registration in (registry.registrations if registry else ())
+            ],
+            "circuits": [
+                {
+                    "provider": circuit.provider,
+                    "model": circuit.model,
+                    "state": circuit.state.value,
+                    "consecutive_failures": circuit.consecutive_failures,
+                }
+                for circuit in self.harness.provider_health()
+            ],
+            "memory": {
+                "active_sessions": memory.active_sessions,
+                "total_chars": memory.total_chars,
+                "ttl_evictions": memory.ttl_evictions,
+                "lru_evictions": memory.lru_evictions,
+                "budget_evictions": memory.budget_evictions,
+                "oversized_turn_rejections": memory.oversized_turn_rejections,
+            },
+        }
+
+    def memory_gauges(self) -> dict[str, int]:
+        memory = self.memory_store.stats()
+        return {"sessions": memory.active_sessions, "chars": memory.total_chars}
+
+    def clear_channel_memory(self, channel_id: str) -> None:
+        removed = self.memory_store.clear_channel("twitch", channel_id)
+        if removed:
+            LOGGER.info(
+                "AI short-term memory cleared: channel_id=%s sessions=%d", channel_id, removed
+            )
 
     async def sync_emotes(self, channel_id: str) -> None:
         """Refresh enabled_emotes after bot mod status changes.
@@ -194,65 +275,109 @@ class AIComponent(BotComponent):
 
         record_cooldown(ctx.channel.id, "ai")
 
+        request_id = uuid.uuid4().hex[:16]
         try:
             LOGGER.debug(
-                f"AI request: channel={ctx.channel.name}, user={ctx.chatter.name}, message={message[:100]}"
+                "AI request started: request_id=%s channel_id=%s input_chars=%d",
+                request_id,
+                ctx.channel.id,
+                len(message),
             )
 
             enabled_packs = await self.module_config_repo.get_enabled_packs()
             matched = match_pack_entries(_PACKS, enabled_packs, message) if enabled_packs else []
 
-            messages: list[ChatCompletionMessageParam] = [
-                {"role": "system", "content": build_system_prompt(ai_settings, matched)},
-                {"role": "user", "content": message},
-            ]
+            memory_key: ConversationKey | None = None
+            history_sections: tuple[InputSection, ...] = ()
+            if ai_settings.get("memory_enabled", False):
+                raw_participant_id = getattr(ctx.chatter, "id", None)
+                participant_id = (
+                    raw_participant_id.strip() if isinstance(raw_participant_id, str) else ""
+                )
+                if participant_id:
+                    memory_key = ConversationKey("twitch", str(ctx.channel.id), participant_id)
+                    turns = self.memory_store.get(memory_key)
+                    if turns:
+                        history_sections = (
+                            InputSection(
+                                InputSectionKind.CONVERSATION_HISTORY,
+                                json.dumps(
+                                    {
+                                        "source": "ephemeral_conversation",
+                                        "turns": [
+                                            {
+                                                "user": turn.user_content,
+                                                "assistant": turn.assistant_content,
+                                            }
+                                            for turn in turns
+                                        ],
+                                    },
+                                    ensure_ascii=False,
+                                    separators=(",", ":"),
+                                ),
+                            ),
+                        )
+            else:
+                self.memory_store.clear_channel("twitch", str(ctx.channel.id))
 
-            response, last_error = await call_provider_chain(
-                self.provider_chain, messages, max_tokens=ai_settings["max_tokens"]
+            request = AssistantRequest(
+                sections=(
+                    *build_assistant_sections(ai_settings, matched),
+                    *history_sections,
+                    InputSection(InputSectionKind.USER_INPUT, message),
+                ),
+                max_output_tokens=ai_settings["max_tokens"],
+                request_id=request_id,
+            )
+            response = await self.harness.respond(request)
+
+            generation = response.generation
+            usage = generation.usage
+            LOGGER.info(
+                "AI request completed: request_id=%s outcome=%s provider=%s model=%s "
+                "attempts=%d fallbacks=%d latency_ms=%d input_tokens=%s "
+                "output_tokens=%s total_tokens=%s",
+                request_id,
+                response.output.outcome.value,
+                generation.provider,
+                generation.model,
+                len(generation.attempts),
+                max(0, len(generation.attempts) - 1),
+                sum(attempt.latency_ms for attempt in generation.attempts),
+                usage.input_tokens if usage else None,
+                usage.output_tokens if usage else None,
+                usage.total_tokens if usage else None,
             )
 
-            # Twitch message limit is 500 characters — truncate at sentence boundary
-            if len(response) > 500:
-                truncated = response[:497]
-                for punct in ("。", "！", "？", "!", "?", "."):
-                    pos = truncated.rfind(punct)
-                    if pos > len(truncated) // 2:  # must keep at least half the text
-                        response = truncated[: pos + 1]
-                        break
-                else:
-                    response = truncated + "…"
-
-            if response:
-                flagged = _scan_response(response)
-                if flagged:
-                    LOGGER.warning(
-                        f"[{ctx.channel.name}] AI response blocked — flagged substring: {flagged!r}"
+            if response.output.outcome is AssistantOutcome.OK:
+                await self._ctx_reply(ctx, response.output.content)
+                if memory_key is not None:
+                    self.memory_store.append(
+                        memory_key,
+                        ConversationTurn(message, response.output.content),
                     )
-                    await self._ctx_reply(
-                        ctx, "訊號不穩，剛才那句話被宇宙射線干擾掉了，換個問題試試？"
-                    )
-                    return
-                await self._ctx_reply(ctx, response)
-            elif last_error:
-                raise last_error
-            else:
-                LOGGER.warning("Empty content after all models")
+            elif response.output.outcome is AssistantOutcome.BLOCKED:
+                LOGGER.warning("AI response blocked: request_id=%s", request_id)
+                await self._ctx_reply(ctx, "訊號不穩，剛才那句話被宇宙射線干擾掉了，換個問題試試？")
+            elif response.output.outcome is AssistantOutcome.EMPTY:
                 await self._ctx_reply(ctx, "AI 回應為空，請重試")
-        except RateLimitError as e:
-            await self._ctx_reply(ctx, "服務繁忙，請稍後再試")
-            LOGGER.warning(f"[{ctx.channel.name}] AI rate limit: {e}")
-        except PermissionDeniedError as e:
-            await self._ctx_reply(ctx, "服務異常，請聯絡管理員")
-            LOGGER.error(f"[{ctx.channel.name}] AI permission denied: {e}")
-        except AuthenticationError as e:
-            await self._ctx_reply(ctx, "設定異常，請聯絡管理員")
-            LOGGER.error(f"[{ctx.channel.name}] AI authentication error: {e}")
-        except APITimeoutError as e:
-            await self._ctx_reply(ctx, "回應逾時，請稍後再試")
-            LOGGER.warning(f"[{ctx.channel.name}] AI timeout: {e}")
-        except Exception as e:
+            elif response.output.outcome is AssistantOutcome.MISCONFIGURED:
+                await self._ctx_reply(ctx, "設定異常，請聯絡管理員")
+            else:
+                failure_kind = generation.failure.kind if generation.failure else None
+                if failure_kind is FailureKind.RATE_LIMITED:
+                    await self._ctx_reply(ctx, "服務繁忙，請稍後再試")
+                elif failure_kind is FailureKind.TIMEOUT:
+                    await self._ctx_reply(ctx, "回應逾時，請稍後再試")
+                else:
+                    await self._ctx_reply(ctx, "服務暫時異常，請稍後再試")
+        except Exception as error:
             await self._ctx_reply(ctx, "服務暫時異常，請稍後再試")
-            LOGGER.error(f"[{ctx.channel.name}] AI unexpected error ({type(e).__name__}): {e}")
+            LOGGER.error(
+                "AI request failed: request_id=%s error_type=%s",
+                request_id,
+                type(error).__name__,
+            )
 
 
 async def setup(bot: commands.Bot) -> None:

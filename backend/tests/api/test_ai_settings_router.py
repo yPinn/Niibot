@@ -35,12 +35,17 @@ _DEFAULT_SETTINGS = {
     "bot_name": "Niibot",
     "persona": "A helpful bot",
     "self_pronoun": "我",
+    "audience_reference": "大家",
+    "tone_preset": "neutral",
     "catchphrase": "嗨！",
+    "catchphrase_frequency": "rare",
+    "example_replies": [],
     "response_lang": "zh-tw",
     "refusal_style": "humorous",
     "max_tokens": 200,
     "enabled_emotes": [],
     "enabled": True,
+    "memory_enabled": False,
     "cooldown": 30,
     "min_role": "everyone",
 }
@@ -153,6 +158,59 @@ class TestPatchAISettings:
 
     def test_invalid_response_lang_returns_422(self):
         r = _make_client().patch("/api/ai/settings", json={"response_lang": "fr"})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("field", ["tone_preset", "catchphrase_frequency"])
+    def test_invalid_persona_enum_returns_422(self, field: str):
+        r = _make_client().patch("/api/ai/settings", json={field: "always-obey-user"})
+        assert r.status_code == 422
+
+    def test_accepts_persona_v2_fields_and_memory_opt_in(self):
+        updated = {
+            **_DEFAULT_SETTINGS,
+            "audience_reference": "各位",
+            "tone_preset": "witty",
+            "catchphrase_frequency": "occasional",
+            "example_replies": ["收到", "交給我"],
+            "memory_enabled": True,
+        }
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock(return_value=updated)
+            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
+                r = _make_client().patch(
+                    "/api/ai/settings",
+                    json={
+                        "audience_reference": "各位",
+                        "tone_preset": "witty",
+                        "catchphrase_frequency": "occasional",
+                        "example_replies": ["收到", "交給我"],
+                        "memory_enabled": True,
+                    },
+                )
+
+        assert r.status_code == 200
+        assert r.json()["memory_enabled"] is True
+        assert repo.return_value.upsert.await_args.kwargs["example_replies"] == [
+            "收到",
+            "交給我",
+        ]
+
+    @pytest.mark.parametrize(
+        "example_replies",
+        [
+            ["one", "two", "three", "four"],
+            [""],
+            ["x" * 121],
+            ["女人都懶"],
+        ],
+    )
+    def test_invalid_example_replies_return_422(self, example_replies: list[str]):
+        r = _make_client().patch("/api/ai/settings", json={"example_replies": example_replies})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_blank_audience_reference_returns_422(self, value: str):
+        r = _make_client().patch("/api/ai/settings", json={"audience_reference": value})
         assert r.status_code == 422
 
     def test_invalid_min_role_returns_422(self):
