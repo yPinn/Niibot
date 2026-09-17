@@ -16,6 +16,7 @@ os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 os.environ.setdefault("API_URL", "https://api.niibot.tv")
 os.environ.setdefault("BOT_ID", "bot-test")
 
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -37,6 +38,7 @@ from services import TenantContext
 from services.command_import.models import (
     ImportItem,
     ImportPreview,
+    ImportResult,
     ImportSection,
     ImportSource,
     ImportStatus,
@@ -690,3 +692,60 @@ class TestExistingNameLookups:
     async def test_existing_trigger_names_on_a_channel_with_none(self):
         service = CommandImportService(_pool_returning([]), MagicMock())
         assert await service.existing_trigger_names(CHANNEL_ID) == set()
+
+
+# ---------------------------------------------------------------------------
+# POST /apply through the router
+# ---------------------------------------------------------------------------
+
+
+class TestApplyEndpoint:
+    """The unit tests above call service.apply() directly, so nothing in the
+    endpoint itself ran — including its success log, where an `extra` key that
+    collides with a LogRecord attribute turns a completed import into a 500.
+
+    INFO must be enabled for that to reproduce: Logger.info short-circuits on
+    isEnabledFor before reaching makeRecord, so under pytest's default WARNING
+    the bad record is never built and the endpoint looks fine.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _info_logging(self, caplog):
+        with caplog.at_level(logging.INFO):
+            yield
+
+    def test_returns_the_result_counts(self):
+        import_id = stash_preview(USER_UUID, _preview())
+        result = ImportResult(created=2, enabled=1, skipped=3, failed=0, errors=[])
+        with patch.object(CommandImportService, "apply", AsyncMock(return_value=result)):
+            r = _make_client().post(
+                "/api/commands/import/apply",
+                json={"import_id": import_id, "selections": {"se:cmd:discord": True}},
+            )
+        assert r.status_code == 200
+        assert r.json() == {
+            "created": 2,
+            "enabled": 1,
+            "skipped": 3,
+            "failed": 0,
+            "errors": [],
+        }
+
+    def test_surfaces_per_item_failures_without_failing_the_request(self):
+        import_id = stash_preview(USER_UUID, _preview())
+        result = ImportResult(created=1, enabled=0, skipped=0, failed=1, errors=["!x: boom"])
+        with patch.object(CommandImportService, "apply", AsyncMock(return_value=result)):
+            r = _make_client().post(
+                "/api/commands/import/apply",
+                json={"import_id": import_id, "selections": {"se:cmd:discord": False}},
+            )
+        assert r.status_code == 200
+        assert r.json()["failed"] == 1
+        assert r.json()["errors"] == ["!x: boom"]
+
+    def test_expired_preview_is_a_404_not_a_500(self):
+        r = _make_client().post(
+            "/api/commands/import/apply",
+            json={"import_id": "gone", "selections": {}},
+        )
+        assert r.status_code == 404

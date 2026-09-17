@@ -260,11 +260,14 @@ async def apply_import(
         raise PreviewExpiredError(context={"import_id": body.import_id}) from exc
 
     result = await service.apply(ctx.channel_id, preview, body.selections)
+    # "created" is a reserved LogRecord attribute — logging raises KeyError on
+    # it, which turned a successful import into a 500 after the rows were
+    # already written.
     LOGGER.info(
         "command_import_applied",
         extra={
             "source": preview.source.value,
-            "created": result.created,
+            "imported": result.created,
             "skipped": result.skipped,
             "failed": result.failed,
         },
