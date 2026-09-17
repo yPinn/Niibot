@@ -92,6 +92,13 @@ export const API_ENDPOINTS = {
     deleteConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
     public: (username: string) => join(`/api/commands/public/${username}`),
   },
+  commandImport: {
+    sources: join('/api/commands/import/sources'),
+    streamelementsPreview: join('/api/commands/import/streamelements/preview'),
+    nightbotOauth: join('/api/commands/import/nightbot/oauth'),
+    preview: (importId: string) => join(`/api/commands/import/preview/${importId}`),
+    apply: join('/api/commands/import/apply'),
+  },
   events: {
     catalog: join('/api/events/catalog'),
     configs: join('/api/events/configs'),
