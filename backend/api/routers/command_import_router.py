@@ -193,7 +193,10 @@ async def nightbot_callback(
     revoked before the redirect, matching the collaborator OAuth flow in
     auth_router which also proves something without keeping the credential.
     """
-    landing = f"{settings.frontend_url}/dashboard/commands"
+    # The dashboard Commands page is /commands, not /dashboard/commands — the
+    # latter is caught by the public "/:username/commands" route and renders a
+    # channel lookup for a user literally named "dashboard".
+    landing = f"{settings.frontend_url}/commands"
     if error:
         return RedirectResponse(url=f"{landing}?import_error={_url_quote(error, safe='')}")
 

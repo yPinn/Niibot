@@ -342,6 +342,17 @@ class TestNightbotOAuth:
         )
         assert "import_error=access_denied" in r.headers["location"]
 
+    def test_callback_lands_on_the_dashboard_commands_route(self):
+        # The dashboard page is /commands. "/dashboard/commands" matches the
+        # public "/:username/commands" route instead and renders a channel
+        # lookup for a user named "dashboard".
+        r = _make_client().get(
+            "/api/commands/import/nightbot/callback",
+            params={"error": "access_denied"},
+            follow_redirects=False,
+        )
+        assert r.headers["location"].startswith("https://niibot.tv/commands?")
+
     def test_callback_without_a_code_is_rejected(self):
         settings = get_settings()
         state = encode_oauth_state("nightbot_import", USER_UUID, secret=settings.jwt_secret_key)
