@@ -15,6 +15,7 @@ from shared.repositories.analytics._caches import (
     _top_chatters_cache,
     _top_commands_cache,
 )
+from shared.repositories.analytics._overlap_mixin import sync_known_bots
 from shared.repositories.analytics._query_mixin import _SCORE_SQL
 
 # ---------------------------------------------------------------------------
@@ -1164,6 +1165,16 @@ _VIEWER_ROW = {
 
 @pytest.mark.asyncio
 class TestRefreshOverlap:
+    @pytest.fixture(autouse=True)
+    def _no_bot_sync(self):
+        """Keep refresh_overlap's own fetch-call sequence untouched by
+        sync_known_bots: an empty bot list makes it a no-op (no conn.fetch)."""
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=[]),
+        ):
+            yield
+
     async def test_no_partners_returns_zero(self):
         conn = _make_conn_multi()
         conn.fetch.return_value = []
@@ -1224,6 +1235,74 @@ class TestRefreshOverlap:
         # executemany and execute should NOT be called when there are no viewers
         conn.executemany.assert_not_called()
         conn.execute.assert_not_called()
+
+    async def test_bot_sync_failure_does_not_abort_refresh(self):
+        """A broken TwitchInsights fetch (or DB error) must not block the refresh."""
+        conn = AsyncMock()
+        conn.fetch.side_effect = [
+            [{"channel_id": "partner1"}],  # partner list
+            [_VIEWER_ROW],  # viewer rows for partner1
+        ]
+        conn.fetchval.return_value = 100
+        pool = _make_pool_with_conn(conn)
+
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(side_effect=RuntimeError("TwitchInsights unreachable")),
+        ):
+            repo = AnalyticsRepository(pool)
+            count = await repo.refresh_overlap("home1", days=30)
+
+        assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — sync_known_bots
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestSyncKnownBots:
+    async def test_no_known_bots_is_noop(self):
+        conn = AsyncMock()
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=[]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        conn.fetch.assert_not_called()
+        conn.executemany.assert_not_called()
+
+    async def test_no_matching_chatters_skips_upsert(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=["nightbot"]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        conn.fetch.assert_awaited_once()
+        conn.executemany.assert_not_called()
+
+    async def test_matching_chatters_upserted_with_auto_sync_note(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [{"user_id": "19264788", "username": "nightbot"}]
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=["nightbot", "streamelements"]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        fetch_args = conn.fetch.await_args.args
+        assert fetch_args[1] == ["nightbot", "streamelements"]  # bots passed through unchanged
+
+        conn.executemany.assert_awaited_once()
+        upsert_sql, upsert_rows = conn.executemany.await_args.args
+        assert "known_bots" in upsert_sql
+        assert "auto-sync" in upsert_sql
+        assert upsert_rows == [("19264788", "nightbot")]
 
 
 # ---------------------------------------------------------------------------

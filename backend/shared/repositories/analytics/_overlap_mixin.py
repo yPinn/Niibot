@@ -6,7 +6,47 @@ import logging
 
 import asyncpg
 
+from shared.repositories.analytics import _query_common
+
 LOGGER = logging.getLogger(__name__)
+
+
+async def sync_known_bots(conn: asyncpg.Connection, days: int = 30) -> None:
+    """Freeze known-bot usernames (shared `_get_bot_list`, incl. TwitchInsights)
+    into `known_bots` by user_id wherever they actually appear in chatter_stats.
+
+    `known_bots` is matched by user_id (stable across renames) while
+    `_get_bot_list()` is username-based, so this bridges the two: any bot
+    username seen recently gets its user_id pinned, permanently excluding it
+    from Matcher even if it's later renamed or drops off the upstream list.
+
+    Module-level so both AnalyticsRepository.refresh_overlap and the standalone
+    backfill script (scripts/twitch_backfill_matcher.py) share one implementation.
+    """
+    bots = await _query_common._get_bot_list()
+    if not bots:
+        return
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT ON (user_id) user_id, username
+        FROM chatter_stats
+        WHERE lower(username) = ANY($1::text[])
+          AND last_message_at >= NOW() - ($2 * INTERVAL '1 day')
+        ORDER BY user_id, last_message_at DESC
+        """,
+        bots,
+        days,
+    )
+    if not rows:
+        return
+    await conn.executemany(
+        """
+        INSERT INTO known_bots (user_id, username, note)
+        VALUES ($1, $2, 'auto-sync')
+        ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username
+        """,
+        [(r["user_id"], r["username"]) for r in rows],
+    )
 
 
 class _AnalyticsOverlapMixin:
@@ -15,6 +55,12 @@ class _AnalyticsOverlapMixin:
     async def refresh_overlap(self, home_channel_id: str, days: int = 30) -> int:
         """Recompute overlap for all partner channels. Returns count of partner channels processed."""
         async with self.pool.acquire() as conn:
+            try:
+                await sync_known_bots(conn, days)
+            except Exception:
+                LOGGER.warning(
+                    "Failed to sync known_bots, continuing with existing list", exc_info=True
+                )
             partner_rows = await conn.fetch(
                 """
                 SELECT DISTINCT channel_id
