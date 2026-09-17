@@ -133,14 +133,24 @@ build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後�
 - **Nightbot** 需要 OAuth。它的未授權讀取會把變數塗銷（`$(user)` 變成 `[user]`）且
   無法還原，實測約四分之一的指令會受影響，所以這個來源一律走授權流程。
 
-設定步驟：
+應用程式是**由維運者註冊一次**，所有實況主共用 — 他們只是授權給這個 app，不需要各自
+註冊。與 Twitch 登入用的 `TWITCH_CLIENT_ID` 是同一種模式。
+
+`NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET` 是 env-scoped，**正式區與測試區各註冊
+一個 app**，密鑰互不相通（比照 `JWT_SECRET_KEY`、`PAYMENT_ENCRYPTION_KEY`）。
+
+設定步驟（每個環境各做一次）：
 
 1. 到 <https://nightbot.tv/account/applications> 建立應用程式
-2. Redirect URI 填 `<API_URL>/api/commands/import/nightbot/callback`（必須完全相符）
-3. 產生 client secret，把兩個值填進 `NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET`
+2. Redirect URI 填 `<API_URL>/api/commands/import/nightbot/callback`。必須完全相符，
+   含 scheme 與大小寫；一個 app 可以列多個，本機開發的
+   `http://localhost:8000/...` 可以掛在測試區那個 app 上
+3. 產生 client secret，把兩個值填進對應環境的
+   `NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET`
 
-取得的 access token 不會存進資料庫：在處理 callback 的那一個 request 內換取、使用、
-撤銷，與 `auth_router` 的 collaborator 流程相同。
+Nightbot 沒有審核流程，註冊完即可讓其他使用者授權。要求的 scope 是唯讀的
+`commands commands_default`。取得的 access token 不會存進資料庫：在處理 callback
+的那一個 request 內換取、使用、撤銷，與 `auth_router` 的 collaborator 流程相同。
 
 ## Staging
 
