@@ -25,6 +25,7 @@ export { Button, buttonVariants } from './button'
 export { Calendar, CalendarDayButton } from './calendar'
 export {
   Card,
+  CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
   CardDescription,

@@ -11,9 +11,9 @@ from shared.cache import AsyncTTLCache, cached
 from shared.models.birthday import Birthday, BirthdaySettings
 
 # --- In-process caches ---
-_birthday_cache = AsyncTTLCache(maxsize=64, ttl=60)
-_settings_cache = AsyncTTLCache(maxsize=16, ttl=120)
-_all_enabled_cache = AsyncTTLCache(maxsize=1, ttl=300)
+_birthday_cache = AsyncTTLCache(maxsize=64, ttl=60, name="birthday.birthday")
+_settings_cache = AsyncTTLCache(maxsize=16, ttl=120, name="birthday.settings")
+_all_enabled_cache = AsyncTTLCache(maxsize=1, ttl=300, name="birthday.all_enabled")
 
 
 class BirthdayRepository:

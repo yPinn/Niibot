@@ -31,6 +31,14 @@ class Settings(BaseServiceSettings):
         ..., validation_alias=AliasChoices("client_secret", "twitch_client_secret")
     )
 
+    # Nightbot OAuth — only needed for importing commands from Nightbot.
+    # Leave unset and the Nightbot import source is hidden from the dashboard;
+    # StreamElements import needs no credentials at all.
+    nightbot_client_id: str = Field(default="", description="Nightbot OAuth application client ID")
+    nightbot_client_secret: str = Field(
+        default="", description="Nightbot OAuth application client secret"
+    )
+
     jwt_secret_key: str = Field(..., description="Secret key for JWT token signing")
     jwt_algorithm: str = Field(default="HS256", description="JWT signing algorithm")
     jwt_expire_days: int = Field(default=7, description="JWT token expiration in days")

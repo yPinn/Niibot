@@ -18,7 +18,7 @@ import {
 } from '@/api/events'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
-import { Icon, SlideUp } from '@/components/primitives'
+import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -278,12 +278,11 @@ export default function AdminPage() {
                   ))}
                 </div>
               ) : allUserChannels.length === 0 ? (
-                <div className="rounded-lg border border-dashed px-4 py-6 text-center">
-                  <p className="text-sub font-medium">目前沒有可管理的使用者頻道</p>
-                  <p className="text-label text-muted-foreground">
-                    完成授權後，使用者會顯示在這裡。
-                  </p>
-                </div>
+                <EmptyState
+                  icon="fa-solid fa-users"
+                  title="目前沒有可管理的使用者頻道"
+                  description="完成授權後，使用者會顯示在這裡。"
+                />
               ) : (
                 <div className="space-y-section">
                   <div

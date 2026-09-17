@@ -1,9 +1,11 @@
 """Twitch bot health check server."""
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from shared.ai_provider import get_primary_model_label
+from shared.assistant.health import primary_model_label
+from shared.gauges import collect_runtime_gauges
 from shared.health_server_base import BaseHealthServer
 
 from .config import get_settings
@@ -26,19 +28,39 @@ class HealthCheckServer(BaseHealthServer):
     async def get_ready(self) -> bool:
         return self.bot is not None and self.bot.bot_id is not None
 
+    def _get_ai_status(self) -> dict[str, object] | None:
+        if self.bot is None:
+            return None
+
+        components = getattr(self.bot, "_components", None)
+        if not isinstance(components, Mapping):
+            return None
+
+        for component in components.values():
+            ai_health = getattr(component, "ai_health", None)
+            if not callable(ai_health):
+                continue
+            try:
+                status = ai_health()
+            except Exception:
+                LOGGER.exception("Failed to collect Twitch AI health")
+                return None
+            return status if isinstance(status, dict) else None
+        return None
+
     async def get_metrics(self) -> dict:
-        s = get_settings()
+        gauges: dict = {"db_pool": None, "caches": {}}
+        memory: dict[str, int] = {}
+        if self.bot is not None:
+            gauges = collect_runtime_gauges(self.bot._db_manager)
+            memory = self.bot.memory_gauges()
+        ai_status = self._get_ai_status()
         return {
             "bot_id": self.bot.bot_id if self.bot else None,
             "connected_channels": len(self.bot.subs.subscribed) if self.bot else 0,
             "components": len(self.bot._components) if self.bot else 0,
-            "ai_model": get_primary_model_label(
-                groq_api_key=s.groq_api_key,
-                groq_model=s.groq_model,
-                gemini_api_key=s.gemini_api_key,
-                gemini_model=s.gemini_model,
-                openrouter_api_key=s.openrouter_api_key,
-                openrouter_model=s.openrouter_model,
-                provider_order=("groq", "gemini", "openrouter"),
-            ),
+            "memory": memory,
+            **gauges,
+            "ai_model": primary_model_label(ai_status),
+            "ai_status": ai_status,
         }

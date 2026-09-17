@@ -866,6 +866,7 @@ class ChannelPointsComponent(commands.Component):
                 youtube_api_key=self.settings.youtube_api_key,
                 twitch_client_id=self.settings.twitch_client_id,
                 twitch_client_secret=self.settings.twitch_client_secret,
+                instafix_host=self.settings.instafix_host,
                 session=self._session,
             )
             title, duration_seconds, view_count = (
@@ -938,6 +939,7 @@ class ChannelPointsComponent(commands.Component):
                 title=title,
                 requested_by=user_name,
                 requested_by_id=user_id,
+                creator_id=metadata.creator_id,
             ):
                 await self._reply(broadcaster, f"@{user_name} 這部影片在封鎖清單中")
                 return
@@ -957,6 +959,8 @@ class ChannelPointsComponent(commands.Component):
                 video_type=resolved.video_type,
                 priority=SOURCE_PRIORITY["redemption"],
                 start_seconds=resolved.start_seconds,
+                creator_id=metadata.creator_id,
+                creator_name=metadata.creator_name,
             )
             if entry is None:
                 await self._reply(broadcaster, f"@{user_name} 點歌失敗，佇列狀態已變更，請重試")

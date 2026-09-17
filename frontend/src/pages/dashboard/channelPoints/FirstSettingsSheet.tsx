@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type RedemptionConfig, updateFirstRedemptionSettings } from '@/api/events'
 import { Spinner } from '@/components/primitives'
+import { TemplatePartsPreview } from '@/components/TemplatePartsPreview'
 import {
   Button,
   Label,
@@ -22,7 +23,21 @@ import {
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
 import { useInputInsert } from '@/hooks/useInputInsert'
+import { renderTemplateParts } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
+import { cn } from '@/lib/utils'
+
+const TWITCH_MESSAGE_LIMIT = 500
+
+// Same legend as events/TemplatePreview — first_message shares the backend's
+// render_template (event_render.py), [[ ]] segments included.
+const PREVIEW_LEGEND = (
+  <>
+    <span className="text-primary">紫色</span>為變數代入值；
+    <span className="line-through">刪除線</span>片段是 <span className="font-mono">[[ ]]</span>{' '}
+    內變數無值、實際不顯示的部分。
+  </>
+)
 
 interface FirstSettingsSheetProps {
   open: boolean
@@ -43,17 +58,20 @@ const PREVIEW_VALUES: Record<string, string> = {
   user: 'Viewer',
 }
 
-const ANNOUNCE_COLORS = [
-  { value: 'primary', label: '預設色' },
-  { value: 'blue', label: '藍色' },
-  { value: 'green', label: '綠色' },
-  { value: 'orange', label: '橘色' },
-  { value: 'purple', label: '紫色' },
+// Twitch's fixed /announce palette (no public hex spec) — swatch values are
+// close visual approximations for the picker, not the exact chat rendering.
+const ANNOUNCE_COLORS: {
+  value: string
+  label: string
+  swatchClassName?: string
+  swatch?: string
+}[] = [
+  { value: 'primary', label: '預設色', swatchClassName: 'bg-primary' },
+  { value: 'blue', label: '藍色', swatch: '#1E69FF' },
+  { value: 'green', label: '綠色', swatch: '#00AD03' },
+  { value: 'orange', label: '橘色', swatch: '#FF7C00' },
+  { value: 'purple', label: '紫色', swatch: '#9C3EE8' },
 ]
-
-function renderPreview(template: string): string {
-  return template.replace(/\$\(([^)]+)\)/g, (token, name: string) => PREVIEW_VALUES[name] ?? token)
-}
 
 export function FirstSettingsSheet({
   open,
@@ -73,6 +91,7 @@ export function FirstSettingsSheet({
   }, [open, config])
 
   const { inputRef, insertText } = useInputInsert<HTMLTextAreaElement>(message, setMessage)
+  const previewParts = useMemo(() => renderTemplateParts(message, PREVIEW_VALUES), [message])
 
   const handleSave = async () => {
     if (!message.trim()) return
@@ -120,12 +139,11 @@ export function FirstSettingsSheet({
               onChange={event => setMessage(event.target.value)}
             />
             <VariableInserter variables={FIRST_VARIABLES} onInsert={insertText} />
-            <div className="space-y-1.5">
-              <p className="text-label text-muted-foreground">預覽</p>
-              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sub wrap-break-word">
-                {message ? renderPreview(message) : '（訊息模板為空）'}
-              </div>
-            </div>
+            <TemplatePartsPreview
+              parts={previewParts}
+              limit={TWITCH_MESSAGE_LIMIT}
+              legend={PREVIEW_LEGEND}
+            />
           </section>
 
           <section className="space-y-2 border-t pt-card" aria-labelledby="first-color-label">
@@ -139,6 +157,11 @@ export function FirstSettingsSheet({
               <SelectContent>
                 {ANNOUNCE_COLORS.map(color => (
                   <SelectItem key={color.value} value={color.value}>
+                    <span
+                      aria-hidden
+                      className={cn('size-3 shrink-0 rounded-full', color.swatchClassName)}
+                      style={color.swatch ? { backgroundColor: color.swatch } : undefined}
+                    />
                     {color.label}
                   </SelectItem>
                 ))}

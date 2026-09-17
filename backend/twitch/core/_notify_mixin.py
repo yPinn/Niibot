@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import twitchio
 
 from core.config import get_settings
-from shared.repositories.video_queue import format_now_playing
+from shared.cache_invalidation import invalidate_channel_config, invalidate_module_config
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -97,12 +97,22 @@ class _NotifyMixin:
             else:
                 if self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
                     await self.subs.unsubscribe(channel_id)  # type: ignore[attr-defined]
-                    self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
                     LOGGER.info(
                         f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}"
                     )  # type: ignore[attr-defined]
                 else:
                     LOGGER.info(f"[NOTIFY] Channel {self._ch(channel_id)} not subscribed, skipping")  # type: ignore[attr-defined]
+
+                # Drop all per-channel in-memory state, not just subscription
+                # bookkeeping — otherwise churny tenants (disable/re-enable,
+                # or many short-lived channels) leak entries across the
+                # process lifetime with nothing to signal it (see
+                # shared/gauges.py for the counters that would show this).
+                self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
+                self._needs_reauth.discard(channel_id)  # type: ignore[attr-defined]
+                self._mod_check_pending.discard(channel_id)  # type: ignore[attr-defined]
+                self.subs.forget(channel_id)  # type: ignore[attr-defined]
+                self._clear_component_channel_memory(channel_id)
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
@@ -277,9 +287,7 @@ class _NotifyMixin:
 
             # Global module_config changes have no channel_id — invalidate global cache.
             if table == "module_config":
-                from shared.repositories.module_config import _CACHE_KEY, _module_config_cache
-
-                _module_config_cache.invalidate(_CACHE_KEY)
+                invalidate_module_config()
                 LOGGER.info("[NOTIFY] module_config updated, global pack cache invalidated")
                 return
 
@@ -293,75 +301,38 @@ class _NotifyMixin:
         except Exception as e:
             LOGGER.warning(f"[NOTIFY] Error handling config_change: {e}")
 
-    async def _handle_video_queue_now_playing(self, connection, pid, channel, payload) -> None:
-        """Announce in chat once when a Video Queue entry starts playing."""
-        try:
-            data = json.loads(payload)
-            channel_id = data.get("channel_id")
-            if not channel_id or not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
-                return
-
-            entry = await self.video_queue.get_current(channel_id)  # type: ignore[attr-defined]
-            if entry is None:
-                return
-
-            users = await self.fetch_users(ids=[channel_id])  # type: ignore[attr-defined]
-            if not users:
-                return
-            await users[0].send_message(
-                message=format_now_playing(entry),
-                sender=self._bot_id,  # type: ignore[attr-defined]
-            )
-        except Exception as e:
-            LOGGER.warning(f"[NOTIFY] Failed to announce now-playing: {e}")
-
     # ------------------------------------------------------------------
     # Cache management
     # ------------------------------------------------------------------
 
-    async def _refresh_channel_cache(self, channel_id: str) -> None:
-        """Reload all config caches for a single channel from DB."""
-        from shared.repositories.ai_settings import _ai_settings_cache
-        from shared.repositories.channel import _channel_cache, _enabled_channels_cache
-        from shared.repositories.command_config import _redemption_cache
-        from shared.repositories.event_config import (
-            EVENT_TYPES,
-        )
-        from shared.repositories.event_config import (
-            _config_cache as _evt_cache,
-        )
-        from shared.repositories.event_config import (
-            _config_list_cache as _evt_list_cache,
-        )
-
-        def _invalidate_channel() -> None:
-            _channel_cache.invalidate(f"channel:{channel_id}")
-            _enabled_channels_cache.clear()
-
-        def _invalidate_events() -> None:
-            for et in EVENT_TYPES:
-                _evt_cache.invalidate(f"event_config:{channel_id}:{et}")
-            _evt_list_cache.invalidate(f"event_list:{channel_id}")
-
-        ops: list[tuple[str, object]] = [
-            ("commands", self.command_configs.warm_cache(channel_id)),  # type: ignore[attr-defined]
-            ("channel", _invalidate_channel),
-            ("events", _invalidate_events),
-            (
-                "redemptions",
-                lambda: _redemption_cache.invalidate_prefix(f"redemption:{channel_id}:"),
-            ),
-            ("timers", lambda: self.timer_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
-            ("triggers", lambda: self.message_trigger_configs.invalidate_cache(channel_id)),  # type: ignore[attr-defined]
-            ("ai_settings", lambda: _ai_settings_cache.invalidate(f"ai_settings:{channel_id}")),
-        ]
-        for name, op in ops:
+    def _clear_component_channel_memory(self, channel_id: str) -> None:
+        """Best-effort removal of optional per-channel component state."""
+        components = getattr(self, "_components", {})
+        for component in components.values():
+            hook = getattr(component, "clear_channel_memory", None)
+            if not callable(hook):
+                continue
             try:
-                result = op() if callable(op) else op  # type: ignore[operator]
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception as e:
-                LOGGER.warning(f"Cache refresh ({name}) failed for {channel_id}: {e}")
+                hook(channel_id)
+            except Exception:
+                LOGGER.exception("[NOTIFY] Failed to clear component memory for %s", channel_id)
+
+    async def _refresh_channel_cache(self, channel_id: str) -> None:
+        """Reload all config caches for a single channel from DB.
+
+        Pure in-memory invalidation is delegated to the shared helper (used
+        identically by the API process's own listener, see api/app.py). This
+        bot additionally re-warms `command_configs` from DB afterward so
+        hot-path chat lookups stay O(1) memory access with zero DB dependency
+        — the invalidation above must run first so the warm step can't pin
+        stale rows back into the cache (see cache_invalidation.py docstring).
+        """
+        invalidate_channel_config(channel_id)
+        self._clear_component_channel_memory(channel_id)
+        try:
+            await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
+        except Exception as e:
+            LOGGER.warning(f"Cache refresh (commands) failed for {channel_id}: {e}")
 
     async def _periodic_cache_refresh(self) -> None:
         """Safety net: reload all config caches every 5 minutes.

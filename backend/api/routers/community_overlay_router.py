@@ -19,6 +19,7 @@ from core.dependencies import (
     get_notify_hub,
     require_self_tenant_access,
 )
+from core.error_handlers import log_request_failure
 from core.rate_limit import RateLimiter
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from services.tenant_service import TenantContext
@@ -273,7 +274,23 @@ async def stream_public_overlay(
                         yield encode_sse("heartbeat", {"at": datetime.now(UTC).isoformat()})
                         continue
 
-                current = await service.get_stream_snapshot(public_key, after_id=cursor)
+                try:
+                    current = await service.get_stream_snapshot(public_key, after_id=cursor)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log_request_failure(
+                        request,
+                        code="STREAM.ITERATION_FAILED",
+                        status=500,
+                        exc=exc,
+                        context={"channel_id": channel_id, "event_class": "occasional"},
+                    )
+                    # Lets the client tell "we failed mid-stream" apart from the
+                    # routine lease-expiry reconnect below — both otherwise look
+                    # identical (a clean end of the response body).
+                    yield encode_sse("stream_error", {"code": "STREAM.ITERATION_FAILED"})
+                    return
                 if current is None or current.channel_id != channel_id:
                     return
                 needs_drain = len(current.events) == 100

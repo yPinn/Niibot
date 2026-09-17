@@ -5,7 +5,7 @@ import { Button } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 
 export default function LoginPage() {
-  useDocumentTitle('Login')
+  useDocumentTitle('登入')
   const { resolvedTheme, setTheme } = useTheme()
 
   return (
@@ -14,6 +14,7 @@ export default function LoginPage() {
         variant="ghost"
         size="icon"
         className="fixed right-4 top-4 z-raised"
+        aria-label={`切換至${resolvedTheme === 'dark' ? '淺色' : '深色'}主題`}
         onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
       >
         <Icon

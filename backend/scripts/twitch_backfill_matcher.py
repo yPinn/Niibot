@@ -20,6 +20,8 @@ utf8_stdio()
 
 from api.core.config import get_settings  # noqa: E402
 
+from shared.repositories.analytics._overlap_mixin import sync_known_bots  # noqa: E402
+
 WINDOWS = [7, 30, 90]
 
 
@@ -108,6 +110,10 @@ async def _compute_channel_overlap(
             FROM chatter_stats cs
             WHERE cs.channel_id = $1
               AND cs.last_message_at >= NOW() - ($3 * INTERVAL '1 day')
+              AND cs.user_id != $1
+              AND cs.user_id != $2
+              AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
+              AND cs.user_id NOT IN (SELECT channel_id FROM channels)
             GROUP BY cs.user_id
         ),
         home_chatters AS (
@@ -118,6 +124,10 @@ async def _compute_channel_overlap(
             FROM chatter_stats cs
             WHERE cs.channel_id = $2
               AND cs.last_message_at >= NOW() - ($3 * INTERVAL '1 day')
+              AND cs.user_id != $1
+              AND cs.user_id != $2
+              AND cs.user_id NOT IN (SELECT user_id FROM known_bots)
+              AND cs.user_id NOT IN (SELECT channel_id FROM channels)
             GROUP BY cs.user_id
         )
         SELECT
@@ -203,9 +213,14 @@ async def _compute_channel_overlap(
             FROM chatter_stats
             WHERE channel_id = $1
               AND last_message_at >= NOW() - ($2 * INTERVAL '1 day')
+              AND user_id != $1
+              AND user_id != $3
+              AND user_id NOT IN (SELECT user_id FROM known_bots)
+              AND user_id NOT IN (SELECT channel_id FROM channels)
             """,
             home_channel_id,
             days,
+            partner_channel_id,
         )
         or 0
     )
@@ -314,6 +329,10 @@ async def main(target_days: list[int], dry_run: bool) -> None:
 
             for days in target_days:
                 print(f"\n  --- {days}d ---")
+                try:
+                    await sync_known_bots(conn, days)
+                except Exception as e:
+                    print(f"    [!] known_bots 同步失敗，沿用現有清單: {e}")
                 count = await backfill_overlap(conn, home_channel_id, partner_ids, days)
                 print(f"  [{days}d] 完成 {count}/{len(partner_ids)}")
 

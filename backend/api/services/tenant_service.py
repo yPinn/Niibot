@@ -43,6 +43,10 @@ class TenantContext:
     channel_id: str
     user_id: str
     role: TenantRole
+    #: Login, bound into the log context so API log lines identify the tenant
+    #: by name instead of only a numeric id. Optional (not None-free) so the
+    #: contextvar is simply skipped when a caller builds a context without it.
+    channel_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -171,6 +175,7 @@ class TenantService:
             row = await conn.fetchrow(
                 """
                 SELECT c.channel_id,
+                       c.channel_name,
                        c.suspended_at,
                        cm.role,
                        caller_membership.status AS caller_membership_status,
@@ -202,7 +207,12 @@ class TenantService:
         role = str(row["role"])
         if not role_satisfies(role, required_role):
             raise TenantAccessDeniedError(context={"channel_id": channel_id, "user_id": user_id})
-        return TenantContext(channel_id=channel_id, user_id=user_id, role=role)  # type: ignore[arg-type]
+        return TenantContext(
+            channel_id=channel_id,
+            user_id=user_id,
+            role=role,  # type: ignore[arg-type]
+            channel_name=row["channel_name"],
+        )
 
     async def list_user_tenants(self, user_id: str) -> list[ChannelMember]:
         """Every channel the user has any role in (dashboard tenant picker)."""

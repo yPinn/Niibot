@@ -5,12 +5,17 @@ export interface AISettings {
   bot_name: string
   persona: string
   self_pronoun: string
+  audience_reference: string
+  tone_preset: 'neutral' | 'witty' | 'energetic' | 'tsundere' | 'calm'
   catchphrase: string
+  catchphrase_frequency: 'off' | 'rare' | 'occasional'
+  example_replies: string[]
   response_lang: 'zh-tw' | 'en' | 'auto'
   refusal_style: 'humorous' | 'polite'
   max_tokens: number
   enabled_emotes: string[]
   enabled: boolean
+  memory_enabled: boolean
   cooldown: number
   min_role: 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
 }
@@ -19,13 +24,18 @@ export const AI_SETTINGS_DEFAULT: AISettings = {
   bot_name: 'Niibot',
   persona: '',
   self_pronoun: '我',
+  audience_reference: '大家',
+  tone_preset: 'neutral',
   catchphrase: '',
+  catchphrase_frequency: 'off',
+  example_replies: [],
   response_lang: 'zh-tw',
-  refusal_style: 'humorous',
+  refusal_style: 'polite',
   max_tokens: 250,
   enabled_emotes: [],
   enabled: false,
-  cooldown: 15,
+  memory_enabled: false,
+  cooldown: 30,
   min_role: 'everyone',
 }
 

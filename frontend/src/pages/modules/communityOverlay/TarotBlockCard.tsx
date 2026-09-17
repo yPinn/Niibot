@@ -5,6 +5,7 @@ import {
   Badge,
   Button,
   Card,
+  CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
   CardDescription,
@@ -14,6 +15,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui'
+
+import { BlockInfoGrid } from './BlockInfoGrid'
 
 interface TarotBlockCardProps {
   testing: boolean
@@ -37,7 +40,7 @@ export function TarotBlockCard({
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <Card className="min-w-0">
-        <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+        <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
           <CardTitle className="flex flex-wrap items-center gap-2">
             <h3>每日塔羅</h3>
             <Badge variant="secondary">牌卡</Badge>
@@ -76,23 +79,26 @@ export function TarotBlockCard({
         </CardHeader>
 
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <p className="text-label text-muted-foreground">聊天指令</p>
-              <p className="text-content font-semibold">!塔羅 [主題]</p>
-              <p className="text-label text-muted-foreground">未填為綜合；另有感情、事業、財運</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-label text-muted-foreground">主題規則</p>
-              <p className="text-content font-semibold">每個主題每天固定一張</p>
-              <p className="text-label text-muted-foreground">同一主題重查結果不變</p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-label text-muted-foreground">牌面來源</p>
-              <p className="text-content font-semibold">本地版本化牌組</p>
-              <p className="text-label text-muted-foreground">替換牌組不影響歷史事件</p>
-            </div>
-          </div>
+          <BlockInfoGrid
+            className="sm:grid-cols-3"
+            cells={[
+              {
+                label: '聊天指令',
+                value: '!塔羅 [主題]',
+                note: '未填為綜合；另有感情、事業、財運',
+              },
+              {
+                label: '主題規則',
+                value: '每個主題每天固定一張',
+                note: '同一主題重查結果不變',
+              },
+              {
+                label: '牌面來源',
+                value: '本地版本化牌組',
+                note: '替換牌組不影響歷史事件',
+              },
+            ]}
+          />
         </CardContent>
 
         <CollapsibleContent>

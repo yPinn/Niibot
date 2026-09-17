@@ -6,7 +6,47 @@ import logging
 
 import asyncpg
 
+from shared.repositories.analytics import _query_common
+
 LOGGER = logging.getLogger(__name__)
+
+
+async def sync_known_bots(conn: asyncpg.Connection, days: int = 30) -> None:
+    """Freeze known-bot usernames (shared `_get_bot_list`, incl. TwitchInsights)
+    into `known_bots` by user_id wherever they actually appear in chatter_stats.
+
+    `known_bots` is matched by user_id (stable across renames) while
+    `_get_bot_list()` is username-based, so this bridges the two: any bot
+    username seen recently gets its user_id pinned, permanently excluding it
+    from Matcher even if it's later renamed or drops off the upstream list.
+
+    Module-level so both AnalyticsRepository.refresh_overlap and the standalone
+    backfill script (scripts/twitch_backfill_matcher.py) share one implementation.
+    """
+    bots = await _query_common._get_bot_list()
+    if not bots:
+        return
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT ON (user_id) user_id, username
+        FROM chatter_stats
+        WHERE lower(username) = ANY($1::text[])
+          AND last_message_at >= NOW() - ($2 * INTERVAL '1 day')
+        ORDER BY user_id, last_message_at DESC
+        """,
+        bots,
+        days,
+    )
+    if not rows:
+        return
+    await conn.executemany(
+        """
+        INSERT INTO known_bots (user_id, username, note)
+        VALUES ($1, $2, 'auto-sync')
+        ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username
+        """,
+        [(r["user_id"], r["username"]) for r in rows],
+    )
 
 
 class _AnalyticsOverlapMixin:
@@ -15,6 +55,12 @@ class _AnalyticsOverlapMixin:
     async def refresh_overlap(self, home_channel_id: str, days: int = 30) -> int:
         """Recompute overlap for all partner channels. Returns count of partner channels processed."""
         async with self.pool.acquire() as conn:
+            try:
+                await sync_known_bots(conn, days)
+            except Exception:
+                LOGGER.warning(
+                    "Failed to sync known_bots, continuing with existing list", exc_info=True
+                )
             partner_rows = await conn.fetch(
                 """
                 SELECT DISTINCT channel_id
@@ -112,16 +158,17 @@ class _AnalyticsOverlapMixin:
         if not viewer_rows:
             return
 
-        # Upsert viewers
+        # Upsert viewers — keyed per window_days so switching windows doesn't
+        # clobber another window's already-computed viewer detail.
         await conn.executemany(
             """
             INSERT INTO channel_overlap_viewers (
                 home_channel_id, partner_channel_id, user_id,
                 username, display_name,
                 partner_sessions, partner_messages, partner_watch_sec, partner_last_seen,
-                home_sessions, home_messages, potential_score, computed_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
-            ON CONFLICT (home_channel_id, partner_channel_id, user_id) DO UPDATE SET
+                home_sessions, home_messages, potential_score, window_days, computed_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+            ON CONFLICT (home_channel_id, partner_channel_id, user_id, window_days) DO UPDATE SET
                 username          = EXCLUDED.username,
                 display_name      = EXCLUDED.display_name,
                 partner_sessions  = EXCLUDED.partner_sessions,
@@ -147,6 +194,7 @@ class _AnalyticsOverlapMixin:
                     r["home_sessions"],
                     r["home_messages"],
                     r["potential_score"],
+                    days,
                 )
                 for r in viewer_rows
             ],
@@ -286,6 +334,7 @@ class _AnalyticsOverlapMixin:
         self,
         home_channel_id: str,
         partner_channel_id: str,
+        days: int = 30,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[int, list[dict]]:
@@ -295,7 +344,7 @@ class _AnalyticsOverlapMixin:
                 """
                 SELECT COUNT(*)
                 FROM channel_overlap_viewers
-                WHERE home_channel_id = $1 AND partner_channel_id = $2
+                WHERE home_channel_id = $1 AND partner_channel_id = $2 AND window_days = $3
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
@@ -303,6 +352,7 @@ class _AnalyticsOverlapMixin:
                 """,
                 home_channel_id,
                 partner_channel_id,
+                days,
             )
             rows = await conn.fetch(
                 """
@@ -311,16 +361,17 @@ class _AnalyticsOverlapMixin:
                     partner_sessions, partner_messages, partner_watch_sec, partner_last_seen,
                     home_sessions, home_messages, potential_score, computed_at
                 FROM channel_overlap_viewers
-                WHERE home_channel_id = $1 AND partner_channel_id = $2
+                WHERE home_channel_id = $1 AND partner_channel_id = $2 AND window_days = $3
                   AND user_id != $1
                   AND user_id != $2
                   AND user_id NOT IN (SELECT user_id FROM known_bots)
                   AND user_id NOT IN (SELECT channel_id FROM channels)
                 ORDER BY potential_score DESC
-                LIMIT $3 OFFSET $4
+                LIMIT $4 OFFSET $5
                 """,
                 home_channel_id,
                 partner_channel_id,
+                days,
                 limit,
                 offset,
             )

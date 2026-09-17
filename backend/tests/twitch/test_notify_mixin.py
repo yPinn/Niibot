@@ -28,6 +28,7 @@ class _FakeSubs:
 
     def __init__(self) -> None:
         self._subscribed: set[str] = set()
+        self._names: set[str] = set()
         self.subscribe = AsyncMock()
         self.unsubscribe = AsyncMock()
 
@@ -41,6 +42,9 @@ class _FakeSubs:
     def ch(self, cid: str) -> str:
         return cid
 
+    def forget(self, cid: str) -> None:
+        self._names.discard(cid)
+
 
 class _StubMixin(_NotifyMixin):
     """Provides the attributes that _NotifyMixin references via self.*."""
@@ -52,6 +56,7 @@ class _StubMixin(_NotifyMixin):
         self.sessions.ensure_session = AsyncMock(return_value=None)
         self._bot_is_mod: set[str] = set()
         self._needs_reauth: set[str] = set()
+        self._mod_check_pending: set[str] = set()
         self._check_bot_mod_status = AsyncMock()
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
@@ -71,6 +76,7 @@ class _StubMixin(_NotifyMixin):
         enabled_channel = MagicMock()
         enabled_channel.enabled = True
         self.channels.get_channel = AsyncMock(return_value=enabled_channel)
+        self._components: dict[str, object] = {}
 
     def _ch(self, cid: str) -> str:
         return self.subs.ch(cid)
@@ -78,6 +84,27 @@ class _StubMixin(_NotifyMixin):
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
     return json.dumps({"channel_id": channel_id, "enabled": enabled})
+
+
+class TestConfigChangeMemoryInvalidation:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_refresh_clears_component_channel_memory(self) -> None:
+        mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+
+        await mixin._refresh_channel_cache("ch1")
+
+        component.clear_channel_memory.assert_called_once_with("ch1")
+
+    async def test_refresh_tolerates_components_without_memory_hook(self) -> None:
+        mixin = _StubMixin()
+        mixin._components["components.other"] = object()
+
+        await mixin._refresh_channel_cache("ch1")
+
+        mixin.command_configs.warm_cache.assert_awaited_once_with("ch1")
 
 
 # ---------------------------------------------------------------------------
@@ -90,28 +117,47 @@ class TestHandleChannelToggleDisable:
 
     async def test_disable_discards_bot_is_mod(self):
         mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
         mixin.subs._subscribed = {"ch1"}
         mixin._bot_is_mod = {"ch1"}
+        mixin._needs_reauth = {"ch1"}
+        mixin._mod_check_pending = {"ch1"}
+        mixin.subs._names = {"ch1"}
 
         await mixin._handle_channel_toggle(
             None, None, "channel_toggle", _payload("ch1", enabled=False)
         )
 
         assert "ch1" not in mixin._bot_is_mod
+        assert "ch1" not in mixin._needs_reauth
+        assert "ch1" not in mixin._mod_check_pending
+        assert "ch1" not in mixin.subs._names
         mixin.subs.unsubscribe.assert_awaited_once_with("ch1")
+        component.clear_channel_memory.assert_called_once_with("ch1")
 
-    async def test_disable_not_subscribed_skips_discard(self):
-        """DISABLE for a channel that was already unsubscribed is a no-op."""
+    async def test_disable_not_subscribed_still_cleans_up_state(self):
+        """DISABLE for a channel already unsubscribed skips the unsubscribe
+        call, but per-channel in-memory state must still be dropped — it can
+        be set (e.g. _needs_reauth from a scope check) independently of
+        EventSub subscription status, and leaving it would leak across
+        disable/re-enable churn for the life of the process."""
         mixin = _StubMixin()
         mixin.subs._subscribed = set()
         mixin._bot_is_mod = {"ch1"}
+        mixin._needs_reauth = {"ch1"}
+        mixin._mod_check_pending = {"ch1"}
+        mixin.subs._names = {"ch1"}
 
         await mixin._handle_channel_toggle(
             None, None, "channel_toggle", _payload("ch1", enabled=False)
         )
 
         mixin.subs.unsubscribe.assert_not_awaited()
-        assert "ch1" in mixin._bot_is_mod  # discard not reached, set unchanged
+        assert "ch1" not in mixin._bot_is_mod
+        assert "ch1" not in mixin._needs_reauth
+        assert "ch1" not in mixin._mod_check_pending
+        assert "ch1" not in mixin.subs._names
 
     async def test_disable_ignores_bot_own_channel(self):
         mixin = _StubMixin()

@@ -1,5 +1,25 @@
 # InstaFix — Self-Hosted Instagram OG Proxy
 
+## Consumers
+
+Two independent implementations currently talk to the same InstaFix
+instance:
+
+- **Discord `social_preview` cog** (`backend/discord/cogs/social_preview/`) —
+  httpx-based, handles carousel/grid probing and profile enrichment for
+  Discord link previews.
+- **Video Queue's Instagram Reel support**
+  (`backend/shared/instafix_client.py`) — aiohttp-based, deliberately
+  minimal (Reel title/thumbnail + mp4 source resolution only), used by
+  `shared/video_sources.py`. See
+  `docs/architecture/video-queue-platforms.md`'s "Instagram Reel" section.
+
+These were kept separate rather than unified behind one shared client so the
+Video Queue addition stayed reviewable and didn't touch the Discord cog's
+already-production-tested logic. Consolidating them is a tracked follow-up,
+not a correctness requirement — see that doc's "Deferred: Instagram client
+consolidation" section.
+
 ## What It Is
 
 [Wikidepia/InstaFix](https://github.com/Wikidepia/InstaFix) is a self-hosted proxy that returns static HTML with

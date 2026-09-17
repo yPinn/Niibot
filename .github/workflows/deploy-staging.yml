@@ -11,7 +11,8 @@ on:
       services:
         description: "Which services to deploy (default = api only)"
         type: choice
-        options: [default, api, twitch, discord, "twitch,discord", all]
+        options:
+          [default, api, twitch, discord, instafix, "twitch,discord", all]
         default: default
       force_all:
         description: "Force rebuild + restart the resolved service set"

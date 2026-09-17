@@ -154,8 +154,8 @@ class TarotComponent(BotComponent):
             )
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "tarot")
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.debug("usage count failed for tarot: %s", e)
 
 
 async def setup(bot: commands.Bot) -> None:

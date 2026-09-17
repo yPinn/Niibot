@@ -4,18 +4,18 @@ This directory holds **read-only configuration baked into every Docker image**
 via `COPY data/ ./data/` in each service Dockerfile. Edit a file here, push,
 the next deploy ships it.
 
-| Path               | Used by                  | Notes                                    |
-| ------------------ | ------------------------ | ---------------------------------------- |
-| `chat_filter.json` | twitch AI                | Substring + pinyin block list            |
-| `eat.json`         | discord eat cog          | Restaurant list                          |
-| `embed.json`       | discord (all cogs)       | Default author/footer chrome             |
-| `fortune.json`     | twitch + discord fortune | Lucky text pool                          |
-| `free_models.json` | shared AI provider chain | OpenRouter free-tier roster              |
-| `games.json`       | discord games cog        | Game catalog                             |
-| `giveaway.json`    | discord giveaway cog     | Static config (not active state)         |
-| `tarot.json`       | twitch + discord tarot   | 78 card ids, names, meanings and advice  |
-| `tarot_decks.json` | discord + Live Display   | Versioned visual deck catalog and source |
-| `packs/<pack>/`    | twitch AI                | Skill-style pack directories (see below) |
+| Path               | Used by                  | Notes                                               |
+| ------------------ | ------------------------ | --------------------------------------------------- |
+| `chat_filter.json` | twitch AI                | Substring + pinyin block list                       |
+| `eat.json`         | discord eat cog          | Restaurant list                                     |
+| `embed.json`       | discord (all cogs)       | Default author/footer chrome                        |
+| `fortune.json`     | twitch + discord fortune | Lucky text pool                                     |
+| `free_models.json` | manual model research    | OpenRouter free-tier inventory; not runtime routing |
+| `games.json`       | discord games cog        | Game catalog                                        |
+| `giveaway.json`    | discord giveaway cog     | Static config (not active state)                    |
+| `tarot.json`       | twitch + discord tarot   | 78 card ids, names, meanings and advice             |
+| `tarot_decks.json` | discord + Live Display   | Versioned visual deck catalog and source            |
+| `packs/<pack>/`    | twitch AI                | Skill-style pack directories (see below)            |
 
 ## Tarot visual decks
 

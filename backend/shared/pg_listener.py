@@ -65,7 +65,14 @@ async def pg_listen(
         except asyncio.CancelledError:
             break
         except Exception as e:
-            LOGGER.error(f"Error in pg_listen('{channel}'): {e}")
+            LOGGER.error(
+                f"Error in pg_listen('{channel}'): {e}",
+                extra={
+                    "code": "RUNTIME.LISTENER_DISCONNECTED",
+                    "event_class": "persistent",
+                    "notify_channel": channel,
+                },
+            )
             LOGGER.warning(
                 f"Reconnecting to PostgreSQL LISTEN '{channel}' in {reconnect_delay}s..."
             )

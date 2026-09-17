@@ -78,6 +78,96 @@ class TestQueryAndChannelVariables:
 
 
 # ---------------------------------------------------------------------------
+# $(sender), $(touser) and positional arguments
+# ---------------------------------------------------------------------------
+
+
+class TestSenderVariable:
+    def test_sender_is_an_alias_of_user(self):
+        chatter = make_chatter(display_name="NiiStream", name="niistream")
+        result = substitute_variables("Hi $(sender)!", chatter, "ch", "")
+        assert result == "Hi NiiStream!"
+
+    def test_sender_and_user_in_same_text(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(user)/$(sender)", chatter, "ch", "")
+        assert result == "Nii/Nii"
+
+
+class TestTouserVariable:
+    def test_uses_first_argument_when_present(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(touser) 你好", chatter, "ch", "friend extra")
+        assert result == "friend 你好"
+
+    def test_falls_back_to_chatter_when_no_argument(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(touser) 你好", chatter, "ch", "")
+        assert result == "Nii 你好"
+
+    def test_whitespace_only_query_falls_back_to_chatter(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(touser)", chatter, "ch", "   ")
+        assert result == "Nii"
+
+    def test_user_replacement_does_not_corrupt_touser(self):
+        # "$(user)" is not a substring of "$(touser)" — guard against a naive
+        # replace order regression.
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(touser)", chatter, "ch", "target")
+        assert result == "target"
+
+
+class TestPositionalArguments:
+    def test_positional_arguments_split_from_query(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(1) beat $(2)", chatter, "ch", "alice bob")
+        assert result == "alice beat bob"
+
+    def test_out_of_range_position_becomes_empty(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(3)]", chatter, "ch", "only one")
+        assert result == "[]"
+
+    def test_empty_query_yields_empty_positions(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(1)]", chatter, "ch", "")
+        assert result == "[]"
+
+    def test_extra_whitespace_between_arguments_collapses(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(1)-$(2)", chatter, "ch", "  a    b  ")
+        assert result == "a-b"
+
+    def test_zero_is_not_a_positional_argument(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(0)", chatter, "ch", "a b")
+        assert result == "$(0)"
+
+
+# ---------------------------------------------------------------------------
+# $(count)
+# ---------------------------------------------------------------------------
+
+
+class TestCountVariable:
+    def test_count_substituted_from_keyword(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("used $(count) times", chatter, "ch", "", count=42)
+        assert result == "used 42 times"
+
+    def test_count_defaults_to_zero(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("used $(count) times", chatter, "ch", "")
+        assert result == "used 0 times"
+
+    def test_repeated_count(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(count)/$(count)", chatter, "ch", "", count=3)
+        assert result == "3/3"
+
+
+# ---------------------------------------------------------------------------
 # $(random min,max)
 # ---------------------------------------------------------------------------
 
@@ -162,11 +252,16 @@ class TestCombined:
         text = "This has no variables at all."
         assert substitute_variables(text, chatter, "ch", "") == text
 
-    def test_count_placeholder_not_substituted(self):
-        # $(count) is documented as a placeholder — should remain as-is
+    @pytest.mark.parametrize(
+        "injected",
+        ["$(count)", "$(channel)", "$(pick a,b,c)", "$(random 1,100)", "$(1)", "$(user)"],
+    )
+    def test_chatter_input_is_not_rescanned_for_variables(self, injected: str):
+        # A viewer typing a variable into a command that echoes $(query) must
+        # see it back verbatim, not expanded.
         chatter = make_chatter(display_name="Nii")
-        result = substitute_variables("used $(count) times", chatter, "ch", "")
-        assert result == "used $(count) times"
+        result = substitute_variables("你說 $(query)", chatter, "ch", injected, count=7)
+        assert result == f"你說 {injected}"
 
     def test_unknown_variable_preserved(self):
         chatter = make_chatter(display_name="Nii")

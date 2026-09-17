@@ -40,8 +40,8 @@ TikTok, which is why it isn't supported yet (see "Deferred: TikTok" below).
 Adding a platform means: one URL regex, one fetch function, one entry in the
 `_WATCH_URL_BUILDERS` map (`video_sources.py`), and one `PlayerStrategy` in
 `players/index.ts`. `resolve_video_url()` tries platforms in this order:
-YouTube → Twitch Clip → Twitch VOD → Bilibili (including `b23.tv` short-link
-redirects).
+YouTube → Twitch Clip → Twitch VOD → Instagram Reel (including `share/`
+short-link redirects) → Bilibili (including `b23.tv` short-link redirects).
 
 ## Twitch VOD (`twitch.tv/videos/{id}`)
 
@@ -67,16 +67,100 @@ min(TWITCH_VOD_WINDOW_SECONDS, vod_duration - start_seconds)` — the **capped
 clips; the duration string (`"3h20m5s"`) is parsed by `_parse_hms()`, shared
 with the `?t=` parser.
 
+## Instagram Reel (`instagram.com/reel/{shortcode}`)
+
+Resolves through the same self-hosted **InstaFix** proxy the Discord bot's
+social-preview cog already runs (`docker-compose.yml`'s `instafix` service —
+see `docs/integrations/instafix.md`), via a new, deliberately minimal
+`shared/instafix_client.py`. This is **not** the same code path as the
+Discord cog's Instagram handling: that implementation also does
+carousel/grid probing and profile enrichment that Video Queue doesn't need,
+and consolidating the two into one shared client is a tracked follow-up
+(see "Deferred" below), not done in this pass.
+
+- `resolve_instagram_url()` matches a direct `/reel(s)/{shortcode}` URL, or
+  follows the redirect on an `instagram.com/share/...` link (the mobile
+  app's "Copy Link" output) to find the shortcode — same shape as
+  `resolve_bilibili_url()`'s `b23.tv` handling.
+- **Title** (`_extract_display_title()`) prefers the caption
+  (`og:description`) over `@handle` — a caption actually describes the
+  content, matching every other platform's title. It's cleaned first
+  (`_strip_trailing_hashtags()`, duplicated from the Discord cog's version
+  for the same staged-migration reason as the OG parser; embedded newlines
+  collapsed to spaces) and capped at `_TITLE_MAX_LENGTH` (60 chars,
+  deliberately short — it stands in for a title, not a caption display).
+  Falls back to `@handle` when there's no usable caption (absent, or
+  nothing left after stripping an all-hashtags caption). **Known trade-off**:
+  this removes the one place a Reel's handle lived in stored `title` data,
+  so a `VideoQueueBlocklistRepository` `kind='creator'` entry matching by
+  Instagram handle would no longer hit reliably — see "Deferred: creator
+  identity normalization" below.
+- `fetch_instagram_reel_info()` fetches the Reel's title + thumbnail from
+  InstaFix's OpenGraph page at **enqueue time**, concurrently with a second
+  request that resolves the same `/videos/{shortcode}/1` redirect
+  `fetch_instagram_reel_source()` uses at play time — not to reuse the mp4
+  URL itself (it's signed and expires, so playback always re-resolves it
+  fresh), but because the CDN URL's `efg` query param is an undocumented
+  base64-encoded JSON blob that includes the real `duration_s`
+  (`shared.instafix_client._extract_duration_seconds`). **View count is
+  still permanently unavailable** — no field for it exists anywhere in
+  InstaFix's response — but duration usually _is_ known at queue time now,
+  same as YouTube/Twitch Clip. `metadata_best_effort = True` (same flag
+  Bilibili uses) stays set because of view_count: `min_view_count` always
+  skips rather than rejects an unwinnable submission, while the
+  duration-cap gate now actually applies whenever the `efg` resolve
+  succeeds, and only skips on the (rarer) case where that redirect fails —
+  `metadata_gate_unverifiable()` already handles a present value correctly
+  regardless of `best_effort`, so no gating-logic changes were needed to
+  pick this up. When the redirect does fail, `duration_seconds` falls back
+  to the pre-existing client-side backfill below.
+- `is_vertical` tries the OG page's `og:video:width`/`height`
+  (`shared.instafix_client._orientation_from_og`) first, but InstaFix's Reel
+  OG page carries no such tags in practice, so this is almost always
+  unknown. The real signal is `_orientation_from_mp4`: a bounded byte-range
+  probe of the already-resolved mp4 CDN URL, parsed as an ISO-BMFF box tree
+  (`moov` → `trak` → `tkhd`) for the video track's actual width/height —
+  same "trust the asset, not unreliable metadata" approach
+  `_extract_duration_seconds` takes with the `efg` param. Defaults to `True`
+  only if both signals come back empty (network failure, or a `moov` that
+  didn't fit the probed prefix). Most Reels are 9:16, but a landscape source
+  video keeps its own aspect ratio when posted as a Reel, so only genuinely
+  vertical entries get the blurred-side-column treatment
+  (`current.is_vertical` in `VideoQueueOverlay.tsx`) — a landscape Reel
+  plays plain, letterboxed like any other landscape source. Unlike
+  `players/youtube.ts`'s `createSidePlayer`
+  (full separate `YT.Player` instances with an all-ready barrier and
+  state-change sync), `players/instagramReel.ts`'s side panels are just two
+  more `<video>` elements pointing at the same resolved mp4 URL — no
+  player-object abstraction to juggle, just `currentTime`/`play()` nudged
+  back in sync (>0.3s drift) off the center video's once-a-second progress
+  tick. `players/shared.ts`'s `destroyAllPlayers()` gained an explicit
+  `sideContainerRefs` cleanup param for this — YouTube's side `YT.Player`s
+  self-clean via `.destroy()`, but a bare `<video>` element has nothing
+  equivalent, so leaving the old one in place would leak into the next mount.
+- **Playback**: identical mechanism to Twitch Clip's `<video>` path —
+  `GET /api/video-queue/public/{u}/entries/{id}/reel-source` resolves the
+  shortcode to a signed CDN mp4 URL fresh at play time (never cached; it
+  expires) via `fetch_instagram_reel_source()`, then `players/
+instagramReel.ts` plays it in a host `<video>` with real `ended` /
+  `loadedmetadata` events. **Unlike Twitch Clip, there is no fallback embed**
+  — Instagram has nothing equivalent to `clips.twitch.tv/embed` — so a
+  resolve failure or a `<video>` `error` event skips the entry immediately
+  instead of degrading to a lesser embed.
+- `duration_seconds` is backfilled the same way Twitch Clip's is: once the
+  resolved `<video>`'s `loadedmetadata` fires, `reportVideoMetadata` writes
+  the real duration back for the dashboard/history.
+
 ## Platform reference (parsing → metadata → playback)
 
-|                                   | YouTube                                                                                                                                                                                | Twitch Clip                                                                                                  | Bilibili                                                                                                                                                                                                          |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                                  | `shared/bilibili_client.py`: `x/web-interface/view` → WBI `wbi/view` → webpage `__INITIAL_STATE__` (see "Bilibili metadata")                                                                                      |
-| Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                          | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
-| Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier.         | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
-| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                                       | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
-| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | Signed source MP4 in a host `<video>` (resolve via private GraphQL); `clips.twitch.tv/embed` iframe fallback | Plain `<iframe>` — no control API                                                                                                                                                                                 |
-| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Event-driven** on the `<video>` path (`ended`); timer ceiling (90s) on the iframe fallback                 | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 600s ceiling                                                                                                                                       |
+|                                   | YouTube                                                                                                                                                                                | Twitch Clip                                                                                                  | Instagram Reel                                                                                                                                                              | Bilibili                                                                                                                                                                                                          |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Metadata API                      | YouTube Data API v3 (`videos.list`)                                                                                                                                                    | Twitch Helix `/helix/clips`                                                                                  | `shared/instafix_client.py` via the self-hosted InstaFix proxy — OpenGraph tags only                                                                                        | `shared/bilibili_client.py`: `x/web-interface/view` → WBI `wbi/view` → webpage `__INITIAL_STATE__` (see "Bilibili metadata")                                                                                      |
+| Official?                         | Yes                                                                                                                                                                                    | Yes                                                                                                          | **No** — InstaFix is a self-hosted reverse-engineered proxy, not part of Instagram's Graph API                                                                              | **No** — not part of Bilibili's official Open Platform (that's a separate, application-gated program for content distribution). This is a reverse-engineered public endpoint with a spoofed Referer/User-Agent.   |
+| Cost                              | Free, quota-based: 10,000 units/day default, `videos.list` costs 1 unit/call (~10k calls/day). No paid tier — exceeding quota requires Google's manual Audit and Quota Extension form. | Free, token-bucket rate limit: 800 points/min per client, most endpoints cost 1 point. No paid tier.         | Free, self-hosted — no SLA, no rate-limit contract; the same dependency class as Bilibili                                                                                   | Free today, but unauthorized use of an undocumented endpoint — no SLA, no rate-limit contract, can change format or start blocking without notice. Tracked as a standing technical-debt risk, not a one-time bug. |
+| duration/view_count at queue time | Always (when API key configured)                                                                                                                                                       | Always                                                                                                       | Duration: **usually** — decoded from an undocumented CDN URL param, see above; falls back to client-side backfill on failure. View count: **never**, no field exists at all | **Best-effort** — unofficial endpoint, datacenter IPs frequently hit risk-control `-412`                                                                                                                          |
+| Playback embed                    | YT IFrame API (`YT.Player`)                                                                                                                                                            | Signed source MP4 in a host `<video>` (resolve via private GraphQL); `clips.twitch.tv/embed` iframe fallback | Signed source MP4 in a host `<video>` (resolve via InstaFix); **no fallback embed exists**                                                                                  | Plain `<iframe>` — no control API                                                                                                                                                                                 |
+| End detection                     | **Event-driven**: `onStateChange` ENDED + a polling fallback                                                                                                                           | **Event-driven** on the `<video>` path (`ended`); timer ceiling (90s) on the iframe fallback                 | **Event-driven** (`ended`) — always, since there's no timer-based iframe path to fall back to                                                                               | **Timer-driven**: `setTimeout` from `duration_seconds`, else a 600s ceiling                                                                                                                                       |
 
 The event-driven vs. timer-driven split is the one piece of platform-specific
 _behavior_ the frontend registry does not (and should not) paper over: YouTube
@@ -256,14 +340,50 @@ overlay does not use it.
 - Twitch Clip: Helix `thumbnail_url`.
 - Twitch VOD: Helix `thumbnail_url` with `%{width}x%{height}` → `320x180`.
 - Bilibili: the view `data`'s `pic`, upgraded to `https://`.
+- Instagram Reel: InstaFix's OG `image` path, resolved to a CDN URL at
+  enqueue time (see "Instagram Reel" above).
 
 `None` (Bilibili risk control, an unprocessed VOD, any fetch failure) just falls
 back to a placeholder. The card also renders the placeholder on an `<img>`
 `onError` — Bilibili's `i*.hdslb.com` CDN 403s a cross-site `Referer`, so the
 `<img>` sends `referrerpolicy="no-referrer"`; if a host still blocks it the
 error handler covers it. The dashboard CSP `img-src` (`frontend/public/_headers`)
-allows `i.ytimg.com`, `*.hdslb.com`, `clips-media-assets2.twitch.tv`, and
-`static-cdn.jtvnw.net`.
+allows `i.ytimg.com`, `*.hdslb.com`, `clips-media-assets2.twitch.tv`,
+`static-cdn.jtvnw.net`, and `*.cdninstagram.com`.
+
+## Deferred: creator identity normalization
+
+`VideoQueueBlocklistRepository.check()`'s `kind='creator'`/`'user'`
+blocklist entries match against whatever happens to live in `title`
+(and `requested_by`, the _submitter_, not necessarily the _creator_) — there
+is no normalized, platform-independent "who made this content" field.
+YouTube's `title` is the video's title, not the channel name; Twitch Clip's
+`requested_by` may read as the broadcaster but the clip's actual creator is
+a separate Helix field never surfaced to the queue row; Bilibili and
+Instagram each have their own shape too. This was always latent, but became
+concrete when Instagram's `title` switched from `@handle` to the caption
+(see "Instagram Reel" above) — removing the one place a Reel's handle
+happened to live in queue data.
+
+No Instagram creator-blocklist entries can exist yet (the platform just
+shipped), so nothing regresses today, but this needs a real fix — likely a
+dedicated `creator` field per platform, not another field overloaded to
+double as identity — before creator-based blocklist/filter features can be
+trusted to work consistently across platforms. Flagged for full research,
+not scoped or started.
+
+## Deferred: Instagram client consolidation
+
+`shared/instafix_client.py` (Video Queue) and `discord/cogs/social_preview/`
+(Discord link previews) are currently **two independent implementations**
+against the same self-hosted InstaFix instance — the Video Queue client was
+deliberately written fresh and minimal rather than refactored out of the
+Discord cog, to keep that change reviewable and avoid touching the cog's
+already-production-tested carousel/grid/profile-enrichment logic in the
+same pass. Consolidating them into one shared client (probably living in
+`shared/` and covering the union of both call shapes) is a reasonable
+follow-up once the Video Queue path has run in production for a while, not
+a correctness requirement.
 
 ## Deferred: donation path multi-platform support
 

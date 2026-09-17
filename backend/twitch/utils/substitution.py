@@ -2,19 +2,25 @@
 
 Supported variables:
     $(user)             Chatter display name (falls back to name)
+    $(sender)           Alias of $(user) — the spelling StreamElements uses
+    $(touser)           First argument, falling back to the chatter when absent
     $(query)            User input after the command trigger
+    $(1) … $(9)         Single positional argument, split from the query
     $(channel)          Channel / broadcaster name
+    $(count)            How many times this command has been used
     $(random min,max)   Random integer in range [min, max] (inclusive)
     $(pick a,b,c)       Random pick from comma-separated items
-    $(count)            Command usage count (placeholder — not yet implemented)
+
+$(touser), $(sender) and the positional arguments exist because Nightbot and
+StreamElements responses lean on them heavily — they are the difference between
+a command importing cleanly and needing a manual rewrite.
 """
 
 import random
 import re
 from typing import Protocol
 
-_RANDOM_PATTERN = re.compile(r"\$\(random\s+(\d+)\s*,\s*(\d+)\)")
-_PICK_PATTERN = re.compile(r"\$\(pick\s+(.+?)\)")
+from shared.command_variables import VARIABLE_PATTERN
 
 
 class ChatterLike(Protocol):
@@ -29,24 +35,36 @@ def substitute_variables(
     chatter: ChatterLike,
     channel_name: str,
     query: str,
+    *,
+    count: int = 0,
 ) -> str:
     """Replace response variables in custom command / trigger text."""
-    text = text.replace("$(user)", chatter.display_name or chatter.name or "")
-    text = text.replace("$(query)", query)
-    text = text.replace("$(channel)", channel_name or "")
+    user = chatter.display_name or chatter.name or ""
+    args = query.split()
+    simple = {
+        "user": user,
+        "sender": user,
+        # Nightbot semantics: the first argument, or the caller when none was given.
+        "touser": args[0] if args else user,
+        "query": query,
+        "channel": channel_name or "",
+        "count": str(count),
+    }
 
-    def _random_replace(m: re.Match) -> str:  # type: ignore[type-arg]
-        lo, hi = int(m.group(1)), int(m.group(2))
-        if lo > hi:
-            lo, hi = hi, lo
-        return str(random.randint(lo, hi))
+    def _replace(m: re.Match) -> str:  # type: ignore[type-arg]
+        if name := m.group("simple"):
+            return simple[name]
+        if position := m.group("position"):
+            # Out-of-range positions collapse to "" rather than leaking the variable.
+            index = int(position) - 1
+            return args[index] if index < len(args) else ""
+        if items := m.group("items"):
+            choices = [i.strip() for i in items.split(",") if i.strip()]
+            return random.choice(choices) if choices else ""
+        lo, hi = int(m.group("lo")), int(m.group("hi"))
+        return str(random.randint(*sorted((lo, hi))))
 
-    text = _RANDOM_PATTERN.sub(_random_replace, text)
-
-    def _pick_replace(m: re.Match) -> str:  # type: ignore[type-arg]
-        items = [i.strip() for i in m.group(1).split(",") if i.strip()]
-        return random.choice(items) if items else ""
-
-    text = _PICK_PATTERN.sub(_pick_replace, text)
-
-    return text
+    # A single pass matters: whatever the chatter typed is inserted as literal
+    # text instead of being rescanned, so $(pick …) in a viewer's message
+    # cannot expand.
+    return VARIABLE_PATTERN.sub(_replace, text)

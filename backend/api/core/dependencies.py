@@ -242,7 +242,9 @@ async def require_tenant_access(
     ctx = await tenant.assert_access(
         channel_id=channel_id, user_id=user_id, required_role="manager"
     )
-    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    # channel (the login name) comes free off the context — without it every
+    # API log line identifies the tenant only by a numeric id.
+    bind_log_context(channel_id=ctx.channel_id, channel=ctx.channel_name, role=ctx.role)
     return ctx
 
 
@@ -258,7 +260,7 @@ async def require_tenant_owner(
         user_id=user_id,
         required_role="owner",
     )
-    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    bind_log_context(channel_id=ctx.channel_id, channel=ctx.channel_name, role=ctx.role)
     return ctx
 
 
@@ -279,5 +281,5 @@ async def require_self_tenant_access(
     ctx = await tenant.assert_access(
         channel_id=channel_id, user_id=user_id, required_role="manager"
     )
-    bind_log_context(channel_id=ctx.channel_id, role=ctx.role)
+    bind_log_context(channel_id=ctx.channel_id, channel=ctx.channel_name, role=ctx.role)
     return ctx

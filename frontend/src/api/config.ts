@@ -92,6 +92,13 @@ export const API_ENDPOINTS = {
     deleteConfig: (commandName: string) => join(`/api/commands/configs/${commandName}`),
     public: (username: string) => join(`/api/commands/public/${username}`),
   },
+  commandImport: {
+    sources: join('/api/commands/import/sources'),
+    streamelementsPreview: join('/api/commands/import/streamelements/preview'),
+    nightbotOauth: join('/api/commands/import/nightbot/oauth'),
+    preview: (importId: string) => join(`/api/commands/import/preview/${importId}`),
+    apply: join('/api/commands/import/apply'),
+  },
   events: {
     catalog: join('/api/events/catalog'),
     configs: join('/api/events/configs'),
@@ -136,6 +143,8 @@ export const API_ENDPOINTS = {
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
     clipSource: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/clip-source`),
+    reelSource: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/reel-source`),
     state: join('/api/video-queue/state'),
     history: join('/api/video-queue/history'),
     skip: join('/api/video-queue/skip'),

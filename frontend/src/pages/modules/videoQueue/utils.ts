@@ -32,6 +32,8 @@ export function watchUrl(videoType: string, videoId: string): string {
       return `https://clips.twitch.tv/${videoId}`
     case 'bilibili':
       return `https://www.bilibili.com/video/${videoId}`
+    case 'instagram_reel':
+      return `https://www.instagram.com/reel/${videoId}/`
     default:
       return `https://youtu.be/${videoId}`
   }

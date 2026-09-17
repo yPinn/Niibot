@@ -46,6 +46,7 @@ import {
   Badge,
   Button,
   Card,
+  CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
   CardDescription,
@@ -65,7 +66,7 @@ const CONTENT_TYPES: CommunityOverlayContentType[] = ['checkin', 'tarot']
 
 function SettingsSkeleton() {
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-section">
       <Skeleton className="h-72 rounded-xl" />
       <Skeleton className="h-[36rem] rounded-xl" />
       <Skeleton className="h-72 rounded-xl" />
@@ -563,14 +564,11 @@ export default function CommunityOverlaySettings({
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="flex min-w-0 flex-col gap-8">
-          <section
-            aria-labelledby="live-display-connection-title"
-            className="flex min-w-0 flex-col gap-3"
-          >
+        <div className="flex min-w-0 flex-col gap-section">
+          <section aria-labelledby="live-display-connection-title" className="min-w-0">
             <SlideUp>
               <Card className="min-w-0">
-                <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
                   <CardTitle className="flex flex-wrap items-center gap-2">
                     <h2 id="live-display-connection-title">OBS 連線</h2>
                     <Badge variant={access.enabled ? 'default' : 'outline'}>
@@ -590,7 +588,7 @@ export default function CommunityOverlaySettings({
                     />
                   </CardAction>
                 </CardHeader>
-                <CardContent className="flex min-w-0 flex-col gap-3 border-t pt-card sm:flex-row sm:items-center">
+                <CardContent className="flex min-w-0 flex-col gap-card border-t pt-card sm:flex-row sm:items-center">
                   <OverlayUrlBlock
                     url={overlayUrl}
                     copyLabel="點擊以複製 OBS 顯示連結"
@@ -634,7 +632,7 @@ export default function CommunityOverlaySettings({
 
           <section
             aria-labelledby="live-display-content-title"
-            className="flex min-w-0 flex-col gap-3"
+            className="flex min-w-0 flex-col gap-element"
           >
             <SettingsSectionHeader
               id="live-display-content-title"
@@ -642,7 +640,7 @@ export default function CommunityOverlaySettings({
               description="管理直播畫面要播放的內容；每項都能直接測試，不會寫入正式紀錄。"
             />
             <SlideUp>
-              <div className="flex min-w-0 flex-col gap-3">
+              <div className="flex min-w-0 flex-col gap-section">
                 <CheckinBlockCard
                   config={checkinConfig}
                   rewards={twitchRewards}

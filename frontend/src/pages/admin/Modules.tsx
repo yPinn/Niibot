@@ -124,8 +124,11 @@ export default function AdminModules() {
             <p className="text-sub text-muted-foreground py-2">尚無啟用中的頻道。</p>
           ) : (
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-              {/* Left: selectable channel cards — grows to absorb leftover width */}
-              <div className="grid content-start grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2 xl:flex-1">
+              {/* Left: selectable channel cards — grows to absorb leftover width.
+                  min-w-0 lets it actually shrink below its grid's intrinsic
+                  content width instead of fighting the right panel's fixed
+                  56rem for space near the xl breakpoint's low end. */}
+              <div className="grid min-w-0 content-start grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2 xl:flex-1">
                 {botEmotes.map(ch => {
                   const blocked = ch.total_count - ch.available_count
                   const isSelected = ch.channel_id === selectedId
@@ -158,7 +161,7 @@ export default function AdminModules() {
                           )}
                         </div>
                         <div
-                          className={`font-mono text-label ${blocked > 0 ? 'text-status-offline' : 'text-muted-foreground'}`}
+                          className={`font-mono text-label ${blocked > 0 ? 'font-semibold text-status-offline' : 'text-muted-foreground'}`}
                         >
                           可用 {ch.available_count} / {ch.total_count}
                         </div>
@@ -168,8 +171,13 @@ export default function AdminModules() {
                 })}
               </div>
 
-              {/* Right: emote panel — fixed to fit exactly 10 emotes (5rem) per row */}
-              <div className="xl:sticky xl:top-4 xl:w-[56rem] xl:shrink-0">
+              {/* Right: emote panel — sized to fit 10 emotes (5rem) per row at
+                  full width, but EmoteSection's own grid is auto-fill so it
+                  reflows fine at fewer columns too. Letting this shrink (and
+                  giving the left channel list a floor) splits the squeeze
+                  between both columns near the xl breakpoint's low end
+                  instead of dumping it all on the channel list. */}
+              <div className="xl:sticky xl:top-4 xl:min-w-md xl:basis-4xl xl:grow-0 xl:shrink">
                 {selectedChannel ? (
                   <div className="rounded-md border">
                     <div className="flex items-center gap-3 border-b px-3 py-2.5">
@@ -191,7 +199,7 @@ export default function AdminModules() {
                       <span
                         className={`shrink-0 font-mono text-label ${
                           selectedChannel.total_count - selectedChannel.available_count > 0
-                            ? 'text-status-offline'
+                            ? 'font-semibold text-status-offline'
                             : 'text-muted-foreground'
                         }`}
                       >

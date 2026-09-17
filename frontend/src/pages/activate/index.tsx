@@ -32,11 +32,17 @@ interface ActivatePageProps {
 const twitchChannelUrl = 'https://www.twitch.tv/llazypilot'
 const discordCommunityUrl = import.meta.env.VITE_DISCORD_COMMUNITY_URL?.trim()
 
-function DiscordCommunityButton({ className }: { className?: string }) {
+function DiscordCommunityButton({
+  className,
+  label = 'Discord 社群',
+}: {
+  className?: string
+  label?: string
+}) {
   const content = (
     <>
       <Icon icon="fa-brands fa-discord" size="sm" />
-      Discord 社群
+      {label}
     </>
   )
 
@@ -65,7 +71,7 @@ interface TwitchActivationBlockProps {
 function TwitchActivationBlock({ onRecheck, recheckLoading }: TwitchActivationBlockProps) {
   return (
     <section
-      aria-label="Twitch 兌換"
+      aria-label="Twitch 獎勵啟用"
       className="bg-muted flex flex-col gap-section rounded-lg p-section sm:p-card"
     >
       <div className="flex items-center gap-element">
@@ -79,21 +85,23 @@ function TwitchActivationBlock({ onRecheck, recheckLoading }: TwitchActivationBl
         </div>
       </div>
 
-      <p className="text-sub text-muted-foreground">Twitch 兌換「Niibot」獎勵後回來確認。</p>
+      <p className="text-sub text-muted-foreground">
+        在 Twitch 兌換「Niibot」獎勵後，回到這裡確認。
+      </p>
 
       <div className="flex flex-col gap-element">
         <div className="grid gap-element sm:grid-cols-2">
           <Button asChild>
             <a href={twitchChannelUrl} target="_blank" rel="noopener noreferrer">
               <Icon icon="fa-brands fa-twitch" size="sm" />
-              前往兌換
+              前往 Twitch 兌換
             </a>
           </Button>
-          <DiscordCommunityButton />
+          <DiscordCommunityButton label="需要協助？前往 Discord 社群" />
         </div>
         <Button variant="outline" className="w-full" onClick={onRecheck} disabled={recheckLoading}>
           {recheckLoading ? <Spinner /> : null}
-          重新確認
+          確認是否已啟用
         </Button>
       </div>
     </section>
@@ -101,7 +109,7 @@ function TwitchActivationBlock({ onRecheck, recheckLoading }: TwitchActivationBl
 }
 
 export default function ActivatePage({ preview = false }: ActivatePageProps) {
-  useDocumentTitle('Activate Account')
+  useDocumentTitle('啟用帳號')
   const { user, isInitialized, isAuthenticated, refreshUser, logout } = useAuth()
   const navigate = useNavigate()
   const isPreview = preview && import.meta.env.DEV
@@ -231,7 +239,7 @@ export default function ActivatePage({ preview = false }: ActivatePageProps) {
                 <div className="flex items-center justify-center size-10 rounded-full bg-destructive/10">
                   <Icon icon="fa-solid fa-circle-xmark" wrapperClassName="text-destructive" />
                 </div>
-                <h1 className="text-page-title font-bold">授權未通過</h1>
+                <h1 className="text-page-title font-bold">帳號目前無法啟用</h1>
                 <p className="text-sub text-muted-foreground text-balance">
                   你的帳號目前無法使用 Niibot，請聯繫管理員。
                 </p>
@@ -243,7 +251,7 @@ export default function ActivatePage({ preview = false }: ActivatePageProps) {
                 </div>
                 <h1 className="text-page-title font-bold">啟用你的帳號</h1>
                 <p className="text-sub text-muted-foreground max-w-[48ch] text-balance">
-                  選擇以下一種方式完成啟用。
+                  使用 Twitch 獎勵或啟用碼完成啟用。
                 </p>
               </>
             )}
@@ -266,7 +274,7 @@ export default function ActivatePage({ preview = false }: ActivatePageProps) {
                 >
                   <div className="flex flex-col gap-element">
                     <h2 className="text-card-title font-semibold">使用啟用碼</h2>
-                    <p className="text-sub text-muted-foreground">輸入作者提供的 6 位啟用碼。</p>
+                    <p className="text-sub text-muted-foreground">輸入作者提供的 6 位數啟用碼。</p>
                   </div>
 
                   {showCode ? (

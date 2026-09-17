@@ -25,8 +25,17 @@ function isStreamMessage(value: unknown): value is VideoQueueStreamMessage {
   )
 }
 
-function handleFrame(frame: SseFrame, onMessage: (message: VideoQueueStreamMessage) => void): void {
-  // Frames other than snapshot/update (e.g. heartbeat) are intentionally dropped here.
+function handleFrame(
+  frame: SseFrame,
+  onMessage: (message: VideoQueueStreamMessage) => void,
+  onStreamError?: () => void
+): void {
+  if (frame.event === 'stream_error') {
+    onStreamError?.()
+    return
+  }
+  // Frames other than snapshot/update/stream_error (e.g. heartbeat) are
+  // intentionally dropped here.
   if (frame.event !== 'snapshot' && frame.event !== 'update') return
   try {
     const parsed = JSON.parse(frame.data) as unknown
@@ -41,6 +50,9 @@ interface OpenStreamOptions {
   username: string
   signal: AbortSignal
   onMessage: (message: VideoQueueStreamMessage) => void
+  /** Called when the server reports a genuine mid-stream failure (as opposed
+   * to the routine lease-renewal reconnect, which sends nothing). */
+  onStreamError?: () => void
   fetchImpl?: typeof fetch
 }
 
@@ -51,12 +63,13 @@ export async function openVideoQueueStream({
   username,
   signal,
   onMessage,
+  onStreamError,
   fetchImpl = fetch,
 }: OpenStreamOptions): Promise<void> {
   await openSseStream({
     url: API_ENDPOINTS.videoQueue.stream(username),
     signal,
-    onFrame: frame => handleFrame(frame, onMessage),
+    onFrame: frame => handleFrame(frame, onMessage, onStreamError),
     fetchImpl,
   })
 }

@@ -1,7 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 import { apiJson, parseApiError } from './errors'
 
-export type VideoType = 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+export type VideoType = 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
 
 export interface VideoQueueEntry {
   id: number
@@ -34,11 +34,14 @@ export interface VideoQueueHistoryEntry {
   title: string | null
   duration_seconds: number | null
   requested_by: string
+  requested_by_id: string | null
   source: string
   video_type: string
   status: 'done' | 'skipped'
   started_at: string | null
   ended_at: string | null
+  creator_id: string | null
+  creator_name: string | null
 }
 
 export interface VideoQueueHistoryPage {
@@ -114,6 +117,26 @@ export async function fetchTwitchClipSource(
 ): Promise<string | null> {
   try {
     const response = await apiFetch(API_ENDPOINTS.videoQueue.clipSource(username, entryId))
+    if (!response.ok) return null
+    const data = (await response.json()) as { url?: unknown }
+    return typeof data.url === 'string' ? data.url : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve a queued Instagram Reel to a directly-playable CDN MP4 URL for the
+ * overlay's `<video>` — Instagram has no embeddable fallback surface, unlike
+ * Twitch's clip embed. Returns null on any failure; the caller skips the
+ * entry (see players/instagramReel.ts).
+ */
+export async function fetchInstagramReelSource(
+  username: string,
+  entryId: number
+): Promise<string | null> {
+  try {
+    const response = await apiFetch(API_ENDPOINTS.videoQueue.reelSource(username, entryId))
     if (!response.ok) return null
     const data = (await response.json()) as { url?: unknown }
     return typeof data.url === 'string' ? data.url : null

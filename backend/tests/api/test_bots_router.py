@@ -74,6 +74,16 @@ class TestTwitchBotStatus:
             "connected_channels": 5,
             "components": 3,
             "ai_model": "gpt-4",
+            "ai_status": {
+                "providers": [
+                    {
+                        "provider": "groq",
+                        "state": "ready",
+                        "model": "openai/gpt-oss-120b",
+                    }
+                ],
+                "circuits": [],
+            },
         }
         with patch("routers.bots_router._http_client") as mock_http:
             mock_http.get = AsyncMock(return_value=_http_response(200, payload))
@@ -85,6 +95,7 @@ class TestTwitchBotStatus:
         assert body["uptime_seconds"] == 3600
         assert body["connected_channels"] == 5
         assert body["ai_model"] == "gpt-4"
+        assert body["ai_status"]["providers"][0]["provider"] == "groq"
 
     def test_non_200_returns_offline(self):
         with patch("routers.bots_router._http_client") as mock_http:

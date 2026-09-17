@@ -2,12 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 
 import { advanceVideoQueue } from '@/api/videoQueue'
-import {
-  openVideoQueueStream,
-  type VideoQueueStreamMessage,
-  type VideoQueueStreamState,
-} from '@/api/videoQueueStream'
+import { openVideoQueueStream, type VideoQueueStreamState } from '@/api/videoQueueStream'
+import { OverlayReconnectingBadge } from '@/components/OverlayReconnectingBadge'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { type StreamHelpers, useReconnectingStream } from '@/hooks/useReconnectingStream'
 
 import {
   destroyAllPlayers,
@@ -18,11 +16,6 @@ import {
 } from './videoQueueOverlay/players'
 
 import styles from './VideoQueueOverlay.module.css'
-
-// A stream that survives this long resets the reconnect backoff — mirrors
-// CommunityOverlay.tsx's STABLE_STREAM_MS so a flapping connection still
-// escalates its delay instead of hammering the server every second.
-const STABLE_STREAM_MS = 30_000
 
 // Bounds how many recently-finished video ids we remember to reject stale
 // frames — see the race-protection note on advancedIdsRef below.
@@ -95,48 +88,33 @@ export default function VideoQueueOverlay() {
       .catch(() => {})
   }, [])
 
-  // NOTIFY-woken SSE stream, replacing the old fixed-interval poll — see
-  // CommunityOverlay.tsx for the reconnect pattern this mirrors. No cursor:
-  // video queue state is a single current snapshot, not an event log.
-  useEffect(() => {
-    if (!username) return
-    let active = true
-    let attempt = 0
-    let controller: AbortController | null = null
-    let reconnectTimer: number | null = null
-
-    const applyMessage = (message: VideoQueueStreamMessage) => {
-      if (!active) return
-      if (message.current && advancedIdsRef.current.has(message.current.id)) return
-      setState(message)
-    }
-
-    const connect = () => {
-      controller = new AbortController()
-      const connectedAt = Date.now()
-      void openVideoQueueStream({
+  // NOTIFY-woken SSE stream, replacing the old fixed-interval poll. No
+  // cursor: video queue state is a single current snapshot, not an event
+  // log. Reconnect/backoff/status tracking lives in useReconnectingStream,
+  // shared with the dashboard's useVideoQueueStream.
+  const connect = useCallback(
+    (signal: AbortSignal, { notifyLive, notifyStreamError }: StreamHelpers) => {
+      if (!username) return Promise.resolve()
+      return openVideoQueueStream({
         username,
-        signal: controller.signal,
-        onMessage: applyMessage,
+        signal,
+        onMessage: message => {
+          notifyLive()
+          if (!mountedRef.current) return
+          if (message.current && advancedIdsRef.current.has(message.current.id)) return
+          setState(message)
+        },
+        onStreamError: () => notifyStreamError(),
       })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!active || controller?.signal.aborted) return
-          if (Date.now() - connectedAt >= STABLE_STREAM_MS) attempt = 0
-          const base = Math.min(1_000 * 2 ** attempt, 30_000)
-          const delay = Math.round(base * (0.8 + Math.random() * 0.4))
-          attempt += 1
-          reconnectTimer = window.setTimeout(connect, delay)
-        })
-    }
+    },
+    [username]
+  )
 
-    connect()
-    return () => {
-      active = false
-      controller?.abort()
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
-    }
-  }, [username])
+  const { status: streamStatus } = useReconnectingStream({
+    enabled: !!username,
+    label: 'video-queue-overlay-stream',
+    connect,
+  })
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
@@ -218,7 +196,8 @@ export default function VideoQueueOverlay() {
       progressRef,
       clipTimerRef,
       containerRef,
-      setElapsed
+      setElapsed,
+      [leftContainerRef, rightContainerRef]
     )
     currentIdRef.current = newId
 
@@ -279,14 +258,19 @@ export default function VideoQueueOverlay() {
       ? Math.min(elapsed / current.duration_seconds, 1)
       : 0
 
-  // Empty queue and no current → fully transparent (OBS sees nothing)
-  if (!current && queueCount === 0) return null
+  // Empty queue and no current → fully transparent (OBS sees nothing), except
+  // in preview mode a streamer testing connectivity should still see the
+  // reconnecting indicator even with nothing queued.
+  if (!current && queueCount === 0) {
+    return <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
+  }
 
   return (
     <div
       className={`${styles.overlay}${isExiting ? ` ${styles.overlayExiting}` : ''}`}
       style={isPreview ? { width: '100%', height: '100dvh' } : undefined}
     >
+      <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
       {current && (
         <div key={current.id} className={styles.titleBar}>
           <div className={styles.titleLeft}>

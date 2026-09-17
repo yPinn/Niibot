@@ -117,10 +117,16 @@ function sanitizeTriggerName(pattern: string): string {
   )
 }
 
+/** Keep in sync with backend MAX_RESPONSE_LENGTH (api/core/constants.py). */
+const MAX_RESPONSE_LENGTH = 450
+
 const COMMAND_VARS = [
   { var: '$(user)', desc: '使用者名稱' },
+  { var: '$(touser)', desc: '第一個參數，沒有就用發話者' },
   { var: '$(query)', desc: '使用者輸入' },
+  { var: '$(1)', desc: '第 1 個參數' },
   { var: '$(channel)', desc: '頻道名稱' },
+  { var: '$(count)', desc: '指令使用次數' },
   { var: '$(random 1,100)', desc: '隨機數字' },
   { var: '$(pick a,b,c)', desc: '隨機選擇' },
 ]
@@ -218,6 +224,11 @@ export function CommandSheet({
         dispatch({ type: 'SAVE_ERROR', msg: '指令名稱不可為空' })
         return
       }
+    }
+
+    if (form.response.trim().length > MAX_RESPONSE_LENGTH) {
+      dispatch({ type: 'SAVE_ERROR', msg: `回應內容上限 ${MAX_RESPONSE_LENGTH} 字` })
+      return
     }
 
     dispatch({ type: 'SAVING' })
@@ -452,7 +463,18 @@ export function CommandSheet({
           {/* ── Response ── */}
           {showResponseField && (
             <div className="flex flex-col gap-2">
-              <Label htmlFor="cmd-response">回應內容</Label>
+              <div className="flex items-baseline justify-between">
+                <Label htmlFor="cmd-response">回應內容</Label>
+                <span
+                  className={
+                    form.response.length > MAX_RESPONSE_LENGTH
+                      ? 'text-label text-destructive'
+                      : 'text-label text-muted-foreground'
+                  }
+                >
+                  {form.response.length} / {MAX_RESPONSE_LENGTH}
+                </span>
+              </div>
               <Textarea
                 id="cmd-response"
                 ref={inputRef}
@@ -461,6 +483,11 @@ export function CommandSheet({
                 placeholder={showTriggerFields ? '$(user) GG！' : '$(user) 你好！'}
                 className="font-mono text-sub"
               />
+              {form.response.length > MAX_RESPONSE_LENGTH && (
+                <p className="text-label text-destructive">
+                  超過 {MAX_RESPONSE_LENGTH} 字，變數展開後會被 Twitch 截斷
+                </p>
+              )}
               <VariableInserter variables={COMMAND_VARS} onInsert={insertText} />
             </div>
           )}

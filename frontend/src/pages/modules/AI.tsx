@@ -14,33 +14,42 @@ import { type ChannelBadges, getChannelBadges } from '@/api/analytics'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, OptionPicker, SlideUp, Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import {
   Button,
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
   Input,
   Label,
+  Separator,
   Skeleton,
   Switch,
+  Textarea,
 } from '@/components/ui'
+import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
 import {
+  CATCHPHRASE_FREQUENCY_OPTIONS,
   COMMAND_INFO,
   LANG_OPTIONS,
   PERSONA_PRESETS,
-  PROVIDERS,
   REFUSAL_OPTIONS,
   ROLE_OPTIONS,
+  TONE_OPTIONS,
 } from './ai/constants'
 import { EmoteSection } from './ai/EmoteSection'
 import { longestCommonPrefix } from './ai/utils'
 
 export default function AIModule() {
   useDocumentTitle('AI Assistant')
+  const { twitch } = useServiceStatus()
 
   const [saved, setSaved] = useState<AISettings>(AI_SETTINGS_DEFAULT)
   const [draft, setDraft] = useState<AISettings>(AI_SETTINGS_DEFAULT)
@@ -61,8 +70,13 @@ export default function AIModule() {
           ...s,
           persona: s.persona ?? '',
           self_pronoun: s.self_pronoun ?? '我',
+          audience_reference: s.audience_reference ?? '大家',
+          tone_preset: s.tone_preset ?? 'neutral',
           catchphrase: s.catchphrase ?? '',
+          catchphrase_frequency: s.catchphrase_frequency ?? 'off',
+          example_replies: s.example_replies ?? [],
           enabled_emotes: s.enabled_emotes ?? [],
+          memory_enabled: s.memory_enabled ?? false,
         }
         setSaved(normalized)
         setDraft(normalized)
@@ -87,9 +101,13 @@ export default function AIModule() {
     draft.bot_name !== saved.bot_name ||
     draft.persona !== saved.persona ||
     draft.self_pronoun !== saved.self_pronoun ||
+    draft.tone_preset !== saved.tone_preset ||
     draft.catchphrase !== saved.catchphrase ||
+    draft.catchphrase_frequency !== saved.catchphrase_frequency ||
+    JSON.stringify(draft.example_replies) !== JSON.stringify(saved.example_replies) ||
     draft.response_lang !== saved.response_lang ||
-    draft.refusal_style !== saved.refusal_style
+    draft.refusal_style !== saved.refusal_style ||
+    draft.memory_enabled !== saved.memory_enabled
 
   const isCmdDirty = draft.cooldown !== saved.cooldown || draft.min_role !== saved.min_role
 
@@ -97,9 +115,13 @@ export default function AIModule() {
     draft.bot_name === AI_SETTINGS_DEFAULT.bot_name &&
     draft.persona === AI_SETTINGS_DEFAULT.persona &&
     draft.self_pronoun === AI_SETTINGS_DEFAULT.self_pronoun &&
+    draft.tone_preset === AI_SETTINGS_DEFAULT.tone_preset &&
     draft.catchphrase === AI_SETTINGS_DEFAULT.catchphrase &&
+    draft.catchphrase_frequency === AI_SETTINGS_DEFAULT.catchphrase_frequency &&
+    draft.example_replies.length === 0 &&
     draft.response_lang === AI_SETTINGS_DEFAULT.response_lang &&
-    draft.refusal_style === AI_SETTINGS_DEFAULT.refusal_style
+    draft.refusal_style === AI_SETTINGS_DEFAULT.refusal_style &&
+    draft.memory_enabled === AI_SETTINGS_DEFAULT.memory_enabled
 
   const channelPrefix = useMemo(
     () => longestCommonPrefix(emotes.filter(e => e.emote_type !== 'globals').map(e => e.name)),
@@ -139,11 +161,19 @@ export default function AIModule() {
         bot_name: draft.bot_name,
         persona: draft.persona,
         self_pronoun: draft.self_pronoun,
+        tone_preset: draft.tone_preset,
         catchphrase: draft.catchphrase,
+        catchphrase_frequency: draft.catchphrase_frequency,
+        example_replies: draft.example_replies.map(reply => reply.trim()).filter(Boolean),
         response_lang: draft.response_lang,
         refusal_style: draft.refusal_style,
+        memory_enabled: draft.memory_enabled,
       })
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(prev => ({ ...normalized, cooldown: prev.cooldown, min_role: prev.min_role }))
       toast.success('角色設定已儲存')
@@ -158,7 +188,11 @@ export default function AIModule() {
     setSaving(true)
     try {
       const updated = await resetAISettings()
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(normalized)
       toast.success('已重設為預設值')
@@ -176,16 +210,25 @@ export default function AIModule() {
         cooldown: draft.cooldown,
         min_role: draft.min_role,
       })
-      const normalized = { ...updated, enabled_emotes: updated.enabled_emotes ?? [] }
+      const normalized = {
+        ...updated,
+        example_replies: updated.example_replies ?? [],
+        enabled_emotes: updated.enabled_emotes ?? [],
+      }
       setSaved(normalized)
       setDraft(prev => ({
         ...normalized,
         bot_name: prev.bot_name,
         persona: prev.persona,
         self_pronoun: prev.self_pronoun,
+        audience_reference: prev.audience_reference,
+        tone_preset: prev.tone_preset,
         catchphrase: prev.catchphrase,
+        catchphrase_frequency: prev.catchphrase_frequency,
+        example_replies: prev.example_replies,
         response_lang: prev.response_lang,
         refusal_style: prev.refusal_style,
+        memory_enabled: prev.memory_enabled,
       }))
       toast.success('指令設定已儲存')
     } catch (e) {
@@ -222,13 +265,12 @@ export default function AIModule() {
 
       {/* 2:1 — editable left | reference right */}
       <div className="grid gap-section lg:grid-cols-[2fr_1fr] items-start">
-        {/* Left — all editable cards */}
+        {/* Left — identity + speaking style, one form / one save state */}
         <SlideUp inView className="flex flex-col gap-section">
-          {/* Identity */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>角色</CardTitle>
+              <CardTitle>角色設定</CardTitle>
+              <CardAction>
                 <Button size="sm" onClick={handleSave} disabled={!isDirty || disabled}>
                   {saving ? (
                     <Spinner className="mr-1.5 h-3 w-3" />
@@ -237,15 +279,15 @@ export default function AIModule() {
                   )}
                   儲存
                 </Button>
-              </div>
+              </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-section">
               {/* Presets */}
               <div className="flex flex-col gap-element">
                 <div className="flex flex-col gap-0.5">
-                  <Label>懶人包</Label>
+                  <Label>角色範本</Label>
                   <p className="text-label text-muted-foreground">
-                    快速套用預設人設，套用後仍可自行調整
+                    套用後仍可微調下方欄位；不會改變婉拒方式。
                   </p>
                 </div>
                 <div className="flex gap-2 overflow-x-auto pb-0.5">
@@ -271,29 +313,21 @@ export default function AIModule() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-element">
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="bot-name">Bot 名稱</Label>
-                  <p className="text-label text-muted-foreground">聊天室裡叫我什麼名字？</p>
-                </div>
-                <Input
-                  id="bot-name"
-                  value={draft.bot_name}
-                  onChange={e => patch('bot_name', e.target.value)}
-                  maxLength={50}
-                  placeholder="Niibot"
-                  disabled={disabled}
-                  className="max-w-sm"
-                />
-              </div>
-
-              {/* Self pronoun + catchphrase side by side */}
+              {/* Identity — same field family, same grid so widths stay consistent */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-section">
                 <div className="flex flex-col gap-element">
-                  <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="self-pronoun">自稱</Label>
-                    <p className="text-label text-muted-foreground">說話時稱呼自己</p>
-                  </div>
+                  <Label htmlFor="bot-name">Bot 名稱</Label>
+                  <Input
+                    id="bot-name"
+                    value={draft.bot_name}
+                    onChange={e => patch('bot_name', e.target.value)}
+                    maxLength={50}
+                    placeholder="Niibot"
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="flex flex-col gap-element">
+                  <Label htmlFor="self-pronoun">自稱</Label>
                   <Input
                     id="self-pronoun"
                     value={draft.self_pronoun}
@@ -303,109 +337,113 @@ export default function AIModule() {
                     disabled={disabled}
                   />
                 </div>
+              </div>
+              <p className="text-label text-muted-foreground">
+                自稱只在句意需要時使用，不會要求每則回覆固定出現。
+              </p>
+
+              <Separator />
+
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.35fr] gap-section">
                 <div className="flex flex-col gap-element">
-                  <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="catchphrase">口頭禪</Label>
-                    <p className="text-label text-muted-foreground">句尾習慣用語（留空則不加）</p>
-                  </div>
+                  <Label htmlFor="catchphrase">口頭禪</Label>
                   <Input
                     id="catchphrase"
                     value={draft.catchphrase}
                     onChange={e => patch('catchphrase', e.target.value)}
                     maxLength={50}
-                    placeholder="懂嗎、喔！…"
+                    placeholder="懂嗎、喔！…（留空則不加）"
                     disabled={disabled}
                   />
+                </div>
+                <div className="flex flex-col gap-element">
+                  <Label>口頭禪頻率</Label>
+                  <OptionPicker
+                    options={CATCHPHRASE_FREQUENCY_OPTIONS}
+                    value={draft.catchphrase_frequency}
+                    onChange={v => patch('catchphrase_frequency', v)}
+                    disabled={disabled || !draft.catchphrase.trim()}
+                  />
+                  <p className="text-label text-muted-foreground">
+                    這是使用傾向，不是精準比例；需要自然回覆時建議選「不使用」。
+                  </p>
                 </div>
               </div>
 
               <div className="flex flex-col gap-element">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="persona">個性描述</Label>
-                    <span className="font-mono text-label text-muted-foreground">
-                      {(draft.persona ?? '').length} / 300
-                    </span>
-                  </div>
-                  <p className="mt-0.5 text-label text-muted-foreground">
-                    把我設定成什麼樣的角色？描述越詳細，我就越能扮好
-                  </p>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="persona" className="text-content font-semibold">
+                    個性描述
+                  </Label>
+                  <span className="font-mono text-label text-muted-foreground">
+                    {(draft.persona ?? '').length} / 300
+                  </span>
                 </div>
-                <textarea
+                <p className="text-label text-muted-foreground">
+                  先把答案說清楚，再自然帶入角色；避免要求每句都表演。
+                </p>
+                <Textarea
                   id="persona"
                   value={draft.persona ?? ''}
                   onChange={e => patch('persona', e.target.value)}
                   maxLength={300}
-                  rows={4}
-                  placeholder="幽默風趣、愛開玩笑…（留空代表無特別個性）"
+                  rows={3}
+                  placeholder="例如：反應俐落，先回答；情境輕鬆時偶爾善意吐槽"
                   disabled={disabled}
-                  className="w-full rounded-md border border-input bg-transparent dark:bg-input/30 px-3 py-2 leading-relaxed resize-none shadow-xs focus:outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+                  className="resize-none leading-relaxed"
                 />
               </div>
-              {(isDirty || !isDefault) && (
-                <div className="flex justify-end gap-2 border-t pt-section">
-                  {isDirty && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setDraft(prev => ({
-                          ...prev,
-                          bot_name: saved.bot_name,
-                          persona: saved.persona,
-                          self_pronoun: saved.self_pronoun,
-                          catchphrase: saved.catchphrase,
-                          response_lang: saved.response_lang,
-                          refusal_style: saved.refusal_style,
-                        }))
-                      }
-                      disabled={saving}
-                    >
-                      取消
-                    </Button>
-                  )}
-                  {!isDefault && (
-                    <Button variant="outline" size="sm" onClick={handleReset} disabled={disabled}>
-                      {saving ? (
-                        <Spinner className="mr-1.5 h-3 w-3" />
-                      ) : (
-                        <Icon icon="fa-solid fa-rotate-left" className="mr-1.5 text-label" />
-                      )}
-                      重設預設值
-                    </Button>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
 
-          {/* Language + Refusal */}
-          <Card>
-            <CardHeader>
-              <CardTitle>說話方式</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-section">
               <div className="flex flex-col gap-element">
                 <div className="flex flex-col gap-0.5">
-                  <Label>語言</Label>
+                  <Label className="text-content font-semibold">示例回覆</Label>
                   <p className="text-label text-muted-foreground">
-                    用什麼語言跟大家聊？「自動」會跟著觀眾的語言切換
+                    最多三句不同情境的理想回答；模型只參考語氣與節奏，不會把示例當成固定台詞
                   </p>
                 </div>
+                <div className="grid gap-2">
+                  {[0, 1, 2].map(index => (
+                    <Input
+                      key={index}
+                      aria-label={`示例回覆 ${index + 1}`}
+                      value={draft.example_replies[index] ?? ''}
+                      onChange={event => {
+                        const examples = [...draft.example_replies]
+                        examples[index] = event.target.value
+                        patch('example_replies', examples)
+                      }}
+                      maxLength={120}
+                      placeholder={`示例 ${index + 1}${index === 0 ? '：簡單來說，重點是這個。' : '（選填）'}`}
+                      disabled={disabled}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+              <p className="text-sub font-medium">回覆方式</p>
+
+              <div className="flex flex-col gap-element">
+                <Label>回覆語氣</Label>
+                <OptionPicker
+                  options={TONE_OPTIONS}
+                  value={draft.tone_preset}
+                  onChange={v => patch('tone_preset', v)}
+                  disabled={disabled}
+                />
+              </div>
+
+              <SettingRow title="回覆語言" description="「跟隨提問」會依每次問題使用的語言回答">
                 <OptionPicker
                   options={LANG_OPTIONS}
                   value={draft.response_lang}
                   onChange={v => patch('response_lang', v)}
                   disabled={disabled}
                 />
-              </div>
+              </SettingRow>
+
               <div className="flex flex-col gap-element">
-                <div className="flex flex-col gap-0.5">
-                  <Label>拒絕風格</Label>
-                  <p className="text-label text-muted-foreground">
-                    遇到答不了的問題，用什麼方式應付觀眾？
-                  </p>
-                </div>
+                <Label>婉拒方式</Label>
                 <OptionPicker
                   options={REFUSAL_OPTIONS}
                   value={draft.refusal_style}
@@ -413,7 +451,58 @@ export default function AIModule() {
                   disabled={disabled}
                 />
               </div>
+
+              <SettingRow
+                title="短期對話記憶（實驗性）"
+                description="只記住同一位觀眾透過 !ai 的最近 2 輪，10 分鐘後失效；不讀一般聊天、不永久保存，服務重啟即清空。"
+                className="rounded-md border p-3"
+              >
+                <Switch
+                  aria-label="短期對話記憶（實驗性）"
+                  checked={draft.memory_enabled}
+                  onCheckedChange={value => patch('memory_enabled', value)}
+                  disabled={disabled}
+                />
+              </SettingRow>
             </CardContent>
+            {(isDirty || !isDefault) && (
+              <CardFooter className="justify-end gap-2 border-t">
+                {isDirty && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setDraft(prev => ({
+                        ...prev,
+                        bot_name: saved.bot_name,
+                        persona: saved.persona,
+                        self_pronoun: saved.self_pronoun,
+                        tone_preset: saved.tone_preset,
+                        catchphrase: saved.catchphrase,
+                        catchphrase_frequency: saved.catchphrase_frequency,
+                        example_replies: saved.example_replies,
+                        response_lang: saved.response_lang,
+                        refusal_style: saved.refusal_style,
+                        memory_enabled: saved.memory_enabled,
+                      }))
+                    }
+                    disabled={saving}
+                  >
+                    取消
+                  </Button>
+                )}
+                {!isDefault && (
+                  <Button variant="outline" size="sm" onClick={handleReset} disabled={disabled}>
+                    {saving ? (
+                      <Spinner className="mr-1.5 h-3 w-3" />
+                    ) : (
+                      <Icon icon="fa-solid fa-rotate-left" className="mr-1.5 text-label" />
+                    )}
+                    重設預設值
+                  </Button>
+                )}
+              </CardFooter>
+            )}
           </Card>
         </SlideUp>
 
@@ -422,44 +511,42 @@ export default function AIModule() {
           {/* Command info + current model */}
           <Card>
             <CardHeader>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle>指令設定</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-label text-muted-foreground">
-                    {saved.enabled ? '啟用中' : '已停用'}
-                  </span>
-                  <Switch
-                    checked={saved.enabled}
-                    onCheckedChange={handleToggleEnabled}
-                    disabled={loading}
-                  />
-                  <div className="h-4 w-px bg-border" />
-                  {isCmdDirty && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setDraft(prev => ({
-                          ...prev,
-                          cooldown: saved.cooldown,
-                          min_role: saved.min_role,
-                        }))
-                      }
-                      disabled={saving}
-                    >
-                      取消
-                    </Button>
-                  )}
-                  <Button size="sm" onClick={handleCmdSave} disabled={!isCmdDirty || disabled}>
-                    {saving ? (
-                      <Spinner className="mr-1.5 h-3 w-3" />
-                    ) : (
-                      <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-label" />
-                    )}
-                    儲存
+              <CardTitle>指令設定</CardTitle>
+              <CardAction className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-label text-muted-foreground">
+                  {saved.enabled ? '啟用中' : '已停用'}
+                </span>
+                <Switch
+                  checked={saved.enabled}
+                  onCheckedChange={handleToggleEnabled}
+                  disabled={loading}
+                />
+                <div className="h-4 w-px bg-border" />
+                {isCmdDirty && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setDraft(prev => ({
+                        ...prev,
+                        cooldown: saved.cooldown,
+                        min_role: saved.min_role,
+                      }))
+                    }
+                    disabled={saving}
+                  >
+                    取消
                   </Button>
-                </div>
-              </div>
+                )}
+                <Button size="sm" onClick={handleCmdSave} disabled={!isCmdDirty || disabled}>
+                  {saving ? (
+                    <Spinner className="mr-1.5 h-3 w-3" />
+                  ) : (
+                    <Icon icon="fa-solid fa-floppy-disk" className="mr-1.5 text-label" />
+                  )}
+                  儲存
+                </Button>
+              </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-section">
               <div className="flex flex-col divide-y">
@@ -472,18 +559,14 @@ export default function AIModule() {
                 <div className="flex items-center justify-between py-2.5">
                   <Label className="text-muted-foreground">模型</Label>
                   <span className="font-mono text-label truncate max-w-[55%] text-right">
-                    {PROVIDERS[0].model}
+                    {twitch.ai_model ?? '—'}
                   </span>
                 </div>
               </div>
-              <div className="flex flex-col gap-element">
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="cooldown">冷卻時間</Label>
-                  <p className="text-label text-muted-foreground">兩次觸發之間的最短間隔（秒）</p>
-                </div>
+              <SettingRow title="頻道冷卻時間" description="任一觀眾使用後，全頻道需等待的時間。">
                 <div className="flex items-center gap-2">
                   <Input
-                    id="cooldown"
+                    aria-label="頻道冷卻時間（秒）"
                     type="number"
                     min={5}
                     max={300}
@@ -494,16 +577,13 @@ export default function AIModule() {
                       if (!isNaN(val)) patch('cooldown', Math.max(5, Math.min(300, val)))
                     }}
                     disabled={disabled}
-                    className="w-24"
+                    className="w-20"
                   />
                   <span className="text-sub text-muted-foreground">秒</span>
                 </div>
-              </div>
+              </SettingRow>
               <div className="flex flex-col gap-element">
-                <div className="flex flex-col gap-0.5">
-                  <Label>最低身份</Label>
-                  <p className="text-label text-muted-foreground">哪些觀眾可以使用此指令？</p>
-                </div>
+                <Label>誰可以使用</Label>
                 <OptionPicker
                   options={ROLE_OPTIONS}
                   value={draft.min_role}
@@ -517,21 +597,19 @@ export default function AIModule() {
           {/* Emote info */}
           <Card>
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <CardTitle className="shrink-0">我的貼圖</CardTitle>
+              <CardTitle>我的貼圖</CardTitle>
+              <CardAction>
                 <Input
                   placeholder="搜尋貼圖…"
                   value={emoteSearch}
                   onChange={e => setEmoteSearch(e.target.value)}
-                  className="ml-auto h-7 text-label w-32 shrink-0"
+                  className="h-7 text-label w-32"
                 />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sub text-muted-foreground">
-                  顯示 Bot 可使用的頻道及全球貼圖；半透明表示 Bot
-                  目前無使用權限，右上角徽章標示限制類型
-                </span>
-              </div>
+              </CardAction>
+              <CardDescription>
+                顯示 Bot 可使用的頻道及全球貼圖；半透明表示 Bot
+                目前無使用權限，右上角徽章標示限制類型
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-element">
               {emotesLoading ? (

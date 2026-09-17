@@ -6,6 +6,7 @@ import { type BotInviteCreated, createSystemBotResetInvite } from '@/api/botAcco
 import type { RedemptionConfig, TwitchReward } from '@/api/events'
 import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -32,21 +33,18 @@ import { ScopeSection } from './ScopeSection'
 
 const BOT_STATUS_CONFIG = {
   ok: {
-    label: 'All scopes granted',
+    label: 'ready',
     icon: 'fa-solid fa-shield-check',
-    textClass: 'text-status-online',
     className: 'border-status-online/20 bg-status-online/10 text-status-online',
   },
   missing: {
-    label: 'scopes missing',
+    label: 'missing',
     icon: 'fa-solid fa-lock',
-    textClass: 'text-status-info',
     className: 'border-status-info/20 bg-status-info/10 text-status-info',
   },
   no_token: {
-    label: 'No bot token',
+    label: 'no token',
     icon: 'fa-solid fa-rotate-exclamation',
-    textClass: 'text-status-warning',
     className: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
   },
 }
@@ -104,7 +102,8 @@ export function BotStatusPanel({
               </div>
               <Skeleton className="size-4.5 rounded shrink-0" />
             </div>
-            <Skeleton className="h-40 w-full rounded-md" />
+            <Skeleton className="h-56 w-full rounded-md" />
+            <Skeleton className="h-20 w-full rounded-md" />
           </>
         ) : bot && botCfg ? (
           <>
@@ -132,6 +131,10 @@ export function BotStatusPanel({
                       {bot.name}
                     </p>
                   </div>
+                  <Badge className={`shrink-0 gap-1.5 ${botCfg.className}`}>
+                    <Icon icon={botCfg.icon} size="xs" />
+                    {botCfg.label}
+                  </Badge>
                   <Icon
                     icon="fa-solid fa-chevron-down"
                     size="badge"
@@ -156,11 +159,6 @@ export function BotStatusPanel({
                         {bot.name}
                       </p>
                     </div>
-                    <Icon
-                      icon={botCfg.icon}
-                      size="badge"
-                      className={`shrink-0 ${botCfg.textClass}`}
-                    />
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />

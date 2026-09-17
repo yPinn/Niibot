@@ -16,7 +16,9 @@ class VideoQueueEntry:
     requested_by: str
     source: str  # 'chat' | 'redemption' | 'donation' | 'dashboard'
     status: str  # 'queued' | 'playing' | 'done' | 'skipped'
-    video_type: str = "youtube"  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+    video_type: str = (
+        "youtube"  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
+    )
     priority: int = 0
     title: str | None = None
     duration_seconds: int | None = None  # for twitch_vod: the capped play window
@@ -27,6 +29,8 @@ class VideoQueueEntry:
     started_at: datetime | None = None
     ended_at: datetime | None = None  # set when status moves to done/skipped
     requested_by_id: str | None = None  # Twitch user ID; None for legacy rows
+    creator_id: str | None = None  # platform-native id of who made the content
+    creator_name: str | None = None  # display label; not matched against, cosmetic only
 
 
 @dataclass

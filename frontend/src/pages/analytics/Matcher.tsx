@@ -15,13 +15,15 @@ import {
   AvatarFallback,
   AvatarImage,
   Badge,
+  Separator,
   Skeleton,
+  Tabs,
+  TabsList,
+  TabsTrigger,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui'
-import { WipLockOverlay } from '@/components/WipLockOverlay'
-import { SHOW_WIP_LOCK } from '@/config/env'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
@@ -30,6 +32,7 @@ import { cn } from '@/lib/utils'
 
 import { TopGamesChart } from './insights/TopGamesChart'
 import { ChannelCard } from './matcher/ChannelCard'
+import { CollabLog } from './matcher/CollabLog'
 import { ViewerTable } from './matcher/ViewerTable'
 
 function formatPeakHours(hours: number[]): string | null {
@@ -68,7 +71,11 @@ function broadcasterBadgeDetail(type: string | null) {
   return null
 }
 
-const DAYS = 30
+const PERIODS = [
+  { label: '7 天', value: '7' },
+  { label: '30 天', value: '30' },
+  { label: '90 天', value: '90' },
+]
 
 function suitabilityScore(ch: MatcherChannelSummary): number {
   if (ch.monitored_chatters < 10) return 0
@@ -76,18 +83,19 @@ function suitabilityScore(ch: MatcherChannelSummary): number {
   return ch.overlap_pct * exclusive_pct
 }
 
-function invalidateMatcherCache() {
-  apiCache.delete(CACHE_KEYS.MATCHER_SUMMARIES(DAYS))
+function invalidateMatcherCache(days: number) {
+  apiCache.delete(CACHE_KEYS.MATCHER_SUMMARIES(days))
 }
 
-function invalidateViewerCache(channelId: string) {
-  apiCache.delete(CACHE_KEYS.MATCHER_VIEWERS(channelId, 50, 0))
+function invalidateViewerCache(channelId: string, days: number) {
+  apiCache.delete(CACHE_KEYS.MATCHER_VIEWERS(channelId, days, 50, 0))
 }
 
 export default function Matcher() {
   useDocumentTitle('Matcher')
   const { user, isInitialized } = useAuth()
 
+  const [period, setPeriod] = useState('30')
   const [summaries, setSummaries] = useState<MatcherChannelSummary[]>([])
   const [summariesLoading, setSummariesLoading] = useState(true)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
@@ -96,22 +104,25 @@ export default function Matcher() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const loadedForRef = useRef<string | null>(null)
 
-  const fetchSummaries = useCallback(async () => {
-    if (!user) return
-    setSummariesLoading(true)
-    try {
-      setSummaries(await getMatcherSummaries(DAYS))
-    } catch {
-      setSummaries([])
-    } finally {
-      setSummariesLoading(false)
-    }
-  }, [user])
+  const fetchSummaries = useCallback(
+    async (days: number) => {
+      if (!user) return
+      setSummariesLoading(true)
+      try {
+        setSummaries(await getMatcherSummaries(days))
+      } catch {
+        setSummaries([])
+      } finally {
+        setSummariesLoading(false)
+      }
+    },
+    [user]
+  )
 
-  const fetchViewers = useCallback(async (channelId: string) => {
+  const fetchViewers = useCallback(async (channelId: string, days: number) => {
     setViewerLoading(true)
     try {
-      setViewerData(await getPotentialViewers(channelId))
+      setViewerData(await getPotentialViewers(channelId, days))
     } catch {
       setViewerData(null)
     } finally {
@@ -121,33 +132,39 @@ export default function Matcher() {
 
   useEffect(() => {
     if (!isInitialized || !user) return
-    if (loadedForRef.current === user.id) return
-    loadedForRef.current = user.id
-    void fetchSummaries()
-  }, [isInitialized, user, fetchSummaries])
+    const key = `${user.id}:${period}`
+    if (loadedForRef.current === key) return
+    loadedForRef.current = key
+    void fetchSummaries(Number(period))
+  }, [isInitialized, user, period, fetchSummaries])
 
   useEffect(() => {
     if (!selectedChannelId) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchViewers(selectedChannelId)
-  }, [selectedChannelId, fetchViewers])
+    void fetchViewers(selectedChannelId, Number(period))
+  }, [selectedChannelId, period, fetchViewers])
+
+  const handlePeriodChange = useCallback((value: string) => {
+    setPeriod(value)
+  }, [])
 
   const handleRefresh = useCallback(async () => {
     if (isRefreshing) return
     setIsRefreshing(true)
+    const days = Number(period)
     try {
       await refreshMatcher()
-      invalidateMatcherCache()
-      if (selectedChannelId) invalidateViewerCache(selectedChannelId)
+      invalidateMatcherCache(days)
+      if (selectedChannelId) invalidateViewerCache(selectedChannelId, days)
       loadedForRef.current = null
-      await fetchSummaries()
-      if (selectedChannelId) await fetchViewers(selectedChannelId)
+      await fetchSummaries(days)
+      if (selectedChannelId) await fetchViewers(selectedChannelId, days)
     } catch {
       // silent — button returns to idle state
     } finally {
       setIsRefreshing(false)
     }
-  }, [isRefreshing, selectedChannelId, fetchSummaries, fetchViewers])
+  }, [isRefreshing, period, selectedChannelId, fetchSummaries, fetchViewers])
 
   const selectedChannel = summaries.find(s => s.channel_id === selectedChannelId) ?? null
   const peakHoursLabel = selectedChannel ? formatPeakHours(selectedChannel.peak_hours ?? []) : null
@@ -165,6 +182,15 @@ export default function Matcher() {
         description="探索各頻道觀眾重疊度，找出潛在可觸及的觀眾"
         className="items-end shrink-0"
       >
+        <Tabs value={period} onValueChange={handlePeriodChange}>
+          <TabsList>
+            {PERIODS.map(p => (
+              <TabsTrigger key={p.value} value={p.value}>
+                {p.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -283,15 +309,18 @@ export default function Matcher() {
                 </div>
               </div>
 
+              {/* 重疊率／潛在觀眾 are the two numbers this whole tool exists to
+                  surface — sized up so they read as the point, not tied with
+                  the three supporting counts around them. */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">共同觀眾</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-page-title font-bold text-primary tabular-nums">
                     {selectedChannel.exclusive_to_partner.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">潛在觀眾</span>
@@ -299,7 +328,7 @@ export default function Matcher() {
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span
                     className={cn(
-                      'text-card-title font-bold tabular-nums',
+                      'text-page-title font-bold tabular-nums',
                       selectedChannel.overlap_pct >= 30
                         ? 'text-status-online'
                         : selectedChannel.overlap_pct >= 10
@@ -312,13 +341,13 @@ export default function Matcher() {
                   <span className="text-label text-muted-foreground">重疊率</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.monitored_chatters.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">監測觀眾</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.channel_view_count != null
                       ? formatCompact(selectedChannel.channel_view_count)
                       : '—'}
@@ -374,6 +403,15 @@ export default function Matcher() {
                 )}
               </div>
 
+              <Separator />
+
+              <CollabLog
+                partnerChannelId={selectedChannel.channel_id}
+                windowDays={Number(period)}
+              />
+
+              <Separator />
+
               <div className="flex-1 min-h-0">
                 <ViewerTable data={viewerData} isLoading={viewerLoading} />
               </div>
@@ -381,7 +419,6 @@ export default function Matcher() {
           )}
         </div>
       </SlideUp>
-      {SHOW_WIP_LOCK && <WipLockOverlay />}
     </PageMain>
   )
 }

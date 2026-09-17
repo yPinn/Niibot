@@ -20,15 +20,27 @@ x-logging: &default-logging
     compress: "true"
 
 # ---------------------------------------------------------------------------
-# Profiles guide:
-#   --profile api      → API + DB
-#   --profile twitch   → Twitch bot + DB
-#   --profile discord  → Discord bot + DB + Instafix
-#   --profile bots     → All bots + DB + Instafix
+# Profiles guide. postgres and migrate carry no profile, so every combination
+# below also starts the DB and runs pending migrations before the app starts:
+#   --profile api      → API + Instafix
+#   --profile twitch   → Twitch bot + Instafix
+#   --profile discord  → Discord bot + Instafix
+#   --profile bots     → Twitch bot + Discord bot + Instafix
 #   --profile full     → Everything
+#
+# Instafix is shared by Discord's social-preview cog and Video Queue's
+# Instagram Reel support (shared/instafix_client.py), so it runs under api
+# and twitch too now, not just discord/bots.
+#
+# Profiles combine, so a subset that has no name of its own is still reachable:
+#   --profile api --profile twitch   → API + Twitch bot, no Discord
 #
 # No profile / postgres only:
 #   docker compose up postgres   → DB only (useful when running backend locally)
+#
+# Profiles are for local and scripts/staging.sh use. The deploy workflow never
+# passes --profile; it names the services it rebuilds explicitly, so adding a
+# profile here does not make that service deployable on its own.
 #
 # Note: frontend is deployed on Cloudflare Pages, not via Docker.
 # ---------------------------------------------------------------------------
@@ -82,7 +94,7 @@ services:
     container_name: nb-instafix
     restart: unless-stopped
     logging: *default-logging
-    profiles: [discord, bots, full]
+    profiles: [discord, bots, full, api, twitch]
     networks:
       - nb-network
 
@@ -105,6 +117,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_started
     healthcheck:
       <<: *default-healthcheck
       test:
@@ -172,6 +186,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_started
     healthcheck:
       <<: *default-healthcheck
       test:

@@ -236,12 +236,12 @@ export function ThemeEditor({
         </p>
       </div>
 
-      <div className="flex min-w-0 flex-col gap-section xl:col-start-1 xl:row-start-1">
+      <div className="flex min-w-0 flex-col gap-card xl:col-start-1 xl:row-start-1">
         <p className="text-label text-muted-foreground">外觀修改只會影響這個頻道。</p>
 
-        <fieldset className="grid gap-3" disabled={disabled}>
-          <legend className="mb-2 text-label font-semibold">配色</legend>
-          <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+        <fieldset className="grid gap-section" disabled={disabled}>
+          <legend className="mb-2 text-label font-semibold">外觀</legend>
+          <div className="grid gap-card sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
             <ColorControl
               id="overlay-surface-color"
               label="背景色"
@@ -264,20 +264,36 @@ export function ThemeEditor({
               onChange={text_color => onChange({ ...theme, text_color })}
             />
           </div>
-          {lowContrast && (
+          {(lowContrast || lowAccentSeparation) && (
             <WarningBanner>
-              文字色與背景色、強調色的對比偏低，觀眾可能不易閱讀（僅供參考，不影響儲存）。
+              {lowContrast && '文字色與背景色、強調色的對比偏低，觀眾可能不易閱讀。'}
+              {lowContrast && lowAccentSeparation && ' '}
+              {lowAccentSeparation &&
+                '強調色與背景色的對比偏低（低於 4.5:1），小字重點可能不易閱讀。'}{' '}
+              （僅供參考，不影響儲存）
             </WarningBanner>
           )}
-          {lowAccentSeparation && (
-            <WarningBanner>
-              強調色與背景色的對比偏低（低於 4.5:1），小字重點可能不易閱讀（僅供參考，不影響儲存）。
-            </WarningBanner>
-          )}
+          <label className="grid gap-2 text-label font-semibold">
+            <span className="flex justify-between gap-element">
+              {contentType === 'tarot' ? '牌框圓角' : '卡片圓角'}{' '}
+              <output>{theme.radius_px}px</output>
+            </span>
+            <input
+              type="range"
+              aria-label="卡片圓角"
+              min={0}
+              max={40}
+              step={4}
+              value={theme.radius_px}
+              disabled={disabled}
+              onChange={event => onChange({ ...theme, radius_px: Number(event.target.value) })}
+              className="h-9 w-full accent-primary"
+            />
+          </label>
         </fieldset>
 
         <fieldset disabled={disabled}>
-          <legend className="mb-2 text-label font-semibold">顯示位置</legend>
+          <legend className="mb-2 text-label font-semibold">位置</legend>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
             {PLACEMENTS.map(option => (
               <Button
@@ -297,26 +313,10 @@ export function ThemeEditor({
           </p>
         </fieldset>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <fieldset className="grid gap-section" disabled={disabled}>
+          <legend className="mb-2 text-label font-semibold">動態</legend>
           <label className="grid gap-2 text-label font-semibold">
-            <span className="flex justify-between gap-3">
-              {contentType === 'tarot' ? '牌框圓角' : '卡片圓角'}{' '}
-              <output>{theme.radius_px}px</output>
-            </span>
-            <input
-              type="range"
-              aria-label="卡片圓角"
-              min={0}
-              max={40}
-              step={4}
-              value={theme.radius_px}
-              disabled={disabled}
-              onChange={event => onChange({ ...theme, radius_px: Number(event.target.value) })}
-              className="h-9 w-full accent-primary"
-            />
-          </label>
-          <label className="grid gap-2 text-label font-semibold">
-            <span className="flex justify-between gap-3">
+            <span className="flex justify-between gap-element">
               顯示時間 <output>{formatDisplaySeconds(theme.display_ms)} 秒</output>
             </span>
             <input
@@ -331,10 +331,6 @@ export function ThemeEditor({
               className="h-9 w-full accent-primary"
             />
           </label>
-        </div>
-
-        <fieldset disabled={disabled}>
-          <legend className="mb-2 text-label font-semibold">動畫強度</legend>
           <div className="grid grid-cols-3 gap-2">
             {MOTIONS.map(option => (
               <Button

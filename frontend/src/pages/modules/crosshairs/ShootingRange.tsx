@@ -39,19 +39,46 @@ export function ShootingRange({ crosshairs, onSave }: ShootingRangeProps) {
     [activeId, onSave]
   )
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const moveCursorTo = useCallback((clientX: number, clientY: number) => {
     if (!cursorRef.current || !containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    const x = clientX - rect.left
+    const y = clientY - rect.top
     cursorRef.current.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`
   }, [])
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => moveCursorTo(e.clientX, e.clientY),
+    [moveCursorTo]
+  )
 
   const handleMouseEnter = useCallback(() => {
     if (cursorRef.current && activeId) cursorRef.current.style.opacity = '1'
   }, [activeId])
 
   const handleMouseLeave = useCallback(() => {
+    if (cursorRef.current) cursorRef.current.style.opacity = '0'
+  }, [])
+
+  // Touch equivalents — no pointer to hover, so a touch positions the
+  // cursor and shows it immediately (start) and hides it on release (end).
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      const touch = e.touches[0]
+      if (touch) moveCursorTo(touch.clientX, touch.clientY)
+    },
+    [moveCursorTo]
+  )
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLDivElement>) => {
+      handleTouchMove(e)
+      if (cursorRef.current && activeId) cursorRef.current.style.opacity = '1'
+    },
+    [handleTouchMove, activeId]
+  )
+
+  const handleTouchEnd = useCallback(() => {
     if (cursorRef.current) cursorRef.current.style.opacity = '0'
   }, [])
 
@@ -76,7 +103,7 @@ export function ShootingRange({ crosshairs, onSave }: ShootingRangeProps) {
               )}
             >
               <CrosshairPreview game={c.game} code={c.code} size="sm" />
-              <span className="max-w-[56px] truncate text-[10px] text-muted-foreground">
+              <span className="max-w-[56px] truncate text-label text-muted-foreground">
                 {c.name}
               </span>
             </button>
@@ -99,6 +126,9 @@ export function ShootingRange({ crosshairs, onSave }: ShootingRangeProps) {
           onMouseMove={handleMouseMove}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
+          onTouchMove={handleTouchMove}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
           onClick={handleClick}
         >
           {!activeId && (

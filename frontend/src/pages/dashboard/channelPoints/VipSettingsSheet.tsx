@@ -245,11 +245,11 @@ export function VipSettingsSheet({
                       </Button>
                     )}
                   </div>
-                  <p className="text-sub text-muted-foreground">
-                    目前{' '}
-                    <span className="font-medium text-foreground tabular-nums">
+                  <p className="flex items-baseline gap-1.5 text-sub text-muted-foreground">
+                    目前
+                    <span className="text-card-title font-bold text-foreground tabular-nums">
                       {active.length}
-                    </span>{' '}
+                    </span>
                     位 VIP
                   </p>
                   <div className="space-y-2">

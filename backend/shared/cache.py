@@ -23,6 +23,16 @@ _MISSING = object()
 
 F = TypeVar("F", bound=Callable[..., Any])
 
+# Named caches register here for gauge collection (shared.gauges). Only
+# instances constructed with a `name` join the registry — ad-hoc/test
+# instances stay unregistered.
+_REGISTRY: dict[str, "AsyncTTLCache"] = {}
+
+
+def iter_caches() -> list[tuple[str, "AsyncTTLCache"]]:
+    """Return all named cache instances as ``(name, cache)`` pairs."""
+    return list(_REGISTRY.items())
+
 
 class AsyncTTLCache:
     """Async-aware TTL cache with a stale fallback store.
@@ -34,11 +44,22 @@ class AsyncTTLCache:
          (DB) is unreachable.
     """
 
-    def __init__(self, maxsize: int = 128, ttl: float = 60.0):
+    def __init__(self, maxsize: int = 128, ttl: float = 60.0, name: str | None = None):
         self._maxsize = maxsize
         self._cache: TTLCache = TTLCache(maxsize=maxsize, ttl=ttl)
         self._stale: OrderedDict[str, Any] = OrderedDict()
         self._locks: dict[str, asyncio.Lock] = {}
+        self.name = name
+        if name is not None:
+            if name in _REGISTRY:
+                LOGGER.warning(
+                    "Duplicate AsyncTTLCache name %r — gauge will only see the latest", name
+                )
+            _REGISTRY[name] = self
+
+    @property
+    def maxsize(self) -> int:
+        return self._maxsize
 
     # --- lock management (bounded) ---
 

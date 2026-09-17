@@ -351,6 +351,17 @@ class DatabaseManager:
         """Return True if the pool has been initialized and is ready."""
         return self._pool is not None
 
+    def pool_stats(self) -> dict[str, int] | None:
+        """Return pool size/idle/min/max, or None if not connected."""
+        if self._pool is None:
+            return None
+        return {
+            "size": self._pool.get_size(),
+            "idle": self._pool.get_idle_size(),
+            "min_size": self._pool.get_min_size(),
+            "max_size": self._pool.get_max_size(),
+        }
+
     @property
     def pool(self) -> asyncpg.Pool:
         """Get the database connection pool. Raises if not initialized."""

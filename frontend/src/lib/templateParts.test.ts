@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { renderTemplate, renderTemplateParts } from './renderTemplate'
+import { renderTemplate, renderTemplateParts } from './templateParts'
 
 describe('renderTemplate', () => {
   it('substitutes known placeholders', () => {

@@ -391,7 +391,7 @@ export default function Insights() {
               className="grid grid-cols-2 gap-1.5 shrink-0 sm:grid-cols-4"
             >
               {insightsLoading ? (
-                Array.from({ length: 7 }).map((_, i) => (
+                Array.from({ length: 8 }).map((_, i) => (
                   <Skeleton key={i} className="h-14 rounded-md" />
                 ))
               ) : (
@@ -440,6 +440,14 @@ export default function Insights() {
                   </StaggerItem>
                   <StaggerItem>
                     <SummaryTile
+                      icon="fa-solid fa-people-group"
+                      iconClassName="text-status-success/80"
+                      value={ins.total_raids.toLocaleString()}
+                      label="被 Raid 次數"
+                    />
+                  </StaggerItem>
+                  <StaggerItem>
+                    <SummaryTile
                       icon="fa-solid fa-diamond-half-stroke"
                       iconClassName="text-primary/80"
                       value={ins.total_bits > 0 ? ins.total_bits.toLocaleString() : '—'}
@@ -460,6 +468,8 @@ export default function Insights() {
           </AnimatePresence>
 
           {initialized && !insightsLoading && <SuggestedActions suggestions={suggestions} />}
+
+          <Separator />
 
           <PlusProgramCard
             estimate={plusEstimate}

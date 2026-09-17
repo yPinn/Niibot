@@ -1,5 +1,5 @@
 import type { CheckinLeaderboardEntry } from '@/api/checkin'
-import { Icon } from '@/components/primitives'
+import { EmptyState, Icon } from '@/components/primitives'
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Skeleton } from '@/components/ui'
 
 interface CheckinLeaderboardProps {
@@ -49,23 +49,30 @@ export function CheckinLeaderboard({
           </AlertDescription>
         </Alert>
       ) : entries.length === 0 ? (
-        <div className="rounded-md border border-dashed px-3 py-8 text-center">
-          <p className="text-sub font-medium">尚無簽到紀錄</p>
-          <p className="mt-1 text-label text-muted-foreground">
-            觀眾完成第一次簽到後，就會出現在這裡。
-          </p>
-        </div>
+        <EmptyState
+          icon="fa-solid fa-calendar-check"
+          title="尚無簽到紀錄"
+          description="觀眾完成第一次簽到後，就會出現在這裡。"
+        />
       ) : (
         <ol className="divide-y rounded-md border">
           {entries.map(entry => {
             const displayName = entry.display_name || entry.username
+            const rankColor =
+              entry.rank === 1
+                ? 'text-rank-gold'
+                : entry.rank === 2
+                  ? 'text-rank-silver'
+                  : entry.rank === 3
+                    ? 'text-rank-bronze'
+                    : 'text-muted-foreground'
             return (
               <li
                 key={entry.user_id}
                 className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-3"
               >
                 <span
-                  className="text-center text-sub font-semibold text-muted-foreground tabular-nums"
+                  className={`text-center text-sub font-semibold tabular-nums ${rankColor}`}
                   aria-label={`第 ${entry.rank} 名`}
                 >
                   #{entry.rank}

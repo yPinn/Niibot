@@ -12,7 +12,6 @@ from .eventsub_catalog import get_channel_subscriptions
 from .guards import check_command, has_role, is_on_cooldown, record_cooldown
 from .health_server import HealthCheckServer
 from .logging_setup import setup_logging
-from .pg_listener import pg_listen
 
 __all__ = [
     # Settings
@@ -35,6 +34,4 @@ __all__ = [
     "has_role",
     "is_on_cooldown",
     "record_cooldown",
-    # PG Listener
-    "pg_listen",
 ]

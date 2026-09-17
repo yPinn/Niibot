@@ -28,6 +28,15 @@ function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
   )
 }
 
+/**
+ * CardHeader override for a title that can wrap to multiple badges/lines:
+ * stack title above the action on mobile instead of squeezing both into the
+ * default 2-col grid, switching to the normal `[1fr_auto]` layout at `sm:`
+ * and up.
+ */
+export const CARD_HEADER_STACK_ON_MOBILE =
+  'has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]'
+
 function CardTitle({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div

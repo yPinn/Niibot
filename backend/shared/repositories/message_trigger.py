@@ -7,7 +7,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.message_trigger import MessageTriggerConfig
 
-_trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
+_trigger_list_cache = AsyncTTLCache(maxsize=32, ttl=3600, name="message_trigger.trigger_list")
 
 _COLUMNS_BASE = (
     "id, channel_id, trigger_name, match_type, pattern, case_sensitive, "
@@ -159,6 +159,7 @@ class MessageTriggerRepository:
         cooldown: int | None,
         priority: int,
         enabled: bool,
+        aliases: str | None = None,
     ) -> MessageTriggerConfig | None:
         """Atomically create a brand-new trigger; returns None if the name is taken.
 
@@ -167,6 +168,8 @@ class MessageTriggerRepository:
         check-then-insert race between two concurrent callers can't silently
         overwrite one caller's trigger with the other's.
         """
+        alias_list = [a.strip() for a in aliases.split(",") if a.strip()] if aliases else []
+
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 row = await conn.fetchrow(
@@ -191,7 +194,16 @@ class MessageTriggerRepository:
                 )
                 if row is None:
                     return None
+                for alias in alias_list:
+                    await conn.execute(
+                        "INSERT INTO trigger_aliases (trigger_id, alias) VALUES ($1, $2) "
+                        "ON CONFLICT DO NOTHING",
+                        row["id"],
+                        alias,
+                    )
                 result = MessageTriggerConfig(**dict(row))
+                if alias_list:
+                    result.aliases = ",".join(sorted(alias_list))
 
             _trigger_list_cache.invalidate(f"trigger_list:{channel_id}")
             return result

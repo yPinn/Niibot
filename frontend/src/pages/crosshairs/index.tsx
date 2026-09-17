@@ -9,6 +9,7 @@ import {
 } from '@/api/crosshairs'
 import avatarFallback from '@/assets/images/Avatar.png'
 import { CrosshairCardBase } from '@/components/crosshairs/CrosshairCardBase'
+import { CrosshairCardSkeleton } from '@/components/crosshairs/CrosshairCardSkeleton'
 import { CrosshairDetailPreview } from '@/components/crosshairs/CrosshairPreview'
 import { SortDropdown } from '@/components/crosshairs/SortDropdown'
 import { copyCode } from '@/components/crosshairs/utils'
@@ -110,7 +111,7 @@ export default function CrosshairRepo() {
               </div>
               <div className="grid grid-cols-1 gap-section sm:grid-cols-3">
                 {Array.from({ length: 9 }).map((_, i) => (
-                  <Skeleton key={i} className="aspect-square rounded-xl" />
+                  <CrosshairCardSkeleton key={i} />
                 ))}
               </div>
             </CardContent>

@@ -8,7 +8,13 @@ export function destroyAllPlayers(
   progressRef: RefObject<ReturnType<typeof setInterval> | null>,
   clipTimerRef: RefObject<ReturnType<typeof setTimeout> | null>,
   containerRef: RefObject<HTMLDivElement | null>,
-  setElapsed: (v: number) => void
+  setElapsed: (v: number) => void,
+  // Side-panel containers (blurred columns for vertical video): YouTube's YT.Player
+  // instances there clean up via ref.current.destroy() above, but Instagram Reel's
+  // side panels are plain <video> elements with no player-object abstraction — they
+  // need their own explicit clear, same as containerRef, or a leftover element would
+  // persist into the next mount.
+  sideContainerRefs: Array<RefObject<HTMLDivElement | null>> = []
 ) {
   for (const ref of refs) {
     if (ref.current) {
@@ -28,9 +34,14 @@ export function destroyAllPlayers(
     clearTimeout(clipTimerRef.current)
     clipTimerRef.current = null
   }
-  // Clear any iframe left by a Twitch clip or Bilibili player
+  // Clear any iframe/video left by the previous entry's player
   if (containerRef.current) {
     containerRef.current.innerHTML = ''
+  }
+  for (const ref of sideContainerRefs) {
+    if (ref.current) {
+      ref.current.innerHTML = ''
+    }
   }
   setElapsed(0)
 }

@@ -38,7 +38,11 @@ RUNTIME_FILES: dict[str, tuple[str, list[str], str]] = {
         ["Shared — consumed by api, twitch-bot, and discord-bot."],
         "api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的自動跳過。",
     ),
-    "api": ("backend/api/.env.example", ["API service."], "App 憑證走 `shared.env`。"),
+    "api": (
+        "backend/api/.env.example",
+        ["API service. App credentials → shared.env."],
+        "App 憑證走 `shared.env`。",
+    ),
     "twitch": (
         "backend/twitch/.env.example",
         ["Twitch bot. App credentials, BOT_ID, OWNER_ID → shared.env."],
@@ -191,7 +195,7 @@ def render_runtime_example(scope: str, vars_: list[Var], meta: dict) -> str:
     for h in header:
         lines.append(f"# {h}")
     fname = Path(rel).name.replace(".example", "")
-    lines.append(f"# Copy to {fname} and fill in values. Never commit {fname}.")
+    lines.append(f"# Copy to {fname} and fill in values. Never commit it.")
     lines.append("")
 
     for section in order:
@@ -272,8 +276,10 @@ def render_github_example(target: str, vars_: list[Var], meta: dict) -> str:
 
     lines = [GEN_BANNER]
     lines += [f"# {h}" for h in header]
-    verb = "fill in, never commit" if kind == "secrets" else "fill in"
-    lines.append(f"# Copy → {rel}, {verb}.")
+    # Same sentence shape as the runtime templates so both read alike.
+    target = rel.replace(".example", "")
+    warn = " Never commit it." if kind == "secrets" else ""
+    lines.append(f"# Copy to {target} and fill in values.{warn}")
     lines.append("")
 
     # .github files have no "Dev" concept — fold those vars into Monitoring.

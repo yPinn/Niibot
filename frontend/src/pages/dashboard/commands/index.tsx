@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
 import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/api/commands'
@@ -30,7 +32,18 @@ import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 import { BuiltinTab } from './BuiltinTab'
 import { CommandSheet } from './CommandSheet'
 import { CustomTab } from './CustomTab'
+import { ImportSheet } from './ImportSheet'
 import type { CustomRow, CustomSortKey, EditingState, SortKey } from './types'
+
+/** Error codes the Nightbot OAuth callback can append to the return URL. */
+const IMPORT_ERRORS: Record<string, string> = {
+  invalid_state: '授權連結無效，請重新開始匯入',
+  no_code: '沒有收到 Nightbot 的授權碼，請重新開始匯入',
+  token_exchange_failed: 'Nightbot 授權失敗，請重新開始匯入',
+  channel_not_found: '找不到你的頻道',
+  fetch_failed: '讀取 Nightbot 指令失敗，請稍後再試',
+  access_denied: '你取消了 Nightbot 授權',
+}
 
 export default function Commands() {
   useDocumentTitle('Commands')
@@ -41,6 +54,12 @@ export default function Commands() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  // The Nightbot OAuth callback redirects back here with a preview waiting.
+  const [importState, setImportState] = useState<{ open: boolean; importId: string | null }>(() => {
+    const importId = searchParams.get('import_id')
+    return { open: Boolean(importId), importId }
+  })
 
   const builtinSort = useSortState<SortKey>('catalog_order')
   const customSort = useSortState<CustomSortKey>('kind')
@@ -126,6 +145,14 @@ export default function Commands() {
     fetchData()
   }, [fetchData])
 
+  // Consume the OAuth return params once, so a refresh does not replay them.
+  useEffect(() => {
+    const importError = searchParams.get('import_error')
+    if (importError) toast.error(IMPORT_ERRORS[importError] ?? '匯入失敗，請再試一次')
+    if (importError || searchParams.get('import_id')) setSearchParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const openCreate = () => setEditing({ mode: 'create' })
 
   const openEditCommand = (cmd: CommandConfig) => setEditing({ mode: 'edit-command', command: cmd })
@@ -182,7 +209,15 @@ export default function Commands() {
             <CardDescription>
               管理內建指令、自訂指令（!prefix）與自動回應（關鍵字觸發）
             </CardDescription>
-            <CardAction>
+            <CardAction className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setImportState({ open: true, importId: null })}
+              >
+                <Icon icon="fa-solid fa-file-import" wrapperClassName="mr-1.5 size-3" />
+                匯入
+              </Button>
               <Button size="sm" onClick={openCreate}>
                 <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
                 新增
@@ -248,6 +283,13 @@ export default function Commands() {
         onSaved={handleSaved}
         onDeleted={handleDeleted}
         onClose={() => setEditing(null)}
+      />
+
+      <ImportSheet
+        open={importState.open}
+        initialImportId={importState.importId}
+        onImported={fetchData}
+        onClose={() => setImportState({ open: false, importId: null })}
       />
     </PageMain>
   )

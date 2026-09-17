@@ -26,11 +26,12 @@ class RewardAlreadyBoundError(ConflictError):
     user_message = "這個獎勵已經綁定其他功能了，請先解除該綁定再試一次"
 
 
-# In-process caches — long TTL for memory-first reads.
-# Freshness is maintained by pg_notify (instant) + periodic refresh (5 min safety net).
-_cmd_cache = AsyncTTLCache(maxsize=128, ttl=3600)
-_cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=3600)
-_redemption_cache = AsyncTTLCache(maxsize=64, ttl=3600)
+# In-process caches — long TTL for memory-first reads. Freshness: `config_change`
+# pg_notify (both twitch and api processes listen) + a periodic full-clear
+# safety net (see shared/cache_invalidation.py and its callers).
+_cmd_cache = AsyncTTLCache(maxsize=128, ttl=3600, name="command_config.cmd")
+_cmd_list_cache = AsyncTTLCache(maxsize=32, ttl=3600, name="command_config.cmd_list")
+_redemption_cache = AsyncTTLCache(maxsize=64, ttl=3600, name="command_config.redemption")
 
 # Base columns without aliases (used in RETURNING / simple fetches before alias join)
 _CMD_COLUMNS_BASE = (

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math as _math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -15,6 +15,7 @@ from shared.repositories.analytics._caches import (
     _top_chatters_cache,
     _top_commands_cache,
 )
+from shared.repositories.analytics._overlap_mixin import sync_known_bots
 from shared.repositories.analytics._query_mixin import _SCORE_SQL
 
 # ---------------------------------------------------------------------------
@@ -1164,6 +1165,16 @@ _VIEWER_ROW = {
 
 @pytest.mark.asyncio
 class TestRefreshOverlap:
+    @pytest.fixture(autouse=True)
+    def _no_bot_sync(self):
+        """Keep refresh_overlap's own fetch-call sequence untouched by
+        sync_known_bots: an empty bot list makes it a no-op (no conn.fetch)."""
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=[]),
+        ):
+            yield
+
     async def test_no_partners_returns_zero(self):
         conn = _make_conn_multi()
         conn.fetch.return_value = []
@@ -1224,6 +1235,106 @@ class TestRefreshOverlap:
         # executemany and execute should NOT be called when there are no viewers
         conn.executemany.assert_not_called()
         conn.execute.assert_not_called()
+
+    async def test_bot_sync_failure_does_not_abort_refresh(self):
+        """A broken TwitchInsights fetch (or DB error) must not block the refresh."""
+        conn = AsyncMock()
+        conn.fetch.side_effect = [
+            [{"channel_id": "partner1"}],  # partner list
+            [_VIEWER_ROW],  # viewer rows for partner1
+        ]
+        conn.fetchval.return_value = 100
+        pool = _make_pool_with_conn(conn)
+
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(side_effect=RuntimeError("TwitchInsights unreachable")),
+        ):
+            repo = AnalyticsRepository(pool)
+            count = await repo.refresh_overlap("home1", days=30)
+
+        assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — sync_known_bots
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestSyncKnownBots:
+    async def test_no_known_bots_is_noop(self):
+        conn = AsyncMock()
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=[]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        conn.fetch.assert_not_called()
+        conn.executemany.assert_not_called()
+
+    async def test_no_matching_chatters_skips_upsert(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=["nightbot"]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        conn.fetch.assert_awaited_once()
+        conn.executemany.assert_not_called()
+
+    async def test_matching_chatters_upserted_with_auto_sync_note(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [{"user_id": "19264788", "username": "nightbot"}]
+        with patch(
+            "shared.repositories.analytics._query_common._get_bot_list",
+            new=AsyncMock(return_value=["nightbot", "streamelements"]),
+        ):
+            await sync_known_bots(conn, days=30)
+
+        fetch_args = conn.fetch.await_args.args
+        assert fetch_args[1] == ["nightbot", "streamelements"]  # bots passed through unchanged
+
+        conn.executemany.assert_awaited_once()
+        upsert_sql, upsert_rows = conn.executemany.await_args.args
+        assert "known_bots" in upsert_sql
+        assert "auto-sync" in upsert_sql
+        assert upsert_rows == [("19264788", "nightbot")]
+
+
+# ---------------------------------------------------------------------------
+# Overlap mixin — _compute_channel_overlap window isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestComputeChannelOverlapWindowIsolation:
+    async def test_different_windows_upsert_distinct_window_days(self):
+        """Two refreshes for the same partner with different `days` must not
+        clobber each other's viewer rows — each upsert has to carry its own
+        window_days so the 7d and 30d potential-viewer tables coexist."""
+        conn = AsyncMock()
+        conn.fetch.return_value = [_VIEWER_ROW]
+        conn.fetchval.return_value = 100
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        await repo._compute_channel_overlap(conn, "home1", "partner1", 7)
+        await repo._compute_channel_overlap(conn, "home1", "partner1", 30)
+
+        assert conn.executemany.await_count == 2
+        first_sql, first_rows = conn.executemany.await_args_list[0].args
+        second_sql, second_rows = conn.executemany.await_args_list[1].args
+
+        assert "window_days" in first_sql
+        assert (
+            "ON CONFLICT (home_channel_id, partner_channel_id, user_id, window_days)" in first_sql
+        )
+        assert first_rows[0][-1] == 7
+        assert second_rows[0][-1] == 30
 
 
 # ---------------------------------------------------------------------------
@@ -1402,6 +1513,133 @@ class TestGetPotentialViewers:
         total, rows = await repo.get_potential_viewers("home1", "p1")
 
         assert total == 0
+
+    async def test_days_is_passed_to_both_queries(self):
+        """The selected window must scope both the count and the row query —
+        otherwise switching windows in the UI would silently read another
+        window's viewer detail."""
+        conn = AsyncMock()
+        conn.fetchval.return_value = 0
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+
+        repo = AnalyticsRepository(pool)
+        await repo.get_potential_viewers("home1", "p1", days=7, limit=10, offset=0)
+
+        fetchval_sql, *fetchval_args = conn.fetchval.await_args.args
+        assert "window_days = $3" in fetchval_sql
+        assert fetchval_args == ["home1", "p1", 7]
+
+        fetch_sql, *fetch_args = conn.fetch.await_args.args
+        assert "window_days = $3" in fetch_sql
+        assert fetch_args == ["home1", "p1", 7, 10, 0]
+
+
+# ---------------------------------------------------------------------------
+# Collab mixin — create_collab_event / list_collab_events / delete_collab_event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestCreateCollabEvent:
+    async def test_returns_row_with_target_count(self):
+        pool, conn = _make_pool(
+            fetchrow={
+                "id": 1,
+                "occurred_at": _NOW,
+                "note": "raid collab",
+                "window_days": 30,
+                "created_at": _NOW,
+            },
+            fetchval=5,
+        )
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.create_collab_event("home1", "partner1", 30, "raid collab")
+
+        assert result["id"] == 1
+        assert result["target_count"] == 5
+        conn.execute.assert_awaited_once()
+        insert_sql, *insert_args = conn.execute.await_args.args
+        assert "matcher_collab_targets" in insert_sql
+        assert "home_sessions = 0" in insert_sql
+        assert insert_args == [1, "home1", "partner1", 30]
+
+
+@pytest.mark.asyncio
+class TestListCollabEvents:
+    async def test_returns_empty_list_when_no_collabs(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert result == []
+        conn.fetchrow.assert_not_called()
+
+    async def test_computes_conversion_pct_and_attribution_window(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [
+            {"id": 1, "occurred_at": _NOW, "note": None, "window_days": 30, "created_at": _NOW}
+        ]
+        conn.fetchrow.return_value = {
+            "target_count": 20,
+            "followed_count": 4,
+            "subscribed_count": 1,
+            "returned_count": 2,
+            "converted_any_count": 5,
+        }
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert len(result) == 1
+        row = result[0]
+        assert row["converted_any_count"] == 5
+        assert row["converted_pct"] == 25.0
+        assert row["attribution_ends_at"] == _NOW + timedelta(days=14)
+
+        stats_sql, *stats_args = conn.fetchrow.await_args.args
+        assert "stream_events" in stats_sql
+        assert "chatter_stats" in stats_sql
+        assert stats_args == [1, "home1", _NOW, _NOW + timedelta(days=14)]
+
+    async def test_zero_targets_does_not_divide_by_zero(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [
+            {"id": 1, "occurred_at": _NOW, "note": None, "window_days": 30, "created_at": _NOW}
+        ]
+        conn.fetchrow.return_value = {
+            "target_count": 0,
+            "followed_count": 0,
+            "subscribed_count": 0,
+            "returned_count": 0,
+            "converted_any_count": 0,
+        }
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert result[0]["converted_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+class TestDeleteCollabEvent:
+    async def test_returns_true_when_row_deleted(self):
+        pool, _ = _make_pool(execute="DELETE 1")
+        repo = AnalyticsRepository(pool)
+
+        assert await repo.delete_collab_event("home1", 1) is True
+
+    async def test_returns_false_when_no_row_matched(self):
+        pool, _ = _make_pool(execute="DELETE 0")
+        repo = AnalyticsRepository(pool)
+
+        assert await repo.delete_collab_event("home1", 999) is False
 
 
 # ---------------------------------------------------------------------------

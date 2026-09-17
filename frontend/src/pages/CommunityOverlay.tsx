@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'motion/react'
 
@@ -20,7 +20,9 @@ import {
   resolveOverlayEvent,
   supportsPublishedRenderer,
 } from '@/components/community-overlay/rendererRegistry'
+import { OverlayReconnectingBadge } from '@/components/OverlayReconnectingBadge'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { type StreamHelpers, useReconnectingStream } from '@/hooks/useReconnectingStream'
 
 import styles from './CommunityOverlay.module.css'
 
@@ -82,8 +84,6 @@ function playbackReducer(state: PlaybackState, action: PlaybackAction): Playback
   return promoteNext(state.queue, action.now, state.stageTheme)
 }
 
-const STABLE_STREAM_MS = 30_000
-
 interface ScopedCommunityOverlayProps {
   publicKey: string
   preview: boolean
@@ -113,18 +113,11 @@ function ScopedCommunityOverlay({
     tarot: DEFAULT_TAROT_OVERLAY_THEME,
   })
   const themesRef = useRef(themes)
+  const cursorRef = useRef<number | undefined>(preview ? 0 : undefined)
 
-  useEffect(() => {
-    if (!publicKey) return
-    let active = true
-    let cursor: number | undefined = preview ? 0 : undefined
-    let attempt = 0
-    let controller: AbortController | null = null
-    let reconnectTimer: number | null = null
-
-    const applyMessage = (message: CommunityOverlayStreamMessage) => {
-      if (!active) return
-      cursor = message.cursor
+  const applyMessage = useCallback(
+    (message: CommunityOverlayStreamMessage) => {
+      cursorRef.current = message.cursor
       let nextThemes = themesRef.current
       for (const blockType of Object.keys(message.themes)) {
         if (blockType !== 'checkin' && blockType !== 'tarot') continue
@@ -159,45 +152,40 @@ function ScopedCommunityOverlay({
         })
         .map(resolved => ({ resolved, theme: nextThemes[resolved.blockType] }))
       if (incoming.length) dispatch({ type: 'enqueue', items: incoming, now })
-    }
+    },
+    [blockFilter]
+  )
 
-    const connect = () => {
-      controller = new AbortController()
-      const connectedAt = Date.now()
-      void openCommunityOverlayStream({
+  // Dev-only fixture path: fire one synthetic event and never open a real
+  // connection. Kept as its own effect, separate from the reconnect loop
+  // below, so it fires exactly once instead of being re-applied on every
+  // backoff retry.
+  useEffect(() => {
+    if (!developmentSample) return
+    const sampleEvent = buildCommunityOverlayPreviewEvent(developmentSample)
+    applyMessage({ type: 'snapshot', cursor: sampleEvent.id, events: [sampleEvent], themes: {} })
+  }, [developmentSample, applyMessage])
+
+  const connect = useCallback(
+    (signal: AbortSignal, { notifyLive, notifyStreamError }: StreamHelpers) =>
+      openCommunityOverlayStream({
         publicKey,
-        afterId: cursor,
-        signal: controller.signal,
-        onMessage: applyMessage,
-      })
-        .catch(() => undefined)
-        .finally(() => {
-          if (!active || controller?.signal.aborted) return
-          if (Date.now() - connectedAt >= STABLE_STREAM_MS) attempt = 0
-          const base = Math.min(1_000 * 2 ** attempt, 30_000)
-          const delay = Math.round(base * (0.8 + Math.random() * 0.4))
-          attempt += 1
-          reconnectTimer = window.setTimeout(connect, delay)
-        })
-    }
+        afterId: cursorRef.current,
+        signal,
+        onMessage: message => {
+          notifyLive()
+          applyMessage(message)
+        },
+        onStreamError: () => notifyStreamError(),
+      }),
+    [publicKey, applyMessage]
+  )
 
-    if (developmentSample) {
-      const sampleEvent = buildCommunityOverlayPreviewEvent(developmentSample)
-      applyMessage({
-        type: 'snapshot',
-        cursor: sampleEvent.id,
-        events: [sampleEvent],
-        themes: {},
-      })
-    } else {
-      connect()
-    }
-    return () => {
-      active = false
-      controller?.abort()
-      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer)
-    }
-  }, [preview, publicKey, blockFilter, developmentSample])
+  const { status: streamStatus } = useReconnectingStream({
+    enabled: !!publicKey && !developmentSample,
+    label: 'live-display-stream',
+    connect,
+  })
 
   const activeTheme = playback.stageTheme ?? themes.checkin
 
@@ -213,6 +201,7 @@ function ScopedCommunityOverlay({
 
   return (
     <main className={styles.stage} data-placement={activeTheme.placement} aria-live="polite">
+      <OverlayReconnectingBadge visible={preview && streamStatus === 'reconnecting'} />
       <AnimatePresence
         mode="wait"
         onExitComplete={() => dispatch({ type: 'exitComplete', now: Date.now() })}

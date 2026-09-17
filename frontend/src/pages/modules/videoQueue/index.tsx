@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   addVideoToQueue,
   advanceVideoQueue,
+  type BlocklistKind,
   clearVideoQueue,
   getVideoQueueHistory,
   getVideoQueueSettings,
@@ -27,9 +28,11 @@ import {
   CardHeader,
   CardTitle,
   Label,
+  Separator,
   Skeleton,
   Switch,
 } from '@/components/ui'
+import { WarningBanner } from '@/components/WarningBanner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
@@ -59,7 +62,11 @@ export default function VideoQueue() {
   const { user, isAffiliate } = useAuth()
   // Queue state rides the same NOTIFY-woken SSE stream as the OBS overlay;
   // settings are fetched once (they only change from this page).
-  const { state, setState } = useVideoQueueStream(isAffiliate ? user?.name : undefined)
+  const {
+    state,
+    setState,
+    status: streamStatus,
+  } = useVideoQueueStream(isAffiliate ? user?.name : undefined)
   const [settings, setSettings] = useState<VideoQueueSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -125,9 +132,22 @@ export default function VideoQueue() {
     }
   }
 
-  const handleBlockFromHistory = async (entry: VideoQueueHistoryEntry) => {
+  const handleBlockFromHistory = async (entry: VideoQueueHistoryEntry, kind: BlocklistKind) => {
+    let value: string | null
+    let label: string | null
+    if (kind === 'creator') {
+      value = entry.creator_id
+      label = entry.creator_name ?? entry.creator_id
+    } else if (kind === 'user') {
+      value = entry.requested_by_id ?? entry.requested_by
+      label = entry.requested_by
+    } else {
+      value = entry.video_id
+      label = entry.title ?? entry.video_id
+    }
+    if (!value) return
     try {
-      await blocklistRef.current?.addBlock('video', entry.video_id, entry.title ?? entry.video_id)
+      await blocklistRef.current?.addBlock(kind, value, label)
       toast.success('已加入封鎖清單')
     } catch (e) {
       toastApiError(e, '加入封鎖清單失敗')
@@ -347,7 +367,7 @@ export default function VideoQueue() {
         </PageHeader>
         <Skeleton className="h-52 w-full rounded-xl" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12">
-          <Skeleton className="h-96 w-full rounded-xl lg:col-span-8" />
+          <Skeleton className="h-120 w-full rounded-xl lg:col-span-8" />
           <Skeleton className="h-96 w-full rounded-xl lg:col-span-4" />
         </div>
       </PageMain>
@@ -363,6 +383,10 @@ export default function VideoQueue() {
       <SetupGuideSheet open={helpOpen} onOpenChange={setHelpOpen} />
 
       {!isAffiliate && <AffiliateLockOverlay message="取得資格後可使用影片佇列功能" fullPage />}
+
+      {streamStatus === 'reconnecting' && (
+        <WarningBanner>即時更新暫時中斷，重新連線中…畫面可能不是最新狀態</WarningBanner>
+      )}
 
       <SlideUp inView>
         <NowPlayingCard
@@ -410,6 +434,8 @@ export default function VideoQueue() {
           <OverlayCard url={overlayUrl} current={current} onOpenGuide={() => setHelpOpen(true)} />
         </div>
       </SlideUp>
+
+      <Separator />
 
       <SlideUp
         inView

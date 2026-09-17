@@ -21,11 +21,13 @@ from core.dependencies import (
     get_twitch_api,
     require_activated,
 )
+from core.error_handlers import log_request_failure
 from core.rate_limit import RateLimiter
 from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
 from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
+from shared.instafix_client import fetch_instagram_reel_source
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
     VideoQueueEntry,
@@ -56,6 +58,7 @@ router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 _advance_limiter = RateLimiter(max_calls=30, period=60.0)
 _stream_limiter = RateLimiter(max_calls=30, period=60.0)
 _clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
+_reel_source_limiter = RateLimiter(max_calls=30, period=60.0)
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 
@@ -110,7 +113,7 @@ class VideoEntryResponse(BaseModel):
     start_seconds: int  # twitch_vod seek offset; 0 otherwise
     requested_by: str
     source: str
-    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
@@ -181,11 +184,14 @@ class VideoHistoryEntry(BaseModel):
     title: str | None
     duration_seconds: int | None
     requested_by: str
+    requested_by_id: str | None
     source: str
     video_type: str
     status: str  # 'done' | 'skipped'
     started_at: datetime | None
     ended_at: datetime | None
+    creator_id: str | None
+    creator_name: str | None
 
 
 class VideoQueueHistoryResponse(BaseModel):
@@ -227,7 +233,9 @@ def _blocklist_response(e: VideoQueueBlocklistEntry) -> BlocklistEntryResponse:
     )
 
 
-_channel_id_cache: AsyncTTLCache = AsyncTTLCache(maxsize=256, ttl=300.0)
+_channel_id_cache: AsyncTTLCache = AsyncTTLCache(
+    maxsize=256, ttl=300.0, name="video_queue_router.channel_id"
+)
 
 
 async def _resolve_channel_id(username: str, twitch_api: TwitchAPIClient) -> str:
@@ -372,7 +380,23 @@ async def stream_public_video_queue(
                     yield encode_sse("heartbeat", {"at": datetime.now(UTC).isoformat()})
                     continue
 
-                current_state = await _build_stream_state(channel_id, repo)
+                try:
+                    current_state = await _build_stream_state(channel_id, repo)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log_request_failure(
+                        request,
+                        code="STREAM.ITERATION_FAILED",
+                        status=500,
+                        exc=exc,
+                        context={"channel_id": channel_id, "event_class": "occasional"},
+                    )
+                    # Lets the client tell "we failed mid-stream" apart from the
+                    # routine lease-expiry reconnect below — both otherwise look
+                    # identical (a clean end of the response body).
+                    yield encode_sse("stream_error", {"code": "STREAM.ITERATION_FAILED"})
+                    return
                 payload = current_state.model_dump(mode="json")
                 if payload == last_payload:
                     continue
@@ -478,6 +502,46 @@ async def get_clip_source(
     except Exception:
         LOGGER.exception("Failed to resolve twitch clip source")
         raise HTTPException(status_code=500, detail="Failed to resolve clip source") from None
+
+
+class ReelSourceResponse(BaseModel):
+    url: str
+
+
+@router.get("/public/{username}/entries/{entry_id}/reel-source", response_model=ReelSourceResponse)
+async def get_reel_source(
+    request: Request,
+    username: str,
+    entry_id: int,
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    app_settings: Settings = Depends(get_settings),
+) -> ReelSourceResponse:
+    """Unauthenticated — resolve a queued Instagram Reel to a directly playable
+    CDN MP4 URL for the OBS overlay's `<video>` (Instagram has no embeddable
+    fallback surface, unlike Twitch's clips.twitch.tv/embed). Scoped to an
+    entry that is actually in this channel's queue; 404s on any failure so
+    the overlay skips to the next entry instead of stalling.
+
+    See shared.instafix_client.fetch_instagram_reel_source — this is an
+    unofficial, best-effort dependency on the self-hosted InstaFix proxy.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _reel_source_limiter.require(client_host)
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        entry = await VideoQueueRepository(pool).get_entry_for_channel(entry_id, channel_id)
+        if entry is None or entry.video_type != "instagram_reel":
+            raise HTTPException(status_code=404, detail="Reel entry not found")
+        url = await fetch_instagram_reel_source(entry.video_id, app_settings.instafix_host)
+        if not url:
+            raise HTTPException(status_code=404, detail="Reel source unavailable")
+        return ReelSourceResponse(url=url)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to resolve instagram reel source")
+        raise HTTPException(status_code=500, detail="Failed to resolve reel source") from None
 
 
 @router.delete("/skip", status_code=200, response_model=PublicVideoQueueState)
@@ -626,11 +690,14 @@ async def get_history(
                     title=e.title,
                     duration_seconds=e.duration_seconds,
                     requested_by=e.requested_by,
+                    requested_by_id=e.requested_by_id,
                     source=e.source,
                     video_type=e.video_type,
                     status=e.status,
                     started_at=e.started_at,
                     ended_at=e.ended_at,
+                    creator_id=e.creator_id,
+                    creator_name=e.creator_name,
                 )
                 for e in entries
             ],
@@ -819,6 +886,7 @@ async def add_video_entry(
             youtube_api_key=app_settings.youtube_api_key,
             twitch_client_id=app_settings.client_id,
             twitch_client_secret=app_settings.client_secret,
+            instafix_host=app_settings.instafix_host,
         )
 
         # ...but playability is not a policy choice — an un-embeddable / age-restricted
@@ -845,7 +913,10 @@ async def add_video_entry(
                 )
 
         blocked = await VideoQueueBlocklistRepository(pool).check(
-            channel_id, video_id=resolved.video_id, title=metadata.title
+            channel_id,
+            video_id=resolved.video_id,
+            title=metadata.title,
+            creator_id=metadata.creator_id,
         )
         if blocked is not None:
             raise VideoBlockedError(user_message=_blocked_message(blocked))
@@ -867,6 +938,8 @@ async def add_video_entry(
             priority=SOURCE_PRIORITY["dashboard"],
             start_seconds=resolved.start_seconds,
             thumbnail_url=metadata.thumbnail_url,
+            creator_id=metadata.creator_id,
+            creator_name=metadata.creator_name,
         )
         LOGGER.info(
             "Channel %s added %s %s from dashboard",

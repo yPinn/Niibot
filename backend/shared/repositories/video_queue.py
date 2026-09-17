@@ -7,7 +7,7 @@ clips) live in ``shared.video_sources``.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import asyncpg
 
@@ -23,22 +23,15 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def format_now_playing(entry: VideoQueueEntry) -> str:
-    """Render a 'now playing' chat line for a playing entry.
+    """Render the !np chat line for the currently playing entry.
 
-    Shared by the !np chat command and the auto-announce-on-start notifier so
-    both always say the same thing.
+    No remaining time: it is stale the moment the message is sent, and a
+    viewer reading it seconds later is told the wrong number. The overlay
+    already shows a live countdown for anyone who needs one.
     """
     url = build_watch_url(entry.video_type, entry.video_id)
     title_part = f"「{entry.title}」 " if entry.title else " "
-
-    remaining_str = ""
-    if entry.started_at and entry.duration_seconds:
-        elapsed = (datetime.now(UTC) - entry.started_at).total_seconds()
-        remaining = max(0, entry.duration_seconds - int(elapsed))
-        m, s = divmod(remaining, 60)
-        remaining_str = f" | 剩餘 {m}:{s:02d}"
-
-    return f"▶{title_part}{url}{remaining_str} | 點播者：{entry.requested_by}"
+    return f"▶{title_part}{url} | 點播者：{entry.requested_by}"
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +58,7 @@ PRIORITY_PINNED = 99
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, thumbnail_url, start_seconds, "
     "requested_by, source, status, video_type, priority, "
-    "created_at, started_at, ended_at, requested_by_id"
+    "created_at, started_at, ended_at, requested_by_id, creator_id, creator_name"
 )
 
 # History = terminal entries retained for the dashboard "played" tab.
@@ -80,18 +73,16 @@ _SETTINGS_COLUMNS = (
     "created_at, updated_at"
 )
 
-_settings_cache = AsyncTTLCache(maxsize=32, ttl=15)
+_settings_cache = AsyncTTLCache(maxsize=32, ttl=15, name="video_queue.settings")
 
 _BLOCKLIST_COLUMNS = "id, channel_id, kind, value, label, created_by, created_at"
 
-# Kinds a user can create today. 'creator' is in the DB CHECK (migration 110)
-# but not offered until the creator_id metadata plumbing lands (B3).
-BLOCKLIST_KINDS = ("video", "keyword", "user")
+BLOCKLIST_KINDS = ("video", "creator", "keyword", "user")
 
 # Per-channel cache of the full blocklist, refreshed on write. The check runs on
 # every submission (three add paths) and the list is tiny, so we match in Python
 # rather than issue a query per add.
-_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30)
+_blocklist_cache = AsyncTTLCache(maxsize=64, ttl=30, name="video_queue.blocklist")
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +110,8 @@ class VideoQueueRepository:
         requested_by_id: str | None = None,
         start_seconds: int = 0,
         thumbnail_url: str | None = None,
+        creator_id: str | None = None,
+        creator_name: str | None = None,
     ) -> VideoQueueEntry:
         """Insert a new entry with status='queued'."""
         async with self.pool.acquire() as conn:
@@ -126,8 +119,9 @@ class VideoQueueRepository:
                 f"""
                 INSERT INTO video_queue
                     (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
-                     requested_by, source, video_type, priority, requested_by_id, thumbnail_url)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                     requested_by, source, video_type, priority, requested_by_id, thumbnail_url,
+                     creator_id, creator_name)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING {_ENTRY_COLUMNS}
                 """,
                 channel_id,
@@ -142,6 +136,8 @@ class VideoQueueRepository:
                 priority,
                 requested_by_id,
                 thumbnail_url,
+                creator_id,
+                creator_name,
             )
             return VideoQueueEntry(**dict(row))
 
@@ -162,6 +158,8 @@ class VideoQueueRepository:
         priority: int = 0,
         start_seconds: int = 0,
         thumbnail_url: str | None = None,
+        creator_id: str | None = None,
+        creator_name: str | None = None,
     ) -> VideoQueueEntry | None:
         """Re-validate duplicate/queue-size/per-user limits and insert atomically.
 
@@ -219,8 +217,9 @@ class VideoQueueRepository:
                     f"""
                     INSERT INTO video_queue
                         (channel_id, video_id, title, duration_seconds, is_vertical, start_seconds,
-                         requested_by, source, video_type, priority, requested_by_id, thumbnail_url)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                         requested_by, source, video_type, priority, requested_by_id, thumbnail_url,
+                         creator_id, creator_name)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     RETURNING {_ENTRY_COLUMNS}
                     """,
                     channel_id,
@@ -235,6 +234,8 @@ class VideoQueueRepository:
                     priority,
                     requested_by_id,
                     thumbnail_url,
+                    creator_id,
+                    creator_name,
                 )
                 return VideoQueueEntry(**dict(row))
 
@@ -764,13 +765,25 @@ def _blocklist_match(
     title: str | None,
     requested_by: str | None,
     requested_by_id: str | None,
+    creator_id: str | None,
 ) -> VideoQueueBlocklistEntry | None:
-    """First blocklist rule a submission trips, or None. Case-insensitive."""
+    """First blocklist rule a submission trips, or None. Case-insensitive.
+
+    ``creator`` matches the platform-native ``creator_id`` (channel/uploader/
+    broadcaster identity — see migration 122), not ``video_id``. A submission
+    whose metadata fetch couldn't resolve a creator_id (transient failure, or
+    a platform this integration doesn't capture it for) simply never trips a
+    ``creator`` rule — same fail-open posture as every other best-effort
+    metadata field here.
+    """
     title_l = (title or "").lower()
     login_l = (requested_by or "").lower()
+    creator_l = (creator_id or "").lower()
     for entry in entries:
         value_l = entry.value.lower()
-        if entry.kind in ("video", "creator") and value_l == video_id.lower():
+        if entry.kind == "video" and value_l == video_id.lower():
+            return entry
+        if entry.kind == "creator" and creator_l and value_l == creator_l:
             return entry
         if entry.kind == "keyword" and title_l and value_l in title_l:
             return entry
@@ -849,6 +862,7 @@ class VideoQueueBlocklistRepository:
         title: str | None = None,
         requested_by: str | None = None,
         requested_by_id: str | None = None,
+        creator_id: str | None = None,
     ) -> VideoQueueBlocklistEntry | None:
         """Return the first blocklist rule this submission trips, or None."""
         entries = await self.list_entries(channel_id)
@@ -860,4 +874,5 @@ class VideoQueueBlocklistRepository:
             title=title,
             requested_by=requested_by,
             requested_by_id=requested_by_id,
+            creator_id=creator_id,
         )

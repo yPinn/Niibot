@@ -9,6 +9,7 @@ import {
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, Spinner } from '@/components/primitives'
 import {
+  Badge,
   Button,
   Card,
   CardAction,
@@ -38,7 +39,7 @@ import {
   levelPillClass,
 } from './monitor/logParsers'
 import { LogRecordRow } from './monitor/LogRecordRow'
-import { EnvBadge, FieldRow, StatusBadge, VersionText } from './monitor/StatusCards'
+import { EnvBadge, FieldRow, GaugeDetails, StatusBadge, VersionText } from './monitor/StatusCards'
 
 // ── Fetch state ───────────────────────────────────────────────────────────────
 
@@ -231,6 +232,9 @@ export default function AdminMonitor() {
         icon: 'fa-solid fa-server',
         online: api.online,
         ready: undefined as boolean | undefined,
+        dbPool: api.db_pool,
+        caches: api.caches,
+        memory: undefined,
         fields: [
           {
             label: 'version',
@@ -258,6 +262,9 @@ export default function AdminMonitor() {
         icon: 'fa-brands fa-twitch',
         online: twitch.online,
         ready: twitch.ready,
+        dbPool: twitch.db_pool,
+        caches: twitch.caches,
+        memory: twitch.memory,
         fields: [
           {
             label: 'version',
@@ -277,6 +284,9 @@ export default function AdminMonitor() {
         icon: 'fa-brands fa-discord',
         online: discord.online,
         ready: discord.ready,
+        dbPool: discord.db_pool,
+        caches: discord.caches,
+        memory: discord.memory,
         fields: [
           {
             label: 'version',
@@ -396,7 +406,7 @@ export default function AdminMonitor() {
         {/* Content */}
         {isStatusMode ? (
           <div className="flex-1 min-h-0 overflow-y-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-section p-page lg:p-page-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-section p-page lg:p-page-lg">
               {services.map(service => (
                 <Card key={service.key}>
                   <CardHeader>
@@ -428,6 +438,13 @@ export default function AdminMonitor() {
                         />
                       </div>
                     ))}
+                    {!initialLoading && service.online && (
+                      <GaugeDetails
+                        dbPool={service.dbPool}
+                        caches={service.caches}
+                        memory={service.memory}
+                      />
+                    )}
                   </CardContent>
                 </Card>
               ))}
@@ -443,12 +460,24 @@ export default function AdminMonitor() {
                     <CardTitle className="text-card-title">前端錯誤</CardTitle>
                   </div>
                   <CardAction>
-                    <button
-                      onClick={() => setSelected('__errors__')}
-                      className="text-label text-muted-foreground hover:text-foreground"
-                    >
-                      查看 →
-                    </button>
+                    {errSummary === null ? (
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    ) : errSummary === 'error' ? (
+                      <Badge className="border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5">
+                        <Icon icon="fa-solid fa-circle-xmark" size="xs" />
+                        offline
+                      </Badge>
+                    ) : errSummary.total === 0 ? (
+                      <Badge className="border-status-online/20 bg-status-online/10 text-status-online gap-1.5">
+                        <Icon icon="fa-solid fa-circle-check" size="xs" />
+                        clean
+                      </Badge>
+                    ) : (
+                      <Badge className="border-status-warning/20 bg-status-warning/10 text-status-warning gap-1.5">
+                        <Icon icon="fa-solid fa-triangle-exclamation" size="xs" />
+                        {errSummary.total} 筆
+                      </Badge>
+                    )}
                   </CardAction>
                 </CardHeader>
                 <CardContent>
@@ -456,18 +485,7 @@ export default function AdminMonitor() {
                     label="近 24 小時"
                     loading={errSummary === null}
                     offline={errSummary === 'error'}
-                    value={
-                      errSummary &&
-                      errSummary !== 'error' && (
-                        <span
-                          className={
-                            errSummary.total === 0 ? 'text-status-online' : 'text-status-warning'
-                          }
-                        >
-                          {errSummary.total} 筆
-                        </span>
-                      )
-                    }
+                    value={errSummary && errSummary !== 'error' ? `${errSummary.total} 筆` : null}
                   />
                   <Separator className="opacity-40" />
                   <FieldRow
@@ -476,6 +494,14 @@ export default function AdminMonitor() {
                     offline={errSummary === 'error'}
                     value={errSummary && errSummary !== 'error' ? `${errSummary.kinds} 種` : null}
                   />
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={() => setSelected('__errors__')}
+                      className="text-label text-muted-foreground hover:text-foreground"
+                    >
+                      查看詳情 →
+                    </button>
+                  </div>
                 </CardContent>
               </Card>
             </div>

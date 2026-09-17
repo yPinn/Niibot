@@ -38,6 +38,7 @@ def _tx_cm() -> MagicMock:
 def _access_row(
     channel_id: str = "12345",
     *,
+    channel_name: str = "somechannel",
     role: str | None = "owner",
     suspended: bool = False,
     caller_status: str | None = "active",
@@ -45,6 +46,7 @@ def _access_row(
 ) -> MagicMock:
     payload = {
         "channel_id": channel_id,
+        "channel_name": channel_name,
         "suspended_at": datetime(2026, 1, 1) if suspended else None,
         "role": role,
         "caller_membership_status": caller_status,
@@ -84,6 +86,8 @@ class TestAssertAccess:
             required_role="manager",
         )
         assert ctx.role == "owner"
+        # carried so API log lines name the tenant instead of only its id
+        assert ctx.channel_name == "somechannel"
 
     async def test_viewer_role_insufficient_for_manager(self):
         user = str(uuid.uuid4())

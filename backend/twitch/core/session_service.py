@@ -105,6 +105,17 @@ class SessionService:
     def live_channels(self) -> frozenset[str]:
         return frozenset(self._active)
 
+    def memory_gauges(self) -> dict[str, int]:
+        """Size of every in-process dict this service holds, for the
+        twitch bot's `/status` endpoint and periodic gauge log."""
+        return {
+            "active_sessions": len(self._active),
+            "creating_sessions": len(self._creating),
+            "buffered_channels": len(self._buffers),
+            "buffered_chatters": sum(len(v) for v in self._buffers.values()),
+            "line_count_channels": len(self._line_counts),
+        }
+
     # ------------------------------------------------------------------
     # Hot path — one call per chat message
     # ------------------------------------------------------------------

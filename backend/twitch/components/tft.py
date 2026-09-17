@@ -233,8 +233,8 @@ class TftComponent(BotComponent):
 
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "tft")
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.debug("usage count failed for tft: %s", e)
 
         LOGGER.debug(f"!tft command - {ctx.chatter.name} query: {user_id or 'threshold'}")
 

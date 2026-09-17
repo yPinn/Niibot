@@ -6,6 +6,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from typing import Any
 
 import asyncpg
 import httpx
@@ -18,11 +19,11 @@ from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
 from core.config import COMPONENTS_DIR
-from core.pg_listener import pg_listen
 from core.session_service import SessionService
 from core.subscription_manager import SubscriptionManager
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
+from shared.pg_listener import pg_listen
 from shared.repositories.analytics import AnalyticsRepository
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import (
@@ -104,6 +105,12 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self._mod_check_pending: set[str] = set()
         # Bot's own login name (set during load_tokens)
         self._bot_login: str = ""
+        # Consecutive EventSub websocket closes without an intervening welcome,
+        # keyed by the socket's token_for (best-effort — see event_websocket_closed).
+        # Used to escalate a stuck reconnect loop from WARNING to ERROR so it
+        # actually reaches the Discord webhook instead of only ever hitting
+        # TwitchIO's own INFO/DEBUG-level reconnect logging.
+        self._eventsub_fail_count: dict[str, int] = {}
 
         init_kwargs: dict = dict(
             client_id=client_id,
@@ -229,11 +236,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             ),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
-            pg_listen(
-                self._database_url,
-                "video_queue_now_playing",
-                self._handle_video_queue_now_playing,
-            ),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):
@@ -617,6 +619,68 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         with bound_log_context(command=command, channel=channel):
             LOGGER.error("Command error: %s", payload.exception)
 
+    async def event_error(self, payload: twitchio.EventErrorPayload) -> None:
+        """Override the default (unlabeled, no-context) listener-error log so
+        non-command EventSub handler crashes carry the same code/channel
+        context as command errors, and so they're classified for log search.
+        TwitchIO already isolates each listener in its own task — one bad
+        handler can't crash the bot or drop the connection either way.
+        """
+        channel = getattr(getattr(payload.original, "broadcaster", None), "name", None)
+        listener_name = getattr(payload.listener, "__name__", repr(payload.listener))
+        with bound_log_context(channel=channel):
+            LOGGER.error(
+                "Unhandled error in event listener '%s': %s",
+                listener_name,
+                payload.error,
+                exc_info=payload.error,
+                extra={"code": "RUNTIME.EVENTSUB_HANDLER_FAILED", "event_class": "occasional"},
+            )
+
+    # EventSub websocket lifecycle — TwitchIO logs reconnects at INFO/DEBUG,
+    # which never reaches ERROR and so never triggers the Discord error
+    # webhook. Track consecutive closes-without-a-welcome per socket and
+    # escalate once a reconnect loop looks stuck, rather than alerting on
+    # every routine Twitch-initiated `session_reconnect`.
+    _EVENTSUB_FAIL_THRESHOLD = 3
+
+    async def event_websocket_closed(self, payload: Any) -> None:
+        token_for = getattr(getattr(payload, "socket", None), "_token_for", None) or "unknown"
+        count = self._eventsub_fail_count.get(token_for, 0) + 1
+        self._eventsub_fail_count[token_for] = count
+        if count < self._EVENTSUB_FAIL_THRESHOLD:
+            LOGGER.warning(
+                "EventSub websocket closed for %s (attempt %d)",
+                token_for,
+                count,
+                extra={"code": "RUNTIME.EVENTSUB_DISCONNECTED", "event_class": "persistent"},
+            )
+        else:
+            LOGGER.error(
+                "EventSub websocket for %s has not recovered after %d consecutive closes",
+                token_for,
+                count,
+                extra={"code": "RUNTIME.EVENTSUB_RECONNECT_FAILED", "event_class": "persistent"},
+            )
+
+    async def event_websocket_welcome(self, payload: Any) -> None:
+        # Find which token_for this welcome belongs to via the client's own
+        # websocket registry rather than the payload (WebsocketWelcome carries
+        # only the session, not the owning socket).
+        token_for = next(
+            (tf for tf, sockets in self._websockets.items() if payload.id in sockets),  # type: ignore[attr-defined]
+            None,
+        )
+        if token_for is None:
+            return
+        prior_failures = self._eventsub_fail_count.pop(token_for, 0)
+        if prior_failures >= self._EVENTSUB_FAIL_THRESHOLD:
+            LOGGER.info(
+                "EventSub websocket for %s recovered after %d failures",
+                token_for,
+                prior_failures,
+            )
+
     # ------------------------------------------------------------------
     # Token management
     # ------------------------------------------------------------------
@@ -758,6 +822,33 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             )
         finally:
             self._mod_check_pending.discard(channel_id)
+
+    def memory_gauges(self) -> dict[str, int]:
+        """Size of every bounded/unbounded in-process dict this bot holds,
+        for `/status` and the periodic gauge log — see shared/gauges.py for
+        the DB pool + cache-side counterparts. Components that hold their own
+        per-channel state report via an optional `memory_gauges()` hook,
+        same convention as `refresh_pool()`.
+        """
+        gauges: dict[str, int] = {
+            "needs_reauth": len(self._needs_reauth),
+            "bot_is_mod": len(self._bot_is_mod),
+            "mod_check_pending": len(self._mod_check_pending),
+            "shared_chat_sessions": len(self._shared_chat_sessions),
+            "subscribed_channels": len(self.subs.subscribed),
+            "subscription_names": self.subs.names_count,
+            "eventsub_fail_count_entries": len(self._eventsub_fail_count),
+            **self.sessions.memory_gauges(),
+        }
+        for comp in self._components.values():
+            hook = getattr(comp, "memory_gauges", None)
+            if callable(hook):
+                try:
+                    prefix = type(comp).__name__
+                    gauges.update({f"{prefix}.{k}": v for k, v in hook().items()})
+                except Exception as e:
+                    LOGGER.debug("memory_gauges failed for %s: %s", type(comp).__name__, e)
+        return gauges
 
     def _refresh_pool_refs(self) -> None:
         """Update all pool references after a reconnect."""

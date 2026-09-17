@@ -42,12 +42,13 @@ api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的
 | `ERROR_WEBHOOK_URL`           | (選用) ERROR 以上 log 推送的 Discord webhook（於 shared.env 設一次，三服務共用）                                  |
 | `FRONTEND_URL`                | OAuth redirect origin、CORS allow-list，以及 Discord Tarot embed 的公開牌圖 base URL（api／twitch／discord 共用） |
 | `GEMINI_API_KEY`              | AI provider（AI Studio key，非 GCP service account）                                                              |
-| `GEMINI_MODEL`                | (選用) Gemini 模型；空值走程式預設                                                                                |
-| `GROQ_API_KEY`                | AI provider（速度優先，Twitch 預設首選）                                                                          |
-| `GROQ_MODEL`                  | (選用) Groq 模型；空值走程式預設                                                                                  |
+| `GEMINI_MODEL`                | Gemini 模型（設定 GEMINI_API_KEY 時必填）                                                                         |
+| `GROQ_API_KEY`                | AI provider（Twitch／Discord 預設首選）                                                                           |
+| `GROQ_MODEL`                  | Groq 模型（設定 GROQ_API_KEY 時必填）                                                                             |
+| `INSTAFIX_HOST`               | (dev) Instagram OG proxy，Docker 由 compose 設定；api/twitch/discord 共用                                         |
 | `LOG_LEVEL`                   | log 等級，預設 INFO（api/twitch/discord 共用）                                                                    |
 | `OPENROUTER_API_KEY`          | AI provider（free-tier 備援）                                                                                     |
-| `OPENROUTER_MODEL`            | (選用) OpenRouter 模型                                                                                            |
+| `OPENROUTER_MODEL`            | OpenRouter 免費模型（設定 OPENROUTER_API_KEY 時必填）                                                             |
 | `OWNER_ID`                    | 擁有者的 Twitch user ID                                                                                           |
 | `TWITCH_CLIENT_ID`            | Twitch App Client ID（dev.twitch.tv/console）                                                                     |
 | `TWITCH_CLIENT_SECRET`        | Twitch App Client Secret                                                                                          |
@@ -65,6 +66,8 @@ App 憑證走 `shared.env`。
 | `JWT_ALGORITHM`          | (選用) 預設 HS256                                                       |
 | `JWT_EXPIRE_DAYS`        | (選用) 預設 7                                                           |
 | `JWT_SECRET_KEY`         | JWT 簽章密鑰                                                            |
+| `NIGHTBOT_CLIENT_ID`     | (選用) Nightbot 指令匯入；未設定時該來源不會出現在後台                  |
+| `NIGHTBOT_CLIENT_SECRET` | (選用) Nightbot 指令匯入用的 client secret                              |
 | `PAYMENT_ENCRYPTION_KEY` | 金流設定加密（Fernet key）                                              |
 | `RELEASES_GITHUB_TOKEN`  | (選用) 讀 private repo release，read:contents scope                     |
 
@@ -91,7 +94,6 @@ App 憑證走 `shared.env`。
 | `DISCORD_GUILD_ID`      | (選用) 指定 guild 同步，較快                                    |
 | `DISCORD_STATUS`        | online / idle / dnd / invisible                                 |
 | `DISCORD_SYNC_COMMANDS` | (選用) 增改 slash command 後設一次 true                         |
-| `INSTAFIX_HOST`         | (dev) Instagram OG proxy，Docker 由 compose 設定                |
 | `INSTAGRAM_SESSION_ID`  | (選用) Instagram 個人頁 embed，約 90 天效期                     |
 | `PORT`                  | (dev) discord-bot health server，預設 8080                      |
 | `SCRAPLING_HOST`        | (選用) Threads sidecar；空值＝停用                              |
@@ -122,6 +124,36 @@ build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後�
 | `VITE_SUPPORT_ECPAY_URL`      | 贊助頁 ECPay 連結                                   |
 
 <!-- env:end -->
+
+## Nightbot 指令匯入
+
+後台 Commands 頁的「匯入」可以把使用者在其他機器人上的自訂指令搬過來。
+
+- **StreamElements** 不需要任何設定，指令與各頻道的啟用狀態都是公開可讀的。
+- **Nightbot** 需要 OAuth。它的未授權讀取會把變數塗銷（`$(user)` 變成 `[user]`）且
+  無法還原，實測約四分之一的指令會受影響，所以這個來源一律走授權流程。
+
+應用程式是**由維運者註冊一次**，所有實況主共用 — 他們只是授權給這個 app，不需要各自
+註冊。與 Twitch 登入用的 `TWITCH_CLIENT_ID` 是同一種模式。
+
+`NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET` 是 env-scoped，**正式區與測試區各註冊
+一個 app**，密鑰互不相通（比照 `JWT_SECRET_KEY`、`PAYMENT_ENCRYPTION_KEY`）。
+
+設定步驟（每個環境各做一次）：
+
+1. 到 <https://nightbot.tv/account/applications> 建立應用程式
+2. Redirect URI 填 `<API_URL>/api/commands/import/nightbot/callback`。必須完全相符，
+   含 scheme 與大小寫；一個 app 可以列多個，本機開發的
+   `http://localhost:8000/...` 可以掛在測試區那個 app 上。
+   `<API_URL>` 是該環境的 GitHub Actions variable `API_URL`（`gh variable list
+   --env staging`），它指向 Cloudflare Pages 網域而非後端主機 —— Pages 會把
+   `/api/*` 代理到後端，所以對外的 API origin 與前端相同
+3. 產生 client secret，把兩個值填進對應環境的
+   `NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET`
+
+Nightbot 沒有審核流程，註冊完即可讓其他使用者授權。要求的 scope 是唯讀的
+`commands commands_default`。取得的 access token 不會存進資料庫：在處理 callback
+的那一個 request 內換取、使用、撤銷，與 `auth_router` 的 collaborator 流程相同。
 
 ## Staging
 

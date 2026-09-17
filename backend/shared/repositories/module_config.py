@@ -15,7 +15,7 @@ from shared.cache import AsyncTTLCache, cached
 
 LOGGER = logging.getLogger(__name__)
 
-_module_config_cache = AsyncTTLCache(maxsize=16, ttl=300)
+_module_config_cache = AsyncTTLCache(maxsize=16, ttl=300, name="module_config")
 
 _ENABLED_PACKS_KEY = "enabled_packs"
 _CACHE_KEY = f"module_config:{_ENABLED_PACKS_KEY}"

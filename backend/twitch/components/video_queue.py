@@ -3,7 +3,7 @@
 Public (all users):
     !vq list        Show current + next 3 queued titles
     !vq remove      Remove caller's own most recent queued entry
-    !np / !影片      Now playing: title, link, remaining time, requester
+    !np / !影片      Now playing: title, link, requester
 
 Moderator+ only:
     !vq <URL>       Add a video to the queue (YouTube or Twitch Clip)
@@ -140,6 +140,7 @@ class VideoQueueComponent(BotComponent):
             youtube_api_key=self._settings.youtube_api_key,
             twitch_client_id=self._settings.twitch_client_id,
             twitch_client_secret=self._settings.twitch_client_secret,
+            instafix_host=self._settings.instafix_host,
             session=self._session,
         )
         title, duration_seconds, view_count = (
@@ -190,13 +191,14 @@ class VideoQueueComponent(BotComponent):
             )
             return
 
-        # Blocklist — video / title keyword / requester
+        # Blocklist — video / creator / title keyword / requester
         blocked = await self.vq_blocklist_repo.check(
             channel_id,
             video_id=resolved.video_id,
             title=title,
             requested_by=user_name,
             requested_by_id=user_id,
+            creator_id=metadata.creator_id,
         )
         if blocked is not None:
             await self._ctx_reply(ctx, "這部影片已被封鎖，無法點播 KappaPride")
@@ -217,6 +219,8 @@ class VideoQueueComponent(BotComponent):
             video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["chat"],
             start_seconds=resolved.start_seconds,
+            creator_id=metadata.creator_id,
+            creator_name=metadata.creator_name,
         )
         if entry is None:
             await self._ctx_reply(ctx, "點播失敗，請重新嘗試 BloodTrail")

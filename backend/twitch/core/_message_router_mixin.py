@@ -19,6 +19,11 @@ from utils.substitution import substitute_variables as _substitute_variables
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
+# How many times a custom command may redirect to another before we give up.
+# Deep chains are almost always a mistake; the guard keeps a bad import from
+# spinning the router.
+_MAX_REDIRECT_DEPTH = 3
+
 
 class _MessageRouterMixin:
     _background_tasks: set[asyncio.Task]
@@ -67,6 +72,9 @@ class _MessageRouterMixin:
                 payload.chatter,
                 payload.broadcaster.name or "",
                 text,
+                # usage_count is the pre-increment value; $(count) reports the
+                # firing we are currently serving, matching Nightbot's behaviour.
+                count=trigger.usage_count + 1,
             )
             try:
                 await payload.broadcaster.send_message(
@@ -92,10 +100,35 @@ class _MessageRouterMixin:
     # ------------------------------------------------------------------
 
     async def _handle_custom_command(self, payload: twitchio.ChatMessage) -> bool:
-        """Handle custom commands: direct text response or redirect to builtin command.
+        """Handle custom commands, following redirects between them.
 
-        Returns True if fully handled (text response sent, skip builtin pipeline),
-        False if message should continue to builtin command pipeline.
+        Returns True if fully handled (skip builtin pipeline), False if the
+        message should continue to the builtin command pipeline.
+
+        A ``custom_response`` beginning with ``!`` is a redirect. Redirects are
+        resolved in a loop so one custom command can call another — the common
+        shape of an imported Nightbot alias. Without the loop a redirect could
+        only ever reach a builtin, because the builtin pipeline runs after this
+        handler and never re-enters it.
+        """
+        visited: set[str] = set()
+        for _ in range(_MAX_REDIRECT_DEPTH + 1):
+            result = await self._dispatch_custom_command(payload, visited)
+            if result is not None:
+                return result
+        LOGGER.warning(
+            f"[CMD] Redirect chain exceeded {_MAX_REDIRECT_DEPTH} hops, dropping: {visited}"
+        )
+        return True
+
+    async def _dispatch_custom_command(
+        self, payload: twitchio.ChatMessage, visited: set[str]
+    ) -> bool | None:
+        """Run one step of custom command handling.
+
+        Returns True when handled, False when the message belongs to the builtin
+        pipeline, and None when a redirect rewrote ``payload.text`` and the
+        caller should dispatch again.
         Always-on: usage_count incremented unconditionally; session analytics recorded separately.
         """
         text = payload.text
@@ -108,6 +141,11 @@ class _MessageRouterMixin:
 
         cmd_name = parts[0].lower()
         query = parts[1] if len(parts) > 1 else ""
+
+        if cmd_name in visited:
+            LOGGER.warning(f"[CMD] Redirect loop on !{cmd_name}, dropping: {visited}")
+            return True
+        visited.add(cmd_name)
 
         channel_id = payload.broadcaster.id
 
@@ -149,10 +187,14 @@ class _MessageRouterMixin:
             redirect = response[1:].replace("$(query)", query).strip()
             payload.text = f"!{redirect}"
             LOGGER.info(f"[CMD] !{cmd_name} -> !{redirect}")
-            return False
+            return None
         else:
             response = _substitute_variables(
-                response, payload.chatter, payload.broadcaster.name or "", query
+                response,
+                payload.chatter,
+                payload.broadcaster.name or "",
+                query,
+                count=config.usage_count + 1,
             )
             try:
                 await payload.broadcaster.send_message(

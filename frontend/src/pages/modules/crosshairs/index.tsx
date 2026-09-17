@@ -14,6 +14,7 @@ import {
   getPublicCrosshairs,
   updateCrosshair,
 } from '@/api/crosshairs'
+import { CrosshairCardSkeleton } from '@/components/crosshairs/CrosshairCardSkeleton'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
@@ -32,7 +33,6 @@ import {
   SheetHeader,
   SheetSection,
   SheetTitle,
-  Skeleton,
   Tabs,
   TabsContent,
   TabsList,
@@ -259,7 +259,7 @@ export default function CrosshairModule() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>我的準星</CardTitle>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-element">
                   <SortDropdown
                     value={mineSort}
                     onChange={setMineSort}
@@ -280,7 +280,7 @@ export default function CrosshairModule() {
                 {loadingMine ? (
                   <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                     {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="aspect-square rounded-xl" />
+                      <CrosshairCardSkeleton key={i} />
                     ))}
                   </div>
                 ) : crosshairs.length === 0 ? (
@@ -341,7 +341,7 @@ export default function CrosshairModule() {
                     return (
                       <div className="grid grid-cols-1 gap-section sm:grid-cols-3 lg:grid-cols-5">
                         {Array.from({ length: 8 }).map((_, i) => (
-                          <Skeleton key={i} className="aspect-square rounded-xl" />
+                          <CrosshairCardSkeleton key={i} />
                         ))}
                       </div>
                     )
@@ -429,7 +429,7 @@ export default function CrosshairModule() {
             <Textarea
               placeholder="貼上準星代碼..."
               value={form.code}
-              className="font-mono text-sm"
+              className="font-mono text-sub"
               rows={3}
               onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
             />
