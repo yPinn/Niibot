@@ -28,12 +28,11 @@ const KIND_LABEL: Record<BlocklistKind, string> = {
   user: '點播者',
 }
 
-// 'creator' is defined but not offered until the creator-id plumbing lands.
-const ADDABLE_KINDS: BlocklistKind[] = ['video', 'keyword', 'user']
+const ADDABLE_KINDS: BlocklistKind[] = ['video', 'creator', 'keyword', 'user']
 
 const KIND_PLACEHOLDER: Record<BlocklistKind, string> = {
   video: '影片 ID 或連結',
-  creator: '創作者 ID',
+  creator: '創作者 ID（YouTube 頻道 ID／Bilibili UID／Twitch 頻道名／IG 帳號）',
   keyword: '標題關鍵字',
   user: 'Twitch 使用者名稱',
 }

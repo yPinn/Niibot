@@ -1,7 +1,7 @@
 import { API_ENDPOINTS, apiFetch } from './config'
 import { apiJson, parseApiError } from './errors'
 
-export type VideoType = 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+export type VideoType = 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
 
 export interface VideoQueueEntry {
   id: number
@@ -34,11 +34,14 @@ export interface VideoQueueHistoryEntry {
   title: string | null
   duration_seconds: number | null
   requested_by: string
+  requested_by_id: string | null
   source: string
   video_type: string
   status: 'done' | 'skipped'
   started_at: string | null
   ended_at: string | null
+  creator_id: string | null
+  creator_name: string | null
 }
 
 export interface VideoQueueHistoryPage {

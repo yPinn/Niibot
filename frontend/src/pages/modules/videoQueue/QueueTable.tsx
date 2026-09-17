@@ -35,6 +35,7 @@ const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
 const PLATFORM_BADGE_CONFIG: Record<string, { label: string; className: string }> = {
   twitch_clip: { label: 'Clip', className: 'text-status-special border-status-special/60' },
   bilibili: { label: 'Bilibili', className: 'text-status-info border-status-info/60' },
+  instagram_reel: { label: 'Reel', className: 'text-status-follow border-status-follow/60' },
 }
 
 export function PlatformBadge({ videoType }: { videoType: string }) {

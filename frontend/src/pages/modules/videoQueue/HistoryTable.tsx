@@ -1,10 +1,14 @@
-import type { VideoQueueHistoryEntry } from '@/api/videoQueue'
+import type { BlocklistKind, VideoQueueHistoryEntry } from '@/api/videoQueue'
 import { Icon } from '@/components/primitives'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
 import { TableShell } from '@/components/TableShell'
 import {
   Badge,
   Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   TableBody,
   TableCell,
   TableHead,
@@ -25,7 +29,7 @@ export function HistoryTable({
 }: {
   entries: VideoQueueHistoryEntry[]
   onRequeue: (entry: VideoQueueHistoryEntry) => void
-  onBlock: (entry: VideoQueueHistoryEntry) => void
+  onBlock: (entry: VideoQueueHistoryEntry, kind: BlocklistKind) => void
 }) {
   return (
     <TableShell>
@@ -93,19 +97,32 @@ export function HistoryTable({
                   </TooltipTrigger>
                   <TooltipContent side="left">重新點播</TooltipContent>
                 </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="封鎖"
-                      onClick={() => onBlock(entry)}
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label="封鎖">
+                          <Icon icon="fa-solid fa-ban" className="size-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">加入封鎖清單</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => onBlock(entry, 'video')}>
+                      封鎖此影片
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!entry.creator_id}
+                      onClick={() => onBlock(entry, 'creator')}
                     >
-                      <Icon icon="fa-solid fa-ban" className="size-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="left">加入封鎖清單</TooltipContent>
-                </Tooltip>
+                      封鎖此頻道
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => onBlock(entry, 'user')}>
+                      封鎖此人
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </TableCell>
             </TableRow>
           ))

@@ -11,13 +11,16 @@ import type { MountContext, PlayerStrategy } from './types'
 // immediately instead of degrading to a lesser embed — the queue must never
 // stall (see docs/architecture/video-queue-platforms.md).
 //
-// Reels are always vertical (9:16), so they get the same blurred-side-column
-// treatment as YouTube Shorts (current.is_vertical). Unlike youtube.ts's side
-// panels — full separate YT.Player instances with an all-ready barrier and
-// state-change sync — a <video> element has no "player object" abstraction to
-// juggle, so the side panels here are just two more <video>s pointing at the
-// same resolved URL, seeked/played off their own loadedmetadata and nudged
-// back in sync (>0.3s drift) from the center video's progress tick.
+// Most Reels are 9:16, but not all — a landscape source video keeps its own
+// aspect ratio when posted as a Reel. current.is_vertical reflects that
+// per-entry detection (backend: instafix_client._extract_is_vertical), so
+// only genuinely vertical Reels get the blurred-side-column treatment,
+// same as YouTube Shorts. Unlike youtube.ts's side panels — full separate
+// YT.Player instances with an all-ready barrier and state-change sync — a
+// <video> element has no "player object" abstraction to juggle, so the side
+// panels here are just two more <video>s pointing at the same resolved URL,
+// seeked/played off their own loadedmetadata and nudged back in sync
+// (>0.3s drift) from the center video's progress tick.
 
 const SIDE_DRIFT_SECONDS = 0.3
 

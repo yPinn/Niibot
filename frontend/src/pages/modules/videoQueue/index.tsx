@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   addVideoToQueue,
   advanceVideoQueue,
+  type BlocklistKind,
   clearVideoQueue,
   getVideoQueueHistory,
   getVideoQueueSettings,
@@ -130,9 +131,22 @@ export default function VideoQueue() {
     }
   }
 
-  const handleBlockFromHistory = async (entry: VideoQueueHistoryEntry) => {
+  const handleBlockFromHistory = async (entry: VideoQueueHistoryEntry, kind: BlocklistKind) => {
+    let value: string | null
+    let label: string | null
+    if (kind === 'creator') {
+      value = entry.creator_id
+      label = entry.creator_name ?? entry.creator_id
+    } else if (kind === 'user') {
+      value = entry.requested_by_id ?? entry.requested_by
+      label = entry.requested_by
+    } else {
+      value = entry.video_id
+      label = entry.title ?? entry.video_id
+    }
+    if (!value) return
     try {
-      await blocklistRef.current?.addBlock('video', entry.video_id, entry.title ?? entry.video_id)
+      await blocklistRef.current?.addBlock(kind, value, label)
       toast.success('已加入封鎖清單')
     } catch (e) {
       toastApiError(e, '加入封鎖清單失敗')

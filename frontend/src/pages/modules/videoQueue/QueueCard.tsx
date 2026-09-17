@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { VideoQueueEntry, VideoQueueHistoryEntry } from '@/api/videoQueue'
+import type { BlocklistKind, VideoQueueEntry, VideoQueueHistoryEntry } from '@/api/videoQueue'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { EmptyState, Icon, Spinner } from '@/components/primitives'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
@@ -108,7 +108,7 @@ export function QueueCard({
   onHistoryPrev: () => void
   onHistoryNext: () => void
   onRequeue: (entry: VideoQueueHistoryEntry) => void
-  onBlock: (entry: VideoQueueHistoryEntry) => void
+  onBlock: (entry: VideoQueueHistoryEntry, kind: BlocklistKind) => void
 }) {
   const [confirmClear, setConfirmClear] = useState(false)
   const [queuePage, setQueuePage] = useState(0)
@@ -167,7 +167,7 @@ export function QueueCard({
                 />
                 <Input
                   aria-label="影片連結"
-                  placeholder="貼上影片連結（YouTube／Twitch／Bilibili）"
+                  placeholder="貼上影片連結（YouTube／Twitch／Bilibili／Instagram）"
                   value={addUrlInput}
                   onChange={e => onAddUrlChange(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && onAdd()}
