@@ -18,6 +18,7 @@ from shared.repositories.video_queue import (
     format_now_playing,
 )
 from shared.video_sources import (
+    TwitchMediaInfo,
     YouTubeInfo,
     _app_token_cache,
     _get_twitch_app_token,
@@ -375,6 +376,23 @@ class TestAdd:
         assert result.video_id == "dQw4w9WgXcQ"
         assert result.status == "queued"
 
+    async def test_passes_creator_identity_through_to_the_insert(self):
+        pool, conn = _make_pool(fetchrow=_ENTRY_ROW)
+        repo = VideoQueueRepository(pool)
+
+        await repo.add(
+            "ch1",
+            "dQw4w9WgXcQ",
+            "user1",
+            "chat",
+            creator_id="UC123",
+            creator_name="Some Channel",
+        )
+
+        args = conn.fetchrow.call_args[0]
+        assert "UC123" in args
+        assert "Some Channel" in args
+
 
 def _counts(duplicate: int = 0, queue: int = 0, user: int = 0) -> dict:
     """Row shape returned by add_if_within_limits' single combined counts query."""
@@ -591,19 +609,91 @@ class TestBlocklistMatch:
         entries = [_block("video", "ABCdef")]
         assert (
             _blocklist_match(
-                entries, video_id="abcDEF", title=None, requested_by=None, requested_by_id=None
+                entries,
+                video_id="abcDEF",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
             )
             is entries[0]
+        )
+
+    def test_creator_kind_matches_creator_id_not_video_id(self):
+        # The old stub aliased 'creator' to video_id — this is the actual
+        # fix: a creator rule must NOT match on video_id, and must match on
+        # creator_id regardless of which video that creator made.
+        entries = [_block("creator", "UC123")]
+        assert (
+            _blocklist_match(
+                entries,
+                video_id="totally-unrelated-video-id",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id="UC123",
+            )
+            is entries[0]
+        )
+        assert (
+            _blocklist_match(
+                entries,
+                video_id="UC123",  # same string, but as video_id — must not match
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
+            )
+            is None
+        )
+
+    def test_creator_kind_case_insensitive(self):
+        entries = [_block("creator", "SomeChannel")]
+        assert _blocklist_match(
+            entries,
+            video_id="v",
+            title=None,
+            requested_by=None,
+            requested_by_id=None,
+            creator_id="somechannel",
+        )
+
+    def test_creator_kind_no_match_when_creator_id_missing(self):
+        # A submission whose metadata fetch couldn't resolve a creator_id
+        # (transient failure, or a platform this isn't captured for) must
+        # never trip a creator rule — fail open, same as every other
+        # best-effort metadata field.
+        entries = [_block("creator", "UC123")]
+        assert (
+            _blocklist_match(
+                entries,
+                video_id="v",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
+            )
+            is None
         )
 
     def test_keyword_is_a_case_insensitive_substring_of_the_title(self):
         entries = [_block("keyword", "LoFi")]
         assert _blocklist_match(
-            entries, video_id="v", title="Chill lofi beats", requested_by=None, requested_by_id=None
+            entries,
+            video_id="v",
+            title="Chill lofi beats",
+            requested_by=None,
+            requested_by_id=None,
+            creator_id=None,
         )
         assert (
             _blocklist_match(
-                entries, video_id="v", title="jazz only", requested_by=None, requested_by_id=None
+                entries,
+                video_id="v",
+                title="jazz only",
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
             )
             is None
         )
@@ -611,16 +701,33 @@ class TestBlocklistMatch:
     def test_user_kind_matches_login_or_id(self):
         by_login = [_block("user", "SpamGuy")]
         assert _blocklist_match(
-            by_login, video_id="v", title=None, requested_by="spamguy", requested_by_id="999"
+            by_login,
+            video_id="v",
+            title=None,
+            requested_by="spamguy",
+            requested_by_id="999",
+            creator_id=None,
         )
         by_id = [_block("user", "12345")]
         assert _blocklist_match(
-            by_id, video_id="v", title=None, requested_by="anyone", requested_by_id="12345"
+            by_id,
+            video_id="v",
+            title=None,
+            requested_by="anyone",
+            requested_by_id="12345",
+            creator_id=None,
         )
 
     def test_no_rules_no_match(self):
         assert (
-            _blocklist_match([], video_id="v", title="t", requested_by="u", requested_by_id=None)
+            _blocklist_match(
+                [],
+                video_id="v",
+                title="t",
+                requested_by="u",
+                requested_by_id=None,
+                creator_id=None,
+            )
             is None
         )
 
@@ -1432,19 +1539,23 @@ class TestFetchTwitchVodInfo:
                     "duration": "3h20m5s",
                     "view_count": 42,
                     "thumbnail_url": "https://x/%{width}x%{height}/thumb.jpg",
+                    "user_id": "999",
+                    "user_name": "SomeBroadcaster",
                 }
             ]
         )
-        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (
-            "Stream",
-            12005,
-            42,
-            "https://x/320x180/thumb.jpg",
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == TwitchMediaInfo(
+            title="Stream",
+            duration_seconds=12005,
+            view_count=42,
+            thumbnail_url="https://x/320x180/thumb.jpg",
+            creator_id="999",
+            creator_name="SomeBroadcaster",
         )
 
     async def test_empty_data_returns_none(self):
         session = await self._session([])
-        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == (None, None, None, None)
+        assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == TwitchMediaInfo()
 
     async def test_missing_creds_returns_none(self):
-        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == (None, None, None, None)
+        assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == TwitchMediaInfo()

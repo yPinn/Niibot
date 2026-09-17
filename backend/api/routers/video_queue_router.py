@@ -184,11 +184,14 @@ class VideoHistoryEntry(BaseModel):
     title: str | None
     duration_seconds: int | None
     requested_by: str
+    requested_by_id: str | None
     source: str
     video_type: str
     status: str  # 'done' | 'skipped'
     started_at: datetime | None
     ended_at: datetime | None
+    creator_id: str | None
+    creator_name: str | None
 
 
 class VideoQueueHistoryResponse(BaseModel):
@@ -687,11 +690,14 @@ async def get_history(
                     title=e.title,
                     duration_seconds=e.duration_seconds,
                     requested_by=e.requested_by,
+                    requested_by_id=e.requested_by_id,
                     source=e.source,
                     video_type=e.video_type,
                     status=e.status,
                     started_at=e.started_at,
                     ended_at=e.ended_at,
+                    creator_id=e.creator_id,
+                    creator_name=e.creator_name,
                 )
                 for e in entries
             ],
@@ -907,7 +913,10 @@ async def add_video_entry(
                 )
 
         blocked = await VideoQueueBlocklistRepository(pool).check(
-            channel_id, video_id=resolved.video_id, title=metadata.title
+            channel_id,
+            video_id=resolved.video_id,
+            title=metadata.title,
+            creator_id=metadata.creator_id,
         )
         if blocked is not None:
             raise VideoBlockedError(user_message=_blocked_message(blocked))
@@ -929,6 +938,8 @@ async def add_video_entry(
             priority=SOURCE_PRIORITY["dashboard"],
             start_seconds=resolved.start_seconds,
             thumbnail_url=metadata.thumbnail_url,
+            creator_id=metadata.creator_id,
+            creator_name=metadata.creator_name,
         )
         LOGGER.info(
             "Channel %s added %s %s from dashboard",

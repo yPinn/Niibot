@@ -13,7 +13,9 @@ import pytest
 
 from shared.instafix_client import InstagramReelInfo
 from shared.video_sources import (
+    BilibiliInfo,
     ResolvedVideo,
+    TwitchMediaInfo,
     VideoMetadata,
     YouTubeInfo,
     build_watch_url,
@@ -161,7 +163,9 @@ class TestFetchVideoMetadata:
         clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("Clip", 30, 200, None)),
+            new=AsyncMock(
+                return_value=TwitchMediaInfo(title="Clip", duration_seconds=30, view_count=200)
+            ),
         ):
             metadata = await fetch_video_metadata(
                 clip, twitch_client_id="c", twitch_client_secret="s"
@@ -173,7 +177,16 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="twitch_clip", video_id="SomeClipSlug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("Clip Title", 30, 200, "https://clips-media/x.jpg")),
+            new=AsyncMock(
+                return_value=TwitchMediaInfo(
+                    title="Clip Title",
+                    duration_seconds=30,
+                    view_count=200,
+                    thumbnail_url="https://clips-media/x.jpg",
+                    creator_id="b123",
+                    creator_name="SomeBroadcaster",
+                )
+            ),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="cid", twitch_client_secret="secret"
@@ -185,6 +198,8 @@ class TestFetchVideoMetadata:
             view_count=200,
             is_vertical=False,
             thumbnail_url="https://clips-media/x.jpg",
+            creator_id="b123",
+            creator_name="SomeBroadcaster",
         )
 
     async def test_twitch_vod_caps_the_play_window_from_the_offset(self):
@@ -193,7 +208,12 @@ class TestFetchVideoMetadata:
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
             new=AsyncMock(
-                return_value=("VOD Title", 7200, 5000, "https://static-cdn.jtvnw.net/t.jpg")
+                return_value=TwitchMediaInfo(
+                    title="VOD Title",
+                    duration_seconds=7200,
+                    view_count=5000,
+                    thumbnail_url="https://static-cdn.jtvnw.net/t.jpg",
+                )
             ),
         ):
             metadata = await fetch_video_metadata(
@@ -211,7 +231,9 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7100)
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=("VOD", 7200, 1, None)),
+            new=AsyncMock(
+                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
+            ),
         ):
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="c", twitch_client_secret="s"
@@ -222,7 +244,7 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=(None, None, None, None)),
+            new=AsyncMock(return_value=TwitchMediaInfo()),
         ):
             metadata = await fetch_video_metadata(
                 resolved, twitch_client_id="c", twitch_client_secret="s"
@@ -233,7 +255,17 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD")
         with patch(
             "shared.video_sources.fetch_bilibili_info",
-            new=AsyncMock(return_value=("BV Title", 90, 5000, True, "https://i0.hdslb.com/x.jpg")),
+            new=AsyncMock(
+                return_value=BilibiliInfo(
+                    title="BV Title",
+                    duration_seconds=90,
+                    view_count=5000,
+                    is_vertical=True,
+                    thumbnail_url="https://i0.hdslb.com/x.jpg",
+                    creator_id="12345",
+                    creator_name="SomeUploader",
+                )
+            ),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(resolved)
         mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None)
@@ -244,6 +276,8 @@ class TestFetchVideoMetadata:
             is_vertical=True,
             metadata_best_effort=True,
             thumbnail_url="https://i0.hdslb.com/x.jpg",
+            creator_id="12345",
+            creator_name="SomeUploader",
         )
 
     async def test_bilibili_flags_best_effort_even_when_the_endpoint_fails(self):
@@ -252,7 +286,7 @@ class TestFetchVideoMetadata:
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1FjxHzGEkQ")
         with patch(
             "shared.video_sources.fetch_bilibili_info",
-            new=AsyncMock(return_value=(None, None, None, False, None)),
+            new=AsyncMock(return_value=BilibiliInfo()),
         ):
             metadata = await fetch_video_metadata(resolved)
         assert metadata.metadata_best_effort is True
@@ -280,9 +314,9 @@ class TestFetchVideoMetadata:
             title="Alice",
             duration_seconds=16,
             view_count=None,
-            # Every Reel is 9:16 — always True, unlike YouTube where only
-            # Shorts are vertical — so the overlay gives it the same
-            # blurred-side-column treatment.
+            # InstagramReelInfo.is_vertical defaults True — this test's
+            # fixture doesn't set it explicitly (see test_instafix_client.py
+            # for the OG-dimension detection itself).
             is_vertical=True,
             metadata_best_effort=True,
             thumbnail_url="https://cdn.example/thumb.jpg",
@@ -321,7 +355,9 @@ class TestFetchVideoMetadata:
         clip = ResolvedVideo(video_type="twitch_clip", video_id="Slug")
         with patch(
             "shared.video_sources.fetch_twitch_clip_info",
-            new=AsyncMock(return_value=("C", 30, 200, None)),
+            new=AsyncMock(
+                return_value=TwitchMediaInfo(title="C", duration_seconds=30, view_count=200)
+            ),
         ):
             meta = await fetch_video_metadata(clip, twitch_client_id="c", twitch_client_secret="s")
         assert meta.metadata_best_effort is False

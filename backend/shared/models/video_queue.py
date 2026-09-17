@@ -29,6 +29,8 @@ class VideoQueueEntry:
     started_at: datetime | None = None
     ended_at: datetime | None = None  # set when status moves to done/skipped
     requested_by_id: str | None = None  # Twitch user ID; None for legacy rows
+    creator_id: str | None = None  # platform-native id of who made the content
+    creator_name: str | None = None  # display label; not matched against, cosmetic only
 
 
 @dataclass

@@ -125,6 +125,35 @@ class TestResolveInstagramUrl:
 
 
 # ---------------------------------------------------------------------------
+# _extract_is_vertical — pure
+# ---------------------------------------------------------------------------
+
+
+def test_is_vertical_true_when_taller_than_wide():
+    og = {"video:width": "720", "video:height": "1280"}
+    assert ic._extract_is_vertical(og) is True
+
+
+def test_is_vertical_false_when_wider_than_tall():
+    og = {"video:width": "1280", "video:height": "720"}
+    assert ic._extract_is_vertical(og) is False
+
+
+def test_is_vertical_defaults_true_when_dimensions_missing():
+    assert ic._extract_is_vertical({}) is True
+
+
+def test_is_vertical_defaults_true_when_dimensions_unparseable():
+    og = {"video:width": "unknown", "video:height": "1280"}
+    assert ic._extract_is_vertical(og) is True
+
+
+def test_is_vertical_defaults_true_when_dimensions_zero():
+    og = {"video:width": "0", "video:height": "0"}
+    assert ic._extract_is_vertical(og) is True
+
+
+# ---------------------------------------------------------------------------
 # _extract_display_title — pure
 # ---------------------------------------------------------------------------
 
@@ -242,6 +271,20 @@ class TestFetchInstagramReelInfo:
         assert info.title == "Alice"
         assert info.thumbnail_url == "https://cdn.example/thumb.jpg"
         assert info.duration_seconds == 16
+        # No video:width/height in _og_html — defaults to True.
+        assert info.is_vertical is True
+
+    async def test_landscape_reel_detected_from_video_dimensions(self):
+        html = (
+            "<html><head>"
+            '<meta property="og:title" content="@alice">'
+            '<meta property="og:video:width" content="1280">'
+            '<meta property="og:video:height" content="720">'
+            "</head></html>"
+        )
+        session = _FakeSession({"/reel/Cabc123/": lambda: _FakeResp(text_body=html)})
+        info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
+        assert info.is_vertical is False
 
     async def test_twitter_title_preferred_when_no_og_suffix(self):
         html = '<html><head><meta name="twitter:title" content="@alice"></head></html>'

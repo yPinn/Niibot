@@ -636,11 +636,16 @@ class TestBlocklistEndpoints:
         )
         assert r.status_code == 422
 
-    def test_add_rejects_creator_kind_for_now(self):
-        r = _make_auth_client().post(
-            "/api/video-queue/blocklist", json={"kind": "creator", "value": "x"}
-        )
-        assert r.status_code == 422
+    def test_add_creates_creator_entry(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.add = AsyncMock(
+                return_value=_blocklist_entry(kind="creator", value="UC123")
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist", json={"kind": "creator", "value": "UC123"}
+            )
+        assert r.status_code == 201
+        assert bl.return_value.add.await_args.args == (CHANNEL_ID, "creator", "UC123")
 
     def test_delete_missing_returns_404(self):
         with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:

@@ -122,6 +122,27 @@ def _parse_og(html: str) -> dict[str, str]:
     return parser.og
 
 
+def _extract_is_vertical(og: dict[str, str]) -> bool:
+    """Best-effort orientation from the standard ``og:video:width``/``height``
+    pair, same idea as Bilibili's dimension check in ``video_sources.py``.
+
+    Most Reels are 9:16, but not all — a landscape source video posted as a
+    Reel keeps its own aspect ratio, and the overlay's blurred-side-column
+    treatment should only apply to genuinely vertical content. Defaults to
+    ``True`` (the previous unconditional assumption) when the tags are
+    missing or unparseable, since that's still the overwhelmingly common
+    case and matches prior behaviour for reels this can't read.
+    """
+    try:
+        width = float(og.get("video:width", ""))
+        height = float(og.get("video:height", ""))
+    except ValueError:
+        return True
+    if width <= 0 or height <= 0:
+        return True
+    return height > width
+
+
 def _extract_title(og: dict[str, str]) -> str | None:
     raw = og.get("title")
     if not raw:
@@ -205,11 +226,23 @@ class InstagramReelInfo:
     at play time — in which case ``duration_seconds`` is backfilled
     client-side from the resolved `<video>` element instead
     (`reportVideoMetadata`, same mechanism Twitch Clip already uses).
+
+    ``is_vertical`` defaults to True when the OG page's dimensions are
+    missing or unreadable — see ``_extract_is_vertical``.
+
+    ``creator_id``/``creator_name`` are both the same OG handle/display-name
+    string (see ``_extract_title``) — Instagram exposes no stable numeric id
+    to this integration, unlike YouTube's channelId or Bilibili's owner.mid.
+    A display name can change or collide, so a ``creator`` blocklist rule
+    against a Reel is only as reliable as that string was at fetch time.
     """
 
     title: str | None
     thumbnail_url: str | None
     duration_seconds: int | None
+    is_vertical: bool = True
+    creator_id: str | None = None
+    creator_name: str | None = None
 
 
 async def _resolve_instafix_redirect(
@@ -303,9 +336,15 @@ async def fetch_instagram_reel_info(
             ),
         )
         duration_seconds = _extract_duration_seconds(video_cdn_url) if video_cdn_url else None
+        handle = _extract_title(og)
 
         return InstagramReelInfo(
-            title=title, thumbnail_url=thumbnail_url, duration_seconds=duration_seconds
+            title=title,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+            is_vertical=_extract_is_vertical(og),
+            creator_id=handle,
+            creator_name=handle,
         )
     finally:
         if _own_session:

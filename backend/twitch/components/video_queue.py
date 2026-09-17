@@ -191,13 +191,14 @@ class VideoQueueComponent(BotComponent):
             )
             return
 
-        # Blocklist — video / title keyword / requester
+        # Blocklist — video / creator / title keyword / requester
         blocked = await self.vq_blocklist_repo.check(
             channel_id,
             video_id=resolved.video_id,
             title=title,
             requested_by=user_name,
             requested_by_id=user_id,
+            creator_id=metadata.creator_id,
         )
         if blocked is not None:
             await self._ctx_reply(ctx, "這部影片已被封鎖，無法點播 KappaPride")
@@ -218,6 +219,8 @@ class VideoQueueComponent(BotComponent):
             video_type=resolved.video_type,
             priority=SOURCE_PRIORITY["chat"],
             start_seconds=resolved.start_seconds,
+            creator_id=metadata.creator_id,
+            creator_name=metadata.creator_name,
         )
         if entry is None:
             await self._ctx_reply(ctx, "點播失敗，請重新嘗試 BloodTrail")

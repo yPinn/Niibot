@@ -114,10 +114,14 @@ and consolidating the two into one shared client is a tracked follow-up
   regardless of `best_effort`, so no gating-logic changes were needed to
   pick this up. When the redirect does fail, `duration_seconds` falls back
   to the pre-existing client-side backfill below.
-- `is_vertical = True` **unconditionally** — every Reel is 9:16, unlike
-  YouTube where only Shorts are — so it gets the same blurred-side-column
-  treatment as a YouTube Short (`current.is_vertical` in
-  `VideoQueueOverlay.tsx`). Unlike `players/youtube.ts`'s `createSidePlayer`
+- `is_vertical` is detected from the OG page's `og:video:width`/`height`
+  (`shared.instafix_client._extract_is_vertical`), defaulting to `True`
+  when those tags are missing or unreadable. Most Reels are 9:16, but a
+  landscape source video keeps its own aspect ratio when posted as a Reel,
+  so only genuinely vertical entries get the blurred-side-column treatment
+  (`current.is_vertical` in `VideoQueueOverlay.tsx`) — a landscape Reel
+  plays plain, letterboxed like any other landscape source. Unlike
+  `players/youtube.ts`'s `createSidePlayer`
   (full separate `YT.Player` instances with an all-ready barrier and
   state-change sync), `players/instagramReel.ts`'s side panels are just two
   more `<video>` elements pointing at the same resolved mp4 URL — no
