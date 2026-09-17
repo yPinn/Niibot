@@ -27,6 +27,7 @@ from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
 from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
+from shared.instafix_client import fetch_instagram_reel_source
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
     VideoQueueEntry,
@@ -57,6 +58,7 @@ router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 _advance_limiter = RateLimiter(max_calls=30, period=60.0)
 _stream_limiter = RateLimiter(max_calls=30, period=60.0)
 _clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
+_reel_source_limiter = RateLimiter(max_calls=30, period=60.0)
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 
@@ -111,7 +113,7 @@ class VideoEntryResponse(BaseModel):
     start_seconds: int  # twitch_vod seek offset; 0 otherwise
     requested_by: str
     source: str
-    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
@@ -499,6 +501,46 @@ async def get_clip_source(
         raise HTTPException(status_code=500, detail="Failed to resolve clip source") from None
 
 
+class ReelSourceResponse(BaseModel):
+    url: str
+
+
+@router.get("/public/{username}/entries/{entry_id}/reel-source", response_model=ReelSourceResponse)
+async def get_reel_source(
+    request: Request,
+    username: str,
+    entry_id: int,
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    app_settings: Settings = Depends(get_settings),
+) -> ReelSourceResponse:
+    """Unauthenticated — resolve a queued Instagram Reel to a directly playable
+    CDN MP4 URL for the OBS overlay's `<video>` (Instagram has no embeddable
+    fallback surface, unlike Twitch's clips.twitch.tv/embed). Scoped to an
+    entry that is actually in this channel's queue; 404s on any failure so
+    the overlay skips to the next entry instead of stalling.
+
+    See shared.instafix_client.fetch_instagram_reel_source — this is an
+    unofficial, best-effort dependency on the self-hosted InstaFix proxy.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _reel_source_limiter.require(client_host)
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        entry = await VideoQueueRepository(pool).get_entry_for_channel(entry_id, channel_id)
+        if entry is None or entry.video_type != "instagram_reel":
+            raise HTTPException(status_code=404, detail="Reel entry not found")
+        url = await fetch_instagram_reel_source(entry.video_id, app_settings.instafix_host)
+        if not url:
+            raise HTTPException(status_code=404, detail="Reel source unavailable")
+        return ReelSourceResponse(url=url)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to resolve instagram reel source")
+        raise HTTPException(status_code=500, detail="Failed to resolve reel source") from None
+
+
 @router.delete("/skip", status_code=200, response_model=PublicVideoQueueState)
 async def skip_current(
     _: None = Depends(require_activated),
@@ -838,6 +880,7 @@ async def add_video_entry(
             youtube_api_key=app_settings.youtube_api_key,
             twitch_client_id=app_settings.client_id,
             twitch_client_secret=app_settings.client_secret,
+            instafix_host=app_settings.instafix_host,
         )
 
         # ...but playability is not a policy choice — an un-embeddable / age-restricted

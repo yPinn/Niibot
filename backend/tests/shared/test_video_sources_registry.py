@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from shared.instafix_client import InstagramReelInfo
 from shared.video_sources import (
     ResolvedVideo,
     VideoMetadata,
@@ -81,6 +82,17 @@ class TestResolveVideoUrl:
         assert resolved == ResolvedVideo(
             video_type="bilibili", video_id="BV1xx411c7mD", is_vertical=False
         )
+
+    async def test_instagram_reel_url(self):
+        resolved = await resolve_video_url("https://www.instagram.com/reel/Cabc123/")
+        assert resolved == ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+
+    async def test_instagram_share_link_resolves_via_redirect(self):
+        with patch(
+            "shared.video_sources.resolve_instagram_url", new=AsyncMock(return_value="Cabc123")
+        ):
+            resolved = await resolve_video_url("https://www.instagram.com/share/xyz")
+        assert resolved == ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
 
     async def test_unrecognized_url_returns_none(self):
         resolved = await resolve_video_url("https://example.com/not-a-video")
@@ -245,6 +257,52 @@ class TestFetchVideoMetadata:
             metadata = await fetch_video_metadata(resolved)
         assert metadata.metadata_best_effort is True
         assert metadata.duration_seconds is None
+
+    async def test_instagram_reel_delegates_and_preserves_shape(self):
+        resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+        with patch(
+            "shared.video_sources.fetch_instagram_reel_info",
+            new=AsyncMock(
+                return_value=InstagramReelInfo(
+                    title="Alice",
+                    thumbnail_url="https://cdn.example/thumb.jpg",
+                    duration_seconds=None,
+                )
+            ),
+        ) as mock_fetch:
+            metadata = await fetch_video_metadata(resolved, instafix_host="instafix:3000")
+        mock_fetch.assert_awaited_once_with("Cabc123", "instafix:3000", None)
+        assert metadata == VideoMetadata(
+            title="Alice",
+            duration_seconds=None,
+            view_count=None,
+            # Every Reel is 9:16 — always True, unlike YouTube where only
+            # Shorts are vertical — so the overlay gives it the same
+            # blurred-side-column treatment.
+            is_vertical=True,
+            metadata_best_effort=True,
+            thumbnail_url="https://cdn.example/thumb.jpg",
+        )
+
+    async def test_instagram_reel_always_best_effort_even_when_resolve_fails(self):
+        # No duration/view_count field exists in InstaFix's OG data at all —
+        # unlike Bilibili's -412, this is permanent, not transient, so the
+        # flag must be set even on a "successful" (all-None) fetch.
+        resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+        with patch(
+            "shared.video_sources.fetch_instagram_reel_info",
+            new=AsyncMock(
+                return_value=InstagramReelInfo(
+                    title=None, thumbnail_url=None, duration_seconds=None
+                )
+            ),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.metadata_best_effort is True
+        assert metadata.duration_seconds is None
+        assert metadata.view_count is None
+        assert metadata.playable is True
+        assert metadata.is_vertical is True
 
     async def test_authoritative_platforms_are_not_best_effort(self):
         yt = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")

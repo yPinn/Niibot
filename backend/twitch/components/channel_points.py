@@ -866,6 +866,7 @@ class ChannelPointsComponent(commands.Component):
                 youtube_api_key=self.settings.youtube_api_key,
                 twitch_client_id=self.settings.twitch_client_id,
                 twitch_client_secret=self.settings.twitch_client_secret,
+                instafix_host=self.settings.instafix_host,
                 session=self._session,
             )
             title, duration_seconds, view_count = (

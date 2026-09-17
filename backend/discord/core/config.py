@@ -79,11 +79,7 @@ class DiscordBotSettings(BaseServiceSettings):
         default=0.9, description="Critical threshold (0–1)"
     )
 
-    # Instagram (Social Preview)
-    instafix_host: str = Field(
-        default="instafix:3000",
-        description="InstaFix host (Docker: instafix:3000, local: localhost:3000)",
-    )
+    # Instagram (Social Preview) — instafix_host now lives on BaseServiceSettings
     instagram_session_id: str = Field(
         default="", description="Instagram session cookie for profile embeds"
     )

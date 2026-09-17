@@ -140,6 +140,7 @@ class VideoQueueComponent(BotComponent):
             youtube_api_key=self._settings.youtube_api_key,
             twitch_client_id=self._settings.twitch_client_id,
             twitch_client_secret=self._settings.twitch_client_secret,
+            instafix_host=self._settings.instafix_host,
             session=self._session,
         )
         title, duration_seconds, view_count = (

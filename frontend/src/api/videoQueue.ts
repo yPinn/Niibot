@@ -122,6 +122,26 @@ export async function fetchTwitchClipSource(
   }
 }
 
+/**
+ * Resolve a queued Instagram Reel to a directly-playable CDN MP4 URL for the
+ * overlay's `<video>` — Instagram has no embeddable fallback surface, unlike
+ * Twitch's clip embed. Returns null on any failure; the caller skips the
+ * entry (see players/instagramReel.ts).
+ */
+export async function fetchInstagramReelSource(
+  username: string,
+  entryId: number
+): Promise<string | null> {
+  try {
+    const response = await apiFetch(API_ENDPOINTS.videoQueue.reelSource(username, entryId))
+    if (!response.ok) return null
+    const data = (await response.json()) as { url?: unknown }
+    return typeof data.url === 'string' ? data.url : null
+  } catch {
+    return null
+  }
+}
+
 // Best-effort: callers swallow errors (.catch(() => {})). No response.ok check is intentional.
 export async function reportVideoMetadata(
   username: string,

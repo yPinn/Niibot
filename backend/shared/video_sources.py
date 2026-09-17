@@ -11,6 +11,10 @@ bot, channel-points redemptions, and the donation webhook.
     shared.bilibili_client — three risk-control-aware tiers)
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
   - fetch_twitch_clip_info                     : Twitch Helix clips API call
+  - resolve_instagram_url                      : Instagram Reel / share-link parsing (+
+    shared.instafix_client — self-hosted InstaFix proxy)
+  - fetch_instagram_reel_info                  : Instagram Reel metadata (title/thumbnail
+    only — no duration/view_count, see shared.instafix_client)
 
   - resolve_video_url / fetch_video_metadata / build_watch_url : registry
     layer composing the platform-specific functions above behind one shape,
@@ -30,6 +34,7 @@ from urllib.parse import quote
 import aiohttp
 
 from shared.bilibili_client import fetch_bilibili_video_data
+from shared.instafix_client import fetch_instagram_reel_info, resolve_instagram_url
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -609,6 +614,7 @@ _WATCH_URL_BUILDERS: dict[str, str] = {
     "twitch_clip": "https://clips.twitch.tv/{video_id}",
     "twitch_vod": "https://www.twitch.tv/videos/{video_id}",
     "bilibili": "https://www.bilibili.com/video/{video_id}",
+    "instagram_reel": "https://www.instagram.com/reel/{video_id}/",
 }
 
 
@@ -616,7 +622,7 @@ _WATCH_URL_BUILDERS: dict[str, str] = {
 class ResolvedVideo:
     """A URL identified as belonging to a platform, with its platform-native ID."""
 
-    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili'
+    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
     start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
@@ -667,9 +673,10 @@ async def resolve_video_url(
 ) -> ResolvedVideo | None:
     """Identify which platform a URL belongs to and extract its native ID.
 
-    Tries YouTube, then Twitch Clip, then Bilibili (incl. b23.tv redirects) —
-    same priority order previously duplicated across call sites. Returns None
-    if the URL doesn't match any supported platform.
+    Tries YouTube, then Twitch Clip, then Twitch VOD, then Instagram Reel,
+    then Bilibili (incl. b23.tv redirects) — same priority order previously
+    duplicated across call sites. Returns None if the URL doesn't match any
+    supported platform.
     """
     video_id, is_vertical = extract_youtube_info(url)
     if video_id:
@@ -682,6 +689,14 @@ async def resolve_video_url(
     vod_id, start_seconds = extract_twitch_vod_info(url)
     if vod_id:
         return ResolvedVideo(video_type="twitch_vod", video_id=vod_id, start_seconds=start_seconds)
+
+    # is_vertical here is just a URL-shape hint (matches the YouTube Shorts
+    # pattern above) — the value that actually reaches the DB row comes from
+    # fetch_video_metadata()'s instagram_reel branch, which hardcodes True
+    # unconditionally (every Reel is 9:16, unlike YouTube where only Shorts are).
+    shortcode = await resolve_instagram_url(url, session)
+    if shortcode:
+        return ResolvedVideo(video_type="instagram_reel", video_id=shortcode)
 
     bvid = await resolve_bilibili_url(url, session)
     if bvid:
@@ -696,6 +711,7 @@ async def fetch_video_metadata(
     youtube_api_key: str = "",
     twitch_client_id: str = "",
     twitch_client_secret: str = "",
+    instafix_host: str = "instafix:3000",
     session: aiohttp.ClientSession | None = None,
 ) -> VideoMetadata:
     """Fetch metadata for a resolved video, normalized to one 4-field shape.
@@ -738,6 +754,28 @@ async def fetch_video_metadata(
             is_vertical,
             metadata_best_effort=True,
             thumbnail_url=thumbnail_url,
+        )
+
+    if resolved.video_type == "instagram_reel":
+        reel_info = await fetch_instagram_reel_info(resolved.video_id, instafix_host, session)
+        # No duration/view_count from InstaFix's OG data — permanently unknown
+        # at queue time (unlike Bilibili, where a tier fallback can still
+        # succeed). metadata_best_effort=True skips the min_view_count /
+        # duration-cap gates instead of rejecting an unwinnable submission.
+        # duration_seconds is backfilled client-side once the resolved
+        # <video> starts playing (reportVideoMetadata, same as Twitch Clip).
+        # is_vertical=True unconditionally — every Reel is 9:16, unlike YouTube
+        # where only Shorts are — so the overlay always gives it the same
+        # blurred-side-column treatment as a YouTube Short (players/
+        # instagramReel.ts mounts two extra <video> elements, not YT.Player
+        # instances, into the same left/right containers).
+        return VideoMetadata(
+            title=reel_info.title,
+            duration_seconds=None,
+            view_count=None,
+            is_vertical=True,
+            metadata_best_effort=True,
+            thumbnail_url=reel_info.thumbnail_url,
         )
 
     yt = await fetch_yt_info(resolved.video_id, youtube_api_key, session)

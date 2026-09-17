@@ -22,11 +22,15 @@ x-logging: &default-logging
 # ---------------------------------------------------------------------------
 # Profiles guide. postgres and migrate carry no profile, so every combination
 # below also starts the DB and runs pending migrations before the app starts:
-#   --profile api      → API
-#   --profile twitch   → Twitch bot
+#   --profile api      → API + Instafix
+#   --profile twitch   → Twitch bot + Instafix
 #   --profile discord  → Discord bot + Instafix
 #   --profile bots     → Twitch bot + Discord bot + Instafix
 #   --profile full     → Everything
+#
+# Instafix is shared by Discord's social-preview cog and Video Queue's
+# Instagram Reel support (shared/instafix_client.py), so it runs under api
+# and twitch too now, not just discord/bots.
 #
 # Profiles combine, so a subset that has no name of its own is still reachable:
 #   --profile api --profile twitch   → API + Twitch bot, no Discord
@@ -90,7 +94,7 @@ services:
     container_name: nb-instafix
     restart: unless-stopped
     logging: *default-logging
-    profiles: [discord, bots, full]
+    profiles: [discord, bots, full, api, twitch]
     networks:
       - nb-network
 
@@ -113,6 +117,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_started
     healthcheck:
       <<: *default-healthcheck
       test:
@@ -180,6 +186,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      instafix:
+        condition: service_started
     healthcheck:
       <<: *default-healthcheck
       test:

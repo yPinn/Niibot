@@ -196,7 +196,8 @@ export default function VideoQueueOverlay() {
       progressRef,
       clipTimerRef,
       containerRef,
-      setElapsed
+      setElapsed,
+      [leftContainerRef, rightContainerRef]
     )
     currentIdRef.current = newId
 

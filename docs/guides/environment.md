@@ -45,6 +45,7 @@ api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的
 | `GEMINI_MODEL`                | Gemini 模型（設定 GEMINI_API_KEY 時必填）                                                                         |
 | `GROQ_API_KEY`                | AI provider（Twitch／Discord 預設首選）                                                                           |
 | `GROQ_MODEL`                  | Groq 模型（設定 GROQ_API_KEY 時必填）                                                                             |
+| `INSTAFIX_HOST`               | (dev) Instagram OG proxy，Docker 由 compose 設定；api/twitch/discord 共用                                         |
 | `LOG_LEVEL`                   | log 等級，預設 INFO（api/twitch/discord 共用）                                                                    |
 | `OPENROUTER_API_KEY`          | AI provider（free-tier 備援）                                                                                     |
 | `OPENROUTER_MODEL`            | OpenRouter 免費模型（設定 OPENROUTER_API_KEY 時必填）                                                             |
@@ -93,7 +94,6 @@ App 憑證走 `shared.env`。
 | `DISCORD_GUILD_ID`      | (選用) 指定 guild 同步，較快                                    |
 | `DISCORD_STATUS`        | online / idle / dnd / invisible                                 |
 | `DISCORD_SYNC_COMMANDS` | (選用) 增改 slash command 後設一次 true                         |
-| `INSTAFIX_HOST`         | (dev) Instagram OG proxy，Docker 由 compose 設定                |
 | `INSTAGRAM_SESSION_ID`  | (選用) Instagram 個人頁 embed，約 90 天效期                     |
 | `PORT`                  | (dev) discord-bot health server，預設 8080                      |
 | `SCRAPLING_HOST`        | (選用) Threads sidecar；空值＝停用                              |

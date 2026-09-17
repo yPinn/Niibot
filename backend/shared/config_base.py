@@ -53,6 +53,13 @@ class BaseServiceSettings(BaseSettings):
         description="Fernet key for versioned Twitch OAuth token encryption at rest",
     )
 
+    # Self-hosted InstaFix proxy (see docs/integrations/instafix.md) — used by
+    # Discord's social-preview cog and Video Queue's Instagram Reel support.
+    instafix_host: str = Field(
+        default="instafix:3000",
+        description="InstaFix host (Docker: instafix:3000, local: localhost:3000)",
+    )
+
     @property
     def is_development(self) -> bool:
         return self.environment.lower() == "development"

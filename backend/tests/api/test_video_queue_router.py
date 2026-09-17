@@ -331,6 +331,62 @@ class TestGetClipSource:
         assert r.status_code == 404
 
 
+# ── GET /api/video-queue/public/{username}/entries/{id}/reel-source ───────────
+
+
+class TestGetReelSource:
+    _URL = "/api/video-queue/public/testuser/entries/5/reel-source"
+
+    def test_returns_signed_url(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch(
+                "routers.video_queue_router.fetch_instagram_reel_source",
+                AsyncMock(return_value="https://cdn.cdninstagram.com/reel.mp4?sig=a"),
+            ),
+        ):
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="instagram_reel", video_id="Cabc123")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 200
+        assert r.json()["url"] == "https://cdn.cdninstagram.com/reel.mp4?sig=a"
+
+    def test_non_reel_entry_returns_404(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="youtube")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_entry_not_found_returns_404(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_entry_for_channel = AsyncMock(return_value=None)
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_unresolvable_source_returns_404(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch(
+                "routers.video_queue_router.fetch_instagram_reel_source",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            vqr.return_value.get_entry_for_channel = AsyncMock(
+                return_value=_make_entry(id=5, video_type="instagram_reel", video_id="Cabc123")
+            )
+            r = _make_public_client(_twitch_api_found()).get(self._URL)
+        assert r.status_code == 404
+
+    def test_channel_not_found_returns_404(self):
+        r = _make_public_client(_twitch_api_not_found()).get(
+            "/api/video-queue/public/unknown/entries/5/reel-source"
+        )
+        assert r.status_code == 404
+
+
 # ── DELETE /api/video-queue/skip ─────────────────────────────────────────────
 
 

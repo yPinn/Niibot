@@ -1,4 +1,5 @@
 import { bilibiliStrategy } from './bilibili'
+import { instagramReelStrategy } from './instagramReel'
 import { twitchClipStrategy } from './twitchClip'
 import { twitchVodStrategy } from './twitchVod'
 import type { PlayerStrategy } from './types'
@@ -9,6 +10,7 @@ const STRATEGIES: Record<string, PlayerStrategy> = {
   twitch_clip: twitchClipStrategy,
   twitch_vod: twitchVodStrategy,
   bilibili: bilibiliStrategy,
+  instagram_reel: instagramReelStrategy,
 }
 
 export function getPlayerStrategy(videoType: string): PlayerStrategy | undefined {
