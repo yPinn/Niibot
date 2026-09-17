@@ -767,8 +767,9 @@ async def resolve_video_url(
 
     # ResolvedVideo has no is_vertical hint for Instagram (unlike YouTube's
     # Shorts URL shape) — the real value comes from fetch_video_metadata()'s
-    # instagram_reel branch, which detects it from the OG page's actual
-    # video dimensions (see instafix_client._extract_is_vertical).
+    # instagram_reel branch, which detects it from the OG page's dimensions
+    # when present, else a probe of the resolved mp4's own container (see
+    # instafix_client._orientation_from_og / _orientation_from_mp4).
     shortcode = await resolve_instagram_url(url, session)
     if shortcode:
         return ResolvedVideo(video_type="instagram_reel", video_id=shortcode)
@@ -854,12 +855,14 @@ async def fetch_video_metadata(
         # isn't (that redirect failed), it falls back to the same
         # reportVideoMetadata client-side backfill Twitch Clip uses.
         # Most Reels are 9:16, but a landscape source video keeps its own
-        # aspect ratio when posted as a Reel — reel_info.is_vertical reads
-        # the OG page's og:video:width/height (defaulting True when those
-        # are missing, see instafix_client._extract_is_vertical). Only when
-        # True does the overlay give it the blurred-side-column treatment,
-        # same as a YouTube Short (players/instagramReel.ts mounts two extra
-        # <video> elements, not YT.Player instances, into the same
+        # aspect ratio when posted as a Reel — reel_info.is_vertical tries
+        # the OG page's og:video:width/height first (rarely present in
+        # practice), then a probe of the resolved mp4's own container
+        # dimensions, defaulting True only if both fail (see
+        # instafix_client._orientation_from_og / _orientation_from_mp4).
+        # Only when True does the overlay give it the blurred-side-column
+        # treatment, same as a YouTube Short (players/instagramReel.ts mounts
+        # two extra <video> elements, not YT.Player instances, into the same
         # left/right containers).
         return VideoMetadata(
             title=reel_info.title,

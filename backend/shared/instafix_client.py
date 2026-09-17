@@ -122,24 +122,141 @@ def _parse_og(html: str) -> dict[str, str]:
     return parser.og
 
 
-def _extract_is_vertical(og: dict[str, str]) -> bool:
-    """Best-effort orientation from the standard ``og:video:width``/``height``
-    pair, same idea as Bilibili's dimension check in ``video_sources.py``.
+def _orientation_from_og(og: dict[str, str]) -> bool | None:
+    """Orientation from the standard ``og:video:width``/``height`` pair, same
+    idea as Bilibili's dimension check in ``video_sources.py``.
 
-    Most Reels are 9:16, but not all — a landscape source video posted as a
-    Reel keeps its own aspect ratio, and the overlay's blurred-side-column
-    treatment should only apply to genuinely vertical content. Defaults to
-    ``True`` (the previous unconditional assumption) when the tags are
-    missing or unparseable, since that's still the overwhelmingly common
-    case and matches prior behaviour for reels this can't read.
+    Returns ``None`` (unknown) rather than defaulting when the tags are
+    missing or unparseable — in practice InstaFix's Reel OG page carries no
+    such tags, so this is almost always ``None`` and orientation has to come
+    from ``_orientation_from_mp4`` instead. Kept as the first check anyway in
+    case a future InstaFix version starts emitting them; it costs nothing.
     """
     try:
         width = float(og.get("video:width", ""))
         height = float(og.get("video:height", ""))
     except ValueError:
-        return True
+        return None
     if width <= 0 or height <= 0:
-        return True
+        return None
+    return height > width
+
+
+def _read_u32(data: bytes, offset: int) -> int:
+    return int.from_bytes(data[offset : offset + 4], "big")
+
+
+def _iter_mp4_boxes(data: bytes, start: int, end: int) -> list[tuple[str, int, int]]:
+    """List ``(box_type, payload_start, payload_end)`` for top-level boxes in
+    ``data[start:end]``, per the ISO-BMFF box layout (``size``, ``type``,
+    payload). Stops at the first box whose declared size runs past ``end`` —
+    that's expected here, since ``data`` is only a bounded byte prefix of the
+    real file, not the whole thing.
+    """
+    boxes: list[tuple[str, int, int]] = []
+    pos = start
+    while pos + 8 <= end:
+        size = _read_u32(data, pos)
+        box_type = data[pos + 4 : pos + 8].decode("latin-1", errors="replace")
+        header_size = 8
+        if size == 1:
+            if pos + 16 > end:
+                break
+            size = int.from_bytes(data[pos + 8 : pos + 16], "big")
+            header_size = 16
+        elif size == 0:
+            size = end - pos
+        if size < header_size or pos + size > end:
+            break
+        boxes.append((box_type, pos + header_size, pos + size))
+        pos += size
+    return boxes
+
+
+def _tkhd_dimensions(tkhd_payload: bytes) -> tuple[int, int] | None:
+    """Width/height (16.16 fixed-point, per spec) from a `tkhd` box's body.
+
+    Layout after the box header: version(1)+flags(3), then creation/
+    modification/track_id/reserved/duration sized by version (8-byte fields
+    if version 1, else 4-byte), then reserved(8)+layer(2)+alternate_group(2)+
+    volume(2)+reserved(2)+matrix(36), then width(4)+height(4).
+    """
+    if not tkhd_payload:
+        return None
+    version = tkhd_payload[0]
+    var_block = 32 if version == 1 else 20
+    fixed_block = 8 + 2 + 2 + 2 + 2 + 36
+    width_offset = 4 + var_block + fixed_block
+    if len(tkhd_payload) < width_offset + 8:
+        return None
+    width = _read_u32(tkhd_payload, width_offset) >> 16
+    height = _read_u32(tkhd_payload, width_offset + 4) >> 16
+    if width <= 0 or height <= 0:
+        return None
+    return width, height
+
+
+def _extract_video_dimensions_from_mp4(data: bytes) -> tuple[int, int] | None:
+    """Best-effort width/height from a (possibly truncated) mp4 byte prefix.
+
+    Walks ``moov`` → `trak` → `tkhd`, returning the first track whose `tkhd`
+    reports a non-zero size (an audio-only track's `tkhd` width/height are
+    both 0x0, so it's naturally skipped without needing to read `hdlr`).
+    Only sees the box structure actually present in ``data`` — a prefix that
+    didn't reach far enough to contain `moov` (e.g. the source wasn't
+    fast-start encoded) yields ``None`` rather than raising.
+    """
+    for box_type, p_start, p_end in _iter_mp4_boxes(data, 0, len(data)):
+        if box_type != "moov":
+            continue
+        for trak_type, t_start, t_end in _iter_mp4_boxes(data, p_start, p_end):
+            if trak_type != "trak":
+                continue
+            for leaf_type, l_start, l_end in _iter_mp4_boxes(data, t_start, t_end):
+                if leaf_type != "tkhd":
+                    continue
+                dims = _tkhd_dimensions(data[l_start:l_end])
+                if dims:
+                    return dims
+    return None
+
+
+_MP4_HEADER_PROBE_BYTES = 262_144  # 256 KiB — covers a fast-start `moov` in the common case
+
+
+async def _orientation_from_mp4(cdn_url: str, session: aiohttp.ClientSession) -> bool | None:
+    """Ground-truth orientation read from the resolved CDN mp4 itself.
+
+    InstaFix's Reel OG page doesn't carry ``og:video:width``/``height`` in
+    practice, so ``_orientation_from_og`` returns ``None`` almost every time
+    and every Reel — including landscape ones — was rendered with the
+    vertical blurred-side-column treatment regardless of its real shape.
+    This downloads a bounded byte prefix of the same mp4 URL already
+    resolved for duration and reads the real container dimensions from its
+    `tkhd` box, the same "trust the asset, not unreliable metadata" approach
+    ``_extract_duration_seconds`` already takes with the `efg` param. Some
+    CDNs ignore the ``Range`` header and return the full body; the read is
+    capped at the probe size regardless, so this never downloads more than
+    that. Fails open to ``None`` (caller defaults to vertical, matching
+    prior behaviour) on any error, timeout, or a `moov` that didn't fit in
+    the probed prefix.
+    """
+    try:
+        async with session.get(
+            cdn_url,
+            headers={"Range": f"bytes=0-{_MP4_HEADER_PROBE_BYTES - 1}"},
+            timeout=_TIMEOUT,
+        ) as resp:
+            if resp.status not in (200, 206):
+                return None
+            data = await resp.content.read(_MP4_HEADER_PROBE_BYTES)
+    except Exception as exc:
+        LOGGER.debug("[InstaFix] mp4 header probe failed: %s", type(exc).__name__)
+        return None
+    dims = _extract_video_dimensions_from_mp4(data)
+    if dims is None:
+        return None
+    width, height = dims
     return height > width
 
 
@@ -227,8 +344,10 @@ class InstagramReelInfo:
     client-side from the resolved `<video>` element instead
     (`reportVideoMetadata`, same mechanism Twitch Clip already uses).
 
-    ``is_vertical`` defaults to True when the OG page's dimensions are
-    missing or unreadable — see ``_extract_is_vertical``.
+    ``is_vertical`` comes from OG page dimensions when present (rare in
+    practice), else a probe of the resolved mp4's own container dimensions,
+    else defaults to True — see ``_orientation_from_og`` /
+    ``_orientation_from_mp4``.
 
     ``creator_id``/``creator_name`` are both the same OG handle/display-name
     string (see ``_extract_title``) — Instagram exposes no stable numeric id
@@ -338,11 +457,17 @@ async def fetch_instagram_reel_info(
         duration_seconds = _extract_duration_seconds(video_cdn_url) if video_cdn_url else None
         handle = _extract_title(og)
 
+        is_vertical = _orientation_from_og(og)
+        if is_vertical is None and video_cdn_url:
+            is_vertical = await _orientation_from_mp4(video_cdn_url, _session)
+        if is_vertical is None:
+            is_vertical = True
+
         return InstagramReelInfo(
             title=title,
             thumbnail_url=thumbnail_url,
             duration_seconds=duration_seconds,
-            is_vertical=_extract_is_vertical(og),
+            is_vertical=is_vertical,
             creator_id=handle,
             creator_name=handle,
         )

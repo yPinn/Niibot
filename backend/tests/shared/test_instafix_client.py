@@ -35,12 +35,21 @@ def _mp4_url(*, duration_s: int | None = None, efg_override: str | None = None) 
 # ---------------------------------------------------------------------------
 
 
+class _FakeContent:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    async def read(self, n: int = -1) -> bytes:
+        return self._body if n < 0 else self._body[:n]
+
+
 class _FakeResp:
-    def __init__(self, *, status=200, headers=None, text_body="", final_url=None):
+    def __init__(self, *, status=200, headers=None, text_body="", body_bytes=b"", final_url=None):
         self.status = status
         self.headers = headers or {}
         self._text = text_body
         self.url = final_url or ""
+        self.content = _FakeContent(body_bytes)
 
     async def __aenter__(self):
         return self
@@ -125,32 +134,131 @@ class TestResolveInstagramUrl:
 
 
 # ---------------------------------------------------------------------------
-# _extract_is_vertical — pure
+# _orientation_from_og — pure
 # ---------------------------------------------------------------------------
 
 
-def test_is_vertical_true_when_taller_than_wide():
+def test_og_orientation_true_when_taller_than_wide():
     og = {"video:width": "720", "video:height": "1280"}
-    assert ic._extract_is_vertical(og) is True
+    assert ic._orientation_from_og(og) is True
 
 
-def test_is_vertical_false_when_wider_than_tall():
+def test_og_orientation_false_when_wider_than_tall():
     og = {"video:width": "1280", "video:height": "720"}
-    assert ic._extract_is_vertical(og) is False
+    assert ic._orientation_from_og(og) is False
 
 
-def test_is_vertical_defaults_true_when_dimensions_missing():
-    assert ic._extract_is_vertical({}) is True
+def test_og_orientation_unknown_when_dimensions_missing():
+    assert ic._orientation_from_og({}) is None
 
 
-def test_is_vertical_defaults_true_when_dimensions_unparseable():
+def test_og_orientation_unknown_when_dimensions_unparseable():
     og = {"video:width": "unknown", "video:height": "1280"}
-    assert ic._extract_is_vertical(og) is True
+    assert ic._orientation_from_og(og) is None
 
 
-def test_is_vertical_defaults_true_when_dimensions_zero():
+def test_og_orientation_unknown_when_dimensions_zero():
     og = {"video:width": "0", "video:height": "0"}
-    assert ic._extract_is_vertical(og) is True
+    assert ic._orientation_from_og(og) is None
+
+
+# ---------------------------------------------------------------------------
+# _extract_video_dimensions_from_mp4 / _orientation_from_mp4 — the real fix
+# ---------------------------------------------------------------------------
+
+
+def _u32(n: int) -> bytes:
+    return n.to_bytes(4, "big")
+
+
+def _box(box_type: bytes, payload: bytes) -> bytes:
+    return _u32(len(payload) + 8) + box_type + payload
+
+
+def _tkhd(width: int, height: int, *, version: int = 0) -> bytes:
+    flags = b"\x00\x00\x00"
+    if version == 1:
+        var_block = b"\x00" * 8 + b"\x00" * 8 + b"\x00\x00\x00\x01" + b"\x00" * 4 + b"\x00" * 8
+    else:
+        var_block = b"\x00" * 4 + b"\x00" * 4 + b"\x00\x00\x00\x01" + b"\x00" * 4 + b"\x00" * 4
+    fixed_block = b"\x00" * (8 + 2 + 2 + 2 + 2 + 36)
+    dims = _u32(width << 16) + _u32(height << 16)
+    return _box(b"tkhd", bytes([version]) + flags + var_block + fixed_block + dims)
+
+
+def _trak(tkhd_box: bytes) -> bytes:
+    return _box(b"trak", tkhd_box)
+
+
+def _moov(*trak_boxes: bytes) -> bytes:
+    return _box(b"moov", b"".join(trak_boxes))
+
+
+# Real fast-start mp4s put `ftyp` first, then `moov`, then `mdat` — a video
+# track (real dimensions) alongside an audio track (0x0 tkhd) is the norm.
+_LANDSCAPE_MP4_HEADER = _box(b"ftyp", b"isom" + b"\x00" * 12) + _moov(
+    _trak(_tkhd(0, 0)), _trak(_tkhd(1280, 720))
+)
+_PORTRAIT_MP4_HEADER = _box(b"ftyp", b"isom" + b"\x00" * 12) + _moov(
+    _trak(_tkhd(720, 1280)), _trak(_tkhd(0, 0))
+)
+
+
+def test_extracts_dimensions_from_landscape_video_track():
+    assert ic._extract_video_dimensions_from_mp4(_LANDSCAPE_MP4_HEADER) == (1280, 720)
+
+
+def test_extracts_dimensions_from_portrait_video_track():
+    assert ic._extract_video_dimensions_from_mp4(_PORTRAIT_MP4_HEADER) == (720, 1280)
+
+
+def test_skips_zero_size_audio_track_tkhd():
+    # Audio-only trak (0x0) followed by the real video trak — must not
+    # return the audio track's degenerate dimensions.
+    data = _moov(_trak(_tkhd(0, 0)), _trak(_tkhd(1080, 1920)))
+    assert ic._extract_video_dimensions_from_mp4(data) == (1080, 1920)
+
+
+def test_version_1_tkhd_wide_fields_parsed():
+    data = _moov(_trak(_tkhd(1920, 1080, version=1)))
+    assert ic._extract_video_dimensions_from_mp4(data) == (1920, 1080)
+
+
+def test_no_moov_in_truncated_prefix_returns_none():
+    assert ic._extract_video_dimensions_from_mp4(_box(b"ftyp", b"isom")) is None
+
+
+def test_truncated_moov_returns_none_not_garbage():
+    # moov box header claims more bytes than are actually present (prefix
+    # cut off mid-download) — must not read past the buffer or misparse.
+    truncated = _moov(_trak(_tkhd(1280, 720)))[:20]
+    assert ic._extract_video_dimensions_from_mp4(truncated) is None
+
+
+@pytest.mark.asyncio
+class TestOrientationFromMp4:
+    async def test_reads_real_dimensions_when_range_supported(self):
+        session = _FakeSession(
+            {"video.mp4": lambda: _FakeResp(status=206, body_bytes=_LANDSCAPE_MP4_HEADER)}
+        )
+        assert await ic._orientation_from_mp4("https://cdn.example/video.mp4", session) is False
+
+    async def test_reads_real_dimensions_when_range_ignored(self):
+        # Some CDNs return 200 with the full body instead of honoring Range.
+        session = _FakeSession(
+            {"video.mp4": lambda: _FakeResp(status=200, body_bytes=_PORTRAIT_MP4_HEADER)}
+        )
+        assert await ic._orientation_from_mp4("https://cdn.example/video.mp4", session) is True
+
+    async def test_unknown_on_404(self):
+        session = _FakeSession({})
+        assert await ic._orientation_from_mp4("https://cdn.example/video.mp4", session) is None
+
+    async def test_unknown_on_network_error(self):
+        assert (
+            await ic._orientation_from_mp4("https://cdn.example/video.mp4", _RaisingSession())
+            is None
+        )
 
 
 # ---------------------------------------------------------------------------
