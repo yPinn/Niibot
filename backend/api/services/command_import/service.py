@@ -168,7 +168,7 @@ class CommandImportService:
             name = (item.command_name or item.pattern)[:50]
             if name.lower() in taken_triggers:
                 return False
-            created = await self.trigger_repo.try_insert(
+            trigger = await self.trigger_repo.try_insert(
                 channel_id,
                 name,
                 match_type=item.match_type,
@@ -181,7 +181,7 @@ class CommandImportService:
                 enabled=enabled,
                 aliases=",".join(item.aliases) or None,
             )
-            if created is None:
+            if trigger is None:
                 return False
             taken_triggers.add(name.lower())
             return True
@@ -193,7 +193,7 @@ class CommandImportService:
         if not name or not item.response or name in taken:
             return False
         aliases = [a for a in item.aliases if a not in taken]
-        created = await self.cmd_repo.try_insert_config(
+        command = await self.cmd_repo.try_insert_config(
             channel_id,
             name,
             custom_response=item.response,
@@ -202,7 +202,7 @@ class CommandImportService:
             aliases=",".join(aliases) or None,
             enabled=enabled,
         )
-        if created is None:
+        if command is None:
             return False
         taken.add(name)
         taken.update(aliases)
