@@ -21,7 +21,7 @@ export function PageHeader({ title, description, className, children }: PageHead
         <h1 className="text-page-title font-bold">{title}</h1>
         {description && <p className="text-sub text-muted-foreground">{description}</p>}
       </div>
-      {children && <div className="shrink-0 pt-0.5">{children}</div>}
+      {children && <div className="flex items-center gap-2 shrink-0 pt-0.5">{children}</div>}
     </SlideUp>
   )
 }

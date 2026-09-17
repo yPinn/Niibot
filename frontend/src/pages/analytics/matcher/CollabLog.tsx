@@ -76,17 +76,17 @@ export function CollabLog({ partnerChannelId, windowDays }: CollabLogProps) {
     <div className="flex flex-col gap-2 shrink-0">
       <div className="flex items-center justify-between">
         <span className="text-label text-muted-foreground">合作紀錄</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-label"
+          onClick={() => setDialogOpen(true)}
+        >
+          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1 size-3" />
+          標記本次合作
+        </Button>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-label"
-            onClick={() => setDialogOpen(true)}
-          >
-            <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1 size-3" />
-            標記本次合作
-          </Button>
           <DialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>標記本次合作</DialogTitle>
@@ -126,7 +126,7 @@ export function CollabLog({ partnerChannelId, windowDays }: CollabLogProps) {
       ) : collabs.length === 0 ? (
         <p className="text-label text-muted-foreground">尚無合作紀錄</p>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div className="scrollbar flex max-h-48 flex-col gap-1.5 overflow-y-auto">
           {collabs.map(collab => (
             <div
               key={collab.id}
