@@ -636,3 +636,57 @@ class TestApply:
 
         assert result.skipped == 1
         assert result.created == 0
+
+
+# ---------------------------------------------------------------------------
+# The two DB reads apply() does before its per-item guard
+# ---------------------------------------------------------------------------
+
+
+def _pool_returning(rows: list[dict]) -> MagicMock:
+    """A pool whose conn.fetch returns *rows*, shaped like asyncpg's."""
+    conn = AsyncMock()
+    conn.fetch.return_value = rows
+    tx = MagicMock()
+    tx.__aenter__ = AsyncMock(return_value=None)
+    tx.__aexit__ = AsyncMock(return_value=None)
+    conn.transaction = MagicMock(return_value=tx)
+    pool = MagicMock()
+    pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
+    pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+    return pool
+
+
+_TRIGGER_ROW = {
+    "id": 1,
+    "channel_id": CHANNEL_ID,
+    "trigger_name": "Hello",
+    "match_type": "contains",
+    "pattern": "hello",
+    "case_sensitive": False,
+    "response": "hi",
+    "min_role": "everyone",
+    "cooldown": 30,
+    "priority": 0,
+    "enabled": True,
+    "usage_count": 0,
+    "aliases": None,
+    "created_at": None,
+    "updated_at": None,
+}
+
+
+class TestExistingNameLookups:
+    """These run before apply()'s per-item try/except, so a failure here is a
+    500 rather than a counted failure. Every other apply test mocks them out.
+    """
+
+    @pytest.mark.asyncio
+    async def test_existing_trigger_names_reads_the_repository(self):
+        service = CommandImportService(_pool_returning([_TRIGGER_ROW]), MagicMock())
+        assert await service.existing_trigger_names(CHANNEL_ID) == {"hello"}
+
+    @pytest.mark.asyncio
+    async def test_existing_trigger_names_on_a_channel_with_none(self):
+        service = CommandImportService(_pool_returning([]), MagicMock())
+        assert await service.existing_trigger_names(CHANNEL_ID) == set()
