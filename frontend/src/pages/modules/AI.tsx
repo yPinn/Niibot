@@ -342,6 +342,8 @@ export default function AIModule() {
                 自稱只在句意需要時使用，不會要求每則回覆固定出現。
               </p>
 
+              <Separator />
+
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_1.35fr] gap-section">
                 <div className="flex flex-col gap-element">
                   <Label htmlFor="catchphrase">口頭禪</Label>

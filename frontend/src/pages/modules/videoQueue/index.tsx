@@ -28,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
   Label,
+  Separator,
   Skeleton,
   Switch,
 } from '@/components/ui'
@@ -433,6 +434,8 @@ export default function VideoQueue() {
           <OverlayCard url={overlayUrl} current={current} onOpenGuide={() => setHelpOpen(true)} />
         </div>
       </SlideUp>
+
+      <Separator />
 
       <SlideUp
         inView

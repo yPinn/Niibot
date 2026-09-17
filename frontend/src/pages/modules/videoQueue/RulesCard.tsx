@@ -31,7 +31,10 @@ export interface RulesDraft {
 }
 
 const GROUP_LABEL = 'text-sub font-medium'
-const GRID = 'grid grid-cols-1 gap-x-card gap-y-card sm:grid-cols-2'
+// A trailing lone item in an odd-sized group spans both columns instead of
+// dangling in an otherwise-empty second half of the last row.
+const GRID =
+  'grid grid-cols-1 gap-x-card gap-y-card sm:grid-cols-2 sm:[&>*:last-child:nth-child(odd)]:col-span-2'
 
 // Every right-side control occupies the same fixed width so the input boxes and
 // the select triggers line up vertically down the card, whatever the unit.

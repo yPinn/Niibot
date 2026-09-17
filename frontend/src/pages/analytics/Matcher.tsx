@@ -15,6 +15,7 @@ import {
   AvatarFallback,
   AvatarImage,
   Badge,
+  Separator,
   Skeleton,
   Tabs,
   TabsList,
@@ -404,10 +405,14 @@ export default function Matcher() {
                 )}
               </div>
 
+              <Separator />
+
               <CollabLog
                 partnerChannelId={selectedChannel.channel_id}
                 windowDays={Number(period)}
               />
+
+              <Separator />
 
               <div className="flex-1 min-h-0">
                 <ViewerTable data={viewerData} isLoading={viewerLoading} />

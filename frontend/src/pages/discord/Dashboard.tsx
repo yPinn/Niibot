@@ -47,7 +47,6 @@ const FEATURES = [
 ]
 
 const COMMANDS = [
-  { cmd: '/setlog', desc: '指定要記錄伺服器動態的頻道（需管理員）' },
   { cmd: '/bday menu', desc: '登錄、查詢或訂閱成員生日通知' },
   { cmd: '/giveaway', desc: '建立與管理抽獎活動' },
   { cmd: '/fortune', desc: '今日運勢' },
@@ -55,8 +54,12 @@ const COMMANDS = [
   { cmd: '/tft [名稱#TAG]', desc: '查詢 TFT 當季排行門檻，或輸入玩家名稱查段位' },
   { cmd: '/ai <問題>', desc: '向 AI 提問' },
   { cmd: '/eat', desc: '隨機推薦今天吃什麼' },
-  { cmd: '/clear', desc: '一次清除多則訊息（需管理員）' },
-  { cmd: '/kick /ban /mute', desc: '踢出、封鎖或禁言成員（需管理員）' },
+]
+
+const ADMIN_COMMANDS = [
+  { cmd: '/setlog', desc: '指定要記錄伺服器動態的頻道' },
+  { cmd: '/clear', desc: '一次清除多則訊息' },
+  { cmd: '/kick /ban /mute', desc: '踢出、封鎖或禁言成員' },
 ]
 
 const INVITE_URL = import.meta.env.VITE_DISCORD_BOT_INVITE_URL
@@ -132,6 +135,22 @@ export default function DiscordDashboard() {
                   </div>
                 ))}
               </div>
+              <div className="border-t bg-muted/30 px-page py-1.5">
+                <span className="flex items-center gap-1.5 text-label font-medium text-muted-foreground">
+                  <Icon icon="fa-solid fa-shield-halved" size="xs" />
+                  需要管理員權限
+                </span>
+              </div>
+              <div className="divide-y">
+                {ADMIN_COMMANDS.map(({ cmd, desc }) => (
+                  <div key={cmd} className="flex items-baseline gap-section px-page py-2">
+                    <code className="w-44 shrink-0 font-mono text-sub font-semibold text-primary select-text">
+                      {cmd}
+                    </code>
+                    <span className="text-sub text-muted-foreground">{desc}</span>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -145,7 +164,7 @@ export default function DiscordDashboard() {
         </WarningBanner>
       </SlideUp>
 
-      <SlideUp inView delay={0.1}>
+      <SlideUp inView delay={0.15}>
         <DiscordHelpBanner />
       </SlideUp>
     </PageMain>

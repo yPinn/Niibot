@@ -285,11 +285,9 @@ export default function GameQueue() {
         <div className="lg:col-span-8">
           <Card className="h-full min-h-90 lg:min-h-130">
             <CardHeader>
-              <CardTitle>
+              <CardTitle className="flex items-center gap-2">
                 等待佇列
-                <Badge variant="outline" className="ml-2">
-                  {state?.total_active ?? 0}
-                </Badge>
+                <Badge variant="outline">{state?.total_active ?? 0}</Badge>
               </CardTitle>
               <CardAction>
                 <div className="flex items-center gap-2">
@@ -351,20 +349,10 @@ export default function GameQueue() {
             <CardContent className="flex flex-col gap-section">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-muted-foreground text-sub shrink-0">快速預設</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setGroupSizeInput('5')}
-                  className="h-7"
-                >
+                <Button variant="outline" size="sm" onClick={() => setGroupSizeInput('5')}>
                   LoL / Val (5人)
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setGroupSizeInput('3')}
-                  className="h-7"
-                >
+                <Button variant="outline" size="sm" onClick={() => setGroupSizeInput('3')}>
                   Apex (3人)
                 </Button>
               </div>

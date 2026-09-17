@@ -23,15 +23,15 @@ export function OverlayCard({
   const poster = current ? thumbnailUrl(current.video_type, current.video_id) : null
 
   return (
-    <Card>
+    <Card className="lg:h-full">
       <CardHeader>
         <CardTitle>OBS 畫面</CardTitle>
         <CardDescription>加到 OBS 後，觀眾點播的影片會自動出現在直播畫面上</CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-card">
+      <CardContent className="flex flex-1 flex-col gap-card">
         <OverlayUrlBlock url={url} />
 
-        <div className="relative aspect-video overflow-hidden rounded-lg border bg-black">
+        <div className="relative aspect-video overflow-hidden rounded-lg border bg-black lg:aspect-auto lg:min-h-0 lg:flex-1">
           {previewOpen ? (
             <iframe
               src={`${url}?preview=1`}

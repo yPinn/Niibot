@@ -171,8 +171,13 @@ export default function AdminModules() {
                 })}
               </div>
 
-              {/* Right: emote panel — fixed to fit exactly 10 emotes (5rem) per row */}
-              <div className="xl:sticky xl:top-4 xl:w-[56rem] xl:shrink-0">
+              {/* Right: emote panel — sized to fit 10 emotes (5rem) per row at
+                  full width, but EmoteSection's own grid is auto-fill so it
+                  reflows fine at fewer columns too. Letting this shrink (and
+                  giving the left channel list a floor) splits the squeeze
+                  between both columns near the xl breakpoint's low end
+                  instead of dumping it all on the channel list. */}
+              <div className="xl:sticky xl:top-4 xl:min-w-md xl:basis-4xl xl:grow-0 xl:shrink">
                 {selectedChannel ? (
                   <div className="rounded-md border">
                     <div className="flex items-center gap-3 border-b px-3 py-2.5">
