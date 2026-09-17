@@ -144,7 +144,10 @@ build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後�
 1. 到 <https://nightbot.tv/account/applications> 建立應用程式
 2. Redirect URI 填 `<API_URL>/api/commands/import/nightbot/callback`。必須完全相符，
    含 scheme 與大小寫；一個 app 可以列多個，本機開發的
-   `http://localhost:8000/...` 可以掛在測試區那個 app 上
+   `http://localhost:8000/...` 可以掛在測試區那個 app 上。
+   `<API_URL>` 是該環境的 GitHub Actions variable `API_URL`（`gh variable list
+   --env staging`），它指向 Cloudflare Pages 網域而非後端主機 —— Pages 會把
+   `/api/*` 代理到後端，所以對外的 API origin 與前端相同
 3. 產生 client secret，把兩個值填進對應環境的
    `NIGHTBOT_CLIENT_ID` / `NIGHTBOT_CLIENT_SECRET`
 
