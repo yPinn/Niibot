@@ -370,7 +370,9 @@ export default function AIModule() {
 
               <div className="flex flex-col gap-element">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="persona">個性描述</Label>
+                  <Label htmlFor="persona" className="text-content font-semibold">
+                    個性描述
+                  </Label>
                   <span className="font-mono text-label text-muted-foreground">
                     {(draft.persona ?? '').length} / 300
                   </span>
@@ -392,7 +394,7 @@ export default function AIModule() {
 
               <div className="flex flex-col gap-element">
                 <div className="flex flex-col gap-0.5">
-                  <Label>示例回覆</Label>
+                  <Label className="text-content font-semibold">示例回覆</Label>
                   <p className="text-label text-muted-foreground">
                     最多三句不同情境的理想回答；模型只參考語氣與節奏，不會把示例當成固定台詞
                   </p>

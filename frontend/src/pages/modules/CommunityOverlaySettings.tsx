@@ -46,6 +46,7 @@ import {
   Badge,
   Button,
   Card,
+  CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
   CardDescription,
@@ -570,7 +571,7 @@ export default function CommunityOverlaySettings({
           >
             <SlideUp>
               <Card className="min-w-0">
-                <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+                <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
                   <CardTitle className="flex flex-wrap items-center gap-2">
                     <h2 id="live-display-connection-title">OBS 連線</h2>
                     <Badge variant={access.enabled ? 'default' : 'outline'}>

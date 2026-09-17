@@ -652,7 +652,7 @@ export function CrosshairAdjustSheet({
         </div>
 
         {/* Fixed footer */}
-        <SheetFooter className="mt-0 shrink-0 flex-row gap-2">
+        <SheetFooter className="mt-0 shrink-0 flex-row gap-element">
           <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
             取消
           </Button>

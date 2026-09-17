@@ -190,7 +190,7 @@ const ChartTooltip = ({
                   <Icon icon="fa-solid fa-clock" wrapperClassName="size-2.5 shrink-0" />
                   <span>
                     {TIME_FORMATTER.format(new Date(session.started_at))} ·{' '}
-                    {session.duration_hours.toFixed(1)}h
+                    {session.duration_hours.toFixed(1)} 小時
                   </span>
                 </div>
               </div>
@@ -321,7 +321,7 @@ export default function AnalyticsChart({
         mode: 'stream_hours' as ChartMode,
         label: '總直播時數',
         value: analyticsData.total_stream_hours.toFixed(1),
-        unit: 'h',
+        unit: '小時',
         subtitle: `${analyticsData.total_sessions} 場直播`,
         icon: 'fa-solid fa-clock',
       },
@@ -360,7 +360,10 @@ export default function AnalyticsChart({
           <div className="flex justify-end shrink-0 -mb-1">
             <InfoTooltip>
               <InfoTooltipTrigger asChild>
-                <button className="flex items-center justify-center size-5 rounded-full text-muted-foreground hover:text-foreground transition-colors">
+                <button
+                  aria-label="直播標題說明"
+                  className="flex items-center justify-center size-5 rounded-full text-muted-foreground hover:text-foreground transition-colors"
+                >
                   <Icon icon="fa-solid fa-circle-question" size="sm" />
                 </button>
               </InfoTooltipTrigger>

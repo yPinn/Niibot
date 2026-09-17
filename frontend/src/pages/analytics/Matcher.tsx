@@ -310,15 +310,18 @@ export default function Matcher() {
                 </div>
               </div>
 
+              {/* 重疊率／潛在觀眾 are the two numbers this whole tool exists to
+                  surface — sized up so they read as the point, not tied with
+                  the three supporting counts around them. */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-card shrink-0">
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.shared_chatters.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">共同觀眾</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-page-title font-bold text-primary tabular-nums">
                     {selectedChannel.exclusive_to_partner.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">潛在觀眾</span>
@@ -326,7 +329,7 @@ export default function Matcher() {
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span
                     className={cn(
-                      'text-card-title font-bold tabular-nums',
+                      'text-page-title font-bold tabular-nums',
                       selectedChannel.overlap_pct >= 30
                         ? 'text-status-online'
                         : selectedChannel.overlap_pct >= 10
@@ -339,13 +342,13 @@ export default function Matcher() {
                   <span className="text-label text-muted-foreground">重疊率</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.monitored_chatters.toLocaleString()}
                   </span>
                   <span className="text-label text-muted-foreground">監測觀眾</span>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
-                  <span className="text-card-title font-bold tabular-nums">
+                  <span className="text-content font-semibold tabular-nums">
                     {selectedChannel.channel_view_count != null
                       ? formatCompact(selectedChannel.channel_view_count)
                       : '—'}

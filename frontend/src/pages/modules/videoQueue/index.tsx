@@ -366,7 +366,7 @@ export default function VideoQueue() {
         </PageHeader>
         <Skeleton className="h-52 w-full rounded-xl" />
         <div className="grid grid-cols-1 gap-section lg:grid-cols-12">
-          <Skeleton className="h-96 w-full rounded-xl lg:col-span-8" />
+          <Skeleton className="h-120 w-full rounded-xl lg:col-span-8" />
           <Skeleton className="h-96 w-full rounded-xl lg:col-span-4" />
         </div>
       </PageMain>

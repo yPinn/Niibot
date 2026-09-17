@@ -477,7 +477,9 @@ export default function AdminMonitor() {
                       errSummary !== 'error' && (
                         <span
                           className={
-                            errSummary.total === 0 ? 'text-status-online' : 'text-status-warning'
+                            errSummary.total === 0
+                              ? 'text-status-online'
+                              : 'font-semibold text-status-warning'
                           }
                         >
                           {errSummary.total} 筆

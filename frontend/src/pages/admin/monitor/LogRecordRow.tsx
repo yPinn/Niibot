@@ -75,12 +75,15 @@ export function LogRecordRow({ record, index }: { record: LogRecord; index: numb
     <div
       className={`group flex gap-2 px-3 py-px hover:bg-white/5 ${levelRowClass(level, record.stream, isPg)}`}
     >
-      {/* Left gutter — click the line number to copy the raw line */}
+      {/* Left gutter — click the line number to copy the raw line.
+          Hidden below `sm:` — on a narrow phone this gutter (line number +
+          time + level, ~250px) leaves almost nothing for the message
+          column; the line number is the least essential of the three. */}
       <button
         type="button"
         onClick={() => copyToClipboard(record.raw, '已複製原始行')}
         title="複製原始行"
-        className="w-12 shrink-0 select-none text-right tabular-nums text-muted-foreground/50 group-hover:text-muted-foreground/70 hover:text-foreground"
+        className="hidden w-12 shrink-0 select-none text-right tabular-nums text-muted-foreground/50 group-hover:text-muted-foreground/70 hover:text-foreground sm:block"
       >
         {index + 1}
       </button>

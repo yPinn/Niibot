@@ -5,6 +5,7 @@ import { getBotModStatus } from '@/api/channels'
 import { BOT_USERNAME } from '@/api/config'
 import { type ChannelStats, getChannelStats } from '@/api/stats'
 import AnalyticsChart from '@/components/AnalyticsChart'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { ModSetupDialog } from '@/components/ModSetupDialog'
 import { SlideUp, Stagger, StaggerItem } from '@/components/primitives'
@@ -93,6 +94,7 @@ export default function Dashboard() {
 
   return (
     <PageMain className="transition-all duration-slow ease-default">
+      <PageHeader title="Overview" description="快速查看直播畫面與近期表現。" />
       <ModSetupDialog open={showModDialog} onOpenChange={setShowModDialog} />
 
       <SlideUp inView className="lg:flex-1 lg:min-h-0">

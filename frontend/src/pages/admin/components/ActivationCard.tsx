@@ -17,7 +17,7 @@ import {
   revokeGrant,
 } from '@/api/admin'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
-import { Icon, Spinner } from '@/components/primitives'
+import { EmptyState, Icon, Spinner } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -431,12 +431,11 @@ export function ActivationCard() {
                   onRetry={retryGrants}
                 />
               ) : grants.length === 0 ? (
-                <div className="rounded-lg border border-dashed px-4 py-6 text-center">
-                  <p className="text-sub font-medium">沒有符合目前篩選條件的啟用碼</p>
-                  <p className="text-label text-muted-foreground">
-                    切換上方狀態，或產生新的啟用碼。
-                  </p>
-                </div>
+                <EmptyState
+                  icon="fa-solid fa-ticket"
+                  title="沒有符合目前篩選條件的啟用碼"
+                  description="切換上方狀態，或產生新的啟用碼。"
+                />
               ) : (
                 <div className="divide-y overflow-hidden rounded-lg border">
                   {grants.map(g => {

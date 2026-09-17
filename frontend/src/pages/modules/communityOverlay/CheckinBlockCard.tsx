@@ -9,6 +9,7 @@ import {
   Badge,
   Button,
   Card,
+  CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
   CardDescription,
@@ -64,7 +65,7 @@ export function CheckinBlockCard({
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <Card className="min-w-0">
-        <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+        <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
           <CardTitle className="flex flex-wrap items-center gap-2">
             <h3>每日簽到</h3>
             <Badge variant="secondary">收藏卡冊</Badge>

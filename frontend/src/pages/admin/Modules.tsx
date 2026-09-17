@@ -124,8 +124,11 @@ export default function AdminModules() {
             <p className="text-sub text-muted-foreground py-2">尚無啟用中的頻道。</p>
           ) : (
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-              {/* Left: selectable channel cards — grows to absorb leftover width */}
-              <div className="grid content-start grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2 xl:flex-1">
+              {/* Left: selectable channel cards — grows to absorb leftover width.
+                  min-w-0 lets it actually shrink below its grid's intrinsic
+                  content width instead of fighting the right panel's fixed
+                  56rem for space near the xl breakpoint's low end. */}
+              <div className="grid min-w-0 content-start grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2 xl:flex-1">
                 {botEmotes.map(ch => {
                   const blocked = ch.total_count - ch.available_count
                   const isSelected = ch.channel_id === selectedId
@@ -158,7 +161,7 @@ export default function AdminModules() {
                           )}
                         </div>
                         <div
-                          className={`font-mono text-label ${blocked > 0 ? 'text-status-offline' : 'text-muted-foreground'}`}
+                          className={`font-mono text-label ${blocked > 0 ? 'font-semibold text-status-offline' : 'text-muted-foreground'}`}
                         >
                           可用 {ch.available_count} / {ch.total_count}
                         </div>
@@ -191,7 +194,7 @@ export default function AdminModules() {
                       <span
                         className={`shrink-0 font-mono text-label ${
                           selectedChannel.total_count - selectedChannel.available_count > 0
-                            ? 'text-status-offline'
+                            ? 'font-semibold text-status-offline'
                             : 'text-muted-foreground'
                         }`}
                       >

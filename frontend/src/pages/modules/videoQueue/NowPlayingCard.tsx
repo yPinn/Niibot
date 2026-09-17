@@ -146,7 +146,10 @@ export function NowPlayingCard({
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-element">
             <div className="flex items-center gap-1.5 min-w-0">
               <PlatformBadge videoType={current.video_type} />
-              <span className="truncate font-medium" title={current.title || current.video_id}>
+              <span
+                className="truncate text-content font-semibold"
+                title={current.title || current.video_id}
+              >
                 {current.title || current.video_id}
               </span>
             </div>
