@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math as _math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
@@ -1533,6 +1533,113 @@ class TestGetPotentialViewers:
         fetch_sql, *fetch_args = conn.fetch.await_args.args
         assert "window_days = $3" in fetch_sql
         assert fetch_args == ["home1", "p1", 7, 10, 0]
+
+
+# ---------------------------------------------------------------------------
+# Collab mixin — create_collab_event / list_collab_events / delete_collab_event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestCreateCollabEvent:
+    async def test_returns_row_with_target_count(self):
+        pool, conn = _make_pool(
+            fetchrow={
+                "id": 1,
+                "occurred_at": _NOW,
+                "note": "raid collab",
+                "window_days": 30,
+                "created_at": _NOW,
+            },
+            fetchval=5,
+        )
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.create_collab_event("home1", "partner1", 30, "raid collab")
+
+        assert result["id"] == 1
+        assert result["target_count"] == 5
+        conn.execute.assert_awaited_once()
+        insert_sql, *insert_args = conn.execute.await_args.args
+        assert "matcher_collab_targets" in insert_sql
+        assert "home_sessions = 0" in insert_sql
+        assert insert_args == [1, "home1", "partner1", 30]
+
+
+@pytest.mark.asyncio
+class TestListCollabEvents:
+    async def test_returns_empty_list_when_no_collabs(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = []
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert result == []
+        conn.fetchrow.assert_not_called()
+
+    async def test_computes_conversion_pct_and_attribution_window(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [
+            {"id": 1, "occurred_at": _NOW, "note": None, "window_days": 30, "created_at": _NOW}
+        ]
+        conn.fetchrow.return_value = {
+            "target_count": 20,
+            "followed_count": 4,
+            "subscribed_count": 1,
+            "returned_count": 2,
+            "converted_any_count": 5,
+        }
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert len(result) == 1
+        row = result[0]
+        assert row["converted_any_count"] == 5
+        assert row["converted_pct"] == 25.0
+        assert row["attribution_ends_at"] == _NOW + timedelta(days=14)
+
+        stats_sql, *stats_args = conn.fetchrow.await_args.args
+        assert "stream_events" in stats_sql
+        assert "chatter_stats" in stats_sql
+        assert stats_args == [1, "home1", _NOW, _NOW + timedelta(days=14)]
+
+    async def test_zero_targets_does_not_divide_by_zero(self):
+        conn = AsyncMock()
+        conn.fetch.return_value = [
+            {"id": 1, "occurred_at": _NOW, "note": None, "window_days": 30, "created_at": _NOW}
+        ]
+        conn.fetchrow.return_value = {
+            "target_count": 0,
+            "followed_count": 0,
+            "subscribed_count": 0,
+            "returned_count": 0,
+            "converted_any_count": 0,
+        }
+        pool = _make_pool_with_conn(conn)
+        repo = AnalyticsRepository(pool)
+
+        result = await repo.list_collab_events("home1", "partner1")
+
+        assert result[0]["converted_pct"] == 0.0
+
+
+@pytest.mark.asyncio
+class TestDeleteCollabEvent:
+    async def test_returns_true_when_row_deleted(self):
+        pool, _ = _make_pool(execute="DELETE 1")
+        repo = AnalyticsRepository(pool)
+
+        assert await repo.delete_collab_event("home1", 1) is True
+
+    async def test_returns_false_when_no_row_matched(self):
+        pool, _ = _make_pool(execute="DELETE 0")
+        repo = AnalyticsRepository(pool)
+
+        assert await repo.delete_collab_event("home1", 999) is False
 
 
 # ---------------------------------------------------------------------------

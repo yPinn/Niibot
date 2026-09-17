@@ -1,10 +1,12 @@
 """AnalyticsRepository — stream session, event, and stats persistence.
 
-Split into three focused mixins to keep each concern testable in isolation:
+Split into focused mixins to keep each concern testable in isolation:
 
     _session_mixin  — session lifecycle + VOD sync
     _events_mixin   — stream event recording + chatter stats
     _query_mixin    — aggregation reads (summary, top commands/chatters)
+    _overlap_mixin  — Matcher audience-overlap computation
+    _collab_mixin   — Matcher manual collab marking + conversion attribution
 
 All four in-process caches are defined in _caches.py so every mixin
 imports from a single leaf module (no circular-import risk).
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import asyncpg
 
+from shared.repositories.analytics._collab_mixin import _AnalyticsCollabMixin
 from shared.repositories.analytics._events_mixin import _AnalyticsEventsMixin
 from shared.repositories.analytics._overlap_mixin import _AnalyticsOverlapMixin
 from shared.repositories.analytics._query_mixin import _AnalyticsQueryMixin
@@ -25,6 +28,7 @@ class AnalyticsRepository(
     _AnalyticsEventsMixin,
     _AnalyticsQueryMixin,
     _AnalyticsOverlapMixin,
+    _AnalyticsCollabMixin,
 ):
     """Pure SQL operations for stream analytics tables."""
 

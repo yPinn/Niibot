@@ -421,6 +421,57 @@ export async function getPotentialViewers(
   )
 }
 
+export interface CollabEvent {
+  id: number
+  occurred_at: string
+  note: string | null
+  window_days: number
+  target_count: number
+}
+
+export interface CollabConversion extends CollabEvent {
+  followed_count: number
+  subscribed_count: number
+  returned_count: number
+  converted_any_count: number
+  converted_pct: number
+  attribution_ends_at: string
+}
+
+export async function createCollabEvent(
+  partnerChannelId: string,
+  windowDays: number,
+  note: string | null
+): Promise<CollabEvent> {
+  const response = await apiFetch(`/api/analytics/matcher/${partnerChannelId}/collabs`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ window_days: windowDays, note }),
+  })
+  if (!response.ok) throw await parseApiError(response, '標記合作失敗')
+  return response.json() as Promise<CollabEvent>
+}
+
+export async function listCollabEvents(partnerChannelId: string): Promise<CollabConversion[]> {
+  const response = await apiFetch(`/api/analytics/matcher/${partnerChannelId}/collabs`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '載入合作紀錄失敗')
+  return response.json() as Promise<CollabConversion[]>
+}
+
+export async function deleteCollabEvent(partnerChannelId: string, collabId: number): Promise<void> {
+  const response = await apiFetch(
+    `/api/analytics/matcher/${partnerChannelId}/collabs/${collabId}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+    }
+  )
+  if (!response.ok) throw await parseApiError(response, '刪除合作紀錄失敗')
+}
+
 export async function refreshMatcher(): Promise<RefreshResult> {
   const response = await apiFetch('/api/analytics/matcher/refresh', {
     method: 'POST',

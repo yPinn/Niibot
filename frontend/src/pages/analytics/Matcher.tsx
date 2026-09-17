@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 
 import { TopGamesChart } from './insights/TopGamesChart'
 import { ChannelCard } from './matcher/ChannelCard'
+import { CollabLog } from './matcher/CollabLog'
 import { ViewerTable } from './matcher/ViewerTable'
 
 function formatPeakHours(hours: number[]): string | null {
@@ -399,6 +400,11 @@ export default function Matcher() {
                   </div>
                 )}
               </div>
+
+              <CollabLog
+                partnerChannelId={selectedChannel.channel_id}
+                windowDays={Number(period)}
+              />
 
               <div className="flex-1 min-h-0">
                 <ViewerTable data={viewerData} isLoading={viewerLoading} />

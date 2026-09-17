@@ -5,8 +5,8 @@ import logging
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Response
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
 
 from core.dependencies import (
     get_analytics_service,
@@ -73,6 +73,33 @@ class MatcherViewersResponse(BaseModel):
 
 class RefreshResult(BaseModel):
     refreshed_channels: int
+
+
+class CreateCollabRequest(BaseModel):
+    window_days: Annotated[int, Field(ge=1, le=365)] = 30
+    note: str | None = None
+
+
+class CollabEvent(BaseModel):
+    id: int
+    occurred_at: datetime
+    note: str | None
+    window_days: int
+    target_count: int
+
+
+class CollabConversion(BaseModel):
+    id: int
+    occurred_at: datetime
+    note: str | None
+    window_days: int
+    target_count: int
+    followed_count: int
+    subscribed_count: int
+    returned_count: int
+    converted_any_count: int
+    converted_pct: float
+    attribution_ends_at: datetime
 
 
 def _on_background_task_done(task: asyncio.Task) -> None:
@@ -184,3 +211,38 @@ async def refresh_matcher(
     _matcher_refresh_limiter.require(channel_id)
     count = await service.refresh_matcher(channel_id, days)
     return RefreshResult(refreshed_channels=count)
+
+
+@router.post("/{partner_channel_id}/collabs", response_model=CollabEvent)
+async def create_collab_event(
+    partner_channel_id: str,
+    body: CreateCollabRequest,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> CollabEvent:
+    result = await service.create_collab_event(
+        channel_id, partner_channel_id, body.window_days, body.note
+    )
+    return CollabEvent(**result)
+
+
+@router.get("/{partner_channel_id}/collabs", response_model=list[CollabConversion])
+async def list_collab_events(
+    partner_channel_id: str,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> list[CollabConversion]:
+    results = await service.list_collab_events(channel_id, partner_channel_id)
+    return [CollabConversion(**r) for r in results]
+
+
+@router.delete("/{partner_channel_id}/collabs/{collab_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_collab_event(
+    partner_channel_id: str,
+    collab_id: int,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> None:
+    deleted = await service.delete_collab_event(channel_id, collab_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collab event not found")
