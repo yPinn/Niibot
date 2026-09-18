@@ -17,25 +17,34 @@ from twitch.components.general_commands import GeneralCommandsComponent
 PATCH_CHECK = "twitch.components.general_commands.check_command"
 
 
-def _make_component() -> GeneralCommandsComponent:
+def _make_component(
+    *, is_mod: bool = True, channel_id: str = "ch_test"
+) -> GeneralCommandsComponent:
     bot = MagicMock()
     bot.token_database = MagicMock()
     bot.channels = MagicMock()
+    bot._bot_is_mod = {channel_id} if is_mod else set()
     comp = GeneralCommandsComponent(bot)
     comp._ctx_reply = AsyncMock()
     comp._record_command = AsyncMock()
     return comp
 
 
-def _make_ctx(*, moderator: bool = False, channel_id: str = "ch_test") -> MagicMock:
+def _make_ctx(
+    *, moderator: bool = False, broadcaster: bool = False, channel_id: str = "ch_test"
+) -> MagicMock:
     ctx = MagicMock()
     ctx.chatter.moderator = moderator
+    ctx.chatter.broadcaster = broadcaster
     ctx.chatter.name = "someviewer"
+    ctx.chatter.id = "viewer-1"
     ctx.channel.id = channel_id
     ctx.channel.name = "streamer"
     ctx.bot.bot_id = "bot123"
+    ctx.bot.sender_for = MagicMock(return_value="bot123")
     ctx.bot.fetch_users = AsyncMock(return_value=[MagicMock(id="target456")])
     ctx.broadcaster.send_shoutout = AsyncMock()
+    ctx.broadcaster.timeout_user = AsyncMock()
     return ctx
 
 
@@ -45,6 +54,10 @@ async def _shoutout(comp: GeneralCommandsComponent, ctx: MagicMock, target: str 
 
 async def _help(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
     await GeneralCommandsComponent.help.callback(comp, ctx)  # type: ignore[attr-defined]
+
+
+async def _del(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
+    await GeneralCommandsComponent.delete_own_messages.callback(comp, ctx)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -86,3 +99,48 @@ class TestShoutoutGate:
             await _shoutout(comp, ctx, None)
         ctx.broadcaster.send_shoutout.assert_not_awaited()
         comp._ctx_reply.assert_awaited()
+
+
+@pytest.mark.asyncio
+class TestDel:
+    async def test_blocked_when_check_command_denies(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=None)):
+            await _del(comp, ctx)
+        ctx.broadcaster.timeout_user.assert_not_awaited()
+
+    async def test_broadcaster_cannot_target_self(self):
+        comp = _make_component()
+        ctx = _make_ctx(broadcaster=True)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _del(comp, ctx)
+        ctx.broadcaster.timeout_user.assert_not_awaited()
+        comp._ctx_reply.assert_awaited()
+
+    async def test_silent_when_bot_not_mod(self):
+        comp = _make_component(is_mod=False)
+        ctx = _make_ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _del(comp, ctx)
+        ctx.broadcaster.timeout_user.assert_not_awaited()
+        ctx.broadcaster.send_shoutout.assert_not_awaited()
+
+    async def test_times_out_self_for_one_second(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _del(comp, ctx)
+        ctx.broadcaster.timeout_user.assert_awaited_once_with(
+            moderator="bot123", user="viewer-1", duration=1, reason="!del 自助清除留言"
+        )
+        comp._record_command.assert_awaited_once_with(ctx, "del")
+
+    async def test_silent_on_helix_failure(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        ctx.broadcaster.timeout_user = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _del(comp, ctx)
+        comp._ctx_reply.assert_not_awaited()
+        comp._record_command.assert_not_awaited()

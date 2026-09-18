@@ -134,6 +134,42 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "condemn")
 
+    @commands.command(name="del", aliases=["刪除", "vanish"])
+    async def delete_own_messages(self, ctx: commands.Context) -> None:
+        """清除自己最近的聊天室留言（等同自我 timeout 1 秒）。用法: !del
+
+        Uses the bot token (moderator:manage:banned_users) — the bot must be a
+        mod. Silent on failure (bot not mod, or Twitch rejects the call):
+        this is viewer-triggered, so a visible error on every miss would spam
+        chat for a problem only the broadcaster can fix.
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="del"
+        )
+        if not config:
+            return
+
+        channel_id = ctx.channel.id
+        if ctx.chatter.broadcaster:
+            await self._ctx_reply(ctx, "實況主不能對自己這麼做啦")
+            return
+
+        if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
+            LOGGER.warning(f"[{ctx.channel.name}] !del: bot is not mod, cannot timeout")
+            return
+
+        try:
+            await ctx.broadcaster.timeout_user(
+                moderator=ctx.bot.sender_for(channel_id),
+                user=ctx.chatter.id,
+                duration=1,
+                reason="!del 自助清除留言",
+            )
+        except Exception as e:
+            LOGGER.warning(f"[{ctx.channel.name}] !del failed: {e}")
+            return
+        await self._record_command(ctx, "del")
+
     @commands.command(name="so", aliases=["推薦"])
     async def shoutout(self, ctx: commands.Context, *, target: str | None = None) -> None:
         """版主指令：推薦另一個頻道。用法: !so <頻道名>
