@@ -215,9 +215,16 @@ def default_selection(preview: ImportPreview, *, enabled: bool = False) -> dict[
     Conflicting and unsupported rows start unticked — the user has not read the
     contents yet, and a silent overwrite is the one outcome no import should
     ever produce.
+
+    Builtin rows are the one exception, preticked regardless of *enabled*: a
+    builtin row only exists because the source platform had that default
+    command switched on (``_map_default`` drops disabled ones) and Niibot
+    already ships a working equivalent, not new content to review. Someone
+    fully switching platforms should not have to manually re-enable every
+    command their old bot was already running.
     """
     return {
-        item.key: enabled
+        item.key: (True if item.section is ImportSection.BUILTIN else enabled)
         for item in preview.items
         if item.status in (ImportStatus.OK, ImportStatus.REVIEW)
     }

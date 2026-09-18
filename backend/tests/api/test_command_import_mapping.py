@@ -113,9 +113,9 @@ class TestNames:
         assert find_conflict("指令", set()) == "help"
 
     def test_name_we_have_no_builtin_for_is_not_a_conflict(self):
-        # We do not ship !game, so importing one is perfectly fine. The import
+        # We do not ship !points, so importing one is perfectly fine. The import
         # never required us to reimplement the other platform's commands.
-        assert find_conflict("game", set()) is None
+        assert find_conflict("points", set()) is None
         assert find_conflict("songrequest", set()) is None
 
 

@@ -91,6 +91,16 @@ BUILTIN_EQUIVALENTS: dict[str, str] = {
     "followage": "followage",
     "uptime": "uptime",
     "commands": "help",
+    "so": "so",
+    "shoutout": "so",
+    "title": "title",
+    "game": "game",
+    "tags": "tags",
+    "marker": "marker",
+    "winner": "winner",
+    "quote": "quote",
+    "accountage": "accountage",
+    "vanish": "del",
 }
 
 
