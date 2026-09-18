@@ -135,6 +135,20 @@
     0 12px 20px -4px oklch(0.22 0.05 293 / 12%), 0 4px 8px -4px oklch(0.22 0.05 293 / 7%);
 }
 
+/* Tailwind v4 doesn't auto-generate utilities from an arbitrary `--z-*` theme
+   namespace (unlike `--spacing-*`/`--text-*`/`--ease-*`) — `z-raised`/`z-sticky`/
+   `z-modal` need explicit @utility rules or they silently no-op (z-index stays
+   `auto`), which is exactly what was happening before this was added. */
+@utility z-raised {
+  z-index: var(--z-raised);
+}
+@utility z-sticky {
+  z-index: var(--z-sticky);
+}
+@utility z-modal {
+  z-index: var(--z-modal);
+}
+
 :root {
   color-scheme: light;
 
