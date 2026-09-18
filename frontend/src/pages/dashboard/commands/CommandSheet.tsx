@@ -11,6 +11,7 @@ import {
 } from '@/api/commands'
 import { createTrigger, deleteTrigger, type TriggerConfig, updateTrigger } from '@/api/triggers'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { EmoteInserter } from '@/components/EmoteInserter'
 import { Icon, Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import {
@@ -33,6 +34,7 @@ import {
   Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
 
@@ -193,6 +195,12 @@ export function CommandSheet({
   const { inputRef, insertText } = useInputInsert<HTMLTextAreaElement>(form.response, newVal =>
     dispatch({ type: 'SET', field: 'response', value: newVal })
   )
+  const {
+    emotes,
+    otherChannels,
+    loading: emotesLoading,
+    error: emotesError,
+  } = useChannelEmotes(open)
 
   const formIsCommand = form.name.startsWith('!')
   const isEditingTrigger = editing?.mode === 'edit-trigger'
@@ -489,6 +497,13 @@ export function CommandSheet({
                 </p>
               )}
               <VariableInserter variables={COMMAND_VARS} onInsert={insertText} />
+              <EmoteInserter
+                emotes={emotes}
+                otherChannels={otherChannels}
+                onInsert={insertText}
+                loading={emotesLoading}
+                error={emotesError}
+              />
             </div>
           )}
 

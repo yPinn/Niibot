@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type RedemptionConfig, updateFirstRedemptionSettings } from '@/api/events'
+import { EmoteInserter } from '@/components/EmoteInserter'
 import { Spinner } from '@/components/primitives'
 import { TemplatePartsPreview } from '@/components/TemplatePartsPreview'
 import {
@@ -22,6 +23,7 @@ import {
   Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { renderTemplateParts } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
@@ -91,6 +93,12 @@ export function FirstSettingsSheet({
   }, [open, config])
 
   const { inputRef, insertText } = useInputInsert<HTMLTextAreaElement>(message, setMessage)
+  const {
+    emotes,
+    otherChannels,
+    loading: emotesLoading,
+    error: emotesError,
+  } = useChannelEmotes(open)
   const previewParts = useMemo(() => renderTemplateParts(message, PREVIEW_VALUES), [message])
 
   const handleSave = async () => {
@@ -139,6 +147,13 @@ export function FirstSettingsSheet({
               onChange={event => setMessage(event.target.value)}
             />
             <VariableInserter variables={FIRST_VARIABLES} onInsert={insertText} />
+            <EmoteInserter
+              emotes={emotes}
+              otherChannels={otherChannels}
+              onInsert={insertText}
+              loading={emotesLoading}
+              error={emotesError}
+            />
             <TemplatePartsPreview
               parts={previewParts}
               limit={TWITCH_MESSAGE_LIMIT}
