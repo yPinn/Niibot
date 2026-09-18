@@ -26,6 +26,16 @@ def test_checkin_and_overlay_schema_has_tenant_and_integrity_guards():
     assert "ENABLE ROW LEVEL SECURITY" not in sql
 
 
+def test_quotes_schema_has_tenant_scope_and_stays_staged():
+    sql = (_VERSIONS / "126_add_quotes.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE quotes" in sql
+    assert "p_quotes_tenant" in sql
+    assert "REFERENCES channels(channel_id) ON DELETE CASCADE" in sql
+    assert "UNIQUE (channel_id, quote_number)" in sql
+    assert "ENABLE ROW LEVEL SECURITY" not in sql
+
+
 def test_duplicate_template_count_upgrade_preserves_customized_rows():
     sql = (_VERSIONS / "094_checkin_duplicate_count_template.sql").read_text(encoding="utf-8")
 
