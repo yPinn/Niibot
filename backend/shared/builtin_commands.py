@@ -61,6 +61,15 @@ BUILTIN_DEFS: list[dict] = [
         "aliases": "alive",
         "custom_response": "Pong! @$(user)",
     },
+    # del 撞 StreamElements 的 !vanish 預設指令 → 預設關。永遠 everyone（對自己
+    # 動手，不需要額外權限判斷）。
+    {
+        "command_name": "del",
+        "category": "common",
+        "cooldown": 5,
+        "aliases": "刪除,vanish",
+        "enabled": False,
+    },
     # ── 觀眾查詢（查自己；預設關閉：與 Nightbot / StreamElements / Fossabot /
     #    ChiwaBot 的同名指令衝突，交由實況主自行啟用）───────────────────────
     {
@@ -84,6 +93,22 @@ BUILTIN_DEFS: list[dict] = [
         "category": "viewer",
         "cooldown": 15,
         "aliases": "小奇點",
+        "enabled": False,
+    },
+    {
+        "command_name": "accountage",
+        "category": "viewer",
+        "cooldown": 15,
+        "aliases": "帳號年齡",
+        "enabled": False,
+    },
+    # quote 撞 Nightbot 預設指令模板 → 預設關。查詢對所有人開放（min_role 維持
+    # everyone），新增／刪除需要 Mod 以上——handler 內用 has_role() 另外判斷。
+    {
+        "command_name": "quote",
+        "category": "viewer",
+        "cooldown": 5,
+        "aliases": "語錄",
         "enabled": False,
     },
     # ── 娛樂互動 ──────────────────────────────────────────────────────────────
@@ -121,6 +146,30 @@ BUILTIN_DEFS: list[dict] = [
         "aliases": "訂閱數",
         "enabled": False,
     },
+    # title/game/tags 撞 Nightbot / StreamElements 預設指令模板 → 預設關。查詢對
+    # 所有人開放（min_role 維持 everyone），修改需要 Mod 以上——check_command 只有
+    # 單一 min_role 閘門，這個「查詢／修改」分權是 handler 內用 has_role() 另外判斷。
+    {
+        "command_name": "title",
+        "category": "broadcaster",
+        "cooldown": 10,
+        "aliases": "台標",
+        "enabled": False,
+    },
+    {
+        "command_name": "game",
+        "category": "broadcaster",
+        "cooldown": 10,
+        "aliases": "分類",
+        "enabled": False,
+    },
+    {
+        "command_name": "tags",
+        "category": "broadcaster",
+        "cooldown": 10,
+        "aliases": "標籤",
+        "enabled": False,
+    },
     # ── Mod 工具 ──────────────────────────────────────────────────────────────
     # so 常與其他 bot 衝突且用 bot 的 moderator token 執行 → 預設關 + Mod 限定。
     {
@@ -139,6 +188,24 @@ BUILTIN_DEFS: list[dict] = [
         "cooldown": 5,
         "aliases": "斥責",
     },
+    # marker 撞 Nightbot 預設指令模板 → 預設關。沒有查詢面，永遠 Mod 限定。
+    {
+        "command_name": "marker",
+        "category": "moderator",
+        "min_role": "moderator",
+        "cooldown": 10,
+        "aliases": "標記",
+        "enabled": False,
+    },
+    # winner 撞 Nightbot 預設指令模板 → 預設關。沒有查詢面，永遠 Mod 限定。
+    {
+        "command_name": "winner",
+        "category": "moderator",
+        "min_role": "moderator",
+        "cooldown": 10,
+        "aliases": "幸運兒",
+        "enabled": False,
+    },
 ]
 
 BUILTIN_MAP: dict[str, dict] = {d["command_name"]: d for d in BUILTIN_DEFS}
@@ -156,6 +223,7 @@ for _d in BUILTIN_DEFS:
 
 BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "ping": "確認機器人是否在線",
+    "del": "清除自己最近的聊天室留言（自我 timeout 1 秒）",
     "checkin": "每日簽到並查詢該頻道累積天數",
     "help": "顯示觀眾可用的公開指令列表",
     "uptime": "查看目前已開播多久",
@@ -169,9 +237,16 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "followage": "查詢自己追隨頻道多久",
     "subage": "查詢自己的累積訂閱月數與目前方案",
     "subcount": "供實況主查詢頻道訂閱總數",
+    "title": "查詢或修改頻道標題（修改需 Mod 以上）",
+    "game": "查詢或修改頻道目前分類（修改需 Mod 以上）",
+    "tags": "查詢或修改頻道標籤（修改需 Mod 以上）",
     "bits": "查詢自己的小奇點排名與總額",
+    "accountage": "查詢自己或指定使用者的 Twitch 帳號建立時間",
+    "quote": "查詢、新增或刪除頻道語錄（新增／刪除需 Mod 以上）",
     "so": "Mod 指令：對指定頻道執行推薦 shoutout",
     "crosshairs": "顯示頻道準星收藏頁面連結",
+    "marker": "Mod 指令：在目前直播建立標記，方便之後回顧剪輯",
+    "winner": "Mod 指令：從目前聊天室在線名單隨機抽一位幸運兒",
 }
 
 # Intended operator of each builtin. This is separate from ``min_role``:
@@ -182,10 +257,13 @@ BUILTIN_AUDIENCES: dict[str, str] = {
     "checkin": "viewer",
     "uptime": "viewer",
     "ping": "viewer",
+    "del": "viewer",
     "followage": "viewer",
     "subage": "viewer",
     "rank": "viewer",
     "bits": "viewer",
+    "accountage": "viewer",
+    "quote": "viewer",
     "fortune": "viewer",
     "tarot": "viewer",
     "choose": "viewer",
@@ -193,8 +271,13 @@ BUILTIN_AUDIENCES: dict[str, str] = {
     "tft": "viewer",
     "crosshairs": "viewer",
     "subcount": "broadcaster",
+    "title": "viewer",
+    "game": "viewer",
+    "tags": "viewer",
     "so": "moderator",
     "condemn": "moderator",
+    "marker": "moderator",
+    "winner": "moderator",
 }
 
 BUILTIN_USAGE: dict[str, str] = {
@@ -202,10 +285,13 @@ BUILTIN_USAGE: dict[str, str] = {
     "checkin": "!checkin",
     "uptime": "!uptime",
     "ping": "!ping",
+    "del": "!del",
     "followage": "!followage",
     "subage": "!subage",
     "rank": "!rank",
     "bits": "!bits",
+    "accountage": "!accountage [使用者]",
+    "quote": "!quote [編號] ｜ !quote add <內容> ｜ !quote del <編號>",
     "fortune": "!fortune",
     "tarot": "!tarot [綜合／感情／事業／財運]",
     "choose": "!choose <選項1> <選項2> …",
@@ -213,8 +299,13 @@ BUILTIN_USAGE: dict[str, str] = {
     "tft": "!tft <玩家名稱>#<Tag>",
     "crosshairs": "!crosshairs",
     "subcount": "!subcount",
+    "title": "!title [新標題]（修改需 Mod 以上）",
+    "game": "!game [分類名稱]（修改需 Mod 以上）",
+    "tags": "!tags [標籤1,標籤2,...]（修改需 Mod 以上，最多 10 個）",
     "so": "!so <頻道名稱>",
     "condemn": "!condemn",
+    "marker": "!marker [描述]",
+    "winner": "!winner",
 }
 
 BUILTIN_DETAILS: dict[str, str] = {
@@ -222,10 +313,13 @@ BUILTIN_DETAILS: dict[str, str] = {
     "checkin": "為觸發者記錄當日簽到並回覆該頻道的累積簽到天數；同一天重複觸發不會重複累計。",
     "uptime": "查詢頻道目前是否正在直播；開播時回覆本場直播已持續的時間。",
     "ping": "回覆 Pong 與觸發者名稱，用來快速確認 Niibot 是否在線並能正常處理聊天室訊息。",
+    "del": "將觸發者自己 timeout 1 秒，藉此清除他自己最近在聊天室的留言；bot 需為版主才能生效，失敗時不回覆以避免洗頻。",
     "followage": "查詢觸發者是否追隨此頻道；已追隨時回覆從追隨日期至今的時間。",
     "subage": "查詢觸發者目前的訂閱狀態，並回覆累積訂閱月數、訂閱 Tier，以及是否為禮物訂閱。",
     "rank": "依觸發者在此頻道的累積簽到天數，回覆其在每日簽到排行榜上的名次；與後台簽到排行榜同一套排序。",
     "bits": "查詢觸發者在此頻道累積投出的 Bits，並回覆其全期間排名與總額。",
+    "accountage": "查詢觸發者自己或指定使用者的 Twitch 帳號建立時間，回覆建立日期與至今經過的時間。",
+    "quote": "不帶參數隨機回覆一則語錄，帶編號查詢指定語錄；Mod 以上可用 add/del 新增或刪除，語錄依頻道各自編號。",
     "fortune": "為觸發者產生一則當日運勢結果，適合一般聊天室娛樂互動。",
     "tarot": "抽取每日塔羅並依主題解讀；同一主題當天結果固定，可選綜合、感情、事業或財運。",
     "choose": "從觸發訊息提供的多個選項中隨機挑選一個，協助聊天室快速做決定。",
@@ -233,8 +327,13 @@ BUILTIN_DETAILS: dict[str, str] = {
     "tft": "依玩家名稱與 Tag 查詢聯盟戰棋排名資料，並把結果回覆到聊天室。",
     "crosshairs": "回覆此頻道的公開準星收藏頁連結，讓觀眾瀏覽或複製準星設定。",
     "subcount": "使用實況主授權查詢頻道目前的訂閱者總數；這是營運統計，不列在觀眾公開指令頁。",
+    "title": "不帶參數時回覆目前的頻道標題；帶參數且觸發者為 Mod 以上時，改用實況主授權更新標題。",
+    "game": "不帶參數時回覆目前的頻道分類；帶參數且觸發者為 Mod 以上時，依名稱查詢 Twitch 分類並更新。",
+    "tags": "不帶參數時回覆目前的頻道標籤；帶參數且觸發者為 Mod 以上時，以逗號分隔更新標籤（上限 10 個、每個 25 字）。",
     "so": "由 Mod 對指定 Twitch 頻道執行 shoutout，並在聊天室顯示推薦資訊。",
     "condemn": "由 Mod 發送頻道預先定義的反惡意言論聲明，代表頻道管理立場。",
+    "marker": "由 Mod 在目前直播建立一個時間標記；僅在直播中且該頻道已啟用 VOD 時可用。",
+    "winner": "由 Mod 觸發，從目前聊天室的在線名單（不含機器人本身）隨機抽出一位幸運兒公布到聊天室。",
 }
 
 # Safe, illustrative chat examples for the dashboard. These strings are never
@@ -250,6 +349,7 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
     },
     "uptime": {"input": "!uptime", "output": "目前已開播 2 小時 18 分鐘。"},
     "ping": {"input": "!ping", "output": "Pong! @小霓"},
+    "del": {"input": "!del", "output": "（觸發者最近的留言被清除，無聊天室回覆）"},
     "followage": {
         "input": "!followage",
         "output": "@小霓 已追隨 1 年 3 個月 8 天。",
@@ -263,6 +363,11 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "input": "!bits",
         "output": "@小霓 累積贊助 1,250 Bits，目前排名第 6 名。",
     },
+    "accountage": {
+        "input": "!accountage",
+        "output": "@小霓 的 Twitch 帳號已建立 3 年 2 個月 10 天（2023-07-05）",
+    },
+    "quote": {"input": "!quote", "output": "#3：這波不虧"},
     "fortune": {"input": "!fortune", "output": "@小霓 今日運勢：大吉，幸運色是紫色。"},
     "tarot": {
         "input": "!tarot 感情",
@@ -279,6 +384,9 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "output": "頻道準星收藏：https://niibot.tv/streamer/crosshairs",
     },
     "subcount": {"input": "!subcount", "output": "目前共有 128 位訂閱者，感謝大家的支持 💜"},
+    "title": {"input": "!title", "output": "目前標題：晚安！今天來聊聊新版本的改動"},
+    "game": {"input": "!game", "output": "目前分類：Just Chatting"},
+    "tags": {"input": "!tags", "output": "目前標籤：中文、聊天、New"},
     "so": {
         "input": "!so streamer_name",
         "output": "快去看看 streamer_name 的頻道！https://twitch.tv/streamer_name",
@@ -287,6 +395,8 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "input": "!condemn",
         "output": "本頻道不接受仇恨、歧視或惡意攻擊言論，請共同維護聊天室環境。",
     },
+    "marker": {"input": "!marker 精彩片段", "output": "已建立標記（12:34）"},
+    "winner": {"input": "!winner", "output": "🎉 恭喜 @阿澤 中獎了！"},
 }
 
 # Public /commands page — includes usage examples
@@ -296,6 +406,7 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "help": "顯示觀眾可用的公開指令列表",
     "uptime": "查看目前已開播多久",
     "ping": "確認 Niibot 是否在線",
+    "del": "清除自己最近的聊天室留言，用法：!del",
     "tft": "查詢聯盟戰棋排名，用法：!tft <玩家名>#<tag>",
     "fortune": "運勢占卜",
     "tarot": "每日塔羅；同一主題當天結果固定。用法：!塔羅 [綜合/感情/事業/財運]",
@@ -305,5 +416,10 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "followage": "查詢自己追隨頻道多久，用法：!followage",
     "subage": "查詢自己的累積訂閱月數與目前方案，用法：!subage",
     "bits": "查詢自己的小奇點排名與總額，用法：!bits",
+    "accountage": "查詢自己或指定使用者的 Twitch 帳號建立時間，用法：!accountage [使用者]",
+    "quote": "查詢頻道語錄，用法：!quote [編號]",
+    "title": "查詢頻道標題（Mod 以上可修改），用法：!title [新標題]",
+    "game": "查詢頻道目前分類（Mod 以上可修改），用法：!game [分類名稱]",
+    "tags": "查詢頻道標籤（Mod 以上可修改），用法：!tags [標籤1,標籤2,...]",
     "crosshairs": "顯示頻道準星收藏頁面連結，用法：!crosshairs",
 }
