@@ -107,7 +107,7 @@ class ChannelPointsComponent(commands.Component):
         """Send a bot message to a channel."""
         await broadcaster.send_message(
             message=message,
-            sender=self.bot.bot_id,
+            sender=self.bot.sender_for(broadcaster.id),
         )
 
     @commands.Component.listener()
@@ -151,11 +151,10 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.debug("[%s] Redemption deferred: mod check in-flight", channel_name)
                 return
             LOGGER.debug("[%s] Redemption skipped: bot not mod", channel_name)
-            bot_login: str = getattr(self.bot, "_bot_login", "niibot")
             await mod_guard_notifier.notify(
                 broadcaster_login=channel_name or "",
                 channel_id=channel_id,
-                bot_login=bot_login,
+                bot_login=self.bot.bots.context(channel_id).sender_login,
                 send_fn=lambda msg: self._reply(payload.broadcaster, msg),
             )
             return
@@ -677,7 +676,7 @@ class ChannelPointsComponent(commands.Component):
                 )
                 await broadcaster.send_announcement(
                     message=message,
-                    moderator=self.bot.bot_id,
+                    moderator=self.bot.sender_for(broadcaster.id),
                     color=color,
                 )
                 LOGGER.info("[%s] First claimed by %s", channel_name, user_name)

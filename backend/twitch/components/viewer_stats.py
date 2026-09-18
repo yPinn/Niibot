@@ -92,8 +92,8 @@ class ViewerStatsComponent(BotComponent):
         tok = await self.channel_repo.get_token(channel_id)
         return tok.token if tok else None
 
-    async def _bot_token(self) -> str | None:
-        tok = await self.channel_repo.get_token(self.bot.bot_id, "bot")
+    async def _bot_token(self, channel_id: str) -> str | None:
+        tok = await self.channel_repo.get_token(self.bot.sender_for(channel_id), "bot")
         return tok.token if tok else None
 
     async def _notify_reauth(self, ctx: commands.Context) -> None:
@@ -135,7 +135,7 @@ class ViewerStatsComponent(BotComponent):
             await self._record(ctx, "followage")
             return
 
-        token = await self._bot_token()
+        token = await self._bot_token(channel_id)
         if not token:
             await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
             return
@@ -146,7 +146,7 @@ class ViewerStatsComponent(BotComponent):
                 {
                     "broadcaster_id": channel_id,
                     "user_id": user_id,
-                    "moderator_id": self.bot.bot_id,
+                    "moderator_id": self.bot.sender_for(channel_id),
                 },
                 token,
             )

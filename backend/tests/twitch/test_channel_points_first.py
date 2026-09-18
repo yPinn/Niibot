@@ -12,6 +12,7 @@ def _make_component() -> tuple[ChannelPointsComponent, MagicMock]:
     bot = MagicMock()
     bot.token_database = MagicMock()
     bot.bot_id = "bot-1"
+    bot.sender_for = MagicMock(return_value="bot-1")
     component = ChannelPointsComponent(bot)
     component.vip_repo.get_reward_rule = AsyncMock(return_value=None)
     component._reply = AsyncMock()  # type: ignore[method-assign]

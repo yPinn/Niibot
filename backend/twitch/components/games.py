@@ -89,7 +89,8 @@ class GamesComponent(BotComponent):
             LOGGER.warning("[%s] Roulette: bot is not mod, cannot timeout", channel_id)
             return
 
-        token_obj = await self.channel_repo.get_token(self.bot._bot_id, "bot")
+        sender_id = self.bot.sender_for(channel_id)
+        token_obj = await self.channel_repo.get_token(sender_id, "bot")
         if not token_obj:
             LOGGER.warning("[%s] Roulette: no bot token found", channel_id)
             return
@@ -105,7 +106,7 @@ class GamesComponent(BotComponent):
                     },
                     params={
                         "broadcaster_id": channel_id,
-                        "moderator_id": self.bot._bot_id,
+                        "moderator_id": sender_id,
                     },
                     json={
                         "data": {

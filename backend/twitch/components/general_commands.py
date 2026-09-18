@@ -173,7 +173,7 @@ class GeneralCommandsComponent(BotComponent):
         try:
             await ctx.broadcaster.send_shoutout(
                 to_broadcaster=target_user,
-                moderator=ctx.bot.bot_id,
+                moderator=ctx.bot.sender_for(channel_id),
             )
             LOGGER.info(f"[{ctx.channel.name}] !so → {login} by {ctx.chatter.name}")
             await self._record_command(ctx, "so")

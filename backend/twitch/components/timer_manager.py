@@ -240,16 +240,17 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
+            sender_id = self.bot.sender_for(channel_id)
             if timer.announce:
                 await users[0].send_announcement(
                     message=message,
-                    moderator=self.bot.bot_id,
+                    moderator=sender_id,
                     color="primary",
                 )
             else:
                 await users[0].send_message(
                     message=message,
-                    sender=self.bot.bot_id,
+                    sender=sender_id,
                 )
             self._timer_last_fire[timer.id] = now
             self._timer_last_fire_lines[timer.id] = current_lines
@@ -287,16 +288,17 @@ class TimerManagerComponent(commands.Component):
                 )
                 return
 
+            sender_id = self.bot.sender_for(channel_id)
             if bt.announce:
                 await users[0].send_announcement(
                     message=message,
-                    moderator=self.bot.bot_id,
+                    moderator=sender_id,
                     color="primary",
                 )
             else:
                 await users[0].send_message(
                     message=message,
-                    sender=self.bot.bot_id,
+                    sender=sender_id,
                 )
 
             self._builtin_last_fire[bkey] = now

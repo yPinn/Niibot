@@ -23,6 +23,7 @@ def _make_bot() -> MagicMock:
     bot.channels = MagicMock()
     bot.channels.get_token = AsyncMock(return_value=MagicMock(token="TOK"))
     bot.bot_id = "bot-1"
+    bot.sender_for = MagicMock(return_value="bot-1")
     return bot
 
 
