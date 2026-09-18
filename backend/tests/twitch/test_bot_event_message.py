@@ -267,6 +267,11 @@ def _make_bot_for_mod_check():
         b._bot_is_mod = set()
         b._mod_check_pending = set()
         b.subs = _make_subs()
+
+        async def _mark_reauth_required(user_id):
+            b._needs_reauth.add(user_id)
+
+        b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
         token = MagicMock()
         token.token = "tok"
         b.channels = MagicMock()
@@ -321,6 +326,7 @@ async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
 
     assert "123" in b._needs_reauth
     assert "123" not in b._bot_is_mod
+    b._mark_reauth_required.assert_awaited_once_with("123")
 
 
 # ---------------------------------------------------------------------------

@@ -529,6 +529,11 @@ def mod_bot():
             needs_reauth=b._needs_reauth,
         )
         b.channels = MagicMock()
+
+        async def _mark_reauth_required(user_id):
+            b._needs_reauth.add(user_id)
+
+        b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
         return b
 
 
@@ -567,6 +572,7 @@ class TestCheckBotModStatus:
 
         assert "ch1" not in mod_bot._bot_is_mod
         assert "ch1" in mod_bot._needs_reauth
+        mod_bot._mark_reauth_required.assert_awaited_once_with("ch1")
 
     async def test_no_token_returns_early_without_error(self, mod_bot):
         mod_bot.channels.get_token = AsyncMock(return_value=None)

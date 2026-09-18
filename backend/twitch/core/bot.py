@@ -829,7 +829,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                     )
             elif resp.status_code in (401, 403):
                 # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
-                self._needs_reauth.add(channel_id)
+                await self._mark_reauth_required(channel_id)
                 LOGGER.warning(
                     "[%s] Marking for reauth (mod check %s)",
                     self._ch(channel_id),
