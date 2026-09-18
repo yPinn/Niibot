@@ -528,6 +528,96 @@ class TestFetchPaginated:
 
 
 # ---------------------------------------------------------------------------
+# get_user_emotes — platform-wide, paginated, owner_id preserved
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestGetUserEmotes:
+    async def test_follows_pagination_across_multiple_channels(self):
+        """A bot subscribed to many channels can exceed one page — every page's
+        emotes must come back, not just the first."""
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/chat/emotes/user",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "e1",
+                            "name": "ChanAEmote",
+                            "images": {"url_2x": "https://cdn/e1.png"},
+                            "emote_type": "subscriptions",
+                            "owner_id": "chan-a",
+                        }
+                    ],
+                    "pagination": {"cursor": "CUR2"},
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "e2",
+                            "name": "ChanBEmote",
+                            "images": {"url_2x": "https://cdn/e2.png"},
+                            "emote_type": "subscriptions",
+                            "owner_id": "chan-b",
+                        }
+                    ],
+                    "pagination": {},
+                },
+            ),
+        )
+        api = mock.client()
+
+        results = await api.get_user_emotes("current-channel", "user-tok", "bot-1")
+
+        assert [r["owner_id"] for r in results] == ["chan-a", "chan-b"]
+
+    async def test_preserves_owner_id_and_falls_back_to_globals_type(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/chat/emotes/user",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "g1",
+                            "name": "Kappa",
+                            "images": {"url_1x": "https://cdn/g1.png"},
+                            "owner_id": "twitch",
+                        }
+                    ],
+                    "pagination": {},
+                },
+            ),
+        )
+        api = mock.client()
+
+        [emote] = await api.get_user_emotes("current-channel", "user-tok", "bot-1")
+
+        assert emote == {
+            "id": "g1",
+            "name": "Kappa",
+            "url": "https://cdn/g1.png",
+            "emote_type": "globals",
+            "owner_id": "twitch",
+        }
+
+    async def test_error_returns_empty_list(self):
+        mock = _MockAPI().route(
+            "GET", "/helix/chat/emotes/user", httpx.Response(401, json={"message": "no scope"})
+        )
+        api = mock.client()
+
+        assert await api.get_user_emotes("current-channel", "user-tok", "bot-1") == []
+
+
+# ---------------------------------------------------------------------------
 # get_bot_mod_status — the four documented branches
 # ---------------------------------------------------------------------------
 

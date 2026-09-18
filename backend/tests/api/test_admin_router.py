@@ -1312,11 +1312,16 @@ class TestGetBotEmotes:
         mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
         mock_twitch.is_user_subscribed = AsyncMock(return_value=False)
 
-        with patch("routers.admin_router.ChannelRepository") as cr:
+        with (
+            patch("routers.admin_router.ChannelRepository") as cr,
+            patch("routers.admin_router.resolve_bot_ids", new_callable=AsyncMock) as mock_resolve,
+            patch("routers.admin_router.bot_tokens_for", new_callable=AsyncMock) as mock_tokens,
+        ):
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[_channel(OWNER_ID), _channel("ch-a"), _channel("bot-test")]
             )
-            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            mock_resolve.side_effect = lambda pool, cids, **kw: {cid: "bot-test" for cid in cids}
+            mock_tokens.return_value = {"bot-test": "tok"}
             r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
 
         assert r.status_code == 200
@@ -1346,12 +1351,17 @@ class TestGetBotEmotes:
         mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
         mock_twitch.is_user_subscribed = AsyncMock(return_value=False)
 
-        with patch("routers.admin_router.ChannelRepository") as cr:
+        with (
+            patch("routers.admin_router.ChannelRepository") as cr,
+            patch("routers.admin_router.resolve_bot_ids", new_callable=AsyncMock) as mock_resolve,
+            patch("routers.admin_router.bot_tokens_for", new_callable=AsyncMock) as mock_tokens,
+        ):
             # bot-test is the bot's own channel and must be excluded.
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[_channel("bot-test"), _channel("ch-a")]
             )
-            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            mock_resolve.side_effect = lambda pool, cids, **kw: {cid: "bot-test" for cid in cids}
+            mock_tokens.return_value = {"bot-test": "tok"}
             r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
 
         assert r.status_code == 200
@@ -1387,9 +1397,14 @@ class TestGetBotEmotes:
         mock_twitch.get_user_emotes = AsyncMock(return_value=[{"id": "e1"}])
         mock_twitch.is_user_subscribed = AsyncMock(return_value=True)
 
-        with patch("routers.admin_router.ChannelRepository") as cr:
+        with (
+            patch("routers.admin_router.ChannelRepository") as cr,
+            patch("routers.admin_router.resolve_bot_ids", new_callable=AsyncMock) as mock_resolve,
+            patch("routers.admin_router.bot_tokens_for", new_callable=AsyncMock) as mock_tokens,
+        ):
             cr.return_value.list_all_channels = AsyncMock(return_value=[_channel("ch-a")])
-            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            mock_resolve.side_effect = lambda pool, cids, **kw: {cid: "bot-test" for cid in cids}
+            mock_tokens.return_value = {"bot-test": "tok"}
             r = _make_client(mock_twitch_api=mock_twitch).get("/api/admin/bot-emotes")
 
         assert r.status_code == 200
@@ -1433,12 +1448,15 @@ class TestResyncBotEmotes:
 
         with (
             patch("routers.admin_router.ChannelRepository") as cr,
+            patch("routers.admin_router.resolve_bot_ids", new_callable=AsyncMock) as mock_resolve,
+            patch("routers.admin_router.bot_tokens_for", new_callable=AsyncMock) as mock_tokens,
             patch("routers.admin_router.sync_enabled_emotes", new_callable=AsyncMock) as mock_sync,
         ):
             cr.return_value.list_all_channels = AsyncMock(
                 return_value=[_channel(OWNER_ID), _channel("ch-a")]
             )
-            cr.return_value.get_token = AsyncMock(return_value=MagicMock(token="tok"))
+            mock_resolve.side_effect = lambda pool, cids, **kw: {cid: "bot-test" for cid in cids}
+            mock_tokens.return_value = {"bot-test": "tok"}
             mock_sync.return_value = True
             r = _make_client(mock_twitch_api=mock_twitch).post(
                 "/api/admin/bot-emotes/resync?channel_id=ch-a"
