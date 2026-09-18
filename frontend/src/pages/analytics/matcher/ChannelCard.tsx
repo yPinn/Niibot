@@ -2,10 +2,11 @@ import { Icon } from '@/components/primitives'
 import { Avatar, AvatarFallback, AvatarImage, Badge, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
-import type { MatcherChannelSummary } from './types'
+import { type CompatibilityTier, type MatcherChannelSummary, TIER_COLOR } from './types'
 
 interface ChannelCardProps {
   channel: MatcherChannelSummary
+  tier: CompatibilityTier
   isSelected: boolean
   onClick: () => void
 }
@@ -35,7 +36,7 @@ function broadcasterBadge(type: string | null) {
   return null
 }
 
-export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) {
+export function ChannelCard({ channel, tier, isSelected, onClick }: ChannelCardProps) {
   const name = channel.display_name ?? channel.channel_id
   const initials = name.slice(0, 2).toUpperCase()
   const recentGame = channel.is_live ? channel.stream_game : (channel.top_games[0] ?? null)
@@ -57,6 +58,9 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
         <div className="flex items-start justify-between gap-element">
           <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
             <span className="text-sub font-semibold truncate">{name}</span>
+            <Badge variant="outline" className={cn('text-label py-0 shrink-0', TIER_COLOR[tier])}>
+              契合度 {tier}
+            </Badge>
             {broadcasterBadge(channel.broadcaster_type)}
             {channel.is_live && (
               <Badge className="bg-status-live/90 text-white text-label py-0 px-1.5 shrink-0">
@@ -119,7 +123,7 @@ export function ChannelCard({ channel, isSelected, onClick }: ChannelCardProps) 
             {channel.shared_chatters.toLocaleString()} 共同觀眾
           </Badge>
           <Badge variant="secondary" className="text-label py-0">
-            {channel.exclusive_to_partner.toLocaleString()} 潛在觀眾
+            {channel.exclusive_to_partner.toLocaleString()} 尚未重疊
           </Badge>
         </div>
       </div>

@@ -356,29 +356,18 @@ export interface MatcherChannelSummary {
   computed_at: string | null
   top_games: string[]
   top_games_stats: InsightsGameStat[]
-  peak_hours: number[]
+  hour_histogram: number[]
   session_count: number
   avg_stream_hours: number
   channel_view_count: number | null
 }
 
-export interface PotentialViewer {
-  user_id: string
-  username: string
-  display_name: string | null
-  partner_sessions: number
-  partner_messages: number
-  partner_watch_sec: number
-  partner_last_seen: string | null
-  home_sessions: number
-  home_messages: number
-  potential_score: number
-}
-
-export interface MatcherViewersResponse {
-  partner_channel_id: string
-  total: number
-  viewers: PotentialViewer[]
+export interface SelfStats {
+  top_games: string[]
+  top_games_stats: InsightsGameStat[]
+  hour_histogram: number[]
+  session_count: number
+  avg_stream_hours: number
 }
 
 export interface RefreshResult {
@@ -401,21 +390,15 @@ export async function getMatcherSummaries(days: number = 30): Promise<MatcherCha
   )
 }
 
-export async function getPotentialViewers(
-  partnerChannelId: string,
-  days: number = 30,
-  limit: number = 50,
-  offset: number = 0
-): Promise<MatcherViewersResponse> {
+export async function getSelfStats(days: number = 30): Promise<SelfStats> {
   return apiCache.fetch(
-    CACHE_KEYS.MATCHER_VIEWERS(partnerChannelId, days, limit, offset),
+    CACHE_KEYS.MATCHER_SELF_STATS(days),
     async () => {
-      const response = await apiFetch(
-        `/api/analytics/matcher/${partnerChannelId}/viewers?days=${days}&limit=${limit}&offset=${offset}`,
-        { credentials: 'include' }
-      )
-      if (!response.ok) throw await parseApiError(response, '載入潛在觀眾失敗')
-      return response.json() as Promise<MatcherViewersResponse>
+      const response = await apiFetch(`/api/analytics/matcher/self-stats?days=${days}`, {
+        credentials: 'include',
+      })
+      if (!response.ok) throw await parseApiError(response, '載入自身頻道統計失敗')
+      return response.json() as Promise<SelfStats>
     },
     { ttl: MATCHER_TTL }
   )
