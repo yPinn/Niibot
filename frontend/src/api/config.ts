@@ -67,6 +67,7 @@ export const API_ENDPOINTS = {
       grantMod: join('/api/channels/twitch/grant-mod'),
     },
     defaults: join('/api/channels/defaults'),
+    emotes: join('/api/channels/emotes'),
   },
   analytics: {
     summary: join('/api/analytics/summary'),
@@ -204,7 +205,6 @@ export const API_ENDPOINTS = {
   ai: {
     settings: join('/api/ai/settings'),
     reset: join('/api/ai/settings/reset'),
-    emotes: join('/api/ai/emotes'),
     packs: join('/api/ai/packs'),
   },
   donate: {

@@ -1,5 +1,5 @@
-import type { EmoteItem } from '@/api/aiSettings'
 import type { ChannelBadges } from '@/api/analytics'
+import type { EmoteItem } from '@/api/emotes'
 import { TwitchBadge } from '@/components/primitives'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 

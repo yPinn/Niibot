@@ -90,6 +90,7 @@ export const CACHE_KEYS = {
   CURRENT_USER: 'auth:current-user',
   CHANNELS: 'channels:list',
   TENANTS: 'tenants:list',
+  CHANNEL_EMOTES: 'channels:emotes',
   STATS_CHANNEL: (days: number) => `stats:channel:${days}`,
   ANALYTICS_SUMMARY: (days: number) => `analytics:summary:${days}`,
   ANALYTICS_TOP_COMMANDS: (days: number, limit: number) =>

@@ -4,13 +4,12 @@ import { toast } from 'sonner'
 import {
   AI_SETTINGS_DEFAULT,
   type AISettings,
-  type EmoteItem,
-  getAIEmotes,
   getAISettings,
   patchAISettings,
   resetAISettings,
 } from '@/api/aiSettings'
 import { type ChannelBadges, getChannelBadges } from '@/api/analytics'
+import { type EmoteItem, getChannelEmotes } from '@/api/emotes'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, OptionPicker, SlideUp, Spinner } from '@/components/primitives'
@@ -84,8 +83,8 @@ export default function AIModule() {
       .catch(() => toast.error('載入設定失敗'))
       .finally(() => setLoading(false))
 
-    getAIEmotes()
-      .then(setEmotes)
+    getChannelEmotes()
+      .then(res => setEmotes(res.emotes))
       .catch(() => toast.error('貼圖載入失敗'))
       .finally(() => setEmotesLoading(false))
 
