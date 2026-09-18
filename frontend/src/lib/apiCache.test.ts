@@ -134,8 +134,8 @@ describe('CACHE_KEYS', () => {
     expect(CACHE_KEYS.MATCHER_SUMMARIES(30)).toBe('matcher:summaries:30')
   })
 
-  it('MATCHER_VIEWERS returns keyed string', () => {
-    expect(CACHE_KEYS.MATCHER_VIEWERS('ch123', 30, 50, 0)).toBe('matcher:viewers:ch123:30:50:0')
+  it('MATCHER_SELF_STATS returns keyed string', () => {
+    expect(CACHE_KEYS.MATCHER_SELF_STATS(30)).toBe('matcher:self-stats:30')
   })
 })
 
