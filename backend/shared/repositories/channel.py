@@ -99,12 +99,13 @@ class ChannelRepository:
                 )
                 VALUES ($1, $2, $3, $4, $5, $6)
                 ON CONFLICT (user_id, token_type) DO UPDATE SET
-                    token           = EXCLUDED.token,
-                    refresh         = EXCLUDED.refresh,
-                    scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
+                    token              = EXCLUDED.token,
+                    refresh            = EXCLUDED.refresh,
+                    scopes             = COALESCE(EXCLUDED.scopes, tokens.scopes),
                     encryption_version = EXCLUDED.encryption_version,
-                    requires_reauth = FALSE,
-                    updated_at      = NOW()
+                    requires_reauth    = FALSE,
+                    reauth_notified_at = NULL,
+                    updated_at         = NOW()
                 """,
                 user_id,
                 encrypted_token,
@@ -119,7 +120,8 @@ class ChannelRepository:
         """Flag a token for re-auth; /auth/user checks this to force re-login, cleared by upsert_token."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE tokens SET requires_reauth = TRUE WHERE user_id = $1 AND token_type = $2",
+                "UPDATE tokens SET requires_reauth = TRUE, reauth_notified_at = NOW() "
+                "WHERE user_id = $1 AND token_type = $2",
                 user_id,
                 token_type,
             )
@@ -130,7 +132,7 @@ class ChannelRepository:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT user_id, token, refresh, token_type, scopes, encryption_version, "
-                "created_at, updated_at "
+                "requires_reauth, reauth_notified_at, created_at, updated_at "
                 "FROM tokens"
             )
             return [self._decode_token_row(r) for r in rows]

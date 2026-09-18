@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import asyncpg
@@ -37,6 +37,11 @@ from shared.repositories.video_queue import VideoQueueRepository
 from utils.mod_guard import mod_guard_notifier
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# load_tokens() re-validates every broadcaster on every restart; without a
+# cooldown, an unresolved missing-scope condition re-logs (and re-notifies)
+# on every deploy instead of once per this window.
+_REAUTH_NOTIFY_COOLDOWN = timedelta(hours=12)
 
 
 @dataclass(frozen=True)
@@ -692,10 +697,25 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
 
         if resp.user_id:
             token_type = "bot" if resp.user_id == self._bot_id else "broadcaster"
+            # super().add_token() may have internally refreshed the token (twitchio
+            # auto-refreshes anything expiring within 1h) and fired a fire-and-forget
+            # `token_refreshed` event with the NEW token/refresh — but *this* method
+            # only has the OLD pair it was called with. Read back what twitchio is
+            # actually holding now via its public `tokens` property so we never race
+            # event_token_refreshed()'s persist and clobber a fresh refresh_token with
+            # one Twitch has already rotated away.
+            current = self.tokens.get(resp.user_id)
+            persist_token = current["token"] if current else token
+            persist_refresh = current["refresh"] if current else refresh
+            scopes_str = " ".join(resp.scopes) if resp.scopes else None
             for attempt in range(1, 4):
                 try:
                     await self.channels.upsert_token_only(
-                        resp.user_id, token, refresh, token_type=token_type
+                        resp.user_id,
+                        persist_token,
+                        persist_refresh,
+                        scopes=scopes_str,
+                        token_type=token_type,
                     )
                     break
                 except Exception as e:
@@ -744,12 +764,18 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
 
             missing = missing_broadcaster_scopes(user_info.scopes)
             if missing:
-                LOGGER.warning(
-                    "Channel %s missing scopes %s — will notify on next stream online.",
-                    user_info.login or tok.user_id,
-                    missing,
-                )
                 self._needs_reauth.add(tok.user_id)
+                cooled_down = (
+                    tok.reauth_notified_at is None
+                    or datetime.now(UTC) - tok.reauth_notified_at > _REAUTH_NOTIFY_COOLDOWN
+                )
+                if cooled_down:
+                    LOGGER.warning(
+                        "Channel %s missing scopes %s — will notify on next stream online.",
+                        user_info.login or tok.user_id,
+                        missing,
+                    )
+                    await self._mark_reauth_required(tok.user_id)
 
             try:
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")

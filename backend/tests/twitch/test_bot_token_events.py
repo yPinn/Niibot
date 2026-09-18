@@ -3,11 +3,15 @@
 Covers:
 - event_token_refreshed: persists refreshed tokens + scopes to DB
 - event_subscription_revoked: flags reauth on authorization_revoked
+- add_token: persists twitchio's current token, not stale call args
+- load_tokens: reauth-notification cooldown
 """
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import logging
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -134,6 +138,108 @@ class TestEventTokenRefreshed:
 
         _, kwargs = bot.channels.upsert_token_only.call_args
         assert kwargs["scopes"] == "user:bot user:read:chat user:write:chat"
+
+
+# ---------------------------------------------------------------------------
+# add_token
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestAddToken:
+    async def test_persists_current_token_not_stale_args(self, bot):
+        """super().add_token() may refresh internally when the passed-in token is
+        near expiry, firing a fire-and-forget token_refreshed event with the NEW
+        pair. The override must persist whatever twitchio is now holding — not
+        the stale pre-refresh args it was called with — or a race with
+        event_token_refreshed()'s persist can clobber a fresh refresh_token with
+        one Twitch has already rotated away."""
+        resp = MagicMock(user_id="u1", scopes=["channel:bot"])
+        with (
+            patch("twitchio.client.Client.add_token", new=AsyncMock(return_value=resp)),
+            patch(
+                "twitchio.client.Client.tokens",
+                new_callable=PropertyMock,
+                return_value={"u1": {"token": "fresh_tok", "refresh": "fresh_ref"}},
+            ),
+        ):
+            await bot.add_token("stale_tok", "stale_ref")
+
+        bot.channels.upsert_token_only.assert_awaited_once_with(
+            "u1", "fresh_tok", "fresh_ref", scopes="channel:bot", token_type="broadcaster"
+        )
+
+    async def test_falls_back_to_call_args_when_user_not_in_tokens_map(self, bot):
+        resp = MagicMock(user_id="u1", scopes=[])
+        with (
+            patch("twitchio.client.Client.add_token", new=AsyncMock(return_value=resp)),
+            patch("twitchio.client.Client.tokens", new_callable=PropertyMock, return_value={}),
+        ):
+            await bot.add_token("tok", "ref")
+
+        bot.channels.upsert_token_only.assert_awaited_once_with(
+            "u1", "tok", "ref", scopes=None, token_type="broadcaster"
+        )
+
+
+# ---------------------------------------------------------------------------
+# load_tokens — reauth notification cooldown
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestLoadTokens:
+    @pytest.fixture()
+    def load_bot(self, bot):
+        bot.channels.list_tokens = AsyncMock()
+        bot.add_channel_to_db = AsyncMock()
+        bot._mark_reauth_required = AsyncMock()
+        return bot
+
+    @staticmethod
+    def _token(reauth_notified_at):
+        from shared.models.channel import Token
+
+        return Token(
+            user_id="u1",
+            token="tok",
+            refresh="ref",
+            token_type="broadcaster",
+            reauth_notified_at=reauth_notified_at,
+        )
+
+    async def test_never_notified_logs_and_marks(self, load_bot, caplog):
+        load_bot.channels.list_tokens.return_value = [self._token(None)]
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        load_bot.add_token = AsyncMock(return_value=user_info)
+
+        with caplog.at_level(logging.WARNING):
+            await load_bot.load_tokens()
+
+        load_bot._mark_reauth_required.assert_awaited_once_with("u1")
+        assert "u1" in load_bot._needs_reauth
+        assert any("missing scopes" in r.message for r in caplog.records)
+
+    async def test_within_cooldown_skips_notify_but_keeps_flag(self, load_bot):
+        recent = datetime.now(UTC) - timedelta(hours=1)
+        load_bot.channels.list_tokens.return_value = [self._token(recent)]
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        load_bot.add_token = AsyncMock(return_value=user_info)
+
+        await load_bot.load_tokens()
+
+        load_bot._mark_reauth_required.assert_not_awaited()
+        assert "u1" in load_bot._needs_reauth
+
+    async def test_past_cooldown_notifies_again(self, load_bot):
+        stale = datetime.now(UTC) - timedelta(hours=13)
+        load_bot.channels.list_tokens.return_value = [self._token(stale)]
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        load_bot.add_token = AsyncMock(return_value=user_info)
+
+        await load_bot.load_tokens()
+
+        load_bot._mark_reauth_required.assert_awaited_once_with("u1")
 
 
 @pytest.mark.asyncio
