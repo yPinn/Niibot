@@ -1,7 +1,7 @@
-"""Viewer self-service lookups: !followage / !subage / !subcount / !bits.
+"""Viewer self-service lookups: !followage / !subage / !subcount / !bits / !accountage.
 
 All Twitch reads follow the master-slave rule:
-  - followers  → bot token (bot reads as a moderator; needs bot = mod)
+  - followers, account age → bot token (public/moderator-readable data)
   - subs/bits  → broadcaster token (no moderator-token equivalent on Twitch)
 
 Missing-scope / expired broadcaster tokens surface a reauth chat prompt
@@ -308,6 +308,54 @@ class ViewerStatsComponent(BotComponent):
                 f"累計 {entry.get('score', 0)} 顆 ✨",
             )
         await self._record(ctx, "bits")
+
+    # ------------------------------------------------------------------
+    # !accountage
+    # ------------------------------------------------------------------
+
+    @commands.command(name="accountage", aliases=["帳號年齡"])
+    async def accountage(self, ctx: commands.Context, *, target: str | None = None) -> None:
+        """查詢自己或指定使用者的 Twitch 帳號建立時間。用法: !accountage [使用者]"""
+        if not await self._guard(ctx, "accountage"):
+            return
+
+        channel_id = ctx.channel.id
+        login = (target or "").strip().lstrip("@").lower()
+        params = {"login": login} if login else {"id": ctx.chatter.id}
+
+        token = await self._bot_token(channel_id)
+        if not token:
+            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            return
+
+        try:
+            resp = await self._helix_get("users", params, token)
+        except Exception as e:
+            LOGGER.warning("[%s] accountage error: %s", ctx.channel.name, e)
+            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            return
+
+        if resp.status_code != 200:
+            LOGGER.warning("[%s] accountage %s", ctx.channel.name, resp.status_code)
+            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            return
+
+        data = resp.json().get("data", [])
+        if not data:
+            await self._ctx_reply(
+                ctx, f"找不到使用者：{target}" if target else "查詢失敗，請稍後再試"
+            )
+            return
+
+        user = data[0]
+        created_at = datetime.fromisoformat(user["created_at"].replace("Z", "+00:00"))
+        display = user.get("display_name") or user.get("login") or "?"
+        await self._ctx_reply(
+            ctx,
+            f"@{display} 的 Twitch 帳號已建立 {_humanise_since(created_at)}"
+            f"（{created_at.strftime('%Y-%m-%d')}）",
+        )
+        await self._record(ctx, "accountage")
 
 
 async def setup(bot: commands.Bot) -> None:
