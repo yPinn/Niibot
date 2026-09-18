@@ -1,4 +1,6 @@
-"""Twitch interactive game commands: !roll (shared chamber roulette), !choose."""
+"""Twitch interactive game commands: !roll (shared chamber roulette), !choose,
+!winner (random active chatter pick).
+"""
 
 from __future__ import annotations
 
@@ -153,6 +155,54 @@ class GamesComponent(BotComponent):
         picked = random.choice(options)
         user = ctx.chatter.display_name or ctx.chatter.name
         await self._ctx_reply(ctx, f"🎯 {user} 的選擇：{picked}")
+
+    @commands.command(name="winner", aliases=["幸運兒"])
+    async def winner(self, ctx: commands.Context[Bot]) -> None:
+        """從目前聊天室在線名單隨機抽一位幸運兒（Mod 以上限定）。
+
+        Uses the bot token (moderator:read:chatters) — the bot must be a mod.
+        Single page, capped at Twitch's max first=1000: good enough for a fun
+        pick, not meant to be a precise census of very large chatrooms.
+        """
+        config = await check_command(self.cmd_repo, ctx, "winner", self.channel_repo)
+        if not config:
+            return
+
+        channel_id = ctx.broadcaster.id
+        sender_id = self.bot.sender_for(channel_id)
+        token_obj = await self.channel_repo.get_token(sender_id, "bot")
+        if not token_obj:
+            await self._ctx_reply(ctx, "抽選失敗，請稍後再試")
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    "https://api.twitch.tv/helix/chat/chatters",
+                    headers={
+                        "Client-Id": self.bot._client_id,
+                        "Authorization": f"Bearer {token_obj.token}",
+                    },
+                    params={"broadcaster_id": channel_id, "moderator_id": sender_id, "first": 1000},
+                )
+        except Exception as e:
+            LOGGER.warning("[%s] !winner fetch failed: %s", channel_id, e)
+            await self._ctx_reply(ctx, "抽選失敗，請稍後再試")
+            return
+
+        if resp.status_code != 200:
+            LOGGER.warning("[%s] !winner chatters %s", channel_id, resp.status_code)
+            await self._ctx_reply(ctx, "抽選失敗，請稍後再試")
+            return
+
+        candidates = [v for v in resp.json().get("data", []) if v.get("user_id") != sender_id]
+        if not candidates:
+            await self._ctx_reply(ctx, "目前聊天室沒有可以抽選的觀眾")
+            return
+
+        picked = random.choice(candidates)
+        name = picked.get("user_name") or picked.get("user_login") or "?"
+        await self._ctx_reply(ctx, f"🎉 恭喜 @{name} 中獎了！")
 
 
 async def setup(bot: commands.Bot) -> None:
