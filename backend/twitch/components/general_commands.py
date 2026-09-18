@@ -150,7 +150,7 @@ class GeneralCommandsComponent(BotComponent):
             return
 
         channel_id = ctx.channel.id
-        if ctx.chatter.broadcaster:
+        if ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             await self._ctx_reply(ctx, "實況主不能對自己這麼做啦")
             return
 

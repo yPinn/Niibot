@@ -82,7 +82,7 @@ class QuoteComponent(BotComponent):
             await self._ctx_reply(ctx, f"語錄過長（上限 {_MAX_QUOTE_LEN} 字）")
             return
 
-        creator = ctx.chatter.display_name or ctx.chatter.name
+        creator = ctx.chatter.display_name or ctx.chatter.name or "?"
         try:
             created = await self.quote_repo.add(channel_id, body, creator)
         except Exception as e:
