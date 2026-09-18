@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from core.bot_resolver import BotAccountResolver
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -75,10 +77,12 @@ def bot():
         b.sessions = MagicMock()
         b.sessions.record_line = MagicMock()
         b._bot_id = "bot-001"
+        b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._needs_reauth = set()
         b._bot_is_mod = {"123"}
         b._mod_check_pending = set()
         b._bot_login = "niibot_test"
+        b.bots.set_system_bot_login("niibot_test")
         b._handle_custom_command = AsyncMock(return_value=False)
         b._handle_message_trigger = AsyncMock(return_value=False)
         b._background_tasks = set()
@@ -262,6 +266,7 @@ def _make_bot_for_mod_check():
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
+        b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._client_id = "client-abc"
         b._needs_reauth = set()
         b._bot_is_mod = set()
@@ -345,6 +350,7 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
+        b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b.subs = _make_subs()
         b._needs_reauth = needs_reauth if needs_reauth is not None else set()
         b._bot_is_mod = set()

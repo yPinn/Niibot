@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import httpx
 
 if TYPE_CHECKING:
+    from core.bot_resolver import BotAccountResolver
     from core.subscription_manager import SubscriptionManager
     from shared.repositories.analytics import AnalyticsRepository
     from shared.repositories.channel import ChannelRepository
@@ -71,6 +72,7 @@ class SessionService:
         client: _StreamClient,
         bot_id: str,
         client_id: str,
+        bots: BotAccountResolver,
     ) -> None:
         self._analytics = analytics
         self._channels = channels
@@ -78,6 +80,12 @@ class SessionService:
         self._client = client
         self._bot_id = bot_id
         self._client_id = client_id
+        # Only used to resolve which account's token reads chatters for a
+        # channel — the bot's-own-channel filters below deliberately keep
+        # comparing against `_bot_id` (the system default), not this: a
+        # custom bot account that is itself a monitored broadcaster must
+        # still get its own watch-time tracked. See core/bot_resolver.py.
+        self._bots = bots
 
         self._active: dict[str, int] = {}
         self._creating: set[str] = set()
@@ -408,7 +416,8 @@ class SessionService:
 
     async def _fetch_chatters(self, channel_id: str) -> ChatterSnapshot:
         """Fetch all chatters, distinguishing a complete empty result from failure."""
-        bot_token = await self._channels.get_token(self._bot_id, "bot")
+        sender_id = self._bots.sender_id(channel_id)
+        bot_token = await self._channels.get_token(sender_id, "bot")
         if not bot_token:
             LOGGER.debug("No bot token, skipping watch time for %s", self._ch(channel_id))
             return ChatterSnapshot(viewers=[], complete=False)
@@ -419,7 +428,7 @@ class SessionService:
             while True:
                 params: dict = {
                     "broadcaster_id": channel_id,
-                    "moderator_id": self._bot_id,
+                    "moderator_id": sender_id,
                     "first": 1000,
                 }
                 if cursor:

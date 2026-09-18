@@ -56,6 +56,7 @@ class _Router(_MessageRouterMixin):
     def __init__(self, configs: dict[str, CommandConfig]) -> None:
         self._background_tasks = set()
         self.bot_id = "bot-001"
+        self.sender_for = lambda channel_id: "bot-001"
         self._configs = configs
 
         self.command_configs = MagicMock()

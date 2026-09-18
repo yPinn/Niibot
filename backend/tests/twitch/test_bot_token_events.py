@@ -62,12 +62,15 @@ def bot():
         from twitch.core.bot import Bot
         from twitch.core.subscription_manager import SubscriptionManager
 
+        from core.bot_resolver import BotAccountResolver
+
         b = Bot.__new__(Bot)
         b.channels = MagicMock()
         b.channels.upsert_token_only = AsyncMock()
         b.channels.get_token = AsyncMock()
         b._background_tasks = set()
         b._bot_id = "bot-001"
+        b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._client_id = "test-client-id"
         b._needs_reauth = set()
         b.subs = SubscriptionManager(

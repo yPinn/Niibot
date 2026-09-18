@@ -18,6 +18,7 @@ from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 
 from core._message_router_mixin import _MessageRouterMixin
 from core._notify_mixin import _NotifyMixin
+from core.bot_resolver import BotAccountResolver
 from core.config import COMPONENTS_DIR
 from core.session_service import SessionService
 from core.subscription_manager import SubscriptionManager
@@ -140,6 +141,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             delete_subscription=self.delete_eventsub_subscription,
             needs_reauth=self._needs_reauth,
         )
+        # Per-channel sender resolution (Phase 3 bot accounts) — every
+        # channel resolves to the system default until a switch actually
+        # ships; see core/bot_resolver.py.
+        self.bots = BotAccountResolver(token_database, system_bot_id=bot_id)
         # Stream-session ownership (was loose _active_sessions / _session_creating /
         # _chatter_buffers / _channel_line_counts, mutated from 3 places).
         self.sessions = SessionService(
@@ -149,6 +154,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             client=self,
             bot_id=bot_id,
             client_id=client_id,
+            bots=self.bots,
         )
 
     # ------------------------------------------------------------------
@@ -158,6 +164,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     def _ch(self, channel_id: str) -> str:
         """Return 'login(id)' when the name is known, otherwise just 'id'."""
         return self.subs.ch(channel_id)
+
+    def sender_for(self, channel_id: str) -> str:
+        """The Twitch user id that should speak in this channel right now."""
+        return self.bots.sender_id(channel_id)
 
     async def add_channel_to_db(self, channel_id: str, channel_name: str) -> None:
         if channel_id == self._bot_id:
@@ -270,7 +280,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 broadcaster_login=payload.broadcaster.name,
                 channel_id=channel_id,
                 send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg, sender=self.bot_id
+                    message=msg, sender=self.sender_for(channel_id)
                 ),
             )
 
@@ -348,7 +358,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         if not payload.user_id:
             return
         scopes_str = " ".join(list(payload.scopes)) if payload.scopes else None
-        token_type = "bot" if payload.user_id == self._bot_id else "broadcaster"
+        token_type = "bot" if payload.user_id in self.bots.relevant_bot_ids() else "broadcaster"
         await self.channels.upsert_token_only(
             payload.user_id,
             payload.token,
@@ -359,7 +369,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         LOGGER.debug("[%s] Token refreshed and persisted", self._ch(payload.user_id))
         self._buffer_token_refresh_log(payload.user_id)
         if (
-            payload.user_id != self._bot_id
+            not self.bots.is_bot_identity(payload.user_id)
             and payload.user_id not in self._bot_is_mod
             and payload.user_id not in self._needs_reauth
         ):
@@ -429,8 +439,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         channel_id = payload.broadcaster.id
         chatter_id = payload.chatter.id
 
-        # Ignore bot's own messages — prevents self-triggering loops
-        if chatter_id == self.bot_id:
+        # Ignore any bot's own messages — prevents self-triggering loops. Broader
+        # than "this channel's sender": in a shared-chat session, one tenant's
+        # bot must not treat another tenant's bot as a regular chatter.
+        if self.bots.is_bot_identity(chatter_id):
             return
 
         if channel_id in self._needs_reauth:
@@ -442,7 +454,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 channel_id=channel_id,
                 send_fn=lambda msg: payload.broadcaster.send_message(
                     message=msg,
-                    sender=self.bot_id,
+                    sender=self.sender_for(channel_id),
                 ),
                 min_interval=CMD_COOLDOWN if is_command else None,
             )
@@ -461,10 +473,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             await mod_guard_notifier.notify(
                 broadcaster_login=payload.broadcaster.name or "",
                 channel_id=channel_id,
-                bot_login=self._bot_login,
+                bot_login=self.bots.context(channel_id).sender_login,
                 send_fn=lambda msg: payload.broadcaster.send_message(
                     message=msg,
-                    sender=self.bot_id,
+                    sender=self.sender_for(channel_id),
                 ),
             )
             return
@@ -696,7 +708,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
 
         if resp.user_id:
-            token_type = "bot" if resp.user_id == self._bot_id else "broadcaster"
+            token_type = "bot" if resp.user_id in self.bots.relevant_bot_ids() else "broadcaster"
             # super().add_token() may have internally refreshed the token (twitchio
             # auto-refreshes anything expiring within 1h) and fired a fire-and-forget
             # `token_refreshed` event with the NEW token/refresh — but *this* method
@@ -730,12 +742,20 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         return resp
 
     async def load_tokens(self, path: str | None = None) -> None:
+        # Must run before the loop below: it populates relevant_bot_ids(),
+        # which decides whether a given 'bot'-typed row gets loaded at all.
+        await self.bots.load_all()
+
         tokens = await self.channels.list_tokens()
+        relevant_bot_ids = self.bots.relevant_bot_ids()
 
         for tok in tokens:
             # Load the correct token type per account:
-            # bot account → only 'bot' token; all others → only 'broadcaster' token.
-            expected_type = "bot" if tok.user_id == self._bot_id else "broadcaster"
+            # a relevant bot account → only its 'bot' token; everyone else →
+            # only their 'broadcaster' token. A custom bot account that is not
+            # (yet) active or desired anywhere is deliberately left unloaded —
+            # see BotAccountResolver.relevant_bot_ids().
+            expected_type = "bot" if tok.user_id in relevant_bot_ids else "broadcaster"
             if tok.token_type != expected_type:
                 continue
 
@@ -749,16 +769,22 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 )
                 continue
 
-            if tok.user_id == self._bot_id:
-                self._bot_login = user_info.login or ""
+            if self.bots.is_bot_identity(tok.user_id):
+                if tok.user_id == self._bot_id:
+                    self._bot_login = user_info.login or ""
+                    self.bots.set_system_bot_login(self._bot_login)
                 if "user:bot" not in user_info.scopes:
                     LOGGER.warning(
-                        "Bot token is missing 'user:bot' scope — bot badge will NOT appear "
-                        "in chat. Re-authorize: npm run nb -- twitch oauth --role bot"
+                        "[%s] Bot token is missing 'user:bot' scope — bot badge will NOT "
+                        "appear in chat. Re-authorize: npm run nb -- twitch oauth --role bot",
+                        user_info.login or tok.user_id,
                     )
                 else:
-                    LOGGER.info("Bot token has 'user:bot' scope — bot badge enabled.")
-                continue  # bot account does not need a channels row
+                    LOGGER.info(
+                        "[%s] Bot token has 'user:bot' scope — bot badge enabled.",
+                        user_info.login or tok.user_id,
+                    )
+                continue  # bot accounts do not need a channels row
 
             from shared.twitch_scopes import missing_broadcaster_scopes
 
@@ -809,7 +835,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                         "Client-Id": self._client_id,
                         "Authorization": f"Bearer {token_obj.token}",
                     },
-                    params={"broadcaster_id": channel_id, "user_id": self._bot_id},
+                    params={"broadcaster_id": channel_id, "user_id": self.sender_for(channel_id)},
                 )
 
             if resp.status_code == 200:

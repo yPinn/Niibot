@@ -23,6 +23,6 @@ class BotComponent(commands.Component):
     async def _ctx_reply(self, ctx: commands.Context, message: str) -> None:
         await ctx.channel.send_message(
             message=message,
-            sender=self.bot.bot_id,
+            sender=self.bot.sender_for(ctx.channel.id),
             reply_to_message_id=str(ctx.message.id) if ctx.message else None,
         )

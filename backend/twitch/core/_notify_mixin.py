@@ -1,10 +1,10 @@
 """PG NOTIFY handlers and cache refresh mixin.
 
 Depends on attributes defined in Bot.__init__:
-    self._bot_id, self.owner_id, self.subs, self.sessions
+    self._bot_id, self.owner_id, self.subs, self.sessions, self.bots
     self.channels, self.command_configs, self.redemption_configs
     self.timer_configs, self.message_trigger_configs, self.video_queue
-Uses self._ch() defined on Bot.
+Uses self._ch() and self.sender_for() defined on Bot.
 """
 
 from __future__ import annotations
@@ -135,7 +135,7 @@ class _NotifyMixin:
                 return
             await users[0].send_message(
                 message="帽子叔叔正在巡邏...",
-                sender=self._bot_id,  # type: ignore[attr-defined]
+                sender=self.sender_for(channel_id),  # type: ignore[attr-defined]
             )
             LOGGER.info(f"[NOTIFY] Welcome message sent to channel {self._ch(channel_id)}")  # type: ignore[attr-defined]
         except Exception as e:
@@ -153,7 +153,7 @@ class _NotifyMixin:
                 return
             await users[0].send_message(
                 message="帽子叔叔回來上班了！",
-                sender=self._bot_id,  # type: ignore[attr-defined]
+                sender=self.sender_for(channel_id),  # type: ignore[attr-defined]
             )
             LOGGER.info(
                 f"[NOTIFY] Reauth restored message sent to {login} ({self._ch(channel_id)})"
@@ -254,15 +254,19 @@ class _NotifyMixin:
             LOGGER.exception(f"[NOTIFY] Error handling token_reauth: {e}")
 
     async def _handle_bot_token_updated(self, connection, pid, channel, payload) -> None:
-        """Atomically replace the running system Bot credential after web OAuth."""
+        """Hot-reload a bot credential after web OAuth — system default or a
+        tenant-selected custom account currently active/desired somewhere.
+
+        An authorized-but-never-selected custom account is deliberately left
+        unloaded; it only enters the token store once some channel's
+        `channel_bot_settings` row makes it relevant (see
+        `BotAccountResolver.relevant_bot_ids()`).
+        """
         try:
             data = json.loads(payload)
             user_id = data["user_id"]
-            # Phase 2 hot-reloads only the process-default Niibot credential.
-            # Tenant-selected custom accounts are loaded by the Phase 3 resolver,
-            # avoiding an unscoped external token entering the global store.
-            if user_id != self._bot_id:  # type: ignore[attr-defined]
-                LOGGER.debug("[NOTIFY] Custom Bot credential persisted for future tenant use")
+            if user_id not in self.bots.relevant_bot_ids():  # type: ignore[attr-defined]
+                LOGGER.debug("[NOTIFY] Bot credential persisted for not-yet-relevant account")
                 return
 
             from shared.repositories.channel import _token_cache
@@ -270,13 +274,13 @@ class _NotifyMixin:
             _token_cache.invalidate(f"token:{user_id}:bot")
             token_obj = await self.channels.get_token(user_id, "bot")  # type: ignore[attr-defined]
             if token_obj is None:
-                LOGGER.error("[NOTIFY] Updated system Bot credential is unavailable")
+                LOGGER.error("[NOTIFY] Updated Bot credential is unavailable: %s", user_id)
                 return
 
             await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
-            LOGGER.info("[NOTIFY] System Bot credential hot reload completed")
+            LOGGER.info("[NOTIFY] Bot credential hot reload completed for %s", user_id)
         except Exception:
-            LOGGER.exception("[NOTIFY] System Bot credential hot reload failed")
+            LOGGER.exception("[NOTIFY] Bot credential hot reload failed")
 
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""
