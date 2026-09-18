@@ -46,7 +46,7 @@ class MatcherChannelSummary(BaseModel):
     computed_at: datetime | None = None
     top_games: list[str] = []
     top_games_stats: list[InsightsGameStat] = []
-    peak_hours: list[int] = []
+    hour_histogram: list[int] = []
     session_count: int = 0
     avg_stream_hours: float = 0.0
     channel_view_count: int | None = None
@@ -69,6 +69,14 @@ class MatcherViewersResponse(BaseModel):
     partner_channel_id: str
     total: int
     viewers: list[PotentialViewer]
+
+
+class SelfStats(BaseModel):
+    top_games: list[str] = []
+    top_games_stats: list[InsightsGameStat] = []
+    hour_histogram: list[int] = []
+    session_count: int = 0
+    avg_stream_hours: float = 0.0
 
 
 class RefreshResult(BaseModel):
@@ -132,7 +140,7 @@ async def get_matcher_summaries(
         twitch_api.get_users_by_ids(partner_ids),
         twitch_api.get_streams(partner_ids),
         twitch_api.get_channels_info(partner_ids),
-        asyncio.gather(*[service.get_partner_session_stats(pid, 90) for pid in partner_ids]),
+        asyncio.gather(*[service.get_partner_session_stats(pid, days) for pid in partner_ids]),
     )
 
     users_by_id: dict[str, dict] = {u["id"]: u for u in users_list}
@@ -170,7 +178,7 @@ async def get_matcher_summaries(
                 computed_at=s.get("computed_at"),
                 top_games=stats.get("top_games", []),
                 top_games_stats=[InsightsGameStat(**g) for g in stats.get("top_games_stats", [])],
-                peak_hours=stats.get("peak_hours", []),
+                hour_histogram=stats.get("hour_histogram", []),
                 session_count=stats.get("session_count", 0),
                 avg_stream_hours=stats.get("avg_stream_hours", 0.0),
                 channel_view_count=int(user["view_count"]) if user.get("view_count") else None,
@@ -179,6 +187,25 @@ async def get_matcher_summaries(
 
     response.headers["Cache-Control"] = "private, max-age=300"
     return result
+
+
+@router.get("/self-stats", response_model=SelfStats)
+async def get_self_stats(
+    response: Response,
+    days: Annotated[int, Query(ge=1, le=365)] = 30,
+    channel_id: str = Depends(get_current_channel_id),
+    service: AnalyticsService = Depends(get_analytics_service),
+) -> SelfStats:
+    """Home channel's own session stats, for client-side common-ground comparison."""
+    stats = await service.get_partner_session_stats(channel_id, days)
+    response.headers["Cache-Control"] = "private, max-age=300"
+    return SelfStats(
+        top_games=stats.get("top_games", []),
+        top_games_stats=[InsightsGameStat(**g) for g in stats.get("top_games_stats", [])],
+        hour_histogram=stats.get("hour_histogram", []),
+        session_count=stats.get("session_count", 0),
+        avg_stream_hours=stats.get("avg_stream_hours", 0.0),
+    )
 
 
 @router.get("/{partner_channel_id}/viewers", response_model=MatcherViewersResponse)

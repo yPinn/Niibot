@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   getMatcherSummaries,
-  getPotentialViewers,
+  getSelfStats,
   type MatcherChannelSummary,
-  type MatcherViewersResponse,
   refreshMatcher,
+  type SelfStats,
 } from '@/api/analytics'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
@@ -30,17 +30,10 @@ import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { formatCompact } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-import { TopGamesChart } from './insights/TopGamesChart'
 import { ChannelCard } from './matcher/ChannelCard'
 import { CollabLog } from './matcher/CollabLog'
-import { ViewerTable } from './matcher/ViewerTable'
-
-function formatPeakHours(hours: number[]): string | null {
-  if (!hours.length) return null
-  const min = Math.min(...hours)
-  const max = Math.max(...hours)
-  return min === max ? `${min}:00` : `${min}:00–${max}:59`
-}
+import { HourHeatStrip } from './matcher/HourHeatStrip'
+import { type CompatibilityTier, TIER_COLOR } from './matcher/types'
 
 function formatComputedAt(iso: string | null): string | null {
   if (!iso) return null
@@ -83,12 +76,35 @@ function suitabilityScore(ch: MatcherChannelSummary): number {
   return ch.overlap_pct * exclusive_pct
 }
 
+/** Percentile-bucketed compatibility tier — relative to the current candidate
+ * pool rather than a fixed magic-number threshold, since suitabilityScore's
+ * scale shifts with each home channel's own audience size. */
+function compatibilityTiers(channels: MatcherChannelSummary[]): Map<string, CompatibilityTier> {
+  const sorted = [...channels].sort((a, b) => suitabilityScore(b) - suitabilityScore(a))
+  const total = sorted.length
+  const tiers = new Map<string, CompatibilityTier>()
+  sorted.forEach((ch, index) => {
+    if (suitabilityScore(ch) <= 0) {
+      tiers.set(ch.channel_id, '低')
+      return
+    }
+    const percentile = index / total
+    tiers.set(ch.channel_id, percentile < 1 / 3 ? '高' : percentile < 2 / 3 ? '中' : '低')
+  })
+  return tiers
+}
+
+function commonGames(a: string[], b: string[]): string[] {
+  const bSet = new Set(b)
+  return a.filter(game => bSet.has(game))
+}
+
 function invalidateMatcherCache(days: number) {
   apiCache.delete(CACHE_KEYS.MATCHER_SUMMARIES(days))
 }
 
-function invalidateViewerCache(channelId: string, days: number) {
-  apiCache.delete(CACHE_KEYS.MATCHER_VIEWERS(channelId, days, 50, 0))
+function invalidateSelfStatsCache(days: number) {
+  apiCache.delete(CACHE_KEYS.MATCHER_SELF_STATS(days))
 }
 
 export default function Matcher() {
@@ -99,8 +115,7 @@ export default function Matcher() {
   const [summaries, setSummaries] = useState<MatcherChannelSummary[]>([])
   const [summariesLoading, setSummariesLoading] = useState(true)
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null)
-  const [viewerData, setViewerData] = useState<MatcherViewersResponse | null>(null)
-  const [viewerLoading, setViewerLoading] = useState(false)
+  const [selfStats, setSelfStats] = useState<SelfStats | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const loadedForRef = useRef<string | null>(null)
 
@@ -119,14 +134,11 @@ export default function Matcher() {
     [user]
   )
 
-  const fetchViewers = useCallback(async (channelId: string, days: number) => {
-    setViewerLoading(true)
+  const fetchSelfStats = useCallback(async (days: number) => {
     try {
-      setViewerData(await getPotentialViewers(channelId, days))
+      setSelfStats(await getSelfStats(days))
     } catch {
-      setViewerData(null)
-    } finally {
-      setViewerLoading(false)
+      setSelfStats(null)
     }
   }, [])
 
@@ -136,13 +148,8 @@ export default function Matcher() {
     if (loadedForRef.current === key) return
     loadedForRef.current = key
     void fetchSummaries(Number(period))
-  }, [isInitialized, user, period, fetchSummaries])
-
-  useEffect(() => {
-    if (!selectedChannelId) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void fetchViewers(selectedChannelId, Number(period))
-  }, [selectedChannelId, period, fetchViewers])
+    void fetchSelfStats(Number(period))
+  }, [isInitialized, user, period, fetchSummaries, fetchSelfStats])
 
   const handlePeriodChange = useCallback((value: string) => {
     setPeriod(value)
@@ -155,24 +162,31 @@ export default function Matcher() {
     try {
       await refreshMatcher()
       invalidateMatcherCache(days)
-      if (selectedChannelId) invalidateViewerCache(selectedChannelId, days)
+      invalidateSelfStatsCache(days)
       loadedForRef.current = null
       await fetchSummaries(days)
-      if (selectedChannelId) await fetchViewers(selectedChannelId, days)
+      await fetchSelfStats(days)
     } catch {
       // silent — button returns to idle state
     } finally {
       setIsRefreshing(false)
     }
-  }, [isRefreshing, period, selectedChannelId, fetchSummaries, fetchViewers])
+  }, [isRefreshing, period, fetchSummaries, fetchSelfStats])
 
   const selectedChannel = summaries.find(s => s.channel_id === selectedChannelId) ?? null
-  const peakHoursLabel = selectedChannel ? formatPeakHours(selectedChannel.peak_hours ?? []) : null
   const computedAtLabel = selectedChannel ? formatComputedAt(selectedChannel.computed_at) : null
 
   const sortedSummaries = useMemo(
     () => [...summaries].sort((a, b) => suitabilityScore(b) - suitabilityScore(a)),
     [summaries]
+  )
+  const tierByChannelId = useMemo(() => compatibilityTiers(summaries), [summaries])
+  const selectedGameOverlap = useMemo(
+    () =>
+      selectedChannel && selfStats
+        ? commonGames(selectedChannel.top_games, selfStats.top_games)
+        : [],
+    [selectedChannel, selfStats]
   )
 
   return (
@@ -244,6 +258,7 @@ export default function Matcher() {
               <ChannelCard
                 key={channel.channel_id}
                 channel={channel}
+                tier={tierByChannelId.get(channel.channel_id) ?? '低'}
                 isSelected={selectedChannelId === channel.channel_id}
                 onClick={() => setSelectedChannelId(channel.channel_id)}
               />
@@ -275,6 +290,15 @@ export default function Matcher() {
                     <span className="text-card-title font-semibold">
                       {selectedChannel.display_name ?? selectedChannel.channel_id}
                     </span>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'text-label py-0 shrink-0',
+                        TIER_COLOR[tierByChannelId.get(selectedChannel.channel_id) ?? '低']
+                      )}
+                    >
+                      契合度 {tierByChannelId.get(selectedChannel.channel_id) ?? '低'}
+                    </Badge>
                     {broadcasterBadgeDetail(selectedChannel.broadcaster_type)}
                     {selectedChannel.language && (
                       <Badge
@@ -309,7 +333,14 @@ export default function Matcher() {
                 </div>
               </div>
 
-              {/* 重疊率／潛在觀眾 are the two numbers this whole tool exists to
+              <CollabLog
+                partnerChannelId={selectedChannel.channel_id}
+                windowDays={Number(period)}
+              />
+
+              <Separator />
+
+              {/* 重疊率／尚未重疊 are the two numbers this whole tool exists to
                   surface — sized up so they read as the point, not tied with
                   the three supporting counts around them. */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-card shrink-0">
@@ -323,7 +354,17 @@ export default function Matcher() {
                   <span className="text-page-title font-bold text-primary tabular-nums">
                     {selectedChannel.exclusive_to_partner.toLocaleString()}
                   </span>
-                  <span className="text-label text-muted-foreground">潛在觀眾</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="text-label text-muted-foreground inline-flex items-center gap-0.5 cursor-help">
+                        尚未重疊
+                        <Icon icon="fa-regular fa-circle-question" className="text-label" />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-56">
+                      僅統計聊天室出席紀錄的帳號，不含純觀看不進聊天室的觀眾，也不代表對方完全不認識你。
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
                 <div className="flex flex-col items-center rounded-lg border bg-muted/20 px-4 py-2">
                   <span
@@ -371,12 +412,6 @@ export default function Matcher() {
                   </div>
                 )}
                 <div className="flex items-center gap-section text-label text-muted-foreground flex-wrap">
-                  {peakHoursLabel && (
-                    <span className="flex items-center gap-1">
-                      <Icon icon="fa-regular fa-clock" className="text-label" />
-                      {peakHoursLabel}
-                    </span>
-                  )}
                   {selectedChannel.session_count > 0 && (
                     <span className="flex items-center gap-1">
                       <Icon icon="fa-solid fa-video" className="text-label" />
@@ -392,28 +427,40 @@ export default function Matcher() {
                     </span>
                   )}
                 </div>
-
-                {(selectedChannel.top_games_stats?.length ?? 0) > 0 && (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-label text-muted-foreground">熱門遊戲分類</span>
-                    <div className="h-28">
-                      <TopGamesChart data={selectedChannel.top_games_stats ?? []} />
-                    </div>
-                  </div>
-                )}
               </div>
 
               <Separator />
 
-              <CollabLog
-                partnerChannelId={selectedChannel.channel_id}
-                windowDays={Number(period)}
-              />
+              <div className="flex flex-col gap-card shrink-0">
+                <span className="text-label text-muted-foreground">共同點</span>
 
-              <Separator />
+                {selectedGameOverlap.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-label text-muted-foreground/70">共同遊戲分類</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {selectedGameOverlap.map(game => (
+                        <Badge
+                          key={game}
+                          variant="outline"
+                          className="text-label py-0 px-1.5 text-status-online border-status-online/40"
+                        >
+                          {game}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-label text-muted-foreground/70">目前沒有相同的熱門遊戲分類</p>
+                )}
 
-              <div className="flex-1 min-h-0">
-                <ViewerTable data={viewerData} isLoading={viewerLoading} />
+                <div className="flex flex-col gap-1">
+                  <span className="text-label text-muted-foreground/70">開台時段重疊</span>
+                  <HourHeatStrip
+                    homeHistogram={selfStats?.hour_histogram ?? []}
+                    partnerHistogram={selectedChannel.hour_histogram}
+                    partnerLabel={selectedChannel.display_name ?? selectedChannel.channel_id}
+                  />
+                </div>
               </div>
             </>
           )}

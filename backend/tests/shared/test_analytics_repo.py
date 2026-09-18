@@ -1390,7 +1390,7 @@ class TestGetPartnerSessionStats:
 
         assert result["session_count"] == 0
         assert result["top_games"] == []
-        assert result["peak_hours"] == []
+        assert result["hour_histogram"] == [0] * 24
         assert result["avg_stream_hours"] == 0.0
 
     async def test_returns_aggregated_stats(self):
@@ -1407,7 +1407,9 @@ class TestGetPartnerSessionStats:
 
         assert result["session_count"] == 3
         assert result["top_games"][0] == "Minecraft"
-        assert 20 in result["peak_hours"]
+        assert result["hour_histogram"][20] == 2
+        assert result["hour_histogram"][21] == 1
+        assert sum(result["hour_histogram"]) == 3
         assert result["avg_stream_hours"] == round((3.0 + 2.5 + 1.5) / 3, 1)
 
     async def test_top_games_stats_shape(self):

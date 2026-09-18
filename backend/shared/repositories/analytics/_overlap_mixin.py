@@ -293,14 +293,14 @@ class _AnalyticsOverlapMixin:
             if not rows:
                 return {
                     "top_games": [],
-                    "peak_hours": [],
+                    "hour_histogram": [0] * 24,
                     "session_count": 0,
                     "avg_stream_hours": 0.0,
                 }
 
             game_counts: dict[str, int] = {}
             game_hours: dict[str, float] = {}
-            hours: list[int] = []
+            hour_histogram = [0] * 24
             durations: list[float] = []
             for row in rows:
                 if row["game_name"]:
@@ -308,7 +308,7 @@ class _AnalyticsOverlapMixin:
                     game_hours[row["game_name"]] = game_hours.get(row["game_name"], 0.0) + float(
                         row["duration_hours"]
                     )
-                hours.append(int(row["start_hour"]))
+                hour_histogram[int(row["start_hour"])] += 1
                 durations.append(float(row["duration_hours"]))
 
             top_games = sorted(game_counts, key=lambda g: game_counts[g], reverse=True)[:3]
@@ -325,7 +325,7 @@ class _AnalyticsOverlapMixin:
             return {
                 "top_games": top_games,
                 "top_games_stats": top_games_stats,
-                "peak_hours": sorted(set(hours)),
+                "hour_histogram": hour_histogram,
                 "session_count": len(rows),
                 "avg_stream_hours": avg_hours,
             }
