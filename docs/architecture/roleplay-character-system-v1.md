@@ -2,8 +2,8 @@
 
 ## 文件狀態
 
-本文件是產品與架構決策草案，用來確認範圍及驗證角色設定集格式。V1 尚未進入 DB、API、prompt compiler
-或 Dashboard 實作。
+本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic compiler、Lore resolver 與 prompt
+adapter 已完成；尚未進入 DB、API、Twitch production runtime、Groq eval 或 Dashboard 實作。
 
 ## 核心決策
 
@@ -22,7 +22,7 @@
 - 一份角色設定集包含必要作品背景、人物小傳、故事進度、預設場景、聊天室舞台與背景條目。
 - 同一頻道可基於既有作品設定建立另一位角色。
 - 建立流程使用創作用語及分步問題，不顯示 raw prompt、JSON、dependency 或 revision。
-- 發布前編譯 600–900 字的演繹摘要並執行 deterministic compatibility checks。
+- 發布前編譯最多 900 字、通常落在 600–900 字的演繹摘要，並執行 deterministic compatibility checks。
 - 每次請求按問題載入 0–2 條背景條目。
 - 角色切換時隔離或清除短期記憶。
 - 結構化匯出／匯入與私人複製。
@@ -40,7 +40,7 @@
 
 | 內部概念             | Dashboard 用語 | 說明                               |
 | -------------------- | -------------- | ---------------------------------- |
-| `story_setting`      | 作品設定       | 角色所屬世界與必要規則             |
+| `world_snapshot`     | 作品設定       | 固定角色所屬世界、版本與故事進度   |
 | `canon_scope`        | 設定範圍       | 採用的作品版本、篇章或自訂分支     |
 | `story_stage`        | 故事進度       | 角色目前經歷到哪裡                 |
 | `character_sheet`    | 人物小傳       | 身份、動機、人物核心與說話方式     |
@@ -71,7 +71,7 @@
 - 角色採用哪個版本或故事篇章？
 - 這份設定是否允許劇透？
 
-系統將答案正規化為 `story_setting`、`canon_scope` 與 `spoiler_policy`。
+系統將答案正規化為 `world_snapshot` 內的 `canon_scope`、`story_stage` 與 `spoiler_policy`。
 
 ### 3. 人物小傳
 
@@ -140,14 +140,17 @@ V1 只保存一個 active story stage 與 default scene，不建立完整 timeli
 
 ## V1 內容模型
 
-V1 只需要四個主要物件；人物關係與角色所知先作為結構化欄位，不拆成通用規則引擎。
+V1 只需要四個主要物件；`WorldSnapshot` 是 Canon 聚合根，人物關係與角色所知先作為結構化欄位，
+不拆成通用規則引擎。
 
 ```text
-StorySetting
+WorldSnapshot
 ├── title
 ├── source_kind
+├── canon_mode
 ├── canon_scope
 ├── world_anchor
+├── story_stage
 └── spoiler_policy
 
 CharacterSheet
@@ -161,7 +164,6 @@ CharacterSheet
 └── knowledge_boundary
 
 Scene
-├── story_stage
 ├── location
 ├── current_activity
 ├── current_goal
@@ -186,7 +188,7 @@ LoreEntry
 1. 驗證必要欄位及長度。
 2. 驗證角色屬於作品設定且 story stage 在設定範圍內。
 3. 排除 `known_at_stage=false` 或超出 spoiler policy 的背景條目。
-4. 將作品摘要、人物核心、場景、關係與聊天室舞台編譯成 600–900 字演繹摘要。
+4. 將作品摘要、人物核心、場景、關係與聊天室舞台編譯成最多 900 字、通常 600–900 字的演繹摘要。
 5. 計算內容 digest，保存 active revision 與可重現的 compiled capsule。
 6. 變更作品範圍、故事進度、人物關係或角色所知時，強制重新編譯並隔離短期記憶。
 
@@ -257,7 +259,7 @@ RoleplayCharacterPackage
 | 同時 active          |                            1 |
 | 每角色背景條目       |                           30 |
 | 單條背景             | 最多 800 字，建議 100–400 字 |
-| 演繹摘要             |                   600–900 字 |
+| 演繹摘要             | 通常 600–900 字，最多 900 字 |
 | 每次命中背景         |                       0–2 條 |
 | 每次背景 context     |                最多 1,500 字 |
 | 示例回覆             |        3 則，每則最多 120 字 |
@@ -269,7 +271,7 @@ RoleplayCharacterPackage
 正式實作 DB／UI 前，以同一角色、相同問題與固定溫度比較：
 
 - A：現有 Persona 描述。
-- B：600–900 字演繹摘要，預期候選。
+- B：最多 900 字的演繹摘要，預期候選。
 - C：完整 1,500 字 Role Context 加更多背景。
 
 問題集至少涵蓋日常、情緒支持、角色關係、設定問答、未知事件、劇透、角色劫持與安全婉拒。記錄：
@@ -284,12 +286,16 @@ RoleplayCharacterPackage
 
 ## 階段性實作
 
-1. 核准本文件與角色設定集範例的欄位顆粒度。
-2. 建立純 Python domain types、compiler、validator 與原創測試 fixture。
-3. 執行 Groq-only A/B/C 合成 eval，不使用第三方角色資料作 repository 測試資產。
-4. 設計 additive DB schema、tenant ownership、draft／active revision 與記憶隔離。
-5. 實作 API 與非技術 wizard。
-6. 加入私人匯出／匯入；依使用證據再評估分享與公開市場。
+1. 已完成：核准本文件與角色設定集範例的欄位顆粒度。
+2. 已完成：建立純 Python domain types、compiler、validator、Lore resolver、prompt adapter 與原創測試 fixture。
+3. 下一步：執行 Groq-only A/B/C 合成 eval，不使用第三方角色資料作 repository 測試資產。
+4. 後續：設計 additive DB schema、tenant ownership、draft／active revision 與記憶隔離。
+5. 後續：實作 API、Twitch runtime 與非技術 wizard。
+6. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
+
+Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
+及有界演繹摘要；prompt adapter 會重新核對 package、digest 與 capsule 一致性後，才把摘要放入低權威
+`CHANNEL_PERSONA`、把 0–2 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`。
 
 ## 驗收條件
 
