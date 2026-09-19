@@ -2,6 +2,8 @@
 
 from shared.roleplay.compiler import (
     MAX_CAPSULE_CHARS,
+    MAX_COMPACT_CAPSULE_CHARS,
+    ROLEPLAY_COMPILER_VERSION,
     canonical_roleplay_json,
     compile_roleplay_package,
     roleplay_content_digest,
@@ -17,11 +19,22 @@ from shared.roleplay.contracts import (
     RelationshipState,
     ResolvedLore,
     RoleplayPackage,
+    RoleplayRuntimeProfile,
     Scene,
     SourceKind,
     SpoilerPolicy,
     ValidationIssue,
     WorldSnapshot,
+)
+from shared.roleplay.evaluation import (
+    EvaluationCase,
+    EvaluationGrade,
+    EvaluationRun,
+    EvaluationSummary,
+    EvaluationVariant,
+    build_evaluation_request,
+    grade_evaluation_output,
+    summarize_evaluation_runs,
 )
 from shared.roleplay.prompt import build_roleplay_context_sections
 from shared.roleplay.retrieval import resolve_lore
@@ -36,6 +49,8 @@ from shared.roleplay.validation import (
 
 __all__ = [
     "MAX_CAPSULE_CHARS",
+    "MAX_COMPACT_CAPSULE_CHARS",
+    "ROLEPLAY_COMPILER_VERSION",
     "MAX_EXAMPLE_REPLIES",
     "MAX_LORE_ENTRIES",
     "SUPPORTED_SCHEMA_VERSION",
@@ -44,11 +59,17 @@ __all__ = [
     "CharacterKnowledge",
     "CharacterSheet",
     "CompiledRoleplay",
+    "EvaluationCase",
+    "EvaluationGrade",
+    "EvaluationRun",
+    "EvaluationSummary",
+    "EvaluationVariant",
     "LoreEntry",
     "Relationship",
     "RelationshipState",
     "ResolvedLore",
     "RoleplayPackage",
+    "RoleplayRuntimeProfile",
     "RoleplayValidationError",
     "Scene",
     "SourceKind",
@@ -56,10 +77,13 @@ __all__ = [
     "ValidationIssue",
     "WorldSnapshot",
     "assert_valid_roleplay_package",
+    "build_evaluation_request",
     "build_roleplay_context_sections",
     "canonical_roleplay_json",
     "compile_roleplay_package",
+    "grade_evaluation_output",
     "resolve_lore",
     "roleplay_content_digest",
+    "summarize_evaluation_runs",
     "validate_roleplay_package",
 ]

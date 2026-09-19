@@ -16,6 +16,17 @@ class _Candidate:
     source_index: int
 
 
+def eligible_lore_entries(package: RoleplayPackage) -> tuple[LoreEntry, ...]:
+    """Return lore the character may know and the audience may receive."""
+
+    return tuple(
+        entry
+        for entry in package.lore_entries
+        if entry.known_at_stage
+        and not (entry.contains_spoilers and package.world.spoiler_policy is SpoilerPolicy.FORBID)
+    )
+
+
 def _match(entry: LoreEntry, normalized_query: str, source_index: int) -> _Candidate | None:
     best_strength = 0
     best_chars = 0
@@ -53,11 +64,7 @@ def resolve_lore(
         return ResolvedLore(entries=(), total_chars=0)
 
     candidates: list[_Candidate] = []
-    for index, entry in enumerate(package.lore_entries):
-        if not entry.known_at_stage:
-            continue
-        if entry.contains_spoilers and package.world.spoiler_policy is SpoilerPolicy.FORBID:
-            continue
+    for index, entry in enumerate(eligible_lore_entries(package)):
         candidate = _match(entry, normalized_query, index)
         if candidate is not None:
             candidates.append(candidate)

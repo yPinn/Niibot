@@ -3,14 +3,15 @@
 ## 文件狀態
 
 本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic compiler、Lore resolver 與 prompt
-adapter 已完成；尚未進入 DB、API、Twitch production runtime、Groq eval 或 Dashboard 實作。
+adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成，尚未進入 DB、API、
+Twitch production runtime 或 Dashboard 實作。
 
 ## 核心決策
 
 - Persona Assistant 與 Canon Role-play 是兩種不同產品模式。
 - Canon Role-play 內部採 World-first：角色表現由作品設定、故事進度、當前場景、人物關係與角色所知共同解析。
 - 建立與分享採 Character-first：非技術使用者建立、安裝和分享的是可直接使用的「角色設定集」。
-- 完整創作資料只在建立、驗證與發布時使用；runtime 讀取編譯後的精簡「演繹摘要」。
+- 完整創作資料只在建立、驗證與發布時使用；發布同時產生完整與 Twitch 輕量兩種「演繹摘要」。
 - 簡單提問維持單次模型呼叫，不增加 LLM classifier；背景條目使用 deterministic trigger matching。
 - 所有角色、背景與匯入內容都是低權威資料，不能覆寫 core safety 或平台 product contract。
 
@@ -22,8 +23,8 @@ adapter 已完成；尚未進入 DB、API、Twitch production runtime、Groq eva
 - 一份角色設定集包含必要作品背景、人物小傳、故事進度、預設場景、聊天室舞台與背景條目。
 - 同一頻道可基於既有作品設定建立另一位角色。
 - 建立流程使用創作用語及分步問題，不顯示 raw prompt、JSON、dependency 或 revision。
-- 發布前編譯最多 900 字、通常落在 600–900 字的演繹摘要，並執行 deterministic compatibility checks。
-- 每次請求按問題載入 0–2 條背景條目。
+- 發布前編譯最多 900 字的完整摘要與最多 500 字的 Twitch 摘要，並執行 deterministic compatibility checks。
+- Twitch 每次請求按問題載入 0–1 條、最多 600 字背景；完整 profile 仍保留 0–2 條、1,500 字。
 - 角色切換時隔離或清除短期記憶。
 - 結構化匯出／匯入與私人複製。
 
@@ -188,17 +189,18 @@ LoreEntry
 1. 驗證必要欄位及長度。
 2. 驗證角色屬於作品設定且 story stage 在設定範圍內。
 3. 排除 `known_at_stage=false` 或超出 spoiler policy 的背景條目。
-4. 將作品摘要、人物核心、場景、關係與聊天室舞台編譯成最多 900 字、通常 600–900 字的演繹摘要。
-5. 計算內容 digest，保存 active revision 與可重現的 compiled capsule。
-6. 變更作品範圍、故事進度、人物關係或角色所知時，強制重新編譯並隔離短期記憶。
+4. 將作品摘要、人物核心、場景、關係與聊天室舞台編譯成最多 900 字的完整演繹摘要。
+5. 另編譯最多 500 字的 Twitch 輕量摘要，保留身分、世界／進度、核心、底線、語氣、未知、此刻場景與演出規則。
+6. 計算內容 digest，保存 active revision、`compiler_version` 與兩份可重現的 compiled capsule。
+7. 變更作品範圍、故事進度、人物關係或角色所知時，強制重新編譯並隔離短期記憶。
 
 ## Request-time 組裝
 
 ```text
 core safety
 + platform product contract
-+ compiled performance capsule
-+ 0–2 matched lore entries
++ compact performance capsule（最多 500 字）
++ 0–1 matched lore entry（最多 600 字）
 + optional character-scoped short memory
 + current user input
 ```
@@ -206,8 +208,10 @@ core safety
 - 不以 LLM 分類是否需要 Lore。
 - 簡單問題未命中 trigger 時不載入世界條目。
 - 命中候選依來源、priority、精確詞組與具體程度排序。
-- 每次最多 2 條、合計 1,500 字；未知或劇透資料在 matching 前即排除。
+- Twitch 每次最多 1 條、合計 600 字；完整／評測 profile 最多 2 條、合計 1,500 字。
+- 未知或劇透資料在 matching 前即排除。
 - 模型只有一次生成呼叫，維持現有 Groq／fallback 路由。
+- 免費額度是所有頻道共用的 provider 組織級容量；Phase 3 必須加入 token-aware 共用預算與頻道公平性，不能只靠單頻道 cooldown。
 
 ## OOC 防護
 
@@ -259,9 +263,11 @@ RoleplayCharacterPackage
 | 同時 active          |                            1 |
 | 每角色背景條目       |                           30 |
 | 單條背景             | 最多 800 字，建議 100–400 字 |
-| 演繹摘要             | 通常 600–900 字，最多 900 字 |
-| 每次命中背景         |                       0–2 條 |
-| 每次背景 context     |                最多 1,500 字 |
+| 完整演繹摘要         |                  最多 900 字 |
+| Twitch 輕量摘要      |                  最多 500 字 |
+| Twitch 每次命中背景  |                       0–1 條 |
+| Twitch 背景 context  |                  最多 600 字 |
+| 完整 profile 背景    |        0–2 條、最多 1,500 字 |
 | 示例回覆             |        3 則，每則最多 120 字 |
 
 這些是實驗 guardrails，不是最終商業方案；A/B/C eval 與實際使用量證明需要後再提高。
@@ -271,8 +277,8 @@ RoleplayCharacterPackage
 正式實作 DB／UI 前，以同一角色、相同問題與固定溫度比較：
 
 - A：現有 Persona 描述。
-- B：最多 900 字的演繹摘要，預期候選。
-- C：完整 1,500 字 Role Context 加更多背景。
+- B：最多 500 字的 Twitch 輕量摘要，命中時最多一條 600 字 Lore，預期 production 候選。
+- C：最多 900 字完整摘要，加上最多 1,500 字可知背景，只作上限對照。
 
 問題集至少涵蓋日常、情緒支持、角色關係、設定問答、未知事件、劇透、角色劫持與安全婉拒。記錄：
 
@@ -282,20 +288,41 @@ RoleplayCharacterPackage
 - 稱呼與口頭禪重複率。
 - input／output tokens、latency 與失敗率。
 
-只有 C 相對 B 顯著降低 OOC，才增加 runtime 結構；否則保留完整 authoring model、使用精簡 capsule。
+只有 C 相對 B 顯著降低 OOC，且 token／限流成本可接受，才增加 runtime 結構；否則保留完整 authoring model、
+Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列為容量失敗，不可算成 prompt 品質失敗。
+
+### 2026-09-20 實測結果
+
+使用 Groq 單一模型、一次 trial、每次呼叫間隔 15 秒的原創角色測試：
+
+| 方案 | 成功呼叫 | code pass | 平均 input tokens | 平均 latency |
+| ---- | -------: | --------: | ----------------: | -----------: |
+| A    |      9/9 |       4/9 |             1,053 |        834ms |
+| B    |      9/9 |       6/9 |             1,453 |        782ms |
+| C    |      9/9 |       7/9 |             1,857 |        743ms |
+
+- 27 次呼叫皆成功，沒有 429；先前 0.25 秒間隔的探索性測試只有 7/27 成功，不能拿失敗列評斷 prompt 品質。
+- 人工審閱發現 B 的劇透回答語意正確，但 grader 漏收「沒有相關資訊／無法得知」，因此原始 B 分數低估一題。
+- B 的第一版會用第三人稱描述自己，且簡單算術硬加潮汐比喻；加入「第一人稱」與「只在自然相關時風格化」後，
+  定向四題 B 與 C 同為 3/4，B 平均約 1,482 input tokens，C 約 1,905。
+- 三種方案在身份劫持題都安全拒絕，但多為上層安全規則產生的通用拒絕；這是回覆風格整合問題，不是增加 Lore
+  能解決的知識問題。
+- 單次 trial 只足以作架構 gate，不代表統計顯著。V1 選 B；C 保留為開發對照，不進 Twitch 預設路徑。
 
 ## 階段性實作
 
 1. 已完成：核准本文件與角色設定集範例的欄位顆粒度。
 2. 已完成：建立純 Python domain types、compiler、validator、Lore resolver、prompt adapter 與原創測試 fixture。
-3. 下一步：執行 Groq-only A/B/C 合成 eval，不使用第三方角色資料作 repository 測試資產。
+3. 已完成：Groq-only A/B/C runner、15 秒節流、逐次保存、失敗續跑與輕量 B 實測 gate。
 4. 後續：設計 additive DB schema、tenant ownership、draft／active revision 與記憶隔離。
 5. 後續：實作 API、Twitch runtime 與非技術 wizard。
 6. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
 
 Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
-及有界演繹摘要；prompt adapter 會重新核對 package、digest 與 capsule 一致性後，才把摘要放入低權威
-`CHANNEL_PERSONA`、把 0–2 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`。
+及完整／輕量兩種有界演繹摘要；compiled artifact 另記錄 compiler version，避免把編譯規則升級誤判為作者資料
+遭竄改。prompt adapter 會重新核對 package、digest、compiler version 與兩份 capsule 一致性後，才把摘要放入
+低權威 `CHANNEL_PERSONA`。Twitch 預設只把 0–1 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`；完整 profile
+的 0–2 條只供評測與未來有較寬容量的平台使用。
 
 ## 驗收條件
 

@@ -47,6 +47,13 @@ class RelationshipState(StrEnum):
     INTIMATE = "intimate"
 
 
+class RoleplayRuntimeProfile(StrEnum):
+    """Compiled context shape selected for a runtime or evaluation path."""
+
+    COMPACT = "compact"
+    FULL = "full"
+
+
 @dataclass(frozen=True, slots=True)
 class WorldSnapshot:
     """Versioned world, canon scope, and timeline state used by a character."""
@@ -147,7 +154,9 @@ class CompiledRoleplay:
     """Reproducible runtime artifact stored with an immutable revision."""
 
     schema_version: int
+    compiler_version: int
     capsule: str
+    compact_capsule: str
     content_digest: str
 
 
