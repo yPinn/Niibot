@@ -252,8 +252,24 @@ class TestStreamElementsPreview:
         unsupported = [i["key"] for i in body["items"] if i["section"] == "unsupported"]
         assert unsupported
         assert all(key not in selected for key in unsupported)
-        # Everything preselected defaults to OFF, not enabled.
-        assert all(value is False for value in selected.values())
+        # Non-builtin rows preselect OFF — new content the user has not reviewed yet.
+        non_builtin_keys = [i["key"] for i in body["items"] if i["section"] != "builtin"]
+        assert any(key in selected for key in non_builtin_keys)
+        assert all(selected[key] is False for key in non_builtin_keys if key in selected)
+
+    @pytest.mark.asyncio
+    async def test_builtin_rows_are_preselected(self):
+        # The source platform already had this default command switched on
+        # (SE_DEFAULT's followage), and Niibot has a matching builtin — a full
+        # platform switch should not require re-ticking commands that were
+        # already running.
+        async with _stubbed():
+            r = _make_client().get("/api/commands/import/streamelements/preview")
+        body = r.json()
+        selected = body["default_selection"]
+        builtin_keys = [i["key"] for i in body["items"] if i["section"] == "builtin"]
+        assert builtin_keys
+        assert all(selected[key] is True for key in builtin_keys)
 
     @pytest.mark.asyncio
     async def test_unknown_channel_returns_404(self):

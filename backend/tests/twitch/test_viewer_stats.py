@@ -23,6 +23,7 @@ def _make_bot() -> MagicMock:
     bot.channels = MagicMock()
     bot.channels.get_token = AsyncMock(return_value=MagicMock(token="TOK"))
     bot.bot_id = "bot-1"
+    bot.sender_for = MagicMock(return_value="bot-1")
     return bot
 
 
@@ -53,8 +54,8 @@ def comp() -> ViewerStatsComponent:
     return c
 
 
-async def _call(name: str, comp: ViewerStatsComponent, ctx: MagicMock) -> None:
-    await getattr(ViewerStatsComponent, name).callback(comp, ctx)
+async def _call(name: str, comp: ViewerStatsComponent, ctx: MagicMock, **kwargs) -> None:
+    await getattr(ViewerStatsComponent, name).callback(comp, ctx, **kwargs)
 
 
 # --------------------------------------------------------------------------- #
@@ -172,3 +173,61 @@ async def test_bits_no_entry(comp):
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("bits", comp, ctx)
     assert "還沒" in comp._ctx_reply.await_args[0][1]
+
+
+# --------------------------------------------------------------------------- #
+# !accountage — bot token
+# --------------------------------------------------------------------------- #
+
+
+async def test_accountage_reports_own_account(comp):
+    ctx = _make_ctx()
+    created = (datetime.now(UTC) - timedelta(days=400)).isoformat().replace("+00:00", "Z")
+    comp._helix_get.return_value = _resp(
+        200, {"data": [{"display_name": "Viewer", "created_at": created}]}
+    )
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx)
+    path, params, _token = comp._helix_get.await_args[0]
+    assert path == "users"
+    assert params == {"id": "viewer-9"}
+    msg = comp._ctx_reply.await_args[0][1]
+    assert "Viewer" in msg and "年" in msg
+
+
+async def test_accountage_reports_target_user(comp):
+    ctx = _make_ctx()
+    created = (datetime.now(UTC) - timedelta(days=10)).isoformat().replace("+00:00", "Z")
+    comp._helix_get.return_value = _resp(
+        200, {"data": [{"display_name": "Other", "created_at": created}]}
+    )
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx, target="@Other")
+    path, params, _token = comp._helix_get.await_args[0]
+    assert params == {"login": "other"}
+    assert "Other" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_accountage_user_not_found(comp):
+    ctx = _make_ctx()
+    comp._helix_get.return_value = _resp(200, {"data": []})
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx, target="ghost")
+    assert "找不到使用者" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_accountage_no_bot_token(comp):
+    ctx = _make_ctx()
+    comp.bot.channels.get_token = AsyncMock(return_value=None)
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx)
+    assert "查詢失敗" in comp._ctx_reply.await_args[0][1]
+    comp._helix_get.assert_not_called()
+
+
+async def test_accountage_http_failure(comp):
+    ctx = _make_ctx()
+    comp._helix_get.return_value = _resp(500)
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx)
+    assert "查詢失敗" in comp._ctx_reply.await_args[0][1]

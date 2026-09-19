@@ -1,4 +1,4 @@
-"""Unit tests for twitch.components.games — GamesComponent (roll/roulette, choose).
+"""Unit tests for twitch.components.games — GamesComponent (roll/roulette, choose, winner).
 
 TwitchIO wraps component methods with a Command descriptor.
 Use `.callback(component, ctx, ...)` to invoke the raw implementation directly.
@@ -30,6 +30,7 @@ def _make_bot(*, is_mod: bool = True) -> MagicMock:
     bot._bot_id = "bot123"
     bot._client_id = "client_abc"
     bot._bot_is_mod = {"ch_test"} if is_mod else set()
+    bot.sender_for = MagicMock(return_value="bot123")
     return bot
 
 
@@ -70,6 +71,11 @@ async def _choose(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
     await GamesComponent.choose.callback(component, ctx, **kwargs)  # type: ignore[attr-defined]
 
 
+async def _winner(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
+    """Invoke winner bypassing the TwitchIO Command descriptor."""
+    await GamesComponent.winner.callback(component, ctx, **kwargs)  # type: ignore[attr-defined]
+
+
 def _make_roulette_component(*, is_mod: bool = True) -> GamesComponent:
     comp = GamesComponent(_make_bot(is_mod=is_mod))
     comp._ctx_reply = AsyncMock()
@@ -87,6 +93,17 @@ def _make_http_mock(*, status_code: int = 200) -> MagicMock:
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=False)
     client.post = AsyncMock(return_value=resp)
+    return client
+
+
+def _make_get_http_mock(*, status_code: int = 200, data: dict | None = None) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = data or {}
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    client.get = AsyncMock(return_value=resp)
     return client
 
 
@@ -136,6 +153,21 @@ class TestBuiltinRegistration:
 
         assert "choose" in BUILTIN_DESCRIPTIONS
         assert "choose" in PUBLIC_DESCRIPTIONS
+
+    def test_winner_in_builtin_defs(self) -> None:
+        from shared.builtin_commands import BUILTIN_MAP
+
+        assert "winner" in BUILTIN_MAP
+
+    def test_winner_aliases(self) -> None:
+        from shared.builtin_commands import BUILTIN_ALIAS_MAP
+
+        assert BUILTIN_ALIAS_MAP.get("幸運兒") == "winner"
+
+    def test_winner_has_description(self) -> None:
+        from shared.builtin_commands import BUILTIN_DESCRIPTIONS
+
+        assert "winner" in BUILTIN_DESCRIPTIONS
 
 
 # ---------------------------------------------------------------------------
@@ -411,3 +443,87 @@ class TestChoose:
             await _choose(component, ctx, args="x y")
             text: str = component._ctx_reply.call_args[0][1]  # type: ignore[attr-defined]
             assert "rawname" in text
+
+
+# ---------------------------------------------------------------------------
+# !winner
+# ---------------------------------------------------------------------------
+
+PATCH_HTTPX_GAMES = "twitch.components.games.httpx.AsyncClient"
+
+
+class TestWinner:
+    @pytest.mark.asyncio
+    async def test_disabled_command_no_reply(self, component: GamesComponent) -> None:
+        with patch(PATCH_CHECK, return_value=None):
+            ctx = _make_ctx()
+            await _winner(component, ctx)
+            component._ctx_reply.assert_not_called()  # type: ignore[attr-defined]
+
+    @pytest.mark.asyncio
+    async def test_no_bot_token_shows_generic_failure(self) -> None:
+        comp = _make_roulette_component()
+        comp.channel_repo.get_token = AsyncMock(return_value=None)
+        ctx = _make_ctx()
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _winner(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "抽選失敗" in text
+
+    @pytest.mark.asyncio
+    async def test_picks_a_chatter_and_excludes_bot(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        data = {
+            "data": [
+                {"user_id": "bot123", "user_name": "Niibot"},
+                {"user_id": "u1", "user_name": "阿澤"},
+            ]
+        }
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(data=data)),
+        ):
+            await _winner(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "阿澤" in text
+            assert "Niibot" not in text
+
+    @pytest.mark.asyncio
+    async def test_no_eligible_chatters(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        data = {"data": [{"user_id": "bot123", "user_name": "Niibot"}]}
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(data=data)),
+        ):
+            await _winner(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "沒有可以抽選" in text
+
+    @pytest.mark.asyncio
+    async def test_api_failure_shows_generic_failure(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(status_code=401)),
+        ):
+            await _winner(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "抽選失敗" in text
+
+    @pytest.mark.asyncio
+    async def test_fetch_exception_shows_generic_failure(self) -> None:
+        comp = _make_roulette_component()
+        http_mock = _make_get_http_mock()
+        http_mock.get = AsyncMock(side_effect=Exception("network error"))
+        ctx = _make_ctx()
+        with (
+            patch(PATCH_CHECK, return_value=MagicMock()),
+            patch(PATCH_HTTPX_GAMES, return_value=http_mock),
+        ):
+            await _winner(comp, ctx)
+            text: str = comp._ctx_reply.call_args[0][1]
+            assert "抽選失敗" in text

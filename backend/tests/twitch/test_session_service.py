@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.bot_resolver import BotAccountResolver
 from core.session_service import SessionService, parse_twitch_duration
 
 
@@ -52,6 +53,7 @@ def _make_service(*, analytics=None, channels=None, client=None) -> SessionServi
         client=client or MagicMock(),
         bot_id="bot-001",
         client_id="client-abc",
+        bots=BotAccountResolver(MagicMock(), system_bot_id="bot-001"),
     )
 
 

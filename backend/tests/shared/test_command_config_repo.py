@@ -298,6 +298,50 @@ class TestListConfigs:
 
         assert conn.fetch.call_count == 1
 
+    async def test_builtins_are_returned_in_builtin_defs_order(self):
+        """The dashboard's category grouping (BuiltinTab.tsx / groupByCategory)
+        relies on this exact order — it groups by first-appearance in the API
+        response, not by re-sorting server-side data. If list_configs ever drifts
+        from BUILTIN_DEFS order, categories would render out of order or
+        interleaved.
+        """
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[])
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.list_configs("ch1")
+
+        assert [r.command_name for r in result] == [d["command_name"] for d in BUILTIN_DEFS]
+
+    async def test_new_parity_builtins_land_in_their_declared_category(self):
+        """Spot-check the 8 Nightbot/StreamElements parity builtins added
+        2026-09-19 — each must sit next to its category siblings, not appended
+        at the end or scattered.
+        """
+        _clear_caches()
+        pool, _ = _make_pool(fetch=[])
+        repo = CommandConfigRepository(pool)
+
+        result = await repo.list_configs("ch1")
+        names = [r.command_name for r in result]
+        by_name = {r.command_name: r for r in result}
+
+        # common: del sits right after ping
+        assert names.index("del") == names.index("ping") + 1
+        # viewer: accountage after bits, quote right after accountage
+        assert names.index("accountage") == names.index("bits") + 1
+        assert names.index("quote") == names.index("accountage") + 1
+        # broadcaster: title/game/tags immediately after subcount
+        assert names.index("title") == names.index("subcount") + 1
+        assert names.index("game") == names.index("title") + 1
+        assert names.index("tags") == names.index("game") + 1
+        # moderator: marker/winner after condemn
+        assert names.index("marker") == names.index("condemn") + 1
+        assert names.index("winner") == names.index("marker") + 1
+
+        for name in ("title", "game", "tags", "marker", "winner", "quote", "accountage", "del"):
+            assert by_name[name].enabled is False, f"{name} should default off (collision policy)"
+
 
 @pytest.mark.asyncio
 class TestUpsertConfig:

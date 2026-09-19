@@ -12,6 +12,7 @@ import {
   updateTimer,
 } from '@/api/timers'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
+import { EmoteInserter } from '@/components/EmoteInserter'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, SlideUp, Spinner } from '@/components/primitives'
@@ -52,6 +53,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
@@ -212,6 +214,12 @@ export default function Timers() {
     useInputInsert<HTMLTextAreaElement>(form.template, (val: string) =>
       dispatch({ type: 'SET', field: 'template', value: val })
     )
+  const {
+    emotes,
+    otherChannels,
+    loading: emotesLoading,
+    error: emotesError,
+  } = useChannelEmotes(!!editing)
 
   const handleSave = async () => {
     if (!editing) return
@@ -457,6 +465,13 @@ export default function Timers() {
                 autoFocus={editing?.mode === 'edit'}
               />
               <VariableInserter variables={TIMER_VARS} onInsert={insertVariable} />
+              <EmoteInserter
+                emotes={emotes}
+                otherChannels={otherChannels}
+                onInsert={insertVariable}
+                loading={emotesLoading}
+                error={emotesError}
+              />
             </div>
 
             <div className="flex flex-col gap-2">

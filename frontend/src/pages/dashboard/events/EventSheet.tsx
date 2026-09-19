@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { type EventConfig, type EventDefinition, updateEventConfig } from '@/api/events'
+import { EmoteInserter } from '@/components/EmoteInserter'
 import { Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import {
@@ -18,6 +19,7 @@ import {
   Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
 
@@ -48,6 +50,12 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
 
   const { inputRef: templateInputRef, insertText: insertVariable } =
     useInputInsert<HTMLTextAreaElement>(editTemplate, setEditTemplate)
+  const {
+    emotes,
+    otherChannels,
+    loading: emotesLoading,
+    error: emotesError,
+  } = useChannelEmotes(!!event)
 
   const handleSave = async () => {
     if (!event) return
@@ -78,7 +86,7 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
           <SheetDescription>設定此事件觸發時的自動回應訊息</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col gap-card px-page">
+        <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
           <div className="flex flex-col gap-2">
             <Label htmlFor="event-template">訊息模板</Label>
             <Textarea
@@ -94,6 +102,13 @@ export function EventSheet({ event, definition, onClose, onSaved }: EventSheetPr
             {variableChips.length > 0 && (
               <VariableInserter variables={variableChips} onInsert={insertVariable} />
             )}
+            <EmoteInserter
+              emotes={emotes}
+              otherChannels={otherChannels}
+              onInsert={insertVariable}
+              loading={emotesLoading}
+              error={emotesError}
+            />
           </div>
 
           {definition && (

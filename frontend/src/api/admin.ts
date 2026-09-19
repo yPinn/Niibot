@@ -1,5 +1,5 @@
-import type { EmoteItem } from './aiSettings'
 import { API_ENDPOINTS, apiFetch } from './config'
+import type { EmoteItem } from './emotes'
 import { parseApiError } from './errors'
 
 export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
@@ -116,6 +116,8 @@ export interface BotEmoteChannel {
   name: string
   display_name: string
   avatar: string
+  /** Which bot account this row was measured against. */
+  bot_user_id: string
   available_count: number
   total_count: number
   /** Bot holds a real subscription to this channel (authoritative, not inferred from emotes). */

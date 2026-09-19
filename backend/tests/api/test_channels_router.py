@@ -20,7 +20,12 @@ from fastapi.testclient import TestClient
 
 import services.channel_service as cs
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import (
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    require_activated,
+)
 from core.error_handlers import register_exception_handlers
 from routers.channels_router import router as _channels_router
 
@@ -54,6 +59,7 @@ def _make_client(
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_twitch_api] = lambda: mock_api
     app.dependency_overrides[get_db_pool] = lambda: mock_pool
+    app.dependency_overrides[require_activated] = lambda: None
 
     return TestClient(app, raise_server_exceptions=False)
 
@@ -228,3 +234,144 @@ class TestGrantBotMod:
 
         expected_bot_id = get_settings().bot_id
         mock_api.add_moderator.assert_awaited_once_with(CHANNEL_ID, expected_bot_id, "valid-token")
+
+
+# ============================================
+# GET /api/channels/emotes
+# ============================================
+
+
+def _make_emote(eid: str, name: str, etype: str = "globals") -> dict:
+    return {
+        "id": eid,
+        "name": name,
+        "url": f"https://cdn.example.com/{eid}.png",
+        "emote_type": etype,
+        "tier": "",
+        "animated": False,
+    }
+
+
+class TestGetChannelEmotes:
+    def test_returns_global_and_channel_emotes_without_bot_token(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[_make_emote("g1", "PogChamp")])
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[_make_emote("c1", "Kappa", "subscriptions")]
+        )
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+            patch("routers.channels_router.sync_enabled_emotes_background", AsyncMock()),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=None)
+            r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["bot_user_id"] == "bot-999"
+        assert body["bot_token_available"] is False
+        names = {e["name"] for e in body["emotes"]}
+        assert "PogChamp" in names
+        assert "Kappa" in names
+
+    def test_globals_and_follower_emotes_are_always_available(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[_make_emote("g1", "PogChamp")])
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[_make_emote("f1", "FollowEmote", "follower")]
+        )
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+            patch("routers.channels_router.sync_enabled_emotes_background", AsyncMock()),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=None)
+            r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
+
+        emotes = {e["name"]: e for e in r.json()["emotes"]}
+        assert emotes["PogChamp"]["available"] is True
+        assert emotes["FollowEmote"]["available"] is True
+
+    def test_sub_emote_available_when_bot_has_access(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[])
+        mock_twitch.get_channel_emotes = AsyncMock(
+            return_value=[_make_emote("s1", "SubEmote", "subscriptions")]
+        )
+        mock_twitch.get_user_emotes = AsyncMock(
+            return_value=[_make_emote("s1", "SubEmote", "subscriptions")]
+        )
+
+        token_row = MagicMock()
+        token_row.token = "bot-token"
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+            patch("routers.channels_router.sync_enabled_emotes_background", AsyncMock()),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=token_row)
+            r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
+
+        body = r.json()
+        assert body["bot_token_available"] is True
+        emotes = {e["name"]: e for e in body["emotes"]}
+        assert emotes["SubEmote"]["available"] is True
+
+    def test_surfaces_emotes_unlocked_on_other_channels(self):
+        """The bot account's subscription emote from a channel it doesn't even
+        speak in must still come back, grouped under that channel — those
+        emotes are usable in ANY chat once unlocked."""
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[])
+        mock_twitch.get_channel_emotes = AsyncMock(return_value=[])
+        mock_twitch.get_user_emotes = AsyncMock(
+            return_value=[
+                {**_make_emote("e1", "OtherSub", "subscriptions"), "owner_id": "other-channel"}
+            ]
+        )
+        mock_twitch.get_users_by_ids = AsyncMock(
+            return_value=[
+                {
+                    "id": "other-channel",
+                    "login": "otherchannel",
+                    "display_name": "OtherChannel",
+                    "profile_image_url": "https://img/other.png",
+                }
+            ]
+        )
+
+        token_row = MagicMock()
+        token_row.token = "bot-token"
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+            patch("routers.channels_router.sync_enabled_emotes_background", AsyncMock()),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=token_row)
+            r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
+
+        body = r.json()
+        assert not body["emotes"]
+        [group] = body["other_channels"]
+        assert group["channel_id"] == "other-channel"
+        assert group["channel_name"] == "otherchannel"
+        assert group["emotes"][0]["name"] == "OtherSub"
+
+    def test_exception_returns_500(self):
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(side_effect=RuntimeError("api error"))
+        mock_twitch.get_channel_emotes = AsyncMock(return_value=[])
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=None)
+            r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
+
+        assert r.status_code == 500

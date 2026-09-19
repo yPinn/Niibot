@@ -39,6 +39,9 @@ BROADCASTER_SCOPES: list[str] = [
     # channel management (only the broadcaster can add/remove mods and VIPs)
     "channel:manage:moderators",
     "channel:manage:vips",
+    # channel info (title/game/tags/stream markers — Modify Channel Information
+    # and Create Stream Marker both require the broadcaster's own token)
+    "channel:manage:broadcast",
     # revenue (Bits API + channel.cheer EventSub require the broadcaster)
     "bits:read",
 ]

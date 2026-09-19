@@ -4,6 +4,7 @@ Depends on attributes defined in Bot.__init__:
     self.bot_id, self.owner_id, self.sessions
     self.command_configs, self.redemption_configs
     self.message_trigger_configs, self.channels
+Uses self.sender_for() defined on Bot.
 """
 
 from __future__ import annotations
@@ -79,7 +80,7 @@ class _MessageRouterMixin:
             try:
                 await payload.broadcaster.send_message(
                     message=response,
-                    sender=self.bot_id,  # type: ignore[attr-defined]
+                    sender=self.sender_for(channel_id),  # type: ignore[attr-defined]
                     reply_to_message_id=str(payload.id),
                 )
                 LOGGER.info(
@@ -199,7 +200,7 @@ class _MessageRouterMixin:
             try:
                 await payload.broadcaster.send_message(
                     message=response,
-                    sender=self.bot_id,  # type: ignore[attr-defined]
+                    sender=self.sender_for(channel_id),  # type: ignore[attr-defined]
                     reply_to_message_id=str(payload.id),
                 )
                 LOGGER.info(f"[CMD] !{cmd_name} -> text response")

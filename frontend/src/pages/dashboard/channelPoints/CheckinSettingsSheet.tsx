@@ -8,6 +8,7 @@ import {
   getCheckinSettings,
   updateCheckinSettings,
 } from '@/api/checkin'
+import { EmoteInserter } from '@/components/EmoteInserter'
 import { Icon, Spinner } from '@/components/primitives'
 import { TemplatePartsPreview } from '@/components/TemplatePartsPreview'
 import {
@@ -37,6 +38,7 @@ import {
   Textarea,
 } from '@/components/ui'
 import { VariableInserter } from '@/components/VariableInserter'
+import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { tokenizeVars } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
@@ -193,6 +195,12 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
     useInputInsert<HTMLTextAreaElement>(form.duplicateTemplate, value =>
       updateForm('duplicateTemplate', value)
     )
+  const {
+    emotes,
+    otherChannels,
+    loading: emotesLoading,
+    error: emotesError,
+  } = useChannelEmotes(open)
 
   const successPreviewParts = useMemo(
     () => tokenizeVars(form.successTemplate, PREVIEW_VALUES),
@@ -336,6 +344,13 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                         variables={CHECKIN_VARIABLES}
                         onInsert={insertSuccessVariable}
                       />
+                      <EmoteInserter
+                        emotes={emotes}
+                        otherChannels={otherChannels}
+                        onInsert={insertSuccessVariable}
+                        loading={emotesLoading}
+                        error={emotesError}
+                      />
                       <TemplatePartsPreview
                         parts={successPreviewParts}
                         limit={TWITCH_MESSAGE_LIMIT}
@@ -359,6 +374,13 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                       <VariableInserter
                         variables={CHECKIN_VARIABLES}
                         onInsert={insertDuplicateVariable}
+                      />
+                      <EmoteInserter
+                        emotes={emotes}
+                        otherChannels={otherChannels}
+                        onInsert={insertDuplicateVariable}
+                        loading={emotesLoading}
+                        error={emotesError}
                       />
                       <TemplatePartsPreview
                         parts={duplicatePreviewParts}

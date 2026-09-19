@@ -15,6 +15,8 @@ class Token:
     refresh: str
     token_type: str = "broadcaster"
     scopes: str | None = None
+    requires_reauth: bool = False
+    reauth_notified_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

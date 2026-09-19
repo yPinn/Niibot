@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from core._notify_mixin import _NotifyMixin
+from core.bot_resolver import BotAccountResolver
 
 # ---------------------------------------------------------------------------
 # Minimal concrete stub of _NotifyMixin
@@ -51,6 +52,7 @@ class _StubMixin(_NotifyMixin):
 
     def __init__(self) -> None:
         self._bot_id = "bot-001"
+        self.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         self.subs = _FakeSubs()
         self.sessions = MagicMock()
         self.sessions.ensure_session = AsyncMock(return_value=None)
@@ -518,6 +520,7 @@ def mod_bot():
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
+        b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._client_id = "test-client-id"
         b._bot_is_mod = set()
         b._needs_reauth = set()
@@ -529,6 +532,11 @@ def mod_bot():
             needs_reauth=b._needs_reauth,
         )
         b.channels = MagicMock()
+
+        async def _mark_reauth_required(user_id):
+            b._needs_reauth.add(user_id)
+
+        b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
         return b
 
 
@@ -567,6 +575,7 @@ class TestCheckBotModStatus:
 
         assert "ch1" not in mod_bot._bot_is_mod
         assert "ch1" in mod_bot._needs_reauth
+        mod_bot._mark_reauth_required.assert_awaited_once_with("ch1")
 
     async def test_no_token_returns_early_without_error(self, mod_bot):
         mod_bot.channels.get_token = AsyncMock(return_value=None)

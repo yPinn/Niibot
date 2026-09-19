@@ -211,7 +211,8 @@ class AIComponent(BotComponent):
         reflected, then updates ai_settings and notifies the bot to reload.
         """
         settings = get_settings()
-        token_row = await self.bot.channels.get_token(settings.bot_id, "bot")
+        sender_id = self.bot.sender_for(channel_id)
+        token_row = await self.bot.channels.get_token(sender_id, "bot")
         if not token_row:
             LOGGER.warning("[%s] emote sync skipped: no bot token", channel_id)
             return
@@ -223,7 +224,7 @@ class AIComponent(BotComponent):
                         "Client-Id": settings.twitch_client_id,
                         "Authorization": f"Bearer {token_row.token}",
                     },
-                    params={"user_id": settings.bot_id, "broadcaster_id": channel_id},
+                    params={"user_id": sender_id, "broadcaster_id": channel_id},
                 )
             if r.status_code != 200:
                 LOGGER.warning("[%s] emote sync API error: %s", channel_id, r.status_code)

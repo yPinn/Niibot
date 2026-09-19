@@ -11,9 +11,6 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { EmptyState, Icon, SlideUp } from '@/components/primitives'
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
   Badge,
   Separator,
   Skeleton,
@@ -30,10 +27,12 @@ import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 import { formatCompact } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
+import { overlapColor } from './matcher/badges'
 import { ChannelCard } from './matcher/ChannelCard'
+import { ChannelDetailHeader } from './matcher/ChannelDetailHeader'
 import { CollabLog } from './matcher/CollabLog'
 import { HourHeatStrip } from './matcher/HourHeatStrip'
-import { type CompatibilityTier, TIER_COLOR } from './matcher/types'
+import { type CompatibilityTier } from './matcher/types'
 
 function formatComputedAt(iso: string | null): string | null {
   if (!iso) return null
@@ -43,25 +42,6 @@ function formatComputedAt(iso: string | null): string | null {
   if (hours < 24) return `${hours} 小時前更新`
   const days = Math.floor(hours / 24)
   return `${days} 天前更新`
-}
-
-function broadcasterBadgeDetail(type: string | null) {
-  if (type === 'partner')
-    return (
-      <Badge
-        variant="outline"
-        className="text-status-loading border-status-loading/40 text-label py-0 shrink-0"
-      >
-        Partner
-      </Badge>
-    )
-  if (type === 'affiliate')
-    return (
-      <Badge variant="outline" className="text-primary border-primary/40 text-label py-0 shrink-0">
-        Affiliate
-      </Badge>
-    )
-  return null
 }
 
 const PERIODS = [
@@ -273,65 +253,10 @@ export default function Matcher() {
             </div>
           ) : (
             <>
-              <div className="flex items-start gap-3 shrink-0">
-                <Avatar className="size-12 shrink-0">
-                  <AvatarImage
-                    src={selectedChannel.profile_image_url ?? undefined}
-                    alt={selectedChannel.display_name ?? selectedChannel.channel_id}
-                  />
-                  <AvatarFallback className="text-sub">
-                    {(selectedChannel.display_name ?? selectedChannel.channel_id)
-                      .slice(0, 2)
-                      .toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-card-title font-semibold">
-                      {selectedChannel.display_name ?? selectedChannel.channel_id}
-                    </span>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        'text-label py-0 shrink-0',
-                        TIER_COLOR[tierByChannelId.get(selectedChannel.channel_id) ?? '低']
-                      )}
-                    >
-                      契合度 {tierByChannelId.get(selectedChannel.channel_id) ?? '低'}
-                    </Badge>
-                    {broadcasterBadgeDetail(selectedChannel.broadcaster_type)}
-                    {selectedChannel.language && (
-                      <Badge
-                        variant="outline"
-                        className="text-label py-0 font-mono uppercase text-muted-foreground shrink-0"
-                      >
-                        {selectedChannel.language}
-                      </Badge>
-                    )}
-                    {selectedChannel.is_live && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="size-2 rounded-full bg-status-live shrink-0" />
-                        <span className="text-label text-muted-foreground">
-                          {selectedChannel.viewer_count.toLocaleString()} 人觀看
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {selectedChannel.is_live && selectedChannel.stream_title && (
-                    <p className="text-label text-muted-foreground truncate mt-0.5">
-                      {selectedChannel.stream_game && (
-                        <span className="mr-1">[{selectedChannel.stream_game}]</span>
-                      )}
-                      {selectedChannel.stream_title}
-                    </p>
-                  )}
-                  {selectedChannel.description && (
-                    <p className="text-label text-muted-foreground line-clamp-2 mt-1">
-                      {selectedChannel.description}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <ChannelDetailHeader
+                channel={selectedChannel}
+                tier={tierByChannelId.get(selectedChannel.channel_id) ?? '低'}
+              />
 
               <CollabLog
                 partnerChannelId={selectedChannel.channel_id}
@@ -370,11 +295,7 @@ export default function Matcher() {
                   <span
                     className={cn(
                       'text-page-title font-bold tabular-nums',
-                      selectedChannel.overlap_pct >= 30
-                        ? 'text-status-online'
-                        : selectedChannel.overlap_pct >= 10
-                          ? 'text-status-info'
-                          : 'text-muted-foreground'
+                      overlapColor(selectedChannel.overlap_pct)
                     )}
                   >
                     {selectedChannel.overlap_pct.toFixed(1)}%

@@ -29,9 +29,13 @@ from routers.admin.logs import router as _logs_router
 from routers.admin.modules import router as _modules_router
 from services import AdmissionService, ChannelService, TwitchAPIClient
 from services.emote_sync import (
+    EmoteItem,
     available_emote_names,
-    is_emote_available,
+    bot_tokens_for,
+    fetch_channel_emotes,
+    resolve_bot_ids,
     sync_enabled_emotes,
+    to_emote_items,
 )
 from shared.errors import ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.repositories.activation_code import ActivationCodeRepository
@@ -482,21 +486,14 @@ async def approve_activation_request(
 # ── Bot emote availability (diagnostics + resync) ────────────────────────────
 
 
-class AdminEmoteItem(BaseModel):
-    id: str
-    name: str
-    url: str
-    emote_type: str = ""
-    tier: str = ""
-    available: bool = True
-    animated: bool = False
-
-
 class ChannelEmotes(BaseModel):
     channel_id: str
     name: str
     display_name: str
     avatar: str
+    # Which account this row was measured against — once per-channel bot
+    # switching ships, different rows may legitimately show different ids.
+    bot_user_id: str
     available_count: int
     total_count: int
     # Whether the bot account holds a real subscription to this channel.
@@ -504,7 +501,7 @@ class ChannelEmotes(BaseModel):
     # NOT count, unlike emote-availability which they would inflate. False also
     # covers "unknown" (no bot token, or bot token lacks user:read:subscriptions).
     is_subscribed: bool = False
-    emotes: list[AdminEmoteItem]
+    emotes: list[EmoteItem]
 
 
 class ResyncResult(BaseModel):
@@ -513,23 +510,16 @@ class ResyncResult(BaseModel):
     available_count: int
 
 
-async def _get_bot_token(pool: Pool, bot_id: str) -> str | None:
-    if not bot_id:
-        return None
-    token_obj = await ChannelRepository(pool).get_token(bot_id, "bot")
-    return token_obj.token if token_obj else None
-
-
 async def _enabled_tenant_channels(pool: Pool, bot_id: str) -> list:
-    """Enabled channels, excluding only the bot's own channel.
+    """Enabled channels, excluding only the SYSTEM DEFAULT bot's own channel.
 
     The owner is also a broadcaster, so their own channel is a valid tenant
     where bot emote availability matters — it is intentionally included.
 
-    NOTE: ``bot_id`` is the single global bot account. If per-tenant external
-    bot accounts are introduced later ("bring your own bot account"), this
-    exclusion must become per-channel aware instead of comparing against one
-    global id.
+    This exclusion is deliberately kept keyed to the system default id, not
+    each channel's per-channel resolved bot id (see resolve_bot_ids below,
+    used at fetch time) — a broadcaster who is ALSO someone else's custom bot
+    account must not lose their own diagnostics row because of that.
     """
     all_channels = await ChannelRepository(pool).list_all_channels()
     return [ch for ch in all_channels if ch.enabled and ch.channel_id != bot_id]
@@ -541,50 +531,39 @@ async def get_bot_emotes(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> list[ChannelEmotes]:
-    """Per-channel view of which channel emotes the bot can currently use.
+    """Per-channel view of which channel emotes each channel's current bot
+    account can use.
 
     Aggregated across all enabled tenant channels. Availability is fetched live
     from Twitch (no cache). Global emotes are omitted — they are always usable,
     so they carry no diagnostic signal. Owner-only.
     """
-    bot_id = get_settings().bot_id or ""
-    bot_token = await _get_bot_token(pool, bot_id)
-    channels = await _enabled_tenant_channels(pool, bot_id)
+    system_bot_id = get_settings().bot_id or ""
+    channels = await _enabled_tenant_channels(pool, system_bot_id)
     if not channels:
         return []
 
     channel_ids = [ch.channel_id for ch in channels]
+    bot_ids = await resolve_bot_ids(pool, channel_ids, system_bot_id=system_bot_id)
+    tokens = await bot_tokens_for(pool, bot_ids.values())
     users = await twitch_api.get_users_by_ids(channel_ids)
     user_map = {u["id"]: u for u in users}
 
     sem = asyncio.Semaphore(5)
 
-    async def _fetch(cid: str) -> tuple[str, list[AdminEmoteItem], bool]:
+    async def _fetch(cid: str) -> tuple[str, str, list[EmoteItem], bool]:
         async with sem:
-            coros: list = [twitch_api.get_channel_emotes(cid)]
-            if bot_token:
-                coros.append(twitch_api.get_user_emotes(cid, bot_token, bot_id))
-                # Authoritative subscription check, independent of emote unlocks.
-                coros.append(twitch_api.is_user_subscribed(cid, bot_token, bot_id))
-            res = await asyncio.gather(*coros)
-            channel_raw: list[dict] = res[0]
-            accessible: set[str] | None = {e["id"] for e in res[1]} if bot_token else None
-            is_subscribed: bool = res[2] if bot_token else False
-            items = [
-                AdminEmoteItem(
-                    id=e["id"],
-                    name=e["name"],
-                    url=e["url"],
-                    emote_type=e.get("emote_type", ""),
-                    tier=e.get("tier", ""),
-                    available=is_emote_available(e, accessible),
-                    animated=e.get("animated", False),
-                )
-                for e in channel_raw
-            ]
+            bid = bot_ids[cid]
+            token = tokens.get(bid)
+            fetch = await fetch_channel_emotes(
+                twitch_api, cid, bot_id=bid, bot_token=token, include_global=False
+            )
+            # Authoritative subscription check, independent of emote unlocks.
+            is_subscribed = await twitch_api.is_user_subscribed(cid, token, bid) if token else False
+            items = to_emote_items(fetch, include_global=False)
             # Usable emotes first, then alphabetical within each group.
             items.sort(key=lambda it: (not it.available, it.name.lower()))
-            return cid, items, is_subscribed
+            return cid, bid, items, is_subscribed
 
     raw = await asyncio.gather(*[_fetch(cid) for cid in channel_ids], return_exceptions=True)
 
@@ -593,7 +572,7 @@ async def get_bot_emotes(
         if isinstance(r, Exception):
             LOGGER.warning("bot-emotes fetch failed: %s", r)
             continue
-        cid, items, is_subscribed = r  # type: ignore[misc]
+        cid, bid, items, is_subscribed = r  # type: ignore[misc]
         u = user_map.get(cid, {})
         result.append(
             ChannelEmotes(
@@ -601,6 +580,7 @@ async def get_bot_emotes(
                 name=u.get("login", ""),
                 display_name=u.get("display_name", ""),
                 avatar=u.get("profile_image_url", ""),
+                bot_user_id=bid,
                 available_count=sum(1 for it in items if it.available),
                 total_count=len(items),
                 is_subscribed=is_subscribed,
@@ -620,16 +600,16 @@ async def resync_bot_emotes(
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> list[ResyncResult]:
-    """Re-query Twitch and write the bot's usable emotes into enabled_emotes.
+    """Re-query Twitch and write each channel's current bot account's usable
+    emotes into enabled_emotes.
 
     Closes the gap where following or subscribing a channel with the bot account
     does not otherwise trigger a re-sync (only mod changes and visiting a
-    channel's AI emote page do). Pass channel_id to target one channel, or omit
+    channel's emote page do). Pass channel_id to target one channel, or omit
     to resync every enabled tenant channel. Owner-only.
     """
-    bot_id = get_settings().bot_id or ""
-    bot_token = await _get_bot_token(pool, bot_id)
-    channels = await _enabled_tenant_channels(pool, bot_id)
+    system_bot_id = get_settings().bot_id or ""
+    channels = await _enabled_tenant_channels(pool, system_bot_id)
     if channel_id is not None:
         channels = [ch for ch in channels if ch.channel_id == channel_id]
         if not channels:
@@ -639,22 +619,24 @@ async def resync_bot_emotes(
     if not channels:
         return []
 
+    channel_ids = [ch.channel_id for ch in channels]
+    bot_ids = await resolve_bot_ids(pool, channel_ids, system_bot_id=system_bot_id)
+    tokens = await bot_tokens_for(pool, bot_ids.values())
     global_raw = await twitch_api.get_global_emotes()
     sem = asyncio.Semaphore(5)
 
     async def _resync(cid: str) -> ResyncResult:
         async with sem:
-            coros: list = [twitch_api.get_channel_emotes(cid)]
-            if bot_token:
-                coros.append(twitch_api.get_user_emotes(cid, bot_token, bot_id))
-            res = await asyncio.gather(*coros)
-            channel_raw: list[dict] = res[0]
-            accessible: set[str] | None = {e["id"] for e in res[1]} if bot_token else None
-            names = available_emote_names(channel_raw, global_raw, accessible)
+            bid = bot_ids[cid]
+            token = tokens.get(bid)
+            fetch = await fetch_channel_emotes(
+                twitch_api, cid, bot_id=bid, bot_token=token, include_global=False
+            )
+            names = available_emote_names(fetch.channel_raw, global_raw, fetch.accessible)
             synced = await sync_enabled_emotes(pool, cid, names)
             return ResyncResult(channel_id=cid, synced=synced, available_count=len(names))
 
-    raw = await asyncio.gather(*[_resync(ch.channel_id) for ch in channels], return_exceptions=True)
+    raw = await asyncio.gather(*[_resync(cid) for cid in channel_ids], return_exceptions=True)
     results: list[ResyncResult] = []
     for r in raw:
         if isinstance(r, Exception):

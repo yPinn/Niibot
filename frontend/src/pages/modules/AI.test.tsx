@@ -6,13 +6,13 @@ vi.mock('@/api/aiSettings', async importOriginal => {
   const actual = (await importOriginal()) as Record<string, unknown>
   return {
     ...actual,
-    getAIEmotes: vi.fn(),
     getAISettings: vi.fn(),
     patchAISettings: vi.fn(),
     resetAISettings: vi.fn(),
   }
 })
 vi.mock('@/api/analytics', () => ({ getChannelBadges: vi.fn() }))
+vi.mock('@/api/emotes', () => ({ getChannelEmotes: vi.fn() }))
 vi.mock('@/contexts/ServiceStatusContext', () => ({
   useServiceStatus: () => ({ twitch: { ai_model: 'groq/test-model' } }),
 }))
@@ -20,8 +20,9 @@ vi.mock('@/hooks/useDocumentTitle', () => ({ useDocumentTitle: vi.fn() }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
-import { AI_SETTINGS_DEFAULT, getAIEmotes, getAISettings, patchAISettings } from '@/api/aiSettings'
+import { AI_SETTINGS_DEFAULT, getAISettings, patchAISettings } from '@/api/aiSettings'
 import { getChannelBadges } from '@/api/analytics'
+import { getChannelEmotes } from '@/api/emotes'
 
 import AIModule from './AI'
 
@@ -29,7 +30,11 @@ describe('AI persona and short-term memory settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getAISettings).mockResolvedValue(AI_SETTINGS_DEFAULT)
-    vi.mocked(getAIEmotes).mockResolvedValue([])
+    vi.mocked(getChannelEmotes).mockResolvedValue({
+      bot_user_id: 'bot-1',
+      bot_token_available: true,
+      emotes: [],
+    })
     vi.mocked(getChannelBadges).mockResolvedValue({
       subscriber_1m: null,
       founder: null,

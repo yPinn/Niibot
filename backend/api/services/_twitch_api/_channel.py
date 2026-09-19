@@ -254,29 +254,24 @@ class _ChannelMixin(_TwitchAPIBase):
     async def get_user_emotes(
         self, broadcaster_id: str, user_token: str, user_id: str
     ) -> list[dict]:
-        """Fetch all emotes the authenticated user (bot) can use in a specific channel.
+        """Fetch ALL emotes the authenticated user (bot) can use anywhere on Twitch.
 
-        Requires the bot's user access token. Returns global emotes plus any channel
-        emotes unlocked via the bot's subscriptions.
+        Requires the bot's user access token. Returns global emotes plus every
+        channel emote unlocked via the bot's subscriptions PLATFORM-WIDE, not just
+        in *broadcaster_id*'s channel — subscription emotes are usable in any chat
+        once unlocked. *broadcaster_id* only asks Twitch to additionally include
+        that channel's follower emotes if the bot qualifies. Cursor-paginated:
+        a bot subscribed to many channels can exceed one page.
+
+        `owner_id` is kept on each item (not just id/name/url/emote_type) so
+        callers can group entries by their originating channel.
         """
         try:
-            response = await self._helix_get(
+            raw = await self._fetch_paginated(
                 "chat/emotes/user",
                 {"user_id": user_id, "broadcaster_id": broadcaster_id},
                 token=user_token,
             )
-            if not response or response.status_code != 200:
-                status = response.status_code if response else "no_response"
-                try:
-                    body = response.json() if response else {}
-                except Exception:
-                    body = {}
-                LOGGER.warning(
-                    "get_user_emotes failed: status=%s message=%s",
-                    status,
-                    body.get("message", ""),
-                )
-                return []
             return [
                 {
                     "id": e["id"],
@@ -284,8 +279,9 @@ class _ChannelMixin(_TwitchAPIBase):
                     "url": e.get("images", {}).get("url_2x")
                     or e.get("images", {}).get("url_1x", ""),
                     "emote_type": e.get("emote_type", "globals"),
+                    "owner_id": e.get("owner_id", ""),
                 }
-                for e in response.json().get("data", [])
+                for e in raw
             ]
         except Exception:
             LOGGER.exception("Error fetching user emotes for broadcaster %s", broadcaster_id)

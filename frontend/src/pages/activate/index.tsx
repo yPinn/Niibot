@@ -22,6 +22,7 @@ import {
 } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { cn } from '@/lib/utils'
 
 type Gate = 'needs-grant' | 'rejected' | 'suspended'
 
@@ -48,14 +49,23 @@ function DiscordCommunityButton({
 
   if (!discordCommunityUrl) {
     return (
-      <Button variant="outline" className={className} disabled title="尚未設定 Discord 社群連結">
+      <Button
+        variant="outline"
+        className={cn('h-auto whitespace-normal text-center leading-snug', className)}
+        disabled
+        title="尚未設定 Discord 社群連結"
+      >
         {content}
       </Button>
     )
   }
 
   return (
-    <Button asChild variant="outline" className={className}>
+    <Button
+      asChild
+      variant="outline"
+      className={cn('h-auto whitespace-normal text-center leading-snug', className)}
+    >
       <a href={discordCommunityUrl} target="_blank" rel="noopener noreferrer">
         {content}
       </a>

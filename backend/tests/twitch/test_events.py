@@ -20,6 +20,7 @@ def _component(config=None, *, raises=False, is_mod=True):
     bot = SimpleNamespace(
         event_configs=repo,
         bot_id="bot-1",
+        sender_for=lambda channel_id: "bot-1",
         _bot_is_mod={"ch"} if is_mod else set(),
         create_partialuser=MagicMock(return_value=partial),
     )
@@ -67,3 +68,53 @@ class TestNotify:
         comp = _component(config=cfg)
         comp._sent_partial.send_message.side_effect = RuntimeError("rate limited")
         assert await comp._notify("ch", "follow", {}, label="x") is False
+
+
+def _mod_event_component(*, sender_id="bot-1"):
+    bot = SimpleNamespace(
+        bot_id="bot-1",
+        sender_for=lambda channel_id: sender_id,
+        event_configs=SimpleNamespace(),
+        _bot_is_mod=set(),
+        _components={},
+        _background_tasks=set(),
+        subs=SimpleNamespace(resubscribe_follow=AsyncMock()),
+        analytics=SimpleNamespace(upsert_viewer_mod_status=AsyncMock()),
+    )
+    return EventsComponent(bot), bot
+
+
+class TestModeratorAddRemove:
+    """A switched channel's mod-status cache must key off its *current*
+    sender, not the process's system-default bot_id — otherwise a custom
+    bot account getting /mod would never unblock chat for that channel.
+    """
+
+    async def test_add_tracks_current_sender_not_system_default(self):
+        comp, bot = _mod_event_component(sender_id="custom-bot-9")
+        payload = SimpleNamespace(
+            broadcaster=SimpleNamespace(id="ch1", name="streamer"),
+            user=SimpleNamespace(id="custom-bot-9", name="custombot", display_name="CustomBot"),
+        )
+        await comp.event_moderator_add(payload)
+        assert "ch1" in bot._bot_is_mod
+        bot.subs.resubscribe_follow.assert_awaited_once_with("ch1")
+
+    async def test_add_ignores_system_default_when_custom_sender_active(self):
+        comp, bot = _mod_event_component(sender_id="custom-bot-9")
+        payload = SimpleNamespace(
+            broadcaster=SimpleNamespace(id="ch1", name="streamer"),
+            user=SimpleNamespace(id="bot-1", name="niibot", display_name="Niibot"),
+        )
+        await comp.event_moderator_add(payload)
+        assert "ch1" not in bot._bot_is_mod
+
+    async def test_remove_tracks_current_sender(self):
+        comp, bot = _mod_event_component(sender_id="custom-bot-9")
+        bot._bot_is_mod.add("ch1")
+        payload = SimpleNamespace(
+            broadcaster=SimpleNamespace(id="ch1", name="streamer"),
+            user=SimpleNamespace(id="custom-bot-9", name="custombot", display_name="CustomBot"),
+        )
+        await comp.event_moderator_remove(payload)
+        assert "ch1" not in bot._bot_is_mod

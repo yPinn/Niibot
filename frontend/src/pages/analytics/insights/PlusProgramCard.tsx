@@ -52,7 +52,11 @@ export function PlusProgramCard({
   if (locked) {
     return (
       <CardShell>
-        <AffiliateLockOverlay message="取得實況盟友資格後可查看" className="rounded-[inherit]" />
+        <AffiliateLockOverlay
+          message="取得實況盟友資格後可查看"
+          compact
+          className="rounded-[inherit]"
+        />
         <p className="text-label text-muted-foreground">加強版方案積分（試算）</p>
         <p className="text-card-title font-bold text-muted-foreground/40">—</p>
       </CardShell>

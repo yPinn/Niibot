@@ -2,6 +2,7 @@ import { Icon } from '@/components/primitives'
 import { Avatar, AvatarFallback, AvatarImage, Badge, Card } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
+import { broadcasterBadge, overlapColor } from './badges'
 import { type CompatibilityTier, type MatcherChannelSummary, TIER_COLOR } from './types'
 
 interface ChannelCardProps {
@@ -9,31 +10,6 @@ interface ChannelCardProps {
   tier: CompatibilityTier
   isSelected: boolean
   onClick: () => void
-}
-
-function overlapColor(pct: number): string {
-  if (pct >= 30) return 'text-status-online'
-  if (pct >= 10) return 'text-status-info'
-  return 'text-muted-foreground'
-}
-
-function broadcasterBadge(type: string | null) {
-  if (type === 'partner')
-    return (
-      <Badge
-        variant="outline"
-        className="text-status-loading border-status-loading/40 text-label py-0 shrink-0"
-      >
-        Partner
-      </Badge>
-    )
-  if (type === 'affiliate')
-    return (
-      <Badge variant="outline" className="text-primary border-primary/40 text-label py-0 shrink-0">
-        Affiliate
-      </Badge>
-    )
-  return null
 }
 
 export function ChannelCard({ channel, tier, isSelected, onClick }: ChannelCardProps) {

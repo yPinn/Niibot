@@ -10,7 +10,7 @@ Usage in a component:
             channel_id=channel_id,
             send_fn=lambda msg: channel.send_message(
                 message=msg,
-                sender=self.bot.bot_id,
+                sender=self.bot.sender_for(channel_id),
             ),
         )
         return

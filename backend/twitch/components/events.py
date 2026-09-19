@@ -119,7 +119,7 @@ class EventsComponent(commands.Component):
         try:
             await self.bot.create_partialuser(channel_id).send_message(
                 message=render_template(template, variables),
-                sender=self.bot.bot_id,
+                sender=self.bot.sender_for(channel_id),
             )
         except Exception as e:
             LOGGER.error(f"{label} (error: {e})")
@@ -467,7 +467,7 @@ class EventsComponent(commands.Component):
             try:
                 await payload.to_broadcaster.send_shoutout(
                     to_broadcaster=raider_id,
-                    moderator=self.bot.bot_id,
+                    moderator=self.bot.sender_for(broadcaster_id),
                 )
                 LOGGER.info(f"[{broadcaster_name}] Raid shoutout sent: {raider_name}")
             except Exception as shoutout_err:
@@ -477,7 +477,7 @@ class EventsComponent(commands.Component):
                         channel_id=broadcaster_id,
                         send_fn=lambda msg: payload.to_broadcaster.send_message(
                             message=msg,
-                            sender=self.bot.bot_id,
+                            sender=self.bot.sender_for(broadcaster_id),
                         ),
                     )
                 else:
@@ -526,8 +526,8 @@ class EventsComponent(commands.Component):
         channel_id = payload.broadcaster.id
         user_name = payload.user.display_name or payload.user.name or ""
 
-        # Track when bot itself gets mod — unlocks all features
-        if payload.user.id == self.bot.bot_id:
+        # Track when the channel's current sender gets mod — unlocks all features
+        if payload.user.id == self.bot.sender_for(channel_id):
             self.bot._bot_is_mod.add(channel_id)  # type: ignore[attr-defined]
             LOGGER.info(f"[{payload.broadcaster.name}] Bot was granted mod — all features enabled")
             self._trigger_emote_sync(channel_id)
@@ -556,8 +556,8 @@ class EventsComponent(commands.Component):
         channel_id = payload.broadcaster.id
         user_name = payload.user.display_name or payload.user.name or ""
 
-        # Track when bot itself loses mod — blocks all features
-        if payload.user.id == self.bot.bot_id:
+        # Track when the channel's current sender loses mod — blocks all features
+        if payload.user.id == self.bot.sender_for(channel_id):
             self.bot._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
             LOGGER.warning(f"[{payload.broadcaster.name}] Bot lost mod — all features blocked")
             self._trigger_emote_sync(channel_id)

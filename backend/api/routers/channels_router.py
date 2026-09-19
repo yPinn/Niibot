@@ -4,7 +4,7 @@ import asyncio
 import logging
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -14,9 +14,20 @@ from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
     get_twitch_api,
+    require_activated,
     require_self_tenant_access,
 )
 from services import ChannelService, TenantContext, TwitchAPIClient
+from services.emote_sync import (
+    EmoteItem,
+    OtherChannelEmotes,
+    available_emote_names,
+    build_other_channel_groups,
+    fetch_channel_emotes,
+    resolve_bot_id,
+    sync_enabled_emotes_background,
+    to_emote_items,
+)
 from shared.errors import AccessDeniedError, AppError, ChannelNotFoundError, UpstreamError
 from shared.repositories.channel import ChannelRepository
 
@@ -83,6 +94,16 @@ class ChannelDefaultsUpdate(BaseModel):
 
 class ModStatusResponse(BaseModel):
     is_moderator: bool
+
+
+class ChannelEmotesResponse(BaseModel):
+    bot_user_id: str
+    bot_token_available: bool
+    emotes: list[EmoteItem]
+    # Emotes the bot account has unlocked on OTHER channels (e.g. subscription
+    # emotes, usable anywhere once unlocked) — not limited to channels Niibot
+    # itself monitors.
+    other_channels: list[OtherChannelEmotes]
 
 
 class GrantModResponse(BaseModel):
@@ -278,4 +299,42 @@ async def update_channel_defaults(
     LOGGER.info("channel_defaults_updated")
     return ChannelDefaultsResponse(
         default_cooldown=channel.default_cooldown,
+    )
+
+
+@router.get("/emotes", response_model=ChannelEmotesResponse)
+async def get_channel_emotes(
+    background_tasks: BackgroundTasks,
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+    twitch: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
+    _: None = Depends(require_activated),
+) -> ChannelEmotesResponse:
+    """Return all channel + global emotes with the channel's CURRENT bot
+    account's availability status, PLUS any emotes that account has unlocked
+    on other channels (e.g. subscription emotes, usable anywhere once
+    unlocked) — usable anywhere the bot can send a chat message (custom
+    commands, events, AI replies), not just AI settings.
+
+    Availability is determined by fetching that account's accessible emotes via
+    its user token (requires user:read:emotes scope). Falls back to unavailable
+    for subscription/bits emotes if the bot token is missing or the scope is
+    not yet granted.
+    """
+    bot_id = await resolve_bot_id(pool, channel_id, system_bot_id=settings.bot_id)
+    token_row = await ChannelRepository(pool).get_token(bot_id, "bot")
+    bot_token = token_row.token if token_row else None
+
+    fetch = await fetch_channel_emotes(twitch, channel_id, bot_id=bot_id, bot_token=bot_token)
+    items = to_emote_items(fetch)
+    other_channels = await build_other_channel_groups(twitch, fetch)
+
+    available_names = available_emote_names(fetch.channel_raw, fetch.global_raw, fetch.accessible)
+    background_tasks.add_task(sync_enabled_emotes_background, pool, channel_id, available_names)
+    return ChannelEmotesResponse(
+        bot_user_id=bot_id,
+        bot_token_available=fetch.bot_token_available,
+        emotes=items,
+        other_channels=other_channels,
     )

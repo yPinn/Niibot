@@ -45,16 +45,6 @@ export interface Pack {
   description: string
 }
 
-export interface EmoteItem {
-  id: string
-  name: string
-  url: string
-  emote_type: string
-  tier: string
-  available: boolean
-  animated: boolean
-}
-
 const authed = { credentials: 'include' } as const
 
 export function getAIPacks(): Promise<Pack[]> {
@@ -84,8 +74,4 @@ export function resetAISettings(): Promise<AISettings> {
     { method: 'POST', ...authed },
     { fallback: '重設 AI 設定失敗' }
   )
-}
-
-export function getAIEmotes(): Promise<EmoteItem[]> {
-  return apiJson(API_ENDPOINTS.ai.emotes, authed, { fallback: '載入表情符號失敗' })
 }

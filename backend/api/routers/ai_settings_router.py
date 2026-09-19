@@ -2,33 +2,24 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from typing import Literal
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
-from core.config import DATA_DIR, Settings, get_settings
+from core.config import DATA_DIR
 from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
-    get_twitch_api,
     require_activated,
 )
-from services.emote_sync import (
-    available_emote_names,
-    is_emote_available,
-    notify_config_change,
-    sync_enabled_emotes,
-)
-from services.twitch_api import TwitchAPIClient
+from services.emote_sync import notify_config_change
 from shared.errors import InvalidInputError
 from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
-from shared.repositories.channel import ChannelRepository
 
 _PACKS: dict[str, Pack] = {}
 
@@ -166,25 +157,6 @@ class AISettingsPatch(BaseModel):
         return cleaned
 
 
-class EmoteItem(BaseModel):
-    id: str
-    name: str
-    url: str
-    emote_type: str = "globals"
-    tier: str = ""
-    available: bool = True
-    animated: bool = False
-
-
-async def _sync_emotes(pool: asyncpg.Pool, channel_id: str, available_names: list[str]) -> None:
-    """Background task: persist available emote names so the bot prompt stays current."""
-    try:
-        await sync_enabled_emotes(pool, channel_id, available_names)
-    except Exception:
-        # Background best-effort sync; a failure must not surface anywhere.
-        LOGGER.exception("emote_sync_failed")
-
-
 @router.get("/packs", response_model=list[PackInfo])
 async def get_ai_packs() -> list[PackInfo]:
     """Return all available knowledge packs (loaded from disk at first call)."""
@@ -239,63 +211,3 @@ async def reset_ai_settings(
 
     LOGGER.info("ai_settings_reset")
     return AISettingsResponse(**result)
-
-
-@router.get("/emotes", response_model=list[EmoteItem])
-async def get_ai_emotes(
-    background_tasks: BackgroundTasks,
-    channel_id: str = Depends(get_current_channel_id),
-    pool: asyncpg.Pool = Depends(get_db_pool),
-    twitch: TwitchAPIClient = Depends(get_twitch_api),
-    settings: Settings = Depends(get_settings),
-    _: None = Depends(require_activated),
-) -> list[EmoteItem]:
-    """Return all channel + global emotes with bot availability status.
-
-    Availability is determined by fetching the bot's accessible emotes via its user token
-    (requires user:read:emotes scope). Falls back to unavailable for subscription/bits
-    emotes if the bot token is missing or the scope is not yet granted.
-    """
-    bot_token: str | None = None
-    if settings.bot_id:
-        token_row = await ChannelRepository(pool).get_token(settings.bot_id, "bot")
-        if token_row:
-            bot_token = token_row.token
-
-    coros: list = [twitch.get_global_emotes(), twitch.get_channel_emotes(channel_id)]
-    if bot_token:
-        coros.append(twitch.get_user_emotes(channel_id, bot_token, settings.bot_id))
-
-    results = await asyncio.gather(*coros)
-    global_raw: list[dict] = results[0]
-    channel_raw: list[dict] = results[1]
-    user_raw: list[dict] = results[2] if bot_token else []
-
-    accessible: set[str] | None = {e["id"] for e in user_raw} if bot_token else None
-
-    items = [
-        EmoteItem(
-            id=e["id"],
-            name=e["name"],
-            url=e["url"],
-            emote_type=e.get("emote_type", ""),
-            tier=e.get("tier", ""),
-            available=is_emote_available(e, accessible),
-            animated=e.get("animated", False),
-        )
-        for e in channel_raw
-    ] + [
-        EmoteItem(
-            id=e["id"],
-            name=e["name"],
-            url=e["url"],
-            emote_type="globals",
-            available=True,
-            animated=e.get("animated", False),
-        )
-        for e in global_raw
-    ]
-
-    available_names = available_emote_names(channel_raw, global_raw, accessible)
-    background_tasks.add_task(_sync_emotes, pool, channel_id, available_names)
-    return items

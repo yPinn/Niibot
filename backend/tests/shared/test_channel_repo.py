@@ -182,6 +182,15 @@ class TestUpsertTokenOnly:
         args = conn.execute.call_args[0]
         assert "channel:bot bits:read" in args
 
+    async def test_clears_reauth_notified_at_on_success(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = ChannelRepository(pool)
+
+        await repo.upsert_token_only("u1", "tok", "ref")
+
+        sql = conn.execute.call_args[0][0]
+        assert "reauth_notified_at = NULL" in sql
+
     async def test_encrypts_token_and_refresh_when_key_is_configured(self):
         pool, conn = _make_pool(execute="INSERT 0 1")
         repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
@@ -195,6 +204,31 @@ class TestUpsertTokenOnly:
         assert str(args[3]).startswith("v1:")
         assert 1 in args
         assert "encryption_version" in args[0]
+
+
+@pytest.mark.asyncio
+class TestMarkRequiresReauth:
+    async def test_sets_flag_and_notified_at(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = ChannelRepository(pool)
+
+        await repo.mark_requires_reauth("u1")
+
+        conn.execute.assert_called_once()
+        sql = conn.execute.call_args[0][0]
+        assert "requires_reauth = TRUE" in sql
+        assert "reauth_notified_at = NOW()" in sql
+
+    async def test_invalidates_token_cache(self):
+        _token_cache.set("token:u1:broadcaster", _TOKEN_ROW)
+        pool, _ = _make_pool(execute="UPDATE 1")
+        repo = ChannelRepository(pool)
+
+        await repo.mark_requires_reauth("u1")
+
+        from shared.cache import _MISSING
+
+        assert _token_cache.get("token:u1:broadcaster") is _MISSING
 
 
 @pytest.mark.asyncio
