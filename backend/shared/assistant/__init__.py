@@ -49,10 +49,17 @@ from shared.assistant.router import (
     ProviderCircuitSnapshot,
     RouterPolicy,
 )
+from shared.assistant.scope import (
+    ASSISTANT_SCOPE_CHANGED_CHANNEL,
+    AssistantMode,
+    AssistantScopeChange,
+)
 
 __all__ = [
     "AdmissionDecision",
     "AssistantOutcome",
+    "AssistantMode",
+    "AssistantScopeChange",
     "AssistantHarness",
     "AssistantProvider",
     "AssistantRequest",
@@ -93,4 +100,5 @@ __all__ = [
     "estimate_request_tokens",
     "primary_model_label",
     "twitch_free_tier_budgets",
+    "ASSISTANT_SCOPE_CHANGED_CHANNEL",
 ]

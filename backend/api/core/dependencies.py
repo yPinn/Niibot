@@ -21,6 +21,7 @@ from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
 from services.notify_stream import NotifyWakeHub
+from services.roleplay_service import RoleplayService
 from services.tenant_service import (
     TenantContext,
     TenantService,
@@ -29,6 +30,7 @@ from services.timer_service import TimerService
 from shared.log_context import bind_log_context
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
+from shared.repositories.roleplay import RoleplayRepository
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.community_overlay import CommunityOverlayService
@@ -176,6 +178,12 @@ def get_bot_account_service(
         pool,
         token_encryption_key=settings.twitch_token_encryption_key,
     )
+
+
+def get_roleplay_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> RoleplayService:
+    return RoleplayService(RoleplayRepository(pool), pool)
 
 
 async def require_activated(

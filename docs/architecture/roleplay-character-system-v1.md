@@ -5,7 +5,8 @@
 本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic compiler、Lore resolver 與 prompt
 adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成。Phase 3A 已新增 tenant-owned
 draft、immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增 provider/model 共用容量與
-頻道公平 admission。API、Twitch Role-play production runtime 與 Dashboard 尚未實作。
+頻道公平 admission；Phase 3C 已新增 tenant-path authoring API、strict mutation boundary 與 versioned assistant-scope
+notification。Twitch Role-play production runtime、revision-scoped memory 與 Dashboard 尚未實作。
 
 ## 核心決策
 
@@ -318,14 +319,24 @@ Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列�
 3. 已完成：Groq-only A/B/C runner、15 秒節流、逐次保存、失敗續跑與輕量 B 實測 gate。
 4. 已完成：additive DB schema、tenant ownership、strict JSON codec、draft optimistic version、immutable revision、
    active pointer 與 provider 共用容量；migration 為 `127_add_roleplay_sets.sql`。
-5. 後續：實作 tenant API、Twitch compact runtime、revision-scoped memory 與非技術 wizard。
-6. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
+5. 已完成：tenant API 提供草稿建立／更新、發布、啟用、切回 Persona 與封存；只有 assistant scope 改變才發送
+   typed notification，其他 API instance 只失效該頻道的 AI settings cache。
+6. 後續：接入 Twitch compact runtime、revision-scoped memory 與非技術 wizard。
+7. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
 
 Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
 及完整／輕量兩種有界演繹摘要；compiled artifact 另記錄 compiler version，避免把編譯規則升級誤判為作者資料
 遭竄改。prompt adapter 會重新核對 package、digest、compiler version 與兩份 capsule 一致性後，才把摘要放入
 低權威 `CHANNEL_PERSONA`。Twitch 預設只把 0–1 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`；完整 profile
 的 0–2 條只供評測與未來有較寬容量的平台使用。
+
+Phase 3C 實作位於 `backend/api/routers/roleplay_router.py` 與
+`backend/api/services/roleplay_service.py`。端點使用 `/api/tenants/{channel_id}` 與 tenant access dependency，
+不從 request body 接受 owner，也不要求 legacy channel activation。list response 只含摘要，完整 draft 只由 detail
+端點回傳；mutation 要求 `X-Niibot-Action: roleplay-settings`、strict request schema、optimistic draft version 與
+有界 rate limit。發布不等於啟用，inactive publish 不打擾 runtime；只有 activate／Persona switch 發送 version 1
+`assistant_scope_changed`。Bot Account 仍只負責 Twitch sender／credential，不進入角色 owner、revision、notification
+或記憶作用域。
 
 ## 驗收條件
 
