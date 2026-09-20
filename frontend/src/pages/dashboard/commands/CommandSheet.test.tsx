@@ -28,6 +28,24 @@ const SUBAGE: CommandConfig = {
 }
 
 describe('CommandSheet', () => {
+  it('offers every canonical argument and URL conversion variable', () => {
+    render(
+      <CommandSheet
+        open
+        editing={{ mode: 'create' }}
+        defaults={{ default_cooldown: 0 }}
+        onSaved={vi.fn()}
+        onDeleted={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: '$(1:)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '$(1|預設值)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '$(queryescape)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '$(pathescape)' })).toBeInTheDocument()
+  })
+
   it('explains builtin behavior, audience, usage, and public visibility before settings', () => {
     render(
       <CommandSheet

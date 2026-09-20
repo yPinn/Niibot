@@ -5,7 +5,11 @@ Supported variables:
     $(sender)           Alias of $(user) — the spelling StreamElements uses
     $(touser)           First argument, falling back to the chatter when absent
     $(query)            User input after the command trigger
-    $(1) … $(9)         Single positional argument, split from the query
+    $(queryescape)      Query input encoded for a URL query value
+    $(pathescape)       Query input encoded for a URL path segment
+    $(N)                Single positional argument, split from the query
+    $(N:) / $(N:M)      Positional argument range (inclusive)
+    $(N|fallback)       Positional argument with a default value
     $(channel)          Channel / broadcaster name
     $(count)            How many times this command has been used
     $(random min,max)   Random integer in range [min, max] (inclusive)
@@ -19,6 +23,7 @@ a command importing cleanly and needing a manual rewrite.
 import random
 import re
 from typing import Protocol
+from urllib.parse import quote, quote_plus
 
 from shared.command_variables import VARIABLE_PATTERN
 
@@ -47,6 +52,9 @@ def substitute_variables(
         # Nightbot semantics: the first argument, or the caller when none was given.
         "touser": args[0] if args else user,
         "query": query,
+        "queryescape": quote_plus(query, safe=""),
+        # StreamElements leaves these valid path-segment characters intact.
+        "pathescape": quote(query, safe="&:="),
         "channel": channel_name or "",
         "count": str(count),
     }
@@ -55,9 +63,18 @@ def substitute_variables(
         if name := m.group("simple"):
             return simple[name]
         if position := m.group("position"):
-            # Out-of-range positions collapse to "" rather than leaking the variable.
-            index = int(position) - 1
-            return args[index] if index < len(args) else ""
+            start = int(position) - 1
+            if m.group("range_sep"):
+                raw_end = m.group("range_end")
+                # The source end is one-based and inclusive, which is exactly
+                # the exclusive stop needed by a zero-based Python slice.
+                end = int(raw_end) if raw_end else len(args)
+                return " ".join(args[start:end])
+
+            if start < len(args):
+                return args[start]
+            fallback = m.group("fallback")
+            return fallback if fallback is not None else ""
         if items := m.group("items"):
             choices = [i.strip() for i in items.split(",") if i.strip()]
             return random.choice(choices) if choices else ""
