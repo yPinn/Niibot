@@ -89,9 +89,39 @@ def _collection_repo(draw: CollectionDraw | None = None) -> MagicMock:
 
 @pytest.mark.asyncio
 class TestRecordCheckin:
+    async def test_carryover_same_day_is_duplicate_without_fake_ledger_or_draw(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = {
+            "carried_total_days": 15,
+            "last_source_date": _DAY,
+            "current_streak": 3,
+        }
+        conn.fetchval.return_value = 0
+        collection_repo = _collection_repo()
+        repo = AttendanceRepository(pool, collection_repository=collection_repo)
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=_DAY,
+            occurred_at=_NOW,
+        )
+
+        assert result.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert result.checkin_id is None
+        assert result.total_days == 15
+        assert result.current_streak == 3
+        collection_repo.draw_for_checkin.assert_not_awaited()
+        assert all(
+            "INSERT INTO viewer_checkins" not in call.args[0]
+            for call in conn.fetchrow.await_args_list
+        )
+
     async def test_success_writes_checkin_and_event_in_one_transaction(self):
         pool, conn = _pool()
-        conn.fetchrow.side_effect = [_checkin_row(), {"id": 90}]
+        conn.fetchrow.side_effect = [None, _checkin_row(), {"id": 90}]
         conn.fetchval.return_value = 1
         collection_repo = _collection_repo()
         repo = AttendanceRepository(pool, collection_repository=collection_repo)
@@ -119,7 +149,7 @@ class TestRecordCheckin:
             checkin_id=7,
             drawn_at=_NOW,
         )
-        event_call = conn.fetchrow.await_args_list[1]
+        event_call = conn.fetchrow.await_args_list[2]
         assert "INSERT INTO community_overlay_events" in event_call.args[0]
         assert event_call.args[1:6] == ("ch1", "checkin.recorded", 1, "twitch", "u1")
         assert event_call.args[7]["total_days"] == 1
@@ -130,7 +160,7 @@ class TestRecordCheckin:
 
     async def test_duplicate_returns_existing_count_without_new_event(self):
         pool, conn = _pool()
-        conn.fetchrow.side_effect = [None, _checkin_row()]
+        conn.fetchrow.side_effect = [None, None, _checkin_row()]
         conn.fetchval.return_value = 4
         collection_repo = _collection_repo()
         repo = AttendanceRepository(pool, collection_repository=collection_repo)
@@ -149,14 +179,14 @@ class TestRecordCheckin:
         assert result.event_id is None
         assert result.collection is None
         collection_repo.draw_for_checkin.assert_not_awaited()
-        assert conn.fetchrow.await_count == 2
+        assert conn.fetchrow.await_count == 3
         assert all(
             "community_overlay_events" not in call.args[0] for call in conn.fetchrow.await_args_list
         )
 
     async def test_duplicate_lookup_and_count_are_tenant_scoped(self):
         pool, conn = _pool()
-        conn.fetchrow.side_effect = [None, _checkin_row()]
+        conn.fetchrow.side_effect = [None, None, _checkin_row()]
         conn.fetchval.return_value = 2
         repo = AttendanceRepository(pool)
 
@@ -169,8 +199,10 @@ class TestRecordCheckin:
             occurred_at=_NOW,
         )
 
-        duplicate_sql = conn.fetchrow.await_args_list[1].args[0]
-        count_sql = conn.fetchval.await_args.args[0]
+        duplicate_sql = conn.fetchrow.await_args_list[2].args[0]
+        count_sql = next(
+            call.args[0] for call in conn.fetchval.await_args_list if "COUNT(*)" in call.args[0]
+        )
         assert "channel_id = $1" in duplicate_sql
         assert "user_id = $2" in duplicate_sql
         assert "checkin_date = $3" in duplicate_sql
@@ -179,7 +211,7 @@ class TestRecordCheckin:
 
     async def test_event_failure_propagates_from_transaction(self):
         pool, conn = _pool()
-        conn.fetchrow.side_effect = [_checkin_row(), RuntimeError("event write failed")]
+        conn.fetchrow.side_effect = [None, _checkin_row(), RuntimeError("event write failed")]
         conn.fetchval.return_value = 1
         repo = AttendanceRepository(pool, collection_repository=_collection_repo())
 
@@ -197,7 +229,7 @@ class TestRecordCheckin:
 
     async def test_draw_failure_prevents_overlay_event_and_rolls_back_with_checkin(self):
         pool, conn = _pool()
-        conn.fetchrow.return_value = _checkin_row()
+        conn.fetchrow.side_effect = [None, _checkin_row()]
         conn.fetchval.return_value = 1
         collection_repo = _collection_repo()
         collection_repo.draw_for_checkin.side_effect = RuntimeError("draw failed")
@@ -213,8 +245,8 @@ class TestRecordCheckin:
                 occurred_at=_NOW,
             )
 
-        assert conn.fetchrow.await_count == 1
-        assert "viewer_checkins" in conn.fetchrow.await_args.args[0]
+        assert conn.fetchrow.await_count == 2
+        assert "viewer_checkins" in conn.fetchrow.await_args_list[1].args[0]
         conn.transaction.assert_called_once_with()
 
     async def test_rejects_session_from_another_channel(self):
@@ -329,7 +361,8 @@ class TestCheckinLeaderboard:
         sql, channel_id, limit = conn.fetch.await_args.args
         normalized_sql = " ".join(sql.split())
         assert "WHERE channel_id = $1" in normalized_sql
-        assert "PARTITION BY user_id" in normalized_sql
+        assert "viewer_checkin_carryovers" in normalized_sql
+        assert "carried_total_days" in normalized_sql
         assert "ORDER BY total_days DESC" in normalized_sql
         assert "LIMIT $2" in normalized_sql
         assert (channel_id, limit) == ("ch1", 100)

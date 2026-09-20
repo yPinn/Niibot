@@ -123,6 +123,7 @@ class AttendanceService:
             display_name=result.display_name,
             total_days=result.total_days,
             checkin_date=result.checkin_date,
+            current_streak=result.current_streak,
         )
         return CheckinReply(
             result=result,

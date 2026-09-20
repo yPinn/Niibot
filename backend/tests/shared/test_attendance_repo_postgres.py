@@ -392,3 +392,100 @@ async def test_record_checkin_draws_once_and_embeds_the_immutable_event_snapshot
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
         await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_carryover_bridges_lifetime_total_and_next_day_streak_without_fake_history() -> None:
+    pool = await _create_pool(max_size=2)
+    channel_id = f"test-checkin-carryover-{uuid4().hex}"
+    actor_id = uuid4()
+    source_day = date(2026, 9, 10)
+    next_day_at = datetime(2026, 9, 11, 8, 0, tzinfo=UTC)
+    repository = AttendanceRepository(pool)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute("INSERT INTO users (id) VALUES ($1)", actor_id)
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)", channel_id
+            )
+            batch_id = await conn.fetchval(
+                """
+                INSERT INTO checkin_import_batches
+                    (channel_id, source, source_format, source_timezone, through_date,
+                     content_sha256, idempotency_key, applied_by_user_id,
+                     selected_rows, imported_rows)
+                VALUES ($1, 'chiwabots', 'csv', 'Asia/Taipei', $2,
+                        $3, $4, $5, 1, 1)
+                RETURNING id
+                """,
+                channel_id,
+                source_day,
+                "a" * 64,
+                "b" * 64,
+                actor_id,
+            )
+            await conn.execute(
+                """
+                INSERT INTO viewer_checkin_carryovers
+                    (channel_id, user_id, import_batch_id, source_username,
+                     source_display_name, carried_total_days, last_source_date,
+                     source_current_streak, source_daily_order)
+                VALUES ($1, 'viewer-1', $2, 'viewer', 'Viewer', 15, $3, 3, 5)
+                """,
+                channel_id,
+                batch_id,
+                source_day,
+            )
+            await conn.execute(
+                """
+                INSERT INTO viewer_daily_checkin_streaks
+                    (channel_id, user_id, current_streak, last_checkin_date)
+                VALUES ($1, 'viewer-1', 3, $2)
+                """,
+                channel_id,
+                source_day,
+            )
+
+        before = await repository.list_leaderboard(channel_id)
+        duplicate = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=source_day,
+            occurred_at=datetime(2026, 9, 10, 8, 0, tzinfo=UTC),
+        )
+        recorded = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=next_day_at.date(),
+            occurred_at=next_day_at,
+        )
+
+        assert [(entry.user_id, entry.total_days) for entry in before] == [("viewer-1", 15)]
+        assert duplicate.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert duplicate.checkin_id is None
+        assert duplicate.current_streak == 3
+        assert recorded.total_days == 16
+        assert recorded.current_streak == 4
+        assert recorded.collection is not None
+
+        async with pool.acquire() as conn:
+            counts = await conn.fetchrow(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM viewer_checkins WHERE channel_id = $1) AS checkins,
+                    (SELECT COUNT(*) FROM viewer_card_draws WHERE channel_id = $1) AS draws,
+                    (SELECT COUNT(*) FROM community_overlay_events WHERE channel_id = $1) AS events
+                """,
+                channel_id,
+            )
+        assert counts is not None
+        assert tuple(counts) == (1, 1, 1)
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+            await conn.execute("DELETE FROM users WHERE id = $1", actor_id)
+        await pool.close()

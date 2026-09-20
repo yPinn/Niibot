@@ -28,28 +28,39 @@ _SETTINGS_COLUMNS = (
 # Shared by list_leaderboard and get_checkin_rank so a viewer's chat-facing rank can
 # never drift from the dashboard leaderboard's ordering. $1 = channel_id.
 _RANKED_CHECKINS_CTE = """
-    WITH ranked_checkins AS (
+    WITH ledger_totals AS (
         SELECT
             user_id,
-            username,
-            display_name,
-            checkin_date,
-            COUNT(*) OVER (PARTITION BY user_id) AS total_days,
-            ROW_NUMBER() OVER (
-                PARTITION BY user_id
-                ORDER BY checkin_date DESC, id DESC
-            ) AS recent_row
+            (ARRAY_AGG(username ORDER BY checkin_date DESC, id DESC))[1] AS username,
+            (ARRAY_AGG(display_name ORDER BY checkin_date DESC, id DESC))[1] AS display_name,
+            COUNT(*) AS ledger_days,
+            MAX(checkin_date) AS last_checkin_date
         FROM viewer_checkins
+        WHERE channel_id = $1
+        GROUP BY user_id
+    ), carryover_totals AS (
+        SELECT
+            user_id,
+            source_username AS username,
+            source_display_name AS display_name,
+            carried_total_days,
+            last_source_date AS last_checkin_date
+        FROM viewer_checkin_carryovers
         WHERE channel_id = $1
     ), viewer_totals AS (
         SELECT
-            user_id,
-            username,
-            display_name,
-            total_days,
-            checkin_date AS last_checkin_date
-        FROM ranked_checkins
-        WHERE recent_row = 1
+            COALESCE(ledger.user_id, carryover.user_id) AS user_id,
+            COALESCE(ledger.username, carryover.username) AS username,
+            COALESCE(ledger.display_name, carryover.display_name) AS display_name,
+            COALESCE(ledger.ledger_days, 0) + COALESCE(carryover.carried_total_days, 0)
+                AS total_days,
+            CASE
+                WHEN ledger.last_checkin_date IS NULL THEN carryover.last_checkin_date
+                WHEN carryover.last_checkin_date IS NULL THEN ledger.last_checkin_date
+                ELSE GREATEST(ledger.last_checkin_date, carryover.last_checkin_date)
+            END AS last_checkin_date
+        FROM ledger_totals AS ledger
+        FULL OUTER JOIN carryover_totals AS carryover USING (user_id)
     ), ranked AS (
         SELECT
             ROW_NUMBER() OVER (
@@ -181,6 +192,12 @@ class AttendanceRepository:
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                # Normal check-ins share this lock; an import takes the exclusive
+                # form so its conflict check and cut-over cannot race a live viewer.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))",
+                    f"checkin-import:{channel_id}",
+                )
                 if session_id is not None:
                     valid_session = await conn.fetchval(
                         "SELECT EXISTS (SELECT 1 FROM stream_sessions "
@@ -192,6 +209,44 @@ class AttendanceRepository:
                         raise ValueError(
                             f"Session {session_id} does not belong to channel {channel_id}"
                         )
+
+                carryover = await conn.fetchrow(
+                    """
+                    SELECT carryover.carried_total_days,
+                           carryover.last_source_date,
+                           streak.current_streak
+                    FROM viewer_checkin_carryovers AS carryover
+                    LEFT JOIN viewer_daily_checkin_streaks AS streak
+                      ON streak.channel_id = carryover.channel_id
+                     AND streak.user_id = carryover.user_id
+                    WHERE carryover.channel_id = $1 AND carryover.user_id = $2
+                    """,
+                    channel_id,
+                    user_id,
+                )
+                carried_total_days = int(carryover["carried_total_days"]) if carryover else 0
+                if carryover is not None and checkin_date <= carryover["last_source_date"]:
+                    ledger_days = int(
+                        await conn.fetchval(
+                            "SELECT COUNT(*) FROM viewer_checkins "
+                            "WHERE channel_id = $1 AND user_id = $2",
+                            channel_id,
+                            user_id,
+                        )
+                    )
+                    return CheckinResult(
+                        status=CheckinStatus.ALREADY_CHECKED_IN,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                        username=username,
+                        display_name=display_name,
+                        checkin_date=checkin_date,
+                        total_days=carried_total_days + ledger_days,
+                        checkin_id=None,
+                        event_id=None,
+                        occurred_at=occurred_at,
+                        current_streak=int(carryover["current_streak"] or 0),
+                    )
                 row = await conn.fetchrow(
                     f"""
                     INSERT INTO viewer_checkins
@@ -226,7 +281,7 @@ class AttendanceRepository:
                 if row is None:
                     raise RuntimeError("Check-in conflict row could not be loaded")
 
-                total_days = int(
+                ledger_days = int(
                     await conn.fetchval(
                         "SELECT COUNT(*) FROM viewer_checkins "
                         "WHERE channel_id = $1 AND user_id = $2",
@@ -234,6 +289,50 @@ class AttendanceRepository:
                         user_id,
                     )
                 )
+                total_days = carried_total_days + ledger_days
+
+                if recorded:
+                    current_streak = int(
+                        await conn.fetchval(
+                            """
+                            INSERT INTO viewer_daily_checkin_streaks
+                                (channel_id, user_id, current_streak, last_checkin_date)
+                            VALUES ($1, $2, 1, $3)
+                            ON CONFLICT (channel_id, user_id) DO UPDATE SET
+                                current_streak = CASE
+                                    WHEN viewer_daily_checkin_streaks.last_checkin_date
+                                         = EXCLUDED.last_checkin_date - 1
+                                    THEN viewer_daily_checkin_streaks.current_streak + 1
+                                    WHEN viewer_daily_checkin_streaks.last_checkin_date
+                                         = EXCLUDED.last_checkin_date
+                                    THEN viewer_daily_checkin_streaks.current_streak
+                                    ELSE 1
+                                END,
+                                last_checkin_date = GREATEST(
+                                    viewer_daily_checkin_streaks.last_checkin_date,
+                                    EXCLUDED.last_checkin_date
+                                ),
+                                updated_at = NOW()
+                            RETURNING current_streak
+                            """,
+                            channel_id,
+                            user_id,
+                            checkin_date,
+                        )
+                    )
+                else:
+                    current_streak = int(
+                        await conn.fetchval(
+                            """
+                            SELECT COALESCE(current_streak, 0)
+                            FROM viewer_daily_checkin_streaks
+                            WHERE channel_id = $1 AND user_id = $2
+                            """,
+                            channel_id,
+                            user_id,
+                        )
+                        or 0
+                    )
 
                 event_id: int | None = None
                 collection: CollectionDraw | None = None
@@ -292,5 +391,6 @@ class AttendanceRepository:
             checkin_id=int(row["id"]),
             event_id=event_id,
             occurred_at=occurred_at,
+            current_streak=current_streak,
             collection=collection,
         )

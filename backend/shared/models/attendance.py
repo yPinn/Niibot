@@ -53,9 +53,10 @@ class CheckinResult:
     display_name: str | None
     checkin_date: date
     total_days: int
-    checkin_id: int
+    checkin_id: int | None
     event_id: int | None
     occurred_at: datetime
+    current_streak: int = 1
     collection: CollectionDraw | None = None
 
     @property

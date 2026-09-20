@@ -289,6 +289,40 @@ class TestAttendanceService:
 
         assert outcome.delay_seconds == 7
 
+    async def test_check_in_with_reply_renders_current_streak(self):
+        settings = CheckinSettings(
+            channel_id="ch1",
+            timezone="Asia/Taipei",
+            success_template="$(user) 連續 $(streak) 天，累積 $(count) 天",
+            duplicate_template="already $(streak)",
+        )
+        result = CheckinResult(
+            status=CheckinStatus.RECORDED,
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 31),
+            total_days=16,
+            checkin_id=1,
+            event_id=2,
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+            current_streak=4,
+        )
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=settings)
+        repo.record_checkin = AsyncMock(return_value=result)
+
+        outcome = await AttendanceService(repo).check_in_with_reply(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+
+        assert outcome.message == "Alice 連續 4 天，累積 16 天"
+
     async def test_duplicate_reply_is_immediate_even_when_channel_delay_is_configured(self):
         settings = CheckinSettings(
             channel_id="ch1",
