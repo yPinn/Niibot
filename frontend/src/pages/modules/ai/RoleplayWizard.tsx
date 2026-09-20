@@ -33,13 +33,13 @@ import { cn } from '@/lib/utils'
 import { stepForFieldPath } from './roleplayWizardUtils'
 
 const STEPS = [
-  '作品與演繹範圍',
+  '作品與故事範圍',
   '人物小傳',
-  '故事進度與當前場景',
+  '故事時間點與當前場景',
   '人物關係與角色所知',
   '聊天室舞台',
   '背景條目與說話示例',
-  '檢查並使用',
+  '最後檢查',
 ] as const
 
 const RELATIONSHIP_STATE_LABELS: Record<RoleplayRelationship['state'], string> = {
@@ -194,14 +194,11 @@ export function RoleplayWizard({
 
   const reviewRows = useMemo(
     () => [
-      [
-        '作品與範圍',
-        `${draft.world.title || '尚未填寫'}・${draft.world.canon_scope || '範圍未填'}`,
-      ],
+      ['作品範圍', `${draft.world.title || '尚未填寫'}・${draft.world.canon_scope || '範圍未填'}`],
       ['故事時間點', draft.world.story_stage || '尚未填寫'],
       ['人物核心', `${draft.character.name || '尚未命名'}・${draft.character.role || '定位未填'}`],
       [
-        '目前場景',
+        '當前場景',
         `${draft.scene.location || '地點未填'}・${draft.scene.current_activity || '行動未填'}`,
       ],
       ['角色知道', draft.character.knowledge.known.join('、') || '未列出'],
@@ -212,7 +209,7 @@ export function RoleplayWizard({
           .map(item => `${item.subject || '未命名'}（${RELATIONSHIP_STATE_LABELS[item.state]}）`)
           .join('、') || '未列出',
       ],
-      ['聊天室關係', draft.scene.audience_relationship || '尚未填寫'],
+      ['角色與聊天室', draft.scene.audience_relationship || '尚未填寫'],
       [
         '背景條目',
         draft.lore_entries
@@ -267,7 +264,7 @@ export function RoleplayWizard({
       setStep(current => Math.min(current + 1, STEPS.length - 1))
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        toast.error('這份草稿已在別處更新，請回到角色清單重新載入')
+        toast.error('這份角色設定已在其他頁面更新。請回到角色清單並重新開啟。')
       } else {
         toastApiError(error, '儲存失敗，請重試')
       }
@@ -304,9 +301,9 @@ export function RoleplayWizard({
       if (error instanceof ApiError && error.fields) {
         setErrors(error.fields)
         setStep(Math.min(...Object.keys(error.fields).map(stepForFieldPath)))
-        toast.error('還有幾個欄位需要補完')
+        toast.error('還有內容需要補寫')
       } else if (error instanceof ApiError && error.status === 409) {
-        toast.error('這份草稿已在別處更新，請回到角色清單重新載入')
+        toast.error('這份角色設定已在其他頁面更新。請回到角色清單並重新開啟。')
       } else if (activationTarget !== null) {
         toastApiError(error, '角色已完成，但尚未開始使用；請再試一次')
       } else {
@@ -375,7 +372,7 @@ export function RoleplayWizard({
           {step === 0 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                先固定角色屬於哪個作品、採用哪段故事。這些範圍會決定角色能知道什麼，也能減少出戲。
+                先決定角色來自哪個作品，以及這次要演到哪段故事。這會限制角色知道的事，避免提到後續劇情或出戲。
               </p>
               <div className="grid gap-section sm:grid-cols-2">
                 <div className="flex flex-col gap-element">
@@ -409,7 +406,7 @@ export function RoleplayWizard({
               </div>
               <div className="grid gap-section sm:grid-cols-2">
                 <div className="flex flex-col gap-element">
-                  <Label htmlFor="source-kind">設定來源</Label>
+                  <Label htmlFor="source-kind">作品來源</Label>
                   <select
                     id="source-kind"
                     className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
@@ -422,7 +419,7 @@ export function RoleplayWizard({
                       })
                     }}
                   >
-                    <option value="original">原創世界</option>
+                    <option value="original">原創設定</option>
                     <option value="existing_work">既有作品</option>
                   </select>
                 </div>
@@ -448,7 +445,7 @@ export function RoleplayWizard({
                 </div>
               </div>
               <div className="flex flex-col gap-element">
-                <Label htmlFor="canon-scope">採用範圍</Label>
+                <Label htmlFor="canon-scope">作品範圍</Label>
                 <Textarea
                   id="canon-scope"
                   value={draft.world.canon_scope}
@@ -477,7 +474,7 @@ export function RoleplayWizard({
           {step === 1 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                描述角色長期穩定的核心，而不是把每一種情緒都寫成固定規則。
+                寫下角色長期不變的核心。當下的情緒與態度，會在後面的場景和人物關係中補充。
               </p>
               <div className="grid gap-section sm:grid-cols-2">
                 <div className="flex flex-col gap-element">
@@ -551,7 +548,7 @@ export function RoleplayWizard({
           {step === 2 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                同一個角色在不同故事時間點會有不同關係與認知；請把這次演繹停在一個清楚時刻。
+                先選定這次故事發生在哪個時間點，再寫角色眼前的地點、行動與目標。
               </p>
               <div className="flex flex-col gap-element">
                 <Label htmlFor="story-stage">故事時間點</Label>
@@ -592,7 +589,7 @@ export function RoleplayWizard({
           {step === 3 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                關係會影響角色的態度；「不知道」則是防止模型從作品後段偷帶答案的界線。
+                人物關係會改變角色的態度。也請列出角色此刻知道與不知道的事，避免帶出後續劇情。
               </p>
               <div className="flex flex-col gap-element">
                 <div className="flex items-center justify-between gap-3">
@@ -721,7 +718,7 @@ export function RoleplayWizard({
           {step === 4 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                決定聊天室在角色眼中是什麼地方。觀眾永遠是自己，不會被整群替換成作品人物。
+                設定角色如何看待實況主與觀眾。觀眾仍是聊天室中的自己，不會被當成某個原作人物。
               </p>
               <div className="flex flex-col gap-element">
                 <Label htmlFor="channel-stage">聊天室舞台</Label>
@@ -801,7 +798,7 @@ export function RoleplayWizard({
           {step === 5 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                背景條目只在觀眾問到相關主題時載入；日常提問不會帶上整份世界觀。
+                背景條目是角色可在相關話題中參考的補充設定。每條只寫一個人物、地點、組織或事件。
               </p>
               <div className="flex flex-col gap-element">
                 <div className="flex items-center justify-between gap-3">
@@ -868,7 +865,7 @@ export function RoleplayWizard({
                           checked={entry.known_at_stage}
                           onCheckedChange={known_at_stage => updateLore(index, { known_at_stage })}
                         />
-                        角色在目前故事時間點已知道
+                        角色此時已知道
                       </label>
                       <label className="flex items-center gap-2 text-sub">
                         <Switch
@@ -877,7 +874,7 @@ export function RoleplayWizard({
                             updateLore(index, { contains_spoilers })
                           }
                         />
-                        含範圍外劇情
+                        包含作品範圍外的劇情
                       </label>
                       <Button
                         type="button"
@@ -914,7 +911,7 @@ export function RoleplayWizard({
                           }
                         />
                         <span className="text-label text-muted-foreground">
-                          數值越高，同時命中時越優先。
+                          多條內容同時相關時，數值較高的會先參考。
                         </span>
                       </div>
                     </details>
@@ -937,8 +934,7 @@ export function RoleplayWizard({
           {step === 6 && (
             <>
               <p className="max-w-prose text-sub text-muted-foreground">
-                這裡只做確定性的資料檢查，不會呼叫免費模型，也不會消耗 Groq、Gemini 或 OpenRouter
-                額度。
+                先確認以下內容是否符合你想演出的角色。這一步只整理你填過的內容，不會呼叫模型或消耗免費額度。
               </p>
               <dl className="divide-y rounded-md border px-4">
                 {reviewRows.map(([label, value]) => (
@@ -950,10 +946,10 @@ export function RoleplayWizard({
               </dl>
               <div className="grid gap-3 sm:grid-cols-2">
                 {[
-                  ['一般提問', '只使用輕量角色摘要，先直接回答問題。'],
-                  ['人物關係', '問到相關人物時，才載入相符的關係與背景。'],
-                  ['未知與劇透', '角色不知道或超出採用範圍的資料會先被排除。'],
-                  ['角色劫持', '觀眾要求忽略設定或安全規則時，不會改寫角色邊界。'],
+                  ['一般提問', '會先用角色的說話方式直接回答。'],
+                  ['人物關係', '問到相關人物時，才會參考對應的關係與背景。'],
+                  ['未知與後續劇情', '角色不知道或不在作品範圍內的事，不會當作已知內容回答。'],
+                  ['要求跳出設定', '觀眾要求忽略角色設定或安全規則時，仍會維持原本界線。'],
                 ].map(([title, description]) => (
                   <div key={title} className="rounded-md bg-muted/50 p-3">
                     <p className="text-sub font-medium">{title}</p>
@@ -966,7 +962,7 @@ export function RoleplayWizard({
                   className="rounded-md border border-destructive/50 bg-destructive/5 p-3"
                   role="alert"
                 >
-                  <p className="text-sub font-medium text-destructive">請補完以下欄位</p>
+                  <p className="text-sub font-medium text-destructive">請補寫以下內容</p>
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-label text-destructive">
                     {Object.values(errors).map((message, index) => (
                       <li key={`${message}-${index}`}>{message}</li>

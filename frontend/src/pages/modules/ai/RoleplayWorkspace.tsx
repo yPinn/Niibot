@@ -149,7 +149,7 @@ export function RoleplayWorkspace({
         <div>
           <CardTitle>故事角色</CardTitle>
           <CardDescription className="mt-1">
-            每個角色都連同作品範圍、故事時間點與知識界線保存；最多建立 5 組。
+            每個角色都會記下作品範圍、故事時間點，以及角色知道與不知道的事；最多建立 5 組。
           </CardDescription>
         </div>
         {!loading && sets.length > 0 && (
@@ -176,7 +176,7 @@ export function RoleplayWorkspace({
               </EmptyMedia>
               <EmptyTitle>還沒有故事角色</EmptyTitle>
               <EmptyDescription>
-                從作品範圍與人物小傳開始，約七個步驟就能建立第一個可使用的角色。
+                跟著七個步驟，從作品範圍和人物小傳開始，建立第一位可在聊天室使用的角色。
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
@@ -206,7 +206,9 @@ export function RoleplayWorkspace({
                       )}
                     </div>
                     <p className="mt-1 text-label text-muted-foreground">
-                      {summary.published ? '可直接使用，也能繼續調整後更新' : '尚未完成發布前檢查'}
+                      {summary.published
+                        ? '已完成最後檢查，可直接使用或繼續修改'
+                        : '還沒完成最後檢查'}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -235,7 +237,7 @@ export function RoleplayWorkspace({
                           <AlertDialogHeader>
                             <AlertDialogTitle>封存「{summary.name}」？</AlertDialogTitle>
                             <AlertDialogDescription>
-                              角色會從一般清單隱藏，但已發布內容仍保留在系統中。
+                              封存後會從角色清單隱藏，但不會刪除已完成的設定。
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>

@@ -134,8 +134,9 @@ describe('RoleplayWorkspace', () => {
     )
 
     expect(await screen.findByText('還沒有故事角色')).toBeInTheDocument()
+    expect(screen.getByText(/跟著七個步驟/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '建立故事角色' }))
-    expect(screen.getByRole('heading', { name: '作品與演繹範圍' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '作品與故事範圍' })).toBeInTheDocument()
 
     await user.type(screen.getByLabelText('角色設定名稱'), '月港守望者')
     await user.type(screen.getByLabelText('作品或世界名稱'), '月港')
@@ -232,7 +233,7 @@ describe('RoleplayWizard', () => {
     for (let step = 0; step < 6; step++) {
       await user.click(screen.getByRole('button', { name: '儲存並繼續' }))
     }
-    expect(screen.getByRole('heading', { name: '檢查並使用' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '最後檢查' })).toBeInTheDocument()
     expect(screen.getByText('船員目前身在何處')).toBeInTheDocument()
     expect(screen.getByText(/希雅/)).toBeInTheDocument()
     expect(screen.getByText('月潮')).toBeInTheDocument()
@@ -319,7 +320,7 @@ describe('RoleplayWizard', () => {
     }
     await user.click(screen.getByRole('button', { name: '完成並使用' }))
 
-    expect(await screen.findByRole('heading', { name: '故事進度與當前場景' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '故事時間點與當前場景' })).toBeInTheDocument()
     expect(screen.getByText('請填寫目前地點')).toBeInTheDocument()
   })
 
@@ -370,8 +371,44 @@ describe('RoleplayWizard', () => {
     await user.click(screen.getByRole('button', { name: '儲存並繼續' }))
 
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('這份草稿已在別處更新，請回到角色清單重新載入')
+      expect(toast.error).toHaveBeenCalledWith(
+        '這份角色設定已在其他頁面更新。請回到角色清單並重新開啟。'
+      )
     )
-    expect(screen.getByRole('heading', { name: '作品與演繹範圍' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '作品與故事範圍' })).toBeInTheDocument()
+  })
+
+  it('keeps literary authoring terms while explaining each step in plain language', async () => {
+    const user = userEvent.setup()
+    const initial = roleplaySet()
+    vi.mocked(updateRoleplayDraft).mockResolvedValue({ ...initial, draft_version: 4 })
+
+    render(
+      <RoleplayWizard
+        channelId="channel-a"
+        initialSet={initial}
+        onCancel={vi.fn()}
+        onSaved={vi.fn()}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    expect(screen.getByText(/先決定角色來自哪個作品/)).toBeInTheDocument()
+    const headings = [
+      '人物小傳',
+      '故事時間點與當前場景',
+      '人物關係與角色所知',
+      '聊天室舞台',
+      '背景條目與說話示例',
+      '最後檢查',
+    ]
+    for (const heading of headings) {
+      await user.click(screen.getByRole('button', { name: '儲存並繼續' }))
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+    }
+
+    expect(screen.getByText(/只整理你填過的內容/)).toBeInTheDocument()
+    expect(screen.getByText('要求跳出設定')).toBeInTheDocument()
+    expect(screen.queryByText('角色劫持')).not.toBeInTheDocument()
   })
 })

@@ -157,7 +157,7 @@ export function PersonaPanel({
         <SlideUp inView className="flex flex-col gap-section">
           <Card>
             <CardHeader>
-              <CardTitle>角色設定</CardTitle>
+              <CardTitle>說話風格</CardTitle>
               <CardAction>
                 <Button size="sm" onClick={onSave} disabled={!isDirty || disabled}>
                   {saving ? (
@@ -172,7 +172,7 @@ export function PersonaPanel({
             <CardContent className="flex flex-col gap-section">
               <div className="flex flex-col gap-element">
                 <div className="flex flex-col gap-0.5">
-                  <Label>角色範本</Label>
+                  <Label>風格範本</Label>
                   <p className="text-label text-muted-foreground">
                     套用後仍可微調下方欄位；不會改變婉拒方式。
                   </p>

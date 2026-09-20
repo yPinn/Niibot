@@ -122,7 +122,7 @@ describe('AI persona and short-term memory settings', () => {
   it('uses outcome-based setting labels and explains channel-wide cooldown', async () => {
     render(<AIModule />)
 
-    expect(await screen.findByText('角色範本')).toBeInTheDocument()
+    expect(await screen.findByText('風格範本')).toBeInTheDocument()
     expect(screen.getByText(/套用後仍可微調下方欄位；不會改變婉拒方式/)).toBeInTheDocument()
     expect(screen.getByText('口頭禪頻率')).toBeInTheDocument()
     expect(screen.getByText('回覆語氣')).toBeInTheDocument()
@@ -175,7 +175,7 @@ describe('AI persona and short-term memory settings', () => {
 
     render(<AIModule />)
 
-    expect(await screen.findByText('無法載入 AI 設定')).toBeInTheDocument()
+    expect(await screen.findByText('AI 設定沒有載入成功')).toBeInTheDocument()
     expect(screen.queryByLabelText('Bot 名稱')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '重新載入' }))
 

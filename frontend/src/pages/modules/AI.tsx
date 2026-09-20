@@ -130,7 +130,7 @@ function AIWorkspace({ channelId, tenantRole, twitchModel }: AIWorkspaceProps) {
         cooldown: previous.cooldown,
         min_role: previous.min_role,
       }))
-      toast.success('角色設定已儲存')
+      toast.success('說話風格已儲存')
     } catch (error) {
       toastApiError(error, '儲存失敗，請重試')
     } finally {
@@ -228,9 +228,9 @@ function AIWorkspace({ channelId, tenantRole, twitchModel }: AIWorkspaceProps) {
     <Card>
       <CardContent className="flex flex-col items-center gap-3 py-empty text-center">
         <div>
-          <p className="text-sub font-medium">無法載入 AI 設定</p>
+          <p className="text-sub font-medium">AI 設定沒有載入成功</p>
           <p className="mt-1 text-label text-muted-foreground">
-            目前沒有顯示或套用預設值，請確認連線後重新載入。
+            畫面不會用預設值代替你的設定。請檢查連線後重新載入。
           </p>
         </div>
         <Button
@@ -264,7 +264,7 @@ function AIWorkspace({ channelId, tenantRole, twitchModel }: AIWorkspaceProps) {
           <p className="mt-1 text-label text-muted-foreground">
             {loading
               ? '正在讀取目前工作區的設定。'
-              : `${saved.enabled ? 'AI 回覆已啟用' : 'AI 回覆目前已停用'}；切換下方頁籤只會改變編輯畫面。`}
+              : `${saved.enabled ? 'AI 回覆已啟用' : 'AI 回覆目前已停用'}；切換頁籤不會改變聊天室正在使用的設定。`}
           </p>
         </div>
         <TabsList aria-label="AI 設定類型">
@@ -319,7 +319,7 @@ export default function AIModule() {
     <PageMain>
       <PageHeader
         title="AI Assistant"
-        description="設定 AI 在聊天室的說話方式，或讓它演繹一位有故事背景的角色"
+        description="決定 AI 在聊天室怎麼說話，或建立一位有故事背景的角色"
       />
       {activeTenant ? (
         <AIWorkspace
