@@ -7,7 +7,8 @@ adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq g
 draft、immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增 provider/model 共用容量與
 頻道公平 admission；Phase 3C 已新增 tenant-path authoring API、strict mutation boundary 與 versioned assistant-scope
 notification；Phase 3D 已接上 Twitch compact runtime、revision-scoped memory 與 in-flight scope recheck。
-非技術 Dashboard wizard 與私人分享仍未實作。
+Phase 4 已接上 tenant-aware AI 設定頁、Persona／Role-play 模式框架、角色清單與七步非技術 Dashboard wizard。
+私人匯出／匯入與分享仍未實作。
 
 ## 核心決策
 
@@ -323,7 +324,7 @@ Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列�
 5. 已完成：tenant API 提供草稿建立／更新、發布、啟用、切回 Persona 與封存；只有 activate／切回 Persona 操作發送
    typed notification，其他 API instance 只失效該頻道的 AI settings cache。
 6. 已完成：Twitch compact runtime、revision-scoped memory、typed scope listener 與生成後 scope recheck。
-7. 後續：接入非技術 Dashboard wizard。
+7. 已完成：接入 tenant-aware 非技術 Dashboard wizard、Persona 獨立 panel 與明確模式切換。
 8. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
 
 Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
@@ -350,6 +351,16 @@ Role-play 只使用相同固定安全／Twitch contract、active immutable revis
 `roleplay:<revision_id>`，不含 Bot sender。一般 `config_change` 與週期 refresh 只更新 cache；停用頻道或明確關閉記憶
 會清除整個頻道，scope notification 則只淘汰其他 scope，重複事件不清掉當前對話。模型成功後會直接重讀 DB scope；
 若生成期間已切換角色，就捨棄舊回覆與該次記憶，再提示使用者重問。實際送出仍在 send time 解析 active Bot Account。
+
+Phase 4 實作位於 `frontend/src/pages/modules/AI.tsx` 與 `frontend/src/pages/modules/ai/`。AI 設定、貼圖和角色資料都以
+目前工作區的 `channel_id` 讀取；舊 `/api/ai/*` 與 `/api/channels/emotes` 仍保留相容，新介面使用
+`/api/tenants/{channel_id}/ai/*`、tenant emotes 與既有 role-play API。工作區切換會卸載舊工作區狀態，延遲回應不能覆寫
+新頻道；owner 與 manager 共用 tenant access boundary，Bot credential 仍由目標頻道解析。
+
+「說話風格」與「故事角色」頁籤只切換編輯畫面。實際 runtime 只會在使用者按下「改用說話風格」或
+「完成並使用／使用這個角色」後切換。Wizard 逐步保存 draft，使用 optimistic version 防止覆蓋遠端修改；發布前檢查是
+deterministic summary，不呼叫 Groq、Gemini 或 OpenRouter。完成流程固定為 save → publish → activate；若發布已成功但
+啟用暫時失敗，介面保存 revision id，重試時只做 activate，不重複發布。未儲存離開會提示，active set 不提供封存操作。
 
 ## 驗收條件
 

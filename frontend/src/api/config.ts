@@ -35,6 +35,27 @@ export const API_ENDPOINTS = {
   },
   tenants: {
     list: join('/api/tenants'),
+    aiSettings: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/ai/settings`),
+    aiSettingsReset: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/ai/settings/reset`),
+    emotes: (channelId: string) => join(`/api/tenants/${encodeURIComponent(channelId)}/emotes`),
+    roleplaySets: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets`),
+    roleplaySet: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}`
+      ),
+    roleplayRevisions: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/revisions`
+      ),
+    roleplayActiveRevision: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/active-revision`
+      ),
+    activeRoleplay: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/active-roleplay`),
     botAccounts: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts`),
     botInvites: (channelId: string) =>

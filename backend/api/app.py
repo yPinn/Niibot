@@ -425,6 +425,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(bot_accounts_router.router)
     app.include_router(roleplay_router.router)
+    app.include_router(ai_settings_router.tenant_router)
+    app.include_router(channels_router.tenant_router)
     app.include_router(tenants_router.router)
     app.include_router(donation_router.router)
     app.include_router(client_errors_router.router)

@@ -24,10 +24,13 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
     require_activated,
+    require_tenant_access,
 )
 from core.error_handlers import register_exception_handlers
 from routers.ai_settings_router import _contains_bias
 from routers.ai_settings_router import router as _ai_router
+from routers.ai_settings_router import tenant_router as _tenant_ai_router
+from services.tenant_service import TenantContext
 
 CHANNEL_ID = "ch-ai"
 
@@ -48,7 +51,11 @@ _DEFAULT_SETTINGS = {
     "memory_enabled": False,
     "cooldown": 30,
     "min_role": "everyone",
+    "assistant_mode": "persona",
+    "active_roleplay_revision_id": None,
 }
+
+_ACTION = {"X-Niibot-Action": "ai-settings"}
 
 
 @asynccontextmanager
@@ -90,6 +97,19 @@ def _make_client_not_activated() -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
+def _make_tenant_client(*, channel_id: str = CHANNEL_ID) -> TestClient:
+    app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
+    app.include_router(_tenant_ai_router)
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[require_tenant_access] = lambda: TenantContext(
+        channel_id=channel_id,
+        user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        role="manager",
+    )
+    return TestClient(app, raise_server_exceptions=False)
+
+
 # ── _contains_bias unit tests ─────────────────────────────────────────────────
 
 
@@ -122,6 +142,7 @@ class TestGetAISettings:
         data = r.json()
         assert data["bot_name"] == "Niibot"
         assert data["enabled"] is True
+        assert data["assistant_mode"] == "persona"
 
     def test_exception_returns_500(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
@@ -261,6 +282,8 @@ class TestResetAISettings:
         assert reset["catchphrase_frequency"] == "off"
         assert reset["refusal_style"] == "polite"
         assert reset["cooldown"] == 30
+        assert "assistant_mode" not in reset
+        assert "active_roleplay_revision_id" not in reset
         assert notify.await_args.kwargs["clear_assistant_memory"] is True
 
     def test_exception_returns_500(self):
@@ -287,3 +310,84 @@ class TestActivationGate:
     def test_packs_endpoint_is_not_gated(self):
         r = _make_client_not_activated().get("/api/ai/packs")
         assert r.status_code == 200
+
+
+class TestTenantAISettings:
+    def test_manager_reads_settings_for_authorized_path_tenant(self):
+        roleplay_settings = {
+            **_DEFAULT_SETTINGS,
+            "assistant_mode": "roleplay",
+            "active_roleplay_revision_id": 41,
+        }
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.get = AsyncMock(return_value=roleplay_settings)
+            response = _make_tenant_client().get(f"/api/tenants/{CHANNEL_ID}/ai/settings")
+
+        assert response.status_code == 200
+        assert response.json()["assistant_mode"] == "roleplay"
+        assert response.json()["active_roleplay_revision_id"] == 41
+        repo.return_value.get.assert_awaited_once_with(CHANNEL_ID)
+
+    def test_manager_patch_requires_action_header(self):
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock()
+            response = _make_tenant_client().patch(
+                f"/api/tenants/{CHANNEL_ID}/ai/settings",
+                json={"bot_name": "WorkspaceBot"},
+            )
+
+        assert response.status_code == 422
+        repo.return_value.upsert.assert_not_awaited()
+
+    def test_manager_updates_only_authorized_tenant(self):
+        updated = {**_DEFAULT_SETTINGS, "bot_name": "WorkspaceBot"}
+        notify = AsyncMock()
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock(return_value=updated)
+            with patch("routers.ai_settings_router.notify_config_change", notify):
+                response = _make_tenant_client().patch(
+                    f"/api/tenants/{CHANNEL_ID}/ai/settings",
+                    json={"bot_name": "WorkspaceBot"},
+                    headers=_ACTION,
+                )
+
+        assert response.status_code == 200
+        repo.return_value.upsert.assert_awaited_once_with(
+            CHANNEL_ID,
+            bot_name="WorkspaceBot",
+        )
+        assert notify.await_args.args[1] == CHANNEL_ID
+
+    def test_settings_patch_cannot_change_assistant_scope(self):
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock()
+            response = _make_tenant_client().patch(
+                f"/api/tenants/{CHANNEL_ID}/ai/settings",
+                json={"assistant_mode": "roleplay", "active_roleplay_revision_id": 99},
+                headers=_ACTION,
+            )
+
+        assert response.status_code == 422
+        repo.return_value.upsert.assert_not_awaited()
+
+    def test_reset_keeps_active_roleplay_scope(self):
+        roleplay_settings = {
+            **_DEFAULT_SETTINGS,
+            "assistant_mode": "roleplay",
+            "active_roleplay_revision_id": 41,
+        }
+        notify = AsyncMock()
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock(return_value=roleplay_settings)
+            with patch("routers.ai_settings_router.notify_config_change", notify):
+                response = _make_tenant_client().post(
+                    f"/api/tenants/{CHANNEL_ID}/ai/settings/reset",
+                    headers=_ACTION,
+                )
+
+        assert response.status_code == 200
+        assert response.json()["assistant_mode"] == "roleplay"
+        assert response.json()["active_roleplay_revision_id"] == 41
+        reset = repo.return_value.upsert.await_args.kwargs
+        assert "assistant_mode" not in reset
+        assert "active_roleplay_revision_id" not in reset

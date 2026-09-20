@@ -25,9 +25,12 @@ from core.dependencies import (
     get_db_pool,
     get_twitch_api,
     require_activated,
+    require_tenant_access,
 )
 from core.error_handlers import register_exception_handlers
 from routers.channels_router import router as _channels_router
+from routers.channels_router import tenant_router as _tenant_channels_router
+from services.tenant_service import TenantContext
 
 CHANNEL_ID = "ch-123"
 
@@ -61,6 +64,25 @@ def _make_client(
     app.dependency_overrides[get_db_pool] = lambda: mock_pool
     app.dependency_overrides[require_activated] = lambda: None
 
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _make_tenant_client(
+    *,
+    twitch_api: MagicMock | None = None,
+    channel_id: str = "workspace-789",
+) -> TestClient:
+    app = FastAPI(lifespan=_no_lifespan)
+    register_exception_handlers(app)
+    app.include_router(_tenant_channels_router)
+
+    app.dependency_overrides[get_twitch_api] = lambda: twitch_api or MagicMock()
+    app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
+    app.dependency_overrides[require_tenant_access] = lambda: TenantContext(
+        channel_id=channel_id,
+        user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        role="manager",
+    )
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -375,3 +397,23 @@ class TestGetChannelEmotes:
             r = _make_client(twitch_api=mock_twitch).get("/api/channels/emotes")
 
         assert r.status_code == 500
+
+    def test_tenant_route_uses_authorized_workspace_for_emotes(self):
+        workspace_id = "workspace-789"
+        mock_twitch = MagicMock()
+        mock_twitch.get_global_emotes = AsyncMock(return_value=[])
+        mock_twitch.get_channel_emotes = AsyncMock(return_value=[])
+
+        with (
+            patch("routers.channels_router.ChannelRepository") as cr,
+            patch("routers.channels_router.resolve_bot_id", AsyncMock(return_value="bot-999")),
+            patch("routers.channels_router.sync_enabled_emotes_background", AsyncMock()),
+        ):
+            cr.return_value.get_token = AsyncMock(return_value=None)
+            response = _make_tenant_client(
+                twitch_api=mock_twitch,
+                channel_id=workspace_id,
+            ).get(f"/api/tenants/{workspace_id}/emotes")
+
+        assert response.status_code == 200
+        mock_twitch.get_channel_emotes.assert_awaited_once_with(workspace_id)

@@ -18,6 +18,8 @@ export interface AISettings {
   memory_enabled: boolean
   cooldown: number
   min_role: 'everyone' | 'subscriber' | 'vip' | 'moderator' | 'broadcaster'
+  assistant_mode: 'persona' | 'roleplay'
+  active_roleplay_revision_id: number | null
 }
 
 export const AI_SETTINGS_DEFAULT: AISettings = {
@@ -37,6 +39,8 @@ export const AI_SETTINGS_DEFAULT: AISettings = {
   memory_enabled: false,
   cooldown: 30,
   min_role: 'everyone',
+  assistant_mode: 'persona',
+  active_roleplay_revision_id: null,
 }
 
 export interface Pack {
@@ -72,6 +76,39 @@ export function resetAISettings(): Promise<AISettings> {
   return apiJson(
     API_ENDPOINTS.ai.reset,
     { method: 'POST', ...authed },
+    { fallback: '重設 AI 設定失敗' }
+  )
+}
+
+const tenantActionHeaders = { 'X-Niibot-Action': 'ai-settings' } as const
+type EditableAISettings = Omit<AISettings, 'assistant_mode' | 'active_roleplay_revision_id'>
+
+export function getTenantAISettings(channelId: string): Promise<AISettings> {
+  return apiJson(API_ENDPOINTS.tenants.aiSettings(channelId), authed, {
+    fallback: '載入 AI 設定失敗',
+  })
+}
+
+export function patchTenantAISettings(
+  channelId: string,
+  patch: Partial<EditableAISettings>
+): Promise<AISettings> {
+  return apiJson(
+    API_ENDPOINTS.tenants.aiSettings(channelId),
+    {
+      method: 'PATCH',
+      ...authed,
+      headers: { 'Content-Type': 'application/json', ...tenantActionHeaders },
+      body: JSON.stringify(patch),
+    },
+    { fallback: '更新 AI 設定失敗' }
+  )
+}
+
+export function resetTenantAISettings(channelId: string): Promise<AISettings> {
+  return apiJson(
+    API_ENDPOINTS.tenants.aiSettingsReset(channelId),
+    { method: 'POST', ...authed, headers: tenantActionHeaders },
     { fallback: '重設 AI 設定失敗' }
   )
 }
