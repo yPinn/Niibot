@@ -21,6 +21,7 @@ from .collection import (
     DrawSelection,
     RarityRevision,
 )
+from .roleplay import RoleplayRevision, RoleplaySet
 
 __all__ = [
     "Birthday",
@@ -42,5 +43,7 @@ __all__ = [
     "DrawPoolRevision",
     "DrawSelection",
     "RarityRevision",
+    "RoleplayRevision",
+    "RoleplaySet",
     "Token",
 ]

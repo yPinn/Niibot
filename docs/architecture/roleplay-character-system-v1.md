@@ -3,8 +3,9 @@
 ## 文件狀態
 
 本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic compiler、Lore resolver 與 prompt
-adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成，尚未進入 DB、API、
-Twitch production runtime 或 Dashboard 實作。
+adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成。Phase 3A 已新增 tenant-owned
+draft、immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增 provider/model 共用容量與
+頻道公平 admission。API、Twitch Role-play production runtime 與 Dashboard 尚未實作。
 
 ## 核心決策
 
@@ -211,7 +212,8 @@ core safety
 - Twitch 每次最多 1 條、合計 600 字；完整／評測 profile 最多 2 條、合計 1,500 字。
 - 未知或劇透資料在 matching 前即排除。
 - 模型只有一次生成呼叫，維持現有 Groq／fallback 路由。
-- 免費額度是所有頻道共用的 provider 組織級容量；Phase 3 必須加入 token-aware 共用預算與頻道公平性，不能只靠單頻道 cooldown。
+- 免費額度是所有頻道共用的 provider 組織級容量；已在共用 harness 加入 token-aware RPM／TPM／RPD 預算、
+  頻道 round-robin、公平有界 queue 與 overload shedding，單頻道 cooldown 只保留為局部保護。
 
 ## OOC 防護
 
@@ -314,8 +316,9 @@ Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列�
 1. 已完成：核准本文件與角色設定集範例的欄位顆粒度。
 2. 已完成：建立純 Python domain types、compiler、validator、Lore resolver、prompt adapter 與原創測試 fixture。
 3. 已完成：Groq-only A/B/C runner、15 秒節流、逐次保存、失敗續跑與輕量 B 實測 gate。
-4. 後續：設計 additive DB schema、tenant ownership、draft／active revision 與記憶隔離。
-5. 後續：實作 API、Twitch runtime 與非技術 wizard。
+4. 已完成：additive DB schema、tenant ownership、strict JSON codec、draft optimistic version、immutable revision、
+   active pointer 與 provider 共用容量；migration 為 `127_add_roleplay_sets.sql`。
+5. 後續：實作 tenant API、Twitch compact runtime、revision-scoped memory 與非技術 wizard。
 6. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
 
 Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest

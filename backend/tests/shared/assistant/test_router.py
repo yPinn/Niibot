@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
+from shared.assistant.capacity import ProviderBudgetPolicy, ProviderCapacityController
 from shared.assistant.contracts import (
     AssistantOutcome,
     FailureKind,
@@ -16,6 +17,7 @@ from shared.assistant.contracts import (
     ProviderMessage,
     ProviderRequest,
     ProviderResponse,
+    TokenUsage,
 )
 from shared.assistant.router import (
     BoundedAssistantRouter,
@@ -303,3 +305,66 @@ async def test_no_configured_providers_returns_misconfigured() -> None:
 
     assert result.outcome is AssistantOutcome.MISCONFIGURED
     assert result.attempts == ()
+
+
+@pytest.mark.asyncio
+async def test_local_capacity_limit_skips_primary_without_opening_its_circuit() -> None:
+    primary = FakeProvider("primary", "p1", [_success("primary", "p1")])
+    secondary = FakeProvider("secondary", "p2", [_success("secondary", "p2")])
+    capacity = ProviderCapacityController(
+        {
+            ("primary", "p1"): ProviderBudgetPolicy(
+                requests_per_minute=1,
+                max_queue_depth=1,
+                max_wait_seconds=0,
+            )
+        }
+    )
+    occupied = await capacity.admit("primary", "p1", scope="other-channel", estimated_tokens=1)
+    assert occupied.admitted is True
+    router = BoundedAssistantRouter(
+        (primary, secondary),
+        policy=_policy(),
+        capacity=capacity,
+    )
+
+    result = await router.route(_request())
+
+    assert result.provider == "secondary"
+    assert primary.calls == 0
+    assert result.attempts[0].failure is not None
+    assert result.attempts[0].failure.kind is FailureKind.RATE_LIMITED
+    assert router.provider_health()[0].state is CircuitState.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_router_reconciles_success_with_reported_usage() -> None:
+    completion = ProviderCompletion(
+        provider="primary",
+        model="p1",
+        content="ok",
+        usage=TokenUsage(input_tokens=30, output_tokens=20, total_tokens=50),
+    )
+    primary = FakeProvider("primary", "p1", [completion, completion])
+    capacity = ProviderCapacityController(
+        {
+            ("primary", "p1"): ProviderBudgetPolicy(
+                requests_per_minute=10,
+                tokens_per_minute=230,
+                max_queue_depth=1,
+                max_wait_seconds=0,
+            )
+        }
+    )
+    router = BoundedAssistantRouter(
+        (primary,),
+        policy=_policy(),
+        capacity=capacity,
+    )
+
+    first = await router.route(_request())
+    second = await router.route(_request())
+
+    assert first.outcome is AssistantOutcome.OK
+    assert second.outcome is AssistantOutcome.OK
+    assert primary.calls == 2

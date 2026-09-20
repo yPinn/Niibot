@@ -31,6 +31,8 @@ DEFAULT_AI_SETTINGS: Final[dict[str, object]] = {
     "memory_enabled": False,
     "cooldown": 30,
     "min_role": "everyone",
+    "assistant_mode": "persona",
+    "active_roleplay_revision_id": None,
 }
 
 _LANG_TEXT: dict[str, str] = {
@@ -192,7 +194,8 @@ def build_assistant_sections(
 _COLUMNS = (
     "bot_name, persona, self_pronoun, audience_reference, tone_preset, catchphrase, "
     "catchphrase_frequency, example_replies, response_lang, refusal_style, max_tokens, "
-    "enabled_emotes, enabled, memory_enabled, cooldown, min_role"
+    "enabled_emotes, enabled, memory_enabled, cooldown, min_role, assistant_mode, "
+    "active_roleplay_revision_id"
 )
 
 
@@ -262,7 +265,7 @@ class AISettingsRepository:
                     (channel_id, {_COLUMNS}, updated_at)
                 VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9,
-                    $10, $11, $12, $13, $14, $15, $16, $17, now()
+                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now()
                 )
                 ON CONFLICT (channel_id) DO UPDATE SET
                     bot_name       = EXCLUDED.bot_name,
@@ -281,6 +284,8 @@ class AISettingsRepository:
                     memory_enabled = EXCLUDED.memory_enabled,
                     cooldown       = EXCLUDED.cooldown,
                     min_role       = EXCLUDED.min_role,
+                    assistant_mode = EXCLUDED.assistant_mode,
+                    active_roleplay_revision_id = EXCLUDED.active_roleplay_revision_id,
                     updated_at     = now()
                 RETURNING {_COLUMNS}
                 """,
@@ -301,6 +306,8 @@ class AISettingsRepository:
                 merged["memory_enabled"],
                 merged["cooldown"],
                 merged["min_role"],
+                merged["assistant_mode"],
+                merged["active_roleplay_revision_id"],
             )
         _ai_settings_cache.invalidate(f"ai_settings:{channel_id}")
         return _row_to_dict(row)

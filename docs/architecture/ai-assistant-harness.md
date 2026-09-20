@@ -5,14 +5,15 @@ Twitch 與 Discord 共用同一套 provider-neutral pipeline，平台層只負�
 
 ## 分層
 
-| 層                     | 責任                                                                       | 不負責                      |
-| ---------------------- | -------------------------------------------------------------------------- | --------------------------- |
-| Platform orchestration | 收集頻道設定、知識包、短期歷史、使用者輸入；映射平台訊息                   | provider SDK、fallback 細節 |
-| Prompt compiler        | 驗證權威順序、標記不可信資料、套用字元預算                                 | 選模型、輸出過濾            |
-| Provider adapter       | 映射 role／reasoning 參數、呼叫 SDK、正規化錯誤與 usage                    | 決定是否 fallback           |
-| Bounded router         | deadline、attempt 上限、錯誤分類、circuit breaker                          | 修改 prompt、繞過安全拒答   |
-| Output processor       | 移除 reasoning tag、正規化、截斷、平台前安全掃描                           | 重新呼叫模型                |
-| Platform renderer      | 將 `ok`／`empty`／`blocked`／`unavailable`／`misconfigured` 轉成使用者訊息 | 解析 provider 例外字串      |
+| 層                     | 責任                                                                            | 不負責                      |
+| ---------------------- | ------------------------------------------------------------------------------- | --------------------------- |
+| Platform orchestration | 收集頻道設定、知識包、短期歷史、使用者輸入；映射平台訊息                        | provider SDK、fallback 細節 |
+| Prompt compiler        | 驗證權威順序、標記不可信資料、套用字元預算                                      | 選模型、輸出過濾            |
+| Provider admission     | 預估 token、provider/model 共用 RPM／TPM／RPD、頻道公平排隊與 overload shedding | 修改 prompt、等待無上限     |
+| Provider adapter       | 映射 role／reasoning 參數、呼叫 SDK、正規化錯誤與 usage                         | 決定是否 fallback           |
+| Bounded router         | deadline、attempt 上限、錯誤分類、circuit breaker                               | 修改 prompt、繞過安全拒答   |
+| Output processor       | 移除 reasoning tag、正規化、截斷、平台前安全掃描                                | 重新呼叫模型                |
+| Platform renderer      | 將 `ok`／`empty`／`blocked`／`unavailable`／`misconfigured` 轉成使用者訊息      | 解析 provider 例外字串      |
 
 `AssistantRequest` 與 `ProviderRequest` 分離；應用程式持有所有對話狀態，不依賴任一供應商的 thread state，
 因此 fallback 不會遺失當次 context。
@@ -113,6 +114,28 @@ Gemini 為 20/21（一次 429），且 Gemini 成功延遲約 5–13 秒。
 OpenRouter 只使用明確設定的固定模型，request 帶零價格上限；`free_models.json` 不會在 production 動態輪詢，
 避免免費名單變動時意外選到未知品質或付費模型。
 
+### 共用免費額度 admission
+
+模型呼叫前會從已編譯 request 預估 input token，並加上 `max_output_tokens` 作保守 reservation；成功後再以 provider
+回傳的實際 usage 修正 token 數。RPM／TPM／RPD 以 `(provider, model)` 分開計算，所以 Groq 額度不足不會誤傷
+Gemini 或 OpenRouter。等待者以不含 prompt／viewer 的 platform + channel scope 輪轉；單一頻道無法靠大量並發插隊。
+
+目前配置保留安全餘裕，且把同一組 key 的容量靜態分配給兩個單 process runtime：
+
+| Runtime | Groq local envelope                | Gemini local envelope | OpenRouter local envelope |
+| ------- | ---------------------------------- | --------------------- | ------------------------- |
+| Twitch  | 20 RPM／5,600 TPM／700 rolling RPD | —                     | 12 RPM／650 rolling RPD   |
+| Discord | 4 RPM／1,600 TPM／100 rolling RPD  | 4 RPM                 | 4 RPM／150 rolling RPD    |
+
+queue 有固定上限，Twitch 最多等 150ms、Discord 最多等 500ms；容量仍不足就把該 provider 視為本地 429，直接走既有
+fallback。這不會開啟 provider circuit，因為不是外部服務故障；真正的 429 仍依 `retry-after` 與 circuit 規則處理。
+本地 admission 不在 request path 睡到下一個一分鐘窗口，也不縮短單次回答的 token 上限。
+
+這一版是 process-local，適用目前單一 Twitch process + 單一 Discord process，兩者以靜態 allocation 避免合計超額。
+若未來任一 runtime 水平擴展成多 replica，必須先改為 Redis／資料庫等 distributed limiter，不能讓每個 replica
+各自複製同一份額度。程序重啟也會重置本地 rolling counters，因此 RPD 是降低意外耗盡風險的保守閘門，不是 provider
+帳務的 durable 精準計量；真正餘額與限額仍以 provider console／response headers 為準。
+
 ## Fallback 與 circuit breaker
 
 | 結果                                       | fallback                          | circuit 行為                                |
@@ -136,8 +159,9 @@ open circuit 冷卻後只允許一個 half-open probe。所有第三方例外在
 - 兩者皆有：`ready`
 
 bot `/status` 的 `ai_model` 與 `ai_status` 直接取自已載入的 harness registry，而非重新推測環境變數。
-`ai_status.providers` 顯示註冊狀態，`ai_status.circuits` 顯示運行期故障狀態，`ai_status.memory` 只顯示聚合容量；
-三者都不包含 secret、prompt、知識內容、viewer key 或聊天訊息。
+`ai_status.providers` 顯示註冊狀態，`ai_status.circuits` 顯示運行期故障狀態，`ai_status.capacity` 顯示各
+provider/model 的 minute requests／tokens、rolling daily requests、queue depth 與上限，`ai_status.memory` 只顯示
+聚合容量；全部都不包含 secret、prompt、知識內容、viewer key 或聊天訊息。
 
 結構化 log 只記錄 request id、outcome、provider/model、attempt/fallback 數、latency 與 provider 回傳的 token usage。
 

@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
+from shared.assistant.capacity import ProviderCapacityController, estimate_request_tokens
 from shared.assistant.contracts import (
     AssistantProvider,
     AssistantResult,
@@ -122,10 +123,12 @@ class BoundedAssistantRouter:
         providers: Sequence[AssistantProvider],
         *,
         policy: RouterPolicy,
+        capacity: ProviderCapacityController | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._providers = tuple(providers)
         self._policy = policy
+        self._capacity = capacity
         self._clock = clock
         self._circuits = {
             (provider.name, provider.model): _Circuit() for provider in self._providers
@@ -144,6 +147,7 @@ class BoundedAssistantRouter:
         attempts: list[AttemptRecord] = []
         last_failure: ProviderFailure | None = None
         attempted_count = 0
+        estimated_tokens = estimate_request_tokens(request)
 
         for provider in self._providers:
             if attempted_count >= self._policy.max_attempts:
@@ -160,11 +164,54 @@ class BoundedAssistantRouter:
                 break
 
             attempted_count += 1
+            lease = None
+            if self._capacity is not None:
+                try:
+                    admission = await self._capacity.admit(
+                        provider.name,
+                        provider.model,
+                        scope=request.scheduling_scope,
+                        estimated_tokens=estimated_tokens,
+                        max_wait_seconds=remaining,
+                    )
+                except BaseException:
+                    circuit.probe_in_flight = False
+                    raise
+                if not admission.admitted:
+                    circuit.probe_in_flight = False
+                    failure = ProviderFailure(
+                        provider=provider.name,
+                        model=provider.model,
+                        kind=FailureKind.RATE_LIMITED,
+                        retry_after_seconds=admission.retry_after_seconds,
+                    )
+                    attempts.append(
+                        AttemptRecord(
+                            provider=provider.name,
+                            model=provider.model,
+                            latency_ms=0,
+                            failure=failure,
+                        )
+                    )
+                    last_failure = failure
+                    continue
+                lease = admission.lease
+
+            remaining = self._policy.total_timeout_seconds - (self._clock() - started_at)
+            if remaining <= 0:
+                circuit.probe_in_flight = False
+                if self._capacity is not None and lease is not None:
+                    await self._capacity.cancel(lease)
+                break
+
             attempt_started_at = self._clock()
             timeout = min(self._policy.per_attempt_timeout_seconds, remaining)
             response: ProviderCompletion | ProviderFailure
             try:
                 response = await asyncio.wait_for(provider.complete(request), timeout=timeout)
+            except asyncio.CancelledError:
+                circuit.probe_in_flight = False
+                raise
             except TimeoutError:
                 response = ProviderFailure(
                     provider=provider.name,
@@ -181,6 +228,20 @@ class BoundedAssistantRouter:
             latency_ms = max(0, int((self._clock() - attempt_started_at) * 1000))
 
             if isinstance(response, ProviderCompletion):
+                if self._capacity is not None and lease is not None and response.usage:
+                    actual_tokens = response.usage.total_tokens
+                    if actual_tokens is None:
+                        counts = (
+                            response.usage.input_tokens,
+                            response.usage.output_tokens,
+                        )
+                        if all(count is not None for count in counts):
+                            actual_tokens = sum(count for count in counts if count is not None)
+                    if actual_tokens is not None:
+                        await self._capacity.reconcile(
+                            lease,
+                            actual_tokens=actual_tokens,
+                        )
                 circuit.record_success()
                 attempts.append(
                     AttemptRecord(

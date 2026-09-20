@@ -104,6 +104,7 @@ class PromptCompiler:
             messages=messages,
             max_output_tokens=request.max_output_tokens,
             request_id=request.request_id,
+            scheduling_scope=request.scheduling_scope,
         )
 
     def _shrink_to_total_budget(

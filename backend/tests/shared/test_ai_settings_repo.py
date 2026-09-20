@@ -32,6 +32,8 @@ async def test_missing_row_returns_conservative_persona_v2_defaults() -> None:
     assert settings["refusal_style"] == "polite"
     assert settings["memory_enabled"] is False
     assert settings["cooldown"] == 30
+    assert settings["assistant_mode"] == "persona"
+    assert settings["active_roleplay_revision_id"] is None
 
 
 @pytest.mark.asyncio
@@ -54,6 +56,8 @@ async def test_upsert_persists_all_persona_v2_fields() -> None:
         "memory_enabled": True,
         "cooldown": 15,
         "min_role": "everyone",
+        "assistant_mode": "persona",
+        "active_roleplay_revision_id": None,
     }
     pool, conn = _make_pool(fetchrow=None)
     conn.fetchrow.side_effect = [None, returned]
@@ -74,6 +78,8 @@ async def test_upsert_persists_all_persona_v2_fields() -> None:
     assert "catchphrase_frequency" in sql
     assert "example_replies" in sql
     assert "memory_enabled" in sql
+    assert "assistant_mode" in sql
+    assert "active_roleplay_revision_id" in sql
     assert "各位" in args
     assert "witty" in args
     assert "occasional" in args

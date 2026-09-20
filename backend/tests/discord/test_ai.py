@@ -65,6 +65,7 @@ def _interaction() -> MagicMock:
     interaction.followup.send = AsyncMock()
     interaction.user.name = "viewer"
     interaction.user.display_avatar.url = "https://example.invalid/avatar.png"
+    interaction.guild_id = 12345
     return interaction
 
 
@@ -111,6 +112,7 @@ async def test_question_is_compiled_as_final_user_input() -> None:
     ]
     assert request.sections[-1].content == "hello"
     assert request.max_output_tokens == 800
+    assert request.scheduling_scope == "discord:12345"
 
 
 @pytest.mark.asyncio

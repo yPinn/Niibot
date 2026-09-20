@@ -1,5 +1,10 @@
 """Deterministic Canon Role-play authoring and runtime preparation."""
 
+from shared.roleplay.codec import (
+    RoleplayDocumentError,
+    decode_roleplay_package,
+    encode_roleplay_package,
+)
 from shared.roleplay.compiler import (
     MAX_CAPSULE_CHARS,
     MAX_COMPACT_CAPSULE_CHARS,
@@ -70,6 +75,7 @@ __all__ = [
     "ResolvedLore",
     "RoleplayPackage",
     "RoleplayRuntimeProfile",
+    "RoleplayDocumentError",
     "RoleplayValidationError",
     "Scene",
     "SourceKind",
@@ -81,6 +87,8 @@ __all__ = [
     "build_roleplay_context_sections",
     "canonical_roleplay_json",
     "compile_roleplay_package",
+    "decode_roleplay_package",
+    "encode_roleplay_package",
     "grade_evaluation_output",
     "resolve_lore",
     "roleplay_content_digest",

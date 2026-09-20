@@ -24,6 +24,7 @@ from shared.assistant import (
     PromptBudget,
     RouterPolicy,
     build_assistant_harness,
+    twitch_free_tier_budgets,
 )
 from shared.assistant.providers.registry import ProviderConfig, ProviderKind
 from shared.packs import Pack, load_packs
@@ -149,6 +150,7 @@ class AIComponent(BotComponent):
                 max_user_chars=500,
             ),
             output_policy=OutputPolicy(max_chars=500),
+            provider_budgets=twitch_free_tier_budgets(),
             scanner=_scan_response,
         )
         labels = [
@@ -182,6 +184,20 @@ class AIComponent(BotComponent):
                     "consecutive_failures": circuit.consecutive_failures,
                 }
                 for circuit in self.harness.provider_health()
+            ],
+            "capacity": [
+                {
+                    "provider": capacity.provider,
+                    "model": capacity.model,
+                    "minute_requests": capacity.minute_requests,
+                    "minute_tokens": capacity.minute_tokens,
+                    "daily_requests": capacity.daily_requests,
+                    "queued_requests": capacity.queued_requests,
+                    "requests_per_minute": capacity.requests_per_minute,
+                    "tokens_per_minute": capacity.tokens_per_minute,
+                    "requests_per_day": capacity.requests_per_day,
+                }
+                for capacity in self.harness.provider_capacity()
             ],
             "memory": {
                 "active_sessions": memory.active_sessions,
@@ -329,6 +345,7 @@ class AIComponent(BotComponent):
                 ),
                 max_output_tokens=ai_settings["max_tokens"],
                 request_id=request_id,
+                scheduling_scope=f"twitch:{ctx.channel.id}",
             )
             response = await self.harness.respond(request)
 

@@ -5,6 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from shared.assistant.capacity import (
+    ProviderBudgetPolicy,
+    ProviderCapacityController,
+    ProviderCapacitySnapshot,
+)
 from shared.assistant.contracts import AssistantRequest, AssistantResult
 from shared.assistant.output import OutputPolicy, OutputProcessor, ProcessedOutput
 from shared.assistant.prompt import PromptBudget, PromptCompiler
@@ -40,10 +45,12 @@ class AssistantHarness:
         router: BoundedAssistantRouter,
         output: OutputProcessor,
         registry: ProviderRegistry | None,
+        capacity: ProviderCapacityController | None = None,
     ) -> None:
         self._compiler = compiler
         self._router = router
         self._output = output
+        self._capacity = capacity
         self.registry = registry
 
     async def respond(self, request: AssistantRequest) -> HarnessResponse:
@@ -55,6 +62,9 @@ class AssistantHarness:
     def provider_health(self) -> tuple[ProviderCircuitSnapshot, ...]:
         return self._router.provider_health()
 
+    def provider_capacity(self) -> tuple[ProviderCapacitySnapshot, ...]:
+        return self._capacity.snapshots() if self._capacity is not None else ()
+
 
 def build_assistant_harness(
     *,
@@ -64,6 +74,7 @@ def build_assistant_harness(
     router_policy: RouterPolicy,
     prompt_budget: PromptBudget,
     output_policy: OutputPolicy,
+    provider_budgets: Mapping[ProviderKind, ProviderBudgetPolicy] | None = None,
     scanner: Callable[[str], str | None] | None = None,
 ) -> AssistantHarness:
     """Build a harness without issuing network requests."""
@@ -74,9 +85,23 @@ def build_assistant_harness(
         timeout_seconds=provider_timeout_seconds,
     )
     providers = tuple(OpenAICompatibleProvider(spec) for spec in registry.specs)
+    capacity = None
+    if provider_budgets:
+        capacity = ProviderCapacityController(
+            {
+                (spec.kind.value, spec.model): provider_budgets[spec.kind]
+                for spec in registry.specs
+                if spec.kind in provider_budgets
+            }
+        )
     return AssistantHarness(
         compiler=PromptCompiler(prompt_budget),
-        router=BoundedAssistantRouter(providers, policy=router_policy),
+        router=BoundedAssistantRouter(
+            providers,
+            policy=router_policy,
+            capacity=capacity,
+        ),
         output=OutputProcessor(output_policy, scanner=scanner),
         registry=registry,
+        capacity=capacity,
     )

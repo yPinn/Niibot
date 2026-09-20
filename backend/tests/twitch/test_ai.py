@@ -180,6 +180,7 @@ class TestCooldownOrdering:
         request = comp.harness.respond.await_args.args[0]
         assert request.sections[-1].kind is InputSectionKind.USER_INPUT
         assert request.sections[-1].content == "hello"
+        assert request.scheduling_scope == "twitch:ch_test"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
