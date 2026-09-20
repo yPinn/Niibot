@@ -54,6 +54,7 @@ from routers import (
     vip_router,
 )
 from routers.bots_router import close_bots_http_client
+from routers.checkin_router import close_checkin_import_http_client
 from routers.client_errors_router import client_error_retention_loop
 from routers.command_import_router import close_command_import_http_client
 from routers.video_queue_router import video_queue_history_retention_loop
@@ -335,6 +336,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await close_twitch_api()
         await close_bots_http_client()
         await close_command_import_http_client()
+        await close_checkin_import_http_client()
         await db_manager.disconnect()
         LOGGER.info("Database disconnected")
     except Exception:

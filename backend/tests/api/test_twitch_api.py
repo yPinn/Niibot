@@ -18,6 +18,7 @@ from services.twitch_api import (
     TokenRevocationResult,
     TokenValidationResult,
     TwitchAPIClient,
+    TwitchUsersLookupError,
 )
 
 
@@ -808,6 +809,41 @@ class TestUserHelpers:
         mock.route("GET", "/helix/users", httpx.Response(200, json={"data": []}))
         api = mock.client()
         assert await api.get_user_by_login("ghost") is None
+
+    async def test_strict_login_lookup_batches_repeated_query_params(self):
+        mock = _MockAPI().route("POST", "/oauth2/token", _app_token())
+        mock.route(
+            "GET",
+            "/helix/users",
+            httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {"id": "1", "login": "alice", "display_name": "Alice"},
+                        {"id": "2", "login": "bob", "display_name": "Bob"},
+                    ]
+                },
+            ),
+        )
+        api = mock.client()
+
+        users = await api.get_users_by_logins_strict(["alice", "bob"])
+
+        assert [user["id"] for user in users] == ["1", "2"]
+        assert mock.requests[-1].url.params.get_list("login") == ["alice", "bob"]
+
+    async def test_strict_lookup_distinguishes_upstream_failure_and_malformed_identity(self):
+        failed = _MockAPI().route("POST", "/oauth2/token", _app_token())
+        failed.route("GET", "/helix/users", httpx.Response(503, json={}))
+        failed_api = failed.client()
+        with pytest.raises(TwitchUsersLookupError):
+            await failed_api.get_users_by_ids_strict(["1"])
+
+        malformed = _MockAPI().route("POST", "/oauth2/token", _app_token())
+        malformed.route("GET", "/helix/users", httpx.Response(200, json={"data": [{"id": "1"}]}))
+        malformed_api = malformed.client()
+        with pytest.raises(TwitchUsersLookupError):
+            await malformed_api.get_users_by_ids_strict(["1"])
 
     async def test_fetch_all_followers_filters_and_maps(self):
         mock = _MockAPI().route(

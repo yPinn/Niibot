@@ -326,3 +326,20 @@ async def require_self_tenant_access(
     )
     bind_log_context(channel_id=ctx.channel_id, channel=ctx.channel_name, role=ctx.role)
     return ctx
+
+
+async def require_self_tenant_owner(
+    payload: dict = Depends(get_active_session_payload),
+    tenant: TenantService = Depends(get_tenant_service),
+    _: None = Depends(require_activated),
+) -> TenantContext:
+    """Owner-only tenant context for self-scoped destructive operations."""
+    user_id = str(payload["sub"])
+    channel_id = str(payload["platform_user_id"])
+    ctx = await tenant.assert_access(
+        channel_id=channel_id,
+        user_id=user_id,
+        required_role="owner",
+    )
+    bind_log_context(channel_id=ctx.channel_id, channel=ctx.channel_name, role=ctx.role)
+    return ctx

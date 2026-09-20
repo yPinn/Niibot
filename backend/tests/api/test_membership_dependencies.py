@@ -21,6 +21,7 @@ from core.dependencies import (
     get_current_channel_id,
     get_tenant_service,
     require_self_tenant_access,
+    require_self_tenant_owner,
     require_tenant_access,
     require_tenant_owner,
 )
@@ -45,6 +46,10 @@ def _make_client(*, active: bool) -> tuple[TestClient, MagicMock]:
     async def self_tenant(ctx: TenantContext = Depends(require_self_tenant_access)):
         return {"channel_id": ctx.channel_id}
 
+    @app.get("/self-tenant-owner")
+    async def self_tenant_owner(ctx: TenantContext = Depends(require_self_tenant_owner)):
+        return {"channel_id": ctx.channel_id}
+
     @app.get("/tenant/{channel_id}")
     async def tenant_path(ctx: TenantContext = Depends(require_tenant_access)):
         return {"channel_id": ctx.channel_id}
@@ -67,10 +72,16 @@ def test_active_membership_can_use_all_channel_dependencies():
 
     assert client.get("/legacy").status_code == 200
     assert client.get("/self-tenant").status_code == 200
+    assert client.get("/self-tenant-owner").status_code == 200
     assert client.get("/tenant/channel-1").status_code == 200
     assert client.get("/tenant-owner/channel-1").status_code == 200
-    assert tenant.assert_access.await_count == 3
-    assert tenant.assert_access.await_args_list[-1].kwargs["required_role"] == "owner"
+    assert tenant.assert_access.await_count == 4
+    owner_calls = [
+        call
+        for call in tenant.assert_access.await_args_list
+        if call.kwargs["required_role"] == "owner"
+    ]
+    assert len(owner_calls) == 2
 
 
 def test_inactive_broadcaster_membership_does_not_block_explicit_collaborator_tenant():
@@ -78,6 +89,7 @@ def test_inactive_broadcaster_membership_does_not_block_explicit_collaborator_te
 
     assert client.get("/legacy").status_code == 403
     assert client.get("/self-tenant").status_code == 403
+    assert client.get("/self-tenant-owner").status_code == 403
     assert client.get("/tenant/channel-1").status_code == 200
     assert client.get("/tenant-owner/channel-1").status_code == 200
     assert tenant.assert_access.await_count == 2

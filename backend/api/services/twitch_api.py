@@ -19,7 +19,7 @@ from services._twitch_api._oauth import (
     TokenValidationResult,
     _OAuthMixin,
 )
-from services._twitch_api._users import _UsersMixin
+from services._twitch_api._users import TwitchUsersLookupError, _UsersMixin
 
 __all__ = [
     "HELIX_BASE",
@@ -28,6 +28,7 @@ __all__ = [
     "TokenRevocationResult",
     "TokenValidationResult",
     "TwitchAPIClient",
+    "TwitchUsersLookupError",
 ]
 
 
