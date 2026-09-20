@@ -16,10 +16,10 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from core.dependencies import (
+    get_active_session_payload,
     get_admission_service,
     get_current_channel_id,
     get_tenant_service,
-    get_token_payload,
     require_self_tenant_access,
     require_tenant_access,
     require_tenant_owner,
@@ -53,7 +53,7 @@ def _make_client(*, active: bool) -> tuple[TestClient, MagicMock]:
     async def tenant_owner(ctx: TenantContext = Depends(require_tenant_owner)):
         return {"channel_id": ctx.channel_id}
 
-    app.dependency_overrides[get_token_payload] = lambda: {
+    app.dependency_overrides[get_active_session_payload] = lambda: {
         "sub": "user-1",
         "platform_user_id": "channel-1",
     }

@@ -1,7 +1,30 @@
+import { apiCache } from '@/lib/apiCache'
+
 import { API_ENDPOINTS, apiFetch } from './config'
 import { parseApiError } from './errors'
 
 export type BotInviteState = 'pending' | 'authorized' | 'declined' | 'expired'
+export type TwitchAuthorizationStatus =
+  'valid' | 'requires_reauthorization' | 'temporarily_unavailable' | 'not_checked'
+
+export interface AuthorizationHealth {
+  status: TwitchAuthorizationStatus
+  last_checked_at: string | null
+  last_validated_at: string | null
+  error_code: string | null
+}
+
+export interface AuthorizationRemovalResult {
+  credential_retained: boolean
+  upstream_revoke_confirmed: boolean
+}
+
+export interface BroadcasterAuthorization extends AuthorizationHealth {
+  channel_id: string
+  channel_name: string
+  display_name: string | null
+  enabled: boolean
+}
 
 export interface BotAccount {
   platform_user_id: string
@@ -12,6 +35,11 @@ export interface BotAccount {
   requires_reauth: boolean
   last_validated_at: string | null
   revoked_at: string | null
+  authorization_status: TwitchAuthorizationStatus
+  last_checked_at: string | null
+  linked_at: string | null
+  is_active: boolean
+  is_desired: boolean
 }
 
 export interface BotInviteCreated {
@@ -97,4 +125,57 @@ export function createSystemBotResetInvite(): Promise<BotInviteCreated> {
     credentials: 'include',
     headers: { 'X-Niibot-Action': 'bot-account-management' },
   }).then(response => readJson(response, '建立 Niibot reset 邀請失敗'))
+}
+
+const authorizationHeaders = {
+  'X-Niibot-Action': 'twitch-authorization-management',
+}
+
+export function checkBotAuthorization(
+  channelId: string,
+  botUserId: string
+): Promise<AuthorizationHealth> {
+  return apiFetch(API_ENDPOINTS.tenants.botAuthorizationCheck(channelId, botUserId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: authorizationHeaders,
+  }).then(response => readJson(response, '重新檢查 Bot 授權失敗'))
+}
+
+export function unlinkBotAccount(
+  channelId: string,
+  botUserId: string
+): Promise<AuthorizationRemovalResult> {
+  return apiFetch(API_ENDPOINTS.tenants.botAccount(channelId, botUserId), {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: authorizationHeaders,
+  }).then(response => readJson(response, '移除 Bot 帳號失敗'))
+}
+
+export function getBroadcasterAuthorization(channelId: string): Promise<BroadcasterAuthorization> {
+  return apiFetch(API_ENDPOINTS.tenants.broadcasterAuthorization(channelId), {
+    credentials: 'include',
+  }).then(response => readJson(response, '載入 Twitch 授權失敗'))
+}
+
+export function checkBroadcasterAuthorization(channelId: string): Promise<AuthorizationHealth> {
+  return apiFetch(API_ENDPOINTS.tenants.broadcasterAuthorizationCheck(channelId), {
+    method: 'POST',
+    credentials: 'include',
+    headers: authorizationHeaders,
+  }).then(response => readJson(response, '重新檢查 Twitch 授權失敗'))
+}
+
+export async function disconnectBroadcasterAuthorization(
+  channelId: string
+): Promise<AuthorizationRemovalResult> {
+  const response = await apiFetch(API_ENDPOINTS.tenants.broadcasterAuthorization(channelId), {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: authorizationHeaders,
+  })
+  const result = await readJson<AuthorizationRemovalResult>(response, '解除 Twitch 授權失敗')
+  apiCache.clear()
+  return result
 }

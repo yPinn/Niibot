@@ -19,14 +19,24 @@ class AuthService:
         self.algorithm = algorithm
         self.expire_days = expire_days
 
-    def create_access_token(self, user_id: str, platform: str, platform_user_id: str) -> str:
+    def create_access_token(
+        self,
+        user_id: str,
+        platform: str,
+        platform_user_id: str,
+        *,
+        session_version: int = 1,
+    ) -> str:
         """Create a JWT access token for a user"""
+        if session_version < 1:
+            raise ValueError("session_version must be positive")
         expire = datetime.now(UTC) + timedelta(days=self.expire_days)
 
         payload = {
             "sub": user_id,
             "platform": platform,
             "platform_user_id": platform_user_id,
+            "sv": session_version,
             "exp": expire,
             "iat": datetime.now(UTC),
         }

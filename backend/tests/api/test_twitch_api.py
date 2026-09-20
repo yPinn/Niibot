@@ -12,7 +12,13 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.twitch_api import OAUTH_BASE, TokenRefreshResult, TwitchAPIClient
+from services.twitch_api import (
+    OAUTH_BASE,
+    TokenRefreshResult,
+    TokenRevocationResult,
+    TokenValidationResult,
+    TwitchAPIClient,
+)
 
 
 class _MockAPI:
@@ -475,6 +481,107 @@ class TestRefreshAccessToken:
 
         result = await api.refresh_access_token("rt")
         assert result.success is False
+        assert result.error_code == "provider_unavailable"
+
+
+# ---------------------------------------------------------------------------
+# validate/revoke user tokens
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestTokenValidation:
+    async def test_valid_response_returns_identity_client_scopes_and_expiry(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/oauth2/validate",
+            httpx.Response(
+                200,
+                json={
+                    "client_id": "test-client-id",
+                    "login": "alice",
+                    "user_id": "42",
+                    "scopes": ["chat:read", "chat:edit"],
+                    "expires_in": 3600,
+                },
+            ),
+        )
+
+        result = await mock.client().validate_token_details("secret-token")
+
+        assert result == TokenValidationResult(
+            status="valid",
+            client_id="test-client-id",
+            login="alice",
+            user_id="42",
+            scopes=frozenset({"chat:read", "chat:edit"}),
+            expires_in=3600,
+        )
+        assert mock.requests[0].headers["authorization"] == "OAuth secret-token"
+
+    async def test_401_is_a_definite_invalid_token(self):
+        mock = _MockAPI().route(
+            "GET", "/oauth2/validate", httpx.Response(401, json={"message": "invalid"})
+        )
+
+        result = await mock.client().validate_token_details("secret-token")
+
+        assert result.status == "invalid"
+        assert result.error_code == "invalid_token"
+        assert await mock.client().validate_token("secret-token") is False
+
+    async def test_provider_failure_is_not_misclassified_as_invalid(self):
+        mock = _MockAPI().route(
+            "GET", "/oauth2/validate", httpx.Response(503, json={"message": "unavailable"})
+        )
+
+        result = await mock.client().validate_token_details("secret-token")
+
+        assert result.status == "unavailable"
+        assert result.error_code == "provider_unavailable"
+
+    async def test_malformed_success_is_provider_unavailable(self):
+        mock = _MockAPI().route(
+            "GET", "/oauth2/validate", httpx.Response(200, json={"client_id": "test-client-id"})
+        )
+
+        result = await mock.client().validate_token_details("secret-token")
+
+        assert result.status == "unavailable"
+        assert result.error_code == "provider_unavailable"
+
+
+@pytest.mark.asyncio
+class TestTokenRevocation:
+    async def test_200_reports_revoked_and_uses_form_encoded_secret(self):
+        mock = _MockAPI().route("POST", "/oauth2/revoke", httpx.Response(200))
+
+        result = await mock.client().revoke_access_token("secret-token")
+
+        assert result == TokenRevocationResult(status="revoked")
+        request = mock.requests[0]
+        assert b"client_id=test-client-id" in request.content
+        assert b"token=secret-token" in request.content
+
+    async def test_400_is_idempotent_already_invalid(self):
+        mock = _MockAPI().route(
+            "POST", "/oauth2/revoke", httpx.Response(400, json={"message": "invalid token"})
+        )
+
+        result = await mock.client().revoke_access_token("secret-token")
+
+        assert result.status == "already_invalid"
+
+    async def test_provider_failure_is_reported_without_upstream_details(self):
+        mock = _MockAPI().route(
+            "POST", "/oauth2/revoke", httpx.Response(503, json={"message": "internal detail"})
+        )
+
+        result = await mock.client().revoke_access_token("secret-token")
+
+        assert result == TokenRevocationResult(
+            status="unavailable", error_code="provider_unavailable"
+        )
 
 
 # ---------------------------------------------------------------------------

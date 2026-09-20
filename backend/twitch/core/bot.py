@@ -250,6 +250,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 "bot_token_updated",
                 self._handle_bot_token_updated,
             ),
+            pg_listen(
+                self._database_url,
+                "bot_selection_changed",
+                self._handle_bot_selection_changed,
+            ),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
             pg_listen(

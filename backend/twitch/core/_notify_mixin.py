@@ -287,6 +287,19 @@ class _NotifyMixin:
         except Exception:
             LOGGER.exception("[NOTIFY] Bot credential hot reload failed")
 
+    async def _handle_bot_selection_changed(self, connection, pid, channel, payload) -> None:
+        """Refresh sender routing after selection, fallback, or tenant unlink."""
+        try:
+            data = json.loads(payload)
+            channel_id = data.get("channel_id")
+            if channel_id:
+                await self.bots.refresh(channel_id)  # type: ignore[attr-defined]
+            else:
+                await self.bots.load_all()  # type: ignore[attr-defined]
+            LOGGER.info("[NOTIFY] Bot sender selection refreshed")
+        except Exception:
+            LOGGER.exception("[NOTIFY] Bot sender selection refresh failed")
+
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""
         try:

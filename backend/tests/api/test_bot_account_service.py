@@ -237,6 +237,15 @@ async def test_success_encrypts_token_and_atomically_maps_only_invite_tenant():
 
     assert result.channel_id == "channel-a"
     statements = [call.args for call in conn.execute.await_args_list]
+    account_lock_index = next(
+        index
+        for index, args in enumerate(statements)
+        if "FROM bot_accounts" in args[0] and "FOR UPDATE" in args[0]
+    )
+    token_write_index = next(
+        index for index, args in enumerate(statements) if "INSERT INTO tokens" in args[0]
+    )
+    assert account_lock_index < token_write_index
     token_write = next(args for args in statements if "INSERT INTO tokens" in args[0])
     assert "access-secret" not in token_write[1:]
     assert "refresh-secret" not in token_write[1:]

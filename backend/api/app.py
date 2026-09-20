@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 from core.config import get_settings
 from core.database import get_database_manager, init_database_manager
-from core.dependencies import close_twitch_api, get_notify_hub, require_activated
+from core.dependencies import (
+    close_twitch_api,
+    get_notify_hub,
+    get_twitch_api,
+    require_activated,
+)
 from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging_setup import setup_logging
 from routers import (
@@ -53,6 +58,7 @@ from routers.client_errors_router import client_error_retention_loop
 from routers.command_import_router import close_command_import_http_client
 from routers.video_queue_router import video_queue_history_retention_loop
 from services.assistant_scope_notifications import handle_assistant_scope_changed_notify
+from services.twitch_authorization_service import TwitchAuthorizationService
 from shared.assistant import ASSISTANT_SCOPE_CHANGED_CHANNEL
 from shared.cache_invalidation import (
     clear_config_caches,
@@ -84,11 +90,13 @@ _assistant_scope_listener_task: asyncio.Task | None = None
 _channel_toggle_listener_task: asyncio.Task | None = None
 _cache_clear_task: asyncio.Task | None = None
 _gauge_log_task: asyncio.Task | None = None
+_twitch_authorization_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
 _CACHE_CLEAR_INTERVAL = 600.0  # 10 min safety net for pg_notify misses (see cache_invalidation.py)
 _GAUGE_LOG_INTERVAL = 300.0  # 5 min, matches the twitch bot's heartbeat cadence
+_TWITCH_AUTHORIZATION_INTERVAL = 900.0
 
 
 async def _db_retry_loop(db_manager) -> None:
@@ -182,6 +190,35 @@ async def _gauge_log_loop(db_manager) -> None:
             LOGGER.warning(f"Gauge log error: {e}")
 
 
+async def _twitch_authorization_loop(db_manager, settings) -> None:
+    """Validate every stored Twitch credential at least hourly in bounded batches."""
+    while True:
+        try:
+            delay = _TWITCH_AUTHORIZATION_INTERVAL
+            if db_manager.is_connected:
+                service = TwitchAuthorizationService(
+                    db_manager.pool,
+                    twitch_api=get_twitch_api(),
+                    token_encryption_key=settings.twitch_token_encryption_key,
+                    client_id=settings.client_id,
+                )
+                checked = await service.check_due_credentials(limit=25)
+                if checked:
+                    LOGGER.info(
+                        "Twitch authorization reconciliation checked %d credential(s)", checked
+                    )
+                if checked == 25:
+                    # Drain large installations in bounded bursts without
+                    # waiting another 15 minutes between pages.
+                    delay = 5.0
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            LOGGER.exception("Twitch authorization reconciliation failed")
+            await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
@@ -191,6 +228,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _config_change_listener_task, _assistant_scope_listener_task
     global _channel_toggle_listener_task
     global _cache_clear_task, _gauge_log_task
+    global _twitch_authorization_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -261,6 +299,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # with no NOTIFY trigger at all — coverage is currently partial).
     _cache_clear_task = asyncio.create_task(_cache_clear_loop())
     _gauge_log_task = asyncio.create_task(_gauge_log_loop(db_manager))
+    _twitch_authorization_task = asyncio.create_task(
+        _twitch_authorization_loop(db_manager, settings)
+    )
 
     notify_hub = get_notify_hub()
     notify_hub.start()
@@ -281,6 +322,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _channel_toggle_listener_task,
         _cache_clear_task,
         _gauge_log_task,
+        _twitch_authorization_task,
     ]
     for task in _background_tasks:
         if task:

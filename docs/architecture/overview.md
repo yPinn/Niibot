@@ -4,7 +4,7 @@ Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端�
 另有一個選用的 Threads 抓取 sidecar（scrapling）。本文串起全貌；子系統細節見各自文件。
 
 - 多租戶 / 入會狀態機：[admission-and-tenancy.md](admission-and-tenancy.md)
-- Bot 帳號 / Owner／MOD 協作（Phase 0–2 已交付）：[bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md)
+- Bot 帳號 / 授權生命週期 / Owner／MOD 協作（Phase 0–3 已交付）：[bot-accounts-and-collaboration.md](bot-accounts-and-collaboration.md)
 - 出席 / 簽到 / 社群 Overlay：[attendance-and-community-overlays.md](attendance-and-community-overlays.md)
 - 後端結構：[backend/README.md](../../backend/README.md) · API 端點：[api-endpoints.md](../reference/api-endpoints.md)
 - 版本規範：[versioning.md](../reference/versioning.md)

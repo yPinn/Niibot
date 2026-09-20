@@ -27,6 +27,7 @@ from services.tenant_service import (
     TenantService,
 )
 from services.timer_service import TimerService
+from services.twitch_authorization_service import TwitchAuthorizationService
 from shared.log_context import bind_log_context
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
@@ -158,6 +159,27 @@ def get_token_payload(auth_token: str | None = Cookie(None)) -> dict:
     return payload
 
 
+async def get_active_session_payload(
+    payload: dict = Depends(get_token_payload),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> dict:
+    """Reject JWTs issued before the user's latest server-side revocation.
+
+    Tokens issued before migration 128 have no ``sv`` claim and are treated as
+    version 1 for the bounded rollout window. A missing user always fails closed.
+    """
+    claim_version = payload.get("sv", 1)
+    if isinstance(claim_version, bool) or not isinstance(claim_version, int) or claim_version < 1:
+        raise HTTPException(status_code=401, detail="Session is no longer valid")
+    database_version = await pool.fetchval(
+        "SELECT session_version FROM users WHERE id = $1::uuid",
+        str(payload["sub"]),
+    )
+    if database_version is None or int(database_version) != claim_version:
+        raise HTTPException(status_code=401, detail="Session is no longer valid")
+    return payload
+
+
 def get_identity_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> IdentityService:
     return IdentityService(pool)
 
@@ -180,6 +202,19 @@ def get_bot_account_service(
     )
 
 
+def get_twitch_authorization_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> TwitchAuthorizationService:
+    settings = get_settings()
+    return TwitchAuthorizationService(
+        pool,
+        twitch_api=twitch_api,
+        token_encryption_key=settings.twitch_token_encryption_key,
+        client_id=settings.client_id,
+    )
+
+
 def get_roleplay_service(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> RoleplayService:
@@ -187,7 +222,7 @@ def get_roleplay_service(
 
 
 async def require_activated(
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> None:
     """Gate access to feature endpoints: caller's membership must be active.
@@ -201,14 +236,14 @@ async def require_activated(
 
 
 async def get_current_user_id(
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
 ) -> str:
     """Return users.id (UUID) for user-level operations (preferences, etc.)"""
     return str(payload["sub"])
 
 
 async def get_current_channel_id(
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     _: None = Depends(require_activated),
 ) -> str:
     """Return platform_user_id — maps to TwitchIO broadcaster.id / Helix broadcaster_id.
@@ -231,7 +266,7 @@ async def require_owner(channel_id: str = Depends(get_current_channel_id)) -> st
 
 async def require_tenant_access(
     channel_id: str = Path(..., description="Tenant channel_id"),
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     tenant: TenantService = Depends(get_tenant_service),
 ) -> TenantContext:
     """FastAPI dependency: verify caller has at least 'manager' role on the channel.
@@ -258,7 +293,7 @@ async def require_tenant_access(
 
 async def require_tenant_owner(
     channel_id: str = Path(..., description="Tenant channel_id"),
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     tenant: TenantService = Depends(get_tenant_service),
 ) -> TenantContext:
     """Verify the caller owns the requested tenant."""
@@ -273,7 +308,7 @@ async def require_tenant_owner(
 
 
 async def require_self_tenant_access(
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     tenant: TenantService = Depends(get_tenant_service),
     _: None = Depends(require_activated),
 ) -> TenantContext:

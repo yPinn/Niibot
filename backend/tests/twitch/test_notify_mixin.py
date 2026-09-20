@@ -200,6 +200,33 @@ class TestConfigChangeMemoryInvalidation:
 # ---------------------------------------------------------------------------
 
 
+class TestBotSelectionChanged:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_refreshes_only_named_channel_when_payload_is_tenant_scoped(self) -> None:
+        mixin = _StubMixin()
+        mixin.bots.refresh = AsyncMock()
+        mixin.bots.load_all = AsyncMock()
+
+        await mixin._handle_bot_selection_changed(
+            None, None, "bot_selection_changed", json.dumps({"channel_id": "ch1"})
+        )
+
+        mixin.bots.refresh.assert_awaited_once_with("ch1")
+        mixin.bots.load_all.assert_not_awaited()
+
+    async def test_global_fallback_reload_refreshes_all_sender_routes(self) -> None:
+        mixin = _StubMixin()
+        mixin.bots.refresh = AsyncMock()
+        mixin.bots.load_all = AsyncMock()
+
+        await mixin._handle_bot_selection_changed(
+            None, None, "bot_selection_changed", json.dumps({"bot_user_id": "bot-b"})
+        )
+
+        mixin.bots.load_all.assert_awaited_once_with()
+
+
 class TestHandleChannelToggleDisable:
     pytestmark = pytest.mark.asyncio
 

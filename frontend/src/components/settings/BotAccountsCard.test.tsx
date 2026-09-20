@@ -3,22 +3,36 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, type MockedFunction, vi } from 'vitest'
 
 import {
+  checkBotAuthorization,
+  checkBroadcasterAuthorization,
   createBotInvite,
   createBotReauthorizationInvite,
+  disconnectBroadcasterAuthorization,
   getBotInviteStatus,
+  getBroadcasterAuthorization,
   listBotAccounts,
+  unlinkBotAccount,
 } from '@/api/botAccounts'
+import { openTwitchOAuth } from '@/api/twitchOAuth'
 import { useTenant } from '@/contexts/TenantContext'
 
 import { BotAccountsCard } from './BotAccountsCard'
 
 vi.mock('@/api/botAccounts', () => ({
+  checkBotAuthorization: vi.fn(),
+  checkBroadcasterAuthorization: vi.fn(),
   createBotInvite: vi.fn(),
   createBotReauthorizationInvite: vi.fn(),
+  disconnectBroadcasterAuthorization: vi.fn(),
+  getBroadcasterAuthorization: vi.fn(),
   getBotInviteStatus: vi.fn(),
   listBotAccounts: vi.fn(),
+  unlinkBotAccount: vi.fn(),
 }))
 vi.mock('@/contexts/TenantContext')
+vi.mock('@/api/twitchOAuth', () => ({
+  openTwitchOAuth: vi.fn(),
+}))
 
 const mockUseTenant = useTenant as MockedFunction<typeof useTenant>
 const mockListBotAccounts = listBotAccounts as MockedFunction<typeof listBotAccounts>
@@ -27,6 +41,20 @@ const mockCreateBotReauthorizationInvite = createBotReauthorizationInvite as Moc
   typeof createBotReauthorizationInvite
 >
 const mockGetBotInviteStatus = getBotInviteStatus as MockedFunction<typeof getBotInviteStatus>
+const mockGetBroadcasterAuthorization = getBroadcasterAuthorization as MockedFunction<
+  typeof getBroadcasterAuthorization
+>
+const mockCheckBotAuthorization = checkBotAuthorization as MockedFunction<
+  typeof checkBotAuthorization
+>
+const mockCheckBroadcasterAuthorization = checkBroadcasterAuthorization as MockedFunction<
+  typeof checkBroadcasterAuthorization
+>
+const mockUnlinkBotAccount = unlinkBotAccount as MockedFunction<typeof unlinkBotAccount>
+const mockDisconnectBroadcasterAuthorization = disconnectBroadcasterAuthorization as MockedFunction<
+  typeof disconnectBroadcasterAuthorization
+>
+const mockOpenTwitchOAuth = openTwitchOAuth as MockedFunction<typeof openTwitchOAuth>
 
 const ownerTenant = {
   channel_id: 'channel-a',
@@ -67,6 +95,11 @@ describe('BotAccountsCard', () => {
         requires_reauth: false,
         last_validated_at: null,
         revoked_at: null,
+        authorization_status: 'valid',
+        last_checked_at: '2026-09-20T01:00:00Z',
+        linked_at: null,
+        is_active: true,
+        is_desired: true,
       },
       {
         platform_user_id: 'bot-b',
@@ -77,6 +110,11 @@ describe('BotAccountsCard', () => {
         requires_reauth: false,
         last_validated_at: null,
         revoked_at: null,
+        authorization_status: 'temporarily_unavailable',
+        last_checked_at: '2026-09-20T00:30:00Z',
+        linked_at: '2026-09-01T01:00:00Z',
+        is_active: false,
+        is_desired: false,
       },
     ])
     mockCreateBotInvite.mockResolvedValue({
@@ -96,15 +134,48 @@ describe('BotAccountsCard', () => {
       consumed_at: null,
       account: null,
     })
+    mockGetBroadcasterAuthorization.mockResolvedValue({
+      channel_id: 'channel-a',
+      channel_name: 'alice',
+      display_name: 'Alice',
+      enabled: true,
+      status: 'valid',
+      last_checked_at: '2026-09-20T01:00:00Z',
+      last_validated_at: '2026-09-20T01:00:00Z',
+      error_code: null,
+    })
+    mockCheckBotAuthorization.mockResolvedValue({
+      status: 'valid',
+      last_checked_at: '2026-09-20T01:10:00Z',
+      last_validated_at: '2026-09-20T01:10:00Z',
+      error_code: null,
+    })
+    mockCheckBroadcasterAuthorization.mockResolvedValue({
+      status: 'valid',
+      last_checked_at: '2026-09-20T01:10:00Z',
+      last_validated_at: '2026-09-20T01:10:00Z',
+      error_code: null,
+    })
+    mockUnlinkBotAccount.mockResolvedValue({
+      credential_retained: false,
+      upstream_revoke_confirmed: true,
+    })
+    mockDisconnectBroadcasterAuthorization.mockResolvedValue({
+      credential_retained: false,
+      upstream_revoke_confirmed: true,
+    })
+    mockOpenTwitchOAuth.mockResolvedValue(undefined)
   })
 
   it('lists only server-returned accounts and creates a shareable owner invite', async () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
+    expect(await screen.findByText('Twitch 帳號與授權')).toBeInTheDocument()
+    expect(screen.getByText('實況主帳號')).toBeInTheDocument()
     expect(await screen.findByText('Niibot')).toBeInTheDocument()
     expect(screen.getByText('Bot B')).toBeInTheDocument()
-    expect(screen.getByText('系統預設')).toBeInTheDocument()
+    expect(screen.getByText('系統管理')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '邀請 Bot 帳號' }))
 
@@ -114,6 +185,58 @@ describe('BotAccountsCard', () => {
 
     await user.click(screen.getByRole('button', { name: '重新授權 Bot B' }))
     expect(mockCreateBotReauthorizationInvite).toHaveBeenCalledWith('channel-a', 'bot-b')
+  })
+
+  it('uses plain-language health states and guards tenant bot removal', async () => {
+    const user = userEvent.setup()
+    render(<BotAccountsCard />)
+
+    expect(await screen.findByText('暫時無法確認')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重新檢查 Bot B' }))
+    await waitFor(() =>
+      expect(mockCheckBotAuthorization).toHaveBeenCalledWith('channel-a', 'bot-b')
+    )
+
+    await user.click(screen.getByRole('button', { name: '從這個頻道移除 Bot B' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('其他頻道若仍在使用，授權會保留')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('既有設定與歷史紀錄不會刪除')
+    await user.click(screen.getByRole('button', { name: '確認移除' }))
+
+    await waitFor(() => expect(mockUnlinkBotAccount).toHaveBeenCalledWith('channel-a', 'bot-b'))
+  })
+
+  it('explains broadcaster disconnect impact and requires typing the channel login', async () => {
+    const user = userEvent.setup()
+    render(<BotAccountsCard />)
+
+    await screen.findByText('@alice')
+    await user.click(screen.getByRole('button', { name: '停止 Niibot 並解除授權' }))
+
+    const confirm = screen.getByRole('button', { name: '確認停止並解除' })
+    expect(confirm).toBeDisabled()
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('你目前所有 Dashboard 登入會立即登出')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('設定與歷史紀錄會保留')
+    await user.type(screen.getByLabelText('輸入頻道帳號以確認'), 'alice')
+    expect(confirm).toBeEnabled()
+  })
+
+  it('guards broadcaster reauthorization while OAuth startup is pending and recovers on failure', async () => {
+    let rejectOAuth!: (reason?: unknown) => void
+    mockOpenTwitchOAuth.mockImplementation(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectOAuth = reject
+        })
+    )
+    const user = userEvent.setup()
+    render(<BotAccountsCard />)
+
+    const reauthorize = await screen.findByRole('button', { name: '重新授權' })
+    await user.click(reauthorize)
+
+    expect(reauthorize).toBeDisabled()
+    rejectOAuth(new Error('popup blocked'))
+    await waitFor(() => expect(reauthorize).toBeEnabled())
   })
 
   it('lets a MOD inspect approved accounts but not create credential invitations', async () => {

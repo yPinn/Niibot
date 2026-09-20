@@ -95,9 +95,10 @@ class ChannelRepository:
             await conn.execute(
                 """
                 INSERT INTO tokens (
-                    user_id, token, refresh, scopes, token_type, encryption_version
+                    user_id, token, refresh, scopes, token_type, encryption_version,
+                    last_checked_at, last_validated_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
                 ON CONFLICT (user_id, token_type) DO UPDATE SET
                     token              = EXCLUDED.token,
                     refresh            = EXCLUDED.refresh,
@@ -105,6 +106,10 @@ class ChannelRepository:
                     encryption_version = EXCLUDED.encryption_version,
                     requires_reauth    = FALSE,
                     reauth_notified_at = NULL,
+                    last_checked_at    = NOW(),
+                    last_validated_at  = NOW(),
+                    invalidated_at     = NULL,
+                    validation_error_code = NULL,
                     updated_at         = NOW()
                 """,
                 user_id,
@@ -159,15 +164,21 @@ class ChannelRepository:
                 await conn.execute(
                     """
                     INSERT INTO tokens (
-                        user_id, token, refresh, scopes, token_type, encryption_version
+                        user_id, token, refresh, scopes, token_type, encryption_version,
+                        last_checked_at, last_validated_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token           = EXCLUDED.token,
                         refresh         = EXCLUDED.refresh,
                         scopes          = COALESCE(EXCLUDED.scopes, tokens.scopes),
                         encryption_version = EXCLUDED.encryption_version,
                         requires_reauth = FALSE,
+                        reauth_notified_at = NULL,
+                        last_checked_at = NOW(),
+                        last_validated_at = NOW(),
+                        invalidated_at = NULL,
+                        validation_error_code = NULL,
                         updated_at      = NOW()
                     """,
                     user_id,

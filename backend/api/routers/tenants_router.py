@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from core.dependencies import get_tenant_service, get_token_payload
+from core.dependencies import get_active_session_payload, get_tenant_service
 from services.tenant_service import TenantRole, TenantService, TenantSummary
 
 router = APIRouter(prefix="/api/tenants", tags=["tenants"])
@@ -63,7 +63,7 @@ def _to_response(tenant: TenantSummary) -> TenantResponse:
 
 @router.get("", response_model=TenantListResponse)
 async def list_tenants(
-    payload: dict = Depends(get_token_payload),
+    payload: dict = Depends(get_active_session_payload),
     tenant_service: TenantService = Depends(get_tenant_service),
 ) -> TenantListResponse:
     """List only workspaces the authenticated identity can currently access."""

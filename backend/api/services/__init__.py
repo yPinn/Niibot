@@ -20,7 +20,12 @@ from .tenant_service import (
     TenantService,
     TenantSuspendedError,
 )
-from .twitch_api import TokenRefreshResult, TwitchAPIClient
+from .twitch_api import (
+    TokenRefreshResult,
+    TokenRevocationResult,
+    TokenValidationResult,
+    TwitchAPIClient,
+)
 
 __all__ = [
     "AdmissionDecision",
@@ -44,5 +49,7 @@ __all__ = [
     "TenantService",
     "TenantSuspendedError",
     "TokenRefreshResult",
+    "TokenRevocationResult",
+    "TokenValidationResult",
     "TwitchAPIClient",
 ]

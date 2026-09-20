@@ -74,6 +74,18 @@ export const API_ENDPOINTS = {
       join(
         `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}/reauthorize-invite`
       ),
+    botAuthorizationCheck: (channelId: string, botUserId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}/authorization-check`
+      ),
+    botAccount: (channelId: string, botUserId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}`
+      ),
+    broadcasterAuthorization: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization`),
+    broadcasterAuthorizationCheck: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization/check`),
   },
   publicBotInvites: {
     get: (publicToken: string, nonce: string) =>

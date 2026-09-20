@@ -77,7 +77,13 @@ def _make_pool(
     pool = AsyncMock()
     pool.fetchrow.return_value = fetchrow
     pool.fetch.return_value = fetch if fetch is not None else []
-    pool.fetchval.return_value = fetchval
+
+    async def _fetchval(sql: str, *args):
+        if "session_version" in sql:
+            return 1
+        return fetchval
+
+    pool.fetchval.side_effect = _fetchval
     pool.execute.return_value = execute
 
     # asyncpg pool.acquire() is synchronous — returns a context manager, not a coroutine.
@@ -349,6 +355,7 @@ class TestTwitchOAuthCallbackSuccess:
         is_new_user: bool = False,
         was_reconciled: bool = False,
         twitch_uid: str = _TWITCH_UID,
+        session_lookup_error: Exception | None = None,
     ):
         from services.oauth_service import encode_oauth_state
 
@@ -370,6 +377,8 @@ class TestTwitchOAuthCallbackSuccess:
         )
 
         pool = _make_pool()
+        if session_lookup_error is not None:
+            pool.fetchval.side_effect = session_lookup_error
         mock_channel_svc = MagicMock()
         mock_channel_svc.save_token = AsyncMock(return_value=True)
 
@@ -479,9 +488,25 @@ class TestTwitchOAuthCallbackSuccess:
         assert kwargs.get("channel_id") == _TWITCH_UID
         assert kwargs.get("owner_user_id") == _USER_UUID
 
+    def test_session_version_lookup_failure_redirects_as_database_error(self):
+        response, *_ = self._run(
+            scopes_value="channel:bot",
+            session_lookup_error=RuntimeError("database unavailable"),
+        )
+
+        assert response.status_code in (302, 307)
+        assert "error=db_timeout" in response.headers["location"]
+        assert "auth_token=" not in response.headers.get("set-cookie", "")
+
 
 class TestCollaboratorOAuthCallback:
-    def _run(self, *, tenants: list | None = None, membership_status: str | None = None):
+    def _run(
+        self,
+        *,
+        tenants: list | None = None,
+        membership_status: str | None = None,
+        session_lookup_error: Exception | None = None,
+    ):
         from services.oauth_service import encode_oauth_state
 
         settings = get_settings()
@@ -521,7 +546,10 @@ class TestCollaboratorOAuthCallback:
             patch("routers.auth_router.AdmissionService", return_value=admission_svc),
             patch("routers.auth_router.get_channel_service") as channel_service,
         ):
-            dbm.return_value.pool = _make_pool()
+            pool = _make_pool()
+            if session_lookup_error is not None:
+                pool.fetchval.side_effect = session_lookup_error
+            dbm.return_value.pool = pool
             response = _make_client(twitch_api=twitch_api).get(
                 "/api/auth/twitch/collaborator/callback",
                 params={"code": "valid", "state": state},
@@ -554,6 +582,13 @@ class TestCollaboratorOAuthCallback:
         response, *_ = self._run(membership_status=status)
 
         assert "account_locked" in response.headers["location"]
+        assert "auth_token=" not in response.headers.get("set-cookie", "")
+
+    def test_session_version_lookup_failure_redirects_as_database_error(self):
+        response, *_ = self._run(session_lookup_error=RuntimeError("database unavailable"))
+
+        assert response.status_code in (302, 307)
+        assert "error=db_timeout" in response.headers["location"]
         assert "auth_token=" not in response.headers.get("set-cookie", "")
 
 

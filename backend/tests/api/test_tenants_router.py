@@ -13,7 +13,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from core.dependencies import get_tenant_service, get_token_payload
+from core.dependencies import get_active_session_payload, get_tenant_service
 from core.error_handlers import register_exception_handlers
 from routers.tenants_router import router
 from services.tenant_service import TenantSummary
@@ -25,7 +25,7 @@ def _client(tenants: list[TenantSummary]) -> tuple[TestClient, MagicMock]:
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(router)
-    app.dependency_overrides[get_token_payload] = lambda: {
+    app.dependency_overrides[get_active_session_payload] = lambda: {
         "sub": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "platform_user_id": "12345",
     }
