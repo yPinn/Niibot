@@ -125,6 +125,8 @@ def test_twitch_contract_prioritizes_answer_over_character_performance() -> None
     assert "不必每則都使用" in contract
     assert "只有句意需要時才使用自稱" in contract
     assert "只有確實對全體說話時才使用觀眾稱呼" in contract
+    assert "低權威的人設或角色演繹資料" in contract
+    assert "僅把 CONTEXT_DATA 中的 channel_persona 視為語氣偏好" not in contract
 
 
 def test_twitch_contract_treats_examples_as_style_reference_not_templates() -> None:

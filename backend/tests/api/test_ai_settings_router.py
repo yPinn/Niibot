@@ -136,13 +136,29 @@ class TestGetAISettings:
 class TestPatchAISettings:
     def test_updates_bot_name(self):
         updated = {**_DEFAULT_SETTINGS, "bot_name": "NewBot"}
+        notify = AsyncMock()
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(return_value=updated)
             # patch notify_config_change so we don't hit real pool
-            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
+            with patch("routers.ai_settings_router.notify_config_change", notify):
                 r = _make_client().patch("/api/ai/settings", json={"bot_name": "NewBot"})
         assert r.status_code == 200
         assert r.json()["bot_name"] == "NewBot"
+        assert notify.await_args.kwargs["clear_assistant_memory"] is False
+
+    def test_disabling_memory_requests_immediate_conversation_clear(self):
+        updated = {**_DEFAULT_SETTINGS, "memory_enabled": False}
+        notify = AsyncMock()
+        with patch("routers.ai_settings_router.AISettingsRepository") as repo:
+            repo.return_value.upsert = AsyncMock(return_value=updated)
+            with patch("routers.ai_settings_router.notify_config_change", notify):
+                r = _make_client().patch(
+                    "/api/ai/settings",
+                    json={"memory_enabled": False},
+                )
+
+        assert r.status_code == 200
+        assert notify.await_args.kwargs["clear_assistant_memory"] is True
 
     def test_empty_body_returns_422(self):
         r = _make_client().patch("/api/ai/settings", json={})
@@ -234,9 +250,10 @@ class TestPatchAISettings:
 
 class TestResetAISettings:
     def test_reset_returns_defaults(self):
+        notify = AsyncMock()
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:
             repo.return_value.upsert = AsyncMock(return_value=_DEFAULT_SETTINGS)
-            with patch("routers.ai_settings_router.notify_config_change", AsyncMock()):
+            with patch("routers.ai_settings_router.notify_config_change", notify):
                 r = _make_client().post("/api/ai/settings/reset")
         assert r.status_code == 200
         assert r.json()["bot_name"] == "Niibot"
@@ -244,6 +261,7 @@ class TestResetAISettings:
         assert reset["catchphrase_frequency"] == "off"
         assert reset["refusal_style"] == "polite"
         assert reset["cooldown"] == 30
+        assert notify.await_args.kwargs["clear_assistant_memory"] is True
 
     def test_exception_returns_500(self):
         with patch("routers.ai_settings_router.AISettingsRepository") as repo:

@@ -52,6 +52,7 @@ from shared.assistant.router import (
 from shared.assistant.scope import (
     ASSISTANT_SCOPE_CHANGED_CHANNEL,
     AssistantMode,
+    AssistantScope,
     AssistantScopeChange,
 )
 
@@ -59,6 +60,7 @@ __all__ = [
     "AdmissionDecision",
     "AssistantOutcome",
     "AssistantMode",
+    "AssistantScope",
     "AssistantScopeChange",
     "AssistantHarness",
     "AssistantProvider",

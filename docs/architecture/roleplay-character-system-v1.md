@@ -6,7 +6,8 @@
 adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成。Phase 3A 已新增 tenant-owned
 draft、immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增 provider/model 共用容量與
 頻道公平 admission；Phase 3C 已新增 tenant-path authoring API、strict mutation boundary 與 versioned assistant-scope
-notification。Twitch Role-play production runtime、revision-scoped memory 與 Dashboard 尚未實作。
+notification；Phase 3D 已接上 Twitch compact runtime、revision-scoped memory 與 in-flight scope recheck。
+非技術 Dashboard wizard 與私人分享仍未實作。
 
 ## 核心決策
 
@@ -225,7 +226,7 @@ core safety
 - 角色所知不能引用 story stage 之後的 Lore。
 - 聊天室觀眾不能默認映射成原作人物。
 - 對既有作品的自由改編必須標記為 AU 或聊天室適配，不偽裝 Canon。
-- 缺少可編譯演繹摘要時不得啟用 Role-play，回退一般助手。
+- 缺少可驗證的 active revision 或演繹摘要時不得生成 Role-play 回覆，也不得混入或回退 Persona prompt。
 
 ### Eval matrix
 
@@ -319,10 +320,11 @@ Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列�
 3. 已完成：Groq-only A/B/C runner、15 秒節流、逐次保存、失敗續跑與輕量 B 實測 gate。
 4. 已完成：additive DB schema、tenant ownership、strict JSON codec、draft optimistic version、immutable revision、
    active pointer 與 provider 共用容量；migration 為 `127_add_roleplay_sets.sql`。
-5. 已完成：tenant API 提供草稿建立／更新、發布、啟用、切回 Persona 與封存；只有 assistant scope 改變才發送
+5. 已完成：tenant API 提供草稿建立／更新、發布、啟用、切回 Persona 與封存；只有 activate／切回 Persona 操作發送
    typed notification，其他 API instance 只失效該頻道的 AI settings cache。
-6. 後續：接入 Twitch compact runtime、revision-scoped memory 與非技術 wizard。
-7. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
+6. 已完成：Twitch compact runtime、revision-scoped memory、typed scope listener 與生成後 scope recheck。
+7. 後續：接入非技術 Dashboard wizard。
+8. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
 
 Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
 及完整／輕量兩種有界演繹摘要；compiled artifact 另記錄 compiler version，避免把編譯規則升級誤判為作者資料
@@ -337,6 +339,17 @@ Phase 3C 實作位於 `backend/api/routers/roleplay_router.py` 與
 有界 rate limit。發布不等於啟用，inactive publish 不打擾 runtime；只有 activate／Persona switch 發送 version 1
 `assistant_scope_changed`。Bot Account 仍只負責 Twitch sender／credential，不進入角色 owner、revision、notification
 或記憶作用域。
+
+Phase 3D 實作位於 `backend/twitch/components/ai.py`、`backend/twitch/core/_notify_mixin.py` 與
+`backend/shared/assistant/memory.py`。Persona 與 Role-play 是互斥 runtime：Persona 仍使用既有人設與知識包；
+Role-play 只使用相同固定安全／Twitch contract、active immutable revision 的 compact capsule、最多一條 600 字 Lore、
+同 scope 的短期記憶及目前輸入。角色資料不能改寫 provider 順序、deadline、輸出上限或 sender resolver；active revision
+缺漏、損壞或與 pointer 不符時 fail closed，不呼叫模型。
+
+記憶 key 為 platform + channel + participant + assistant scope；Persona 使用穩定 `persona`，Role-play 使用
+`roleplay:<revision_id>`，不含 Bot sender。一般 `config_change` 與週期 refresh 只更新 cache；停用頻道或明確關閉記憶
+會清除整個頻道，scope notification 則只淘汰其他 scope，重複事件不清掉當前對話。模型成功後會直接重讀 DB scope；
+若生成期間已切換角色，就捨棄舊回覆與該次記憶，再提示使用者重問。實際送出仍在 send time 解析 active Bot Account。
 
 ## 驗收條件
 

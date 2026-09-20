@@ -19,6 +19,7 @@ class ConversationKey:
     platform: str
     channel_id: str
     participant_id: str
+    assistant_scope: str = "persona"
 
     def __post_init__(self) -> None:
         if not self.platform.strip():
@@ -27,6 +28,8 @@ class ConversationKey:
             raise ValueError("channel_id must not be blank")
         if not self.participant_id.strip():
             raise ValueError("participant_id must not be blank")
+        if not self.assistant_scope.strip():
+            raise ValueError("assistant_scope must not be blank")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,13 @@ class ConversationMemoryStore(Protocol):
 
     def clear_channel(self, platform: str, channel_id: str) -> int: ...
 
+    def clear_channel_except_scope(
+        self,
+        platform: str,
+        channel_id: str,
+        assistant_scope: str,
+    ) -> int: ...
+
     def stats(self) -> ConversationMemoryStats: ...
 
 
@@ -80,6 +90,14 @@ class NullConversationMemoryStore:
         return None
 
     def clear_channel(self, platform: str, channel_id: str) -> int:
+        return 0
+
+    def clear_channel_except_scope(
+        self,
+        platform: str,
+        channel_id: str,
+        assistant_scope: str,
+    ) -> int:
         return 0
 
     def stats(self) -> ConversationMemoryStats:
@@ -181,6 +199,24 @@ class BoundedConversationMemoryStore:
             key
             for key in self._sessions
             if key.platform == platform and key.channel_id == channel_id
+        ]
+        for key in matching:
+            self._remove(key)
+        return len(matching)
+
+    def clear_channel_except_scope(
+        self,
+        platform: str,
+        channel_id: str,
+        assistant_scope: str,
+    ) -> int:
+        """Retire old identities while preserving an idempotent current scope."""
+        matching = [
+            key
+            for key in self._sessions
+            if key.platform == platform
+            and key.channel_id == channel_id
+            and key.assistant_scope != assistant_scope
         ]
         for key in matching:
             self._remove(key)

@@ -12,8 +12,10 @@ from core.component import BotComponent
 from core.config import DATA_DIR, get_settings
 from core.guards import has_role, is_on_cooldown, record_cooldown
 from shared.assistant import (
+    AssistantMode,
     AssistantOutcome,
     AssistantRequest,
+    AssistantScope,
     BoundedConversationMemoryStore,
     ConversationKey,
     ConversationTurn,
@@ -29,8 +31,14 @@ from shared.assistant import (
 from shared.assistant.providers.registry import ProviderConfig, ProviderKind
 from shared.packs import Pack, load_packs
 from shared.packs import match_entries as match_pack_entries
-from shared.repositories.ai_settings import AISettingsRepository, build_assistant_sections
+from shared.repositories.ai_settings import (
+    AISettingsRepository,
+    build_assistant_policy_sections,
+    build_assistant_sections,
+)
 from shared.repositories.module_config import ModuleConfigRepository
+from shared.repositories.roleplay import RoleplayRepository
+from shared.roleplay import build_roleplay_context_sections
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -41,6 +49,10 @@ else:
 @dataclass
 class _Cooldown:
     cooldown: int | None
+
+
+class _AssistantRuntimeUnavailableError(RuntimeError):
+    """Selected assistant identity cannot be assembled safely for this request."""
 
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -112,6 +124,7 @@ class AIComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
         self.ai_settings_repo = AISettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.roleplay_repo = RoleplayRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.module_config_repo = ModuleConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.memory_store = BoundedConversationMemoryStore(
             ttl_seconds=600,
@@ -161,6 +174,7 @@ class AIComponent(BotComponent):
 
     def refresh_pool(self, pool) -> None:
         self.ai_settings_repo.pool = pool
+        self.roleplay_repo.pool = pool
         self.module_config_repo.pool = pool
 
     def ai_health(self) -> dict:
@@ -219,6 +233,65 @@ class AIComponent(BotComponent):
             LOGGER.info(
                 "AI short-term memory cleared: channel_id=%s sessions=%d", channel_id, removed
             )
+
+    def clear_channel_memory_except_scope(
+        self,
+        channel_id: str,
+        assistant_scope: str,
+    ) -> None:
+        removed = self.memory_store.clear_channel_except_scope(
+            "twitch",
+            channel_id,
+            assistant_scope,
+        )
+        if removed:
+            LOGGER.info(
+                "AI old-scope memory cleared: channel_id=%s sessions=%d",
+                channel_id,
+                removed,
+            )
+
+    @staticmethod
+    def _scope_from_settings(ai_settings: dict) -> AssistantScope:
+        try:
+            mode = AssistantMode(ai_settings.get("assistant_mode", AssistantMode.PERSONA.value))
+            return AssistantScope(
+                assistant_mode=mode,
+                active_roleplay_revision_id=ai_settings.get("active_roleplay_revision_id"),
+            )
+        except (TypeError, ValueError) as error:
+            raise _AssistantRuntimeUnavailableError from error
+
+    async def _build_runtime_sections(
+        self,
+        channel_id: str,
+        ai_settings: dict,
+        message: str,
+    ) -> tuple[AssistantScope, tuple[InputSection, ...]]:
+        scope = self._scope_from_settings(ai_settings)
+        if scope.assistant_mode is AssistantMode.PERSONA:
+            enabled_packs = await self.module_config_repo.get_enabled_packs()
+            matched = match_pack_entries(_PACKS, enabled_packs, message) if enabled_packs else []
+            return scope, build_assistant_sections(ai_settings, matched)
+
+        revision = await self.roleplay_repo.get_active_revision(channel_id)
+        if revision is None or revision.id != scope.active_roleplay_revision_id:
+            raise _AssistantRuntimeUnavailableError
+        try:
+            roleplay_sections = build_roleplay_context_sections(
+                revision.compiled,
+                revision.package,
+                message,
+            )
+        except ValueError as error:
+            raise _AssistantRuntimeUnavailableError from error
+        return (
+            scope,
+            (
+                *build_assistant_policy_sections(ai_settings),
+                *roleplay_sections,
+            ),
+        )
 
     async def sync_emotes(self, channel_id: str) -> None:
         """Refresh enabled_emotes after bot mod status changes.
@@ -301,8 +374,23 @@ class AIComponent(BotComponent):
                 len(message),
             )
 
-            enabled_packs = await self.module_config_repo.get_enabled_packs()
-            matched = match_pack_entries(_PACKS, enabled_packs, message) if enabled_packs else []
+            if not ai_settings.get("memory_enabled", False):
+                self.memory_store.clear_channel("twitch", str(ctx.channel.id))
+
+            try:
+                assistant_scope, runtime_sections = await self._build_runtime_sections(
+                    str(ctx.channel.id),
+                    ai_settings,
+                    message,
+                )
+            except _AssistantRuntimeUnavailableError:
+                LOGGER.warning(
+                    "AI assistant scope unavailable: request_id=%s channel_id=%s",
+                    request_id,
+                    ctx.channel.id,
+                )
+                await self._ctx_reply(ctx, "角色設定暫時無法使用，請通知頻道管理員")
+                return
 
             memory_key: ConversationKey | None = None
             history_sections: tuple[InputSection, ...] = ()
@@ -312,7 +400,12 @@ class AIComponent(BotComponent):
                     raw_participant_id.strip() if isinstance(raw_participant_id, str) else ""
                 )
                 if participant_id:
-                    memory_key = ConversationKey("twitch", str(ctx.channel.id), participant_id)
+                    memory_key = ConversationKey(
+                        "twitch",
+                        str(ctx.channel.id),
+                        participant_id,
+                        assistant_scope.memory_key,
+                    )
                     turns = self.memory_store.get(memory_key)
                     if turns:
                         history_sections = (
@@ -334,12 +427,9 @@ class AIComponent(BotComponent):
                                 ),
                             ),
                         )
-            else:
-                self.memory_store.clear_channel("twitch", str(ctx.channel.id))
-
             request = AssistantRequest(
                 sections=(
-                    *build_assistant_sections(ai_settings, matched),
+                    *runtime_sections,
                     *history_sections,
                     InputSection(InputSectionKind.USER_INPUT, message),
                 ),
@@ -368,6 +458,16 @@ class AIComponent(BotComponent):
             )
 
             if response.output.outcome is AssistantOutcome.OK:
+                current_scope = await self.ai_settings_repo.get_scope(str(ctx.channel.id))
+                if current_scope != assistant_scope:
+                    LOGGER.info(
+                        "AI response discarded after assistant scope change: request_id=%s "
+                        "channel_id=%s",
+                        request_id,
+                        ctx.channel.id,
+                    )
+                    await self._ctx_reply(ctx, "角色設定剛更新，請再問一次")
+                    return
                 await self._ctx_reply(ctx, response.output.content)
                 if memory_key is not None:
                     self.memory_store.append(

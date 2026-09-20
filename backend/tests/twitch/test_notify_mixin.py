@@ -18,6 +18,7 @@ import pytest
 
 from core._notify_mixin import _NotifyMixin
 from core.bot_resolver import BotAccountResolver
+from shared.assistant import AssistantMode, AssistantScopeChange
 
 # ---------------------------------------------------------------------------
 # Minimal concrete stub of _NotifyMixin
@@ -91,14 +92,14 @@ def _payload(channel_id: str, *, enabled: bool) -> str:
 class TestConfigChangeMemoryInvalidation:
     pytestmark = pytest.mark.asyncio
 
-    async def test_refresh_clears_component_channel_memory(self) -> None:
+    async def test_generic_refresh_invalidates_cache_without_clearing_conversation(self) -> None:
         mixin = _StubMixin()
         component = MagicMock()
         mixin._components["components.ai"] = component
 
         await mixin._refresh_channel_cache("ch1")
 
-        component.clear_channel_memory.assert_called_once_with("ch1")
+        component.clear_channel_memory.assert_not_called()
 
     async def test_refresh_tolerates_components_without_memory_hook(self) -> None:
         mixin = _StubMixin()
@@ -107,6 +108,91 @@ class TestConfigChangeMemoryInvalidation:
         await mixin._refresh_channel_cache("ch1")
 
         mixin.command_configs.warm_cache.assert_awaited_once_with("ch1")
+
+    async def test_explicit_memory_disable_signal_clears_conversation(self) -> None:
+        mixin = _StubMixin()
+        mixin.subs._subscribed.add("ch1")
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+
+        await mixin._handle_config_change(
+            None,
+            None,
+            "config_change",
+            json.dumps(
+                {
+                    "channel_id": "ch1",
+                    "table": "ai_settings",
+                    "clear_assistant_memory": True,
+                }
+            ),
+        )
+
+        mixin.command_configs.warm_cache.assert_awaited_once_with("ch1")
+        component.clear_channel_memory.assert_called_once_with("ch1")
+
+    async def test_string_memory_clear_flag_is_not_trusted(self) -> None:
+        mixin = _StubMixin()
+        mixin.subs._subscribed.add("ch1")
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+
+        await mixin._handle_config_change(
+            None,
+            None,
+            "config_change",
+            json.dumps(
+                {
+                    "channel_id": "ch1",
+                    "table": "ai_settings",
+                    "clear_assistant_memory": "true",
+                }
+            ),
+        )
+
+        component.clear_channel_memory.assert_not_called()
+
+    async def test_assistant_scope_change_clears_only_named_channel_memory(self) -> None:
+        mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+        payload = AssistantScopeChange(
+            channel_id="ch1",
+            assistant_mode=AssistantMode.ROLEPLAY,
+            active_roleplay_revision_id=41,
+        ).to_payload()
+
+        with patch("core._notify_mixin.invalidate_ai_settings_cache") as invalidate:
+            await mixin._handle_assistant_scope_changed(
+                None,
+                None,
+                "assistant_scope_changed",
+                payload,
+            )
+
+        invalidate.assert_called_once_with("ch1")
+        component.clear_channel_memory_except_scope.assert_called_once_with(
+            "ch1",
+            "roleplay:41",
+        )
+        component.clear_channel_memory.assert_not_called()
+        mixin.command_configs.warm_cache.assert_not_awaited()
+
+    async def test_invalid_assistant_scope_notification_does_not_clear_memory(self) -> None:
+        mixin = _StubMixin()
+        component = MagicMock()
+        mixin._components["components.ai"] = component
+
+        with patch("core._notify_mixin.invalidate_ai_settings_cache") as invalidate:
+            await mixin._handle_assistant_scope_changed(
+                None,
+                None,
+                "assistant_scope_changed",
+                '{"token":"secret"}',
+            )
+
+        invalidate.assert_not_called()
+        component.clear_channel_memory.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,7 @@ from core.bot_resolver import BotAccountResolver
 from core.config import COMPONENTS_DIR
 from core.session_service import SessionService
 from core.subscription_manager import SubscriptionManager
+from shared.assistant import ASSISTANT_SCOPE_CHANGED_CHANNEL
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
 from shared.pg_listener import pg_listen
@@ -251,6 +252,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             ),
             pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
             pg_listen(self._database_url, "config_change", self._handle_config_change),
+            pg_listen(
+                self._database_url,
+                ASSISTANT_SCOPE_CHANGED_CHANNEL,
+                self._handle_assistant_scope_changed,
+            ),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
         ):

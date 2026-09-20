@@ -115,8 +115,8 @@ router 標記為「（無獨立頁面）」。
 所有 mutation 都要求 `X-Niibot-Action: roleplay-settings`，並套用 user + tenant + IP 限流；body schema
 拒絕未知欄位與型別轉換。只有啟用 revision 或切回 Persona 會發送 versioned
 `assistant_scope_changed` 通知，讓其他 API instance 精準失效該頻道的 `ai_settings` cache；編輯草稿、發布未啟用
-revision 與封存非 active 設定集都不通知 runtime。Twitch compact runtime、revision-scoped memory 與 Dashboard
-wizard 尚未接入，因此 API 完成不等於聊天室已開始用角色回覆。
+revision 與封存非 active 設定集都不通知 runtime。Twitch compact runtime 與 revision-scoped memory 已接入；
+非技術 Dashboard wizard 尚未接入，因此目前仍需直接呼叫 API 才能建立與啟用故事角色。
 
 ## Community Overlay feed
 

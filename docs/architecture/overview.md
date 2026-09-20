@@ -80,13 +80,14 @@ Dashboard 改設定 ──▶ API 寫入 DB ──▶ pg_notify(channel, payload
                           重載對應記憶體狀態（免重啟）
 ```
 
-| NOTIFY 頻道         | 觸發來源                  | Bot 反應                             |
-| ------------------- | ------------------------- | ------------------------------------ |
-| `config_change`     | 指令 / 觸發 / 計時器 CRUD | 重載該頻道設定                       |
-| `channel_toggle`    | 頻道啟停 Bot              | 訂閱 / 取消 EventSub、檢查 mod 權限  |
-| `new_token`         | OAuth 新 token            | 載入新 broadcaster token             |
-| `token_reauth`      | token 失效                | 標記頻道需重新授權                   |
-| `bot_token_updated` | Web Bot OAuth callback    | 清除 system Bot token cache 並熱載入 |
+| NOTIFY 頻道               | 觸發來源                                 | Bot 反應                                        |
+| ------------------------- | ---------------------------------------- | ----------------------------------------------- |
+| `config_change`           | 指令 / 觸發 / 計時器 / 一般 AI 設定 CRUD | 重載該頻道設定；明確停用記憶時另清除 AI session |
+| `assistant_scope_changed` | 啟用 Role-play revision／切回 Persona    | 失效 AI cache 並淘汰該頻道其他角色 scope        |
+| `channel_toggle`          | 頻道啟停 Bot                             | 訂閱 / 取消 EventSub、檢查 mod 權限             |
+| `new_token`               | OAuth 新 token                           | 載入新 broadcaster token                        |
+| `token_reauth`            | token 失效                               | 標記頻道需重新授權                              |
+| `bot_token_updated`       | Web Bot OAuth callback                   | 清除 system Bot token cache 並熱載入            |
 
 實作：Twitch Bot 用 `pg_listen()`（`twitch/core/pg_listener.py`）開**專用連線**做
 LISTEN（不佔用 pool），斷線自動重連。

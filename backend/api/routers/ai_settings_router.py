@@ -188,7 +188,11 @@ async def patch_ai_settings(
         raise AISettingsEmptyPatchError()
 
     result = await AISettingsRepository(pool).upsert(channel_id, **patch)
-    await notify_config_change(pool, channel_id)
+    await notify_config_change(
+        pool,
+        channel_id,
+        clear_assistant_memory=patch.get("memory_enabled") is False,
+    )
 
     LOGGER.info("ai_settings_updated", extra={"fields": list(patch)})
     return AISettingsResponse(**result)
@@ -207,7 +211,7 @@ async def reset_ai_settings(
     """
     reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
     result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
-    await notify_config_change(pool, channel_id)
+    await notify_config_change(pool, channel_id, clear_assistant_memory=True)
 
     LOGGER.info("ai_settings_reset")
     return AISettingsResponse(**result)

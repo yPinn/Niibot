@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from shared.assistant import AssistantMode, AssistantScope
 from shared.repositories.ai_settings import AISettingsRepository, _ai_settings_cache
 
 
@@ -86,3 +87,30 @@ async def test_upsert_persists_all_persona_v2_fields() -> None:
     assert ["收到", "交給我"] in args
     assert True in args
     assert result["example_replies"] == ["收到", "交給我"]
+
+
+@pytest.mark.asyncio
+async def test_scope_read_bypasses_cached_authoring_settings() -> None:
+    pool, conn = _make_pool(
+        fetchrow={
+            "assistant_mode": "roleplay",
+            "active_roleplay_revision_id": 41,
+        }
+    )
+
+    scope = await AISettingsRepository(pool).get_scope("channel-1")
+
+    assert scope == AssistantScope(AssistantMode.ROLEPLAY, 41)
+    sql, channel_id = conn.fetchrow.await_args.args
+    assert "assistant_mode" in sql
+    assert "active_roleplay_revision_id" in sql
+    assert channel_id == "channel-1"
+
+
+@pytest.mark.asyncio
+async def test_missing_scope_row_is_conservative_persona() -> None:
+    pool, _ = _make_pool(fetchrow=None)
+
+    scope = await AISettingsRepository(pool).get_scope("channel-1")
+
+    assert scope == AssistantScope(AssistantMode.PERSONA, None)

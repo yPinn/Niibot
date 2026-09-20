@@ -24,7 +24,7 @@ Twitch 與 Discord 共用同一套 provider-neutral pipeline，平台層只負�
 
 1. `core_policy`：應用程式不可覆寫的安全與保密邊界。
 2. `product_contract`：Twitch／Discord 的輸出格式、長度與平台行為。
-3. `channel_persona`：頻道主可編輯的人設資料。
+3. `channel_persona`：頻道主可編輯的人設，或已發布 Role-play revision 的演繹摘要；兩者互斥。
 4. `retrieved_context`：知識包檢索結果。
 5. `conversation_history`：選擇性、短效且不可信的對話歷史。
 6. `user_input`：本次使用者輸入，且必須恰好一份。
@@ -84,16 +84,30 @@ Prompt JSON 將自稱寫成帶條件的 `self_reference_when_needed`，而非看
 目前不另增 `style_intensity` 欄位：固定的低強度契約加上 `tone_preset`／自由文字已能覆蓋 Twitch 的短回覆需求。
 只有實際輸出評估顯示多數頻道需要在同一 persona 間穩定切換強弱，才加入有界 enum，而非再增加自由文字層。
 
+## Twitch Canon Role-play runtime
+
+Role-play 與 Persona 共用同一組固定 safety、Twitch product contract、provider router、deadline 與 output processor，
+但不混用兩種模式的動態內容。Role-play 每次只讀 active immutable revision 的 compact capsule、依目前問題解析最多
+一條且合計不超過 600 字的可知 Lore、同 revision 短期歷史與 user input；不載入 Persona 自由文字或知識包。
+pointer 缺漏、revision 不屬於該頻道、compiled artifact 驗證失敗或 pointer／revision 不一致時 fail closed，且不呼叫模型。
+
+成功生成後，Twitch 會繞過 cache 直接重讀目前 assistant scope。若生成期間 mode 或 revision 已變更，舊輸出不送出、
+不寫入記憶，只提示觀眾重新提問；Bot sender 則維持 send-time resolver，角色與 OAuth 帳號互不成為彼此的 owner。
+
 ## Twitch 短期對話記憶
 
 第一版是 opt-in、process-local 的短期延續能力，不是頻道知識庫或觀眾側寫：
 
 - 只收錄明確 `!ai`／`!問` 且最終 `outcome=ok` 的 user/assistant pair；一般聊天、blocked、empty、錯誤與 timeout 不保存。
-- key 為 `(twitch, channel_id, Twitch user id)`，不同頻道與觀眾完全隔離；user id 只存在記憶索引，不注入 prompt、log 或 metrics。
+- key 為 `(twitch, channel_id, Twitch user id, assistant scope)`；Persona scope 固定為 `persona`，Role-play scope 為
+  `roleplay:<revision_id>`，不含 Bot sender。不同頻道、觀眾與角色 revision 完全隔離；user id 只存在記憶索引，
+  不注入 prompt、log 或 metrics。
 - 每個 session 最多 2 exchanges、1000 字元，最後一次成功寫入後 10 分鐘到期。
 - 全程序最多 500 sessions、500,000 內容字元；超額以 LRU 淘汰完整 session，單一超大 turn 直接拒絕保存。
 - 使用單一有界 in-memory store，沒有 per-channel timer/task；讀寫時 lazy expiry，程序重啟即清空。
-- Dashboard 預設 `memory_enabled=false`；設定更新、停用頻道或關閉記憶時會清除該頻道現存 session。
+- Dashboard 預設 `memory_enabled=false`；停用頻道、重設 AI 設定或明確關閉記憶會立即清除該頻道 session。
+  一般設定 refresh 只失效 cache，不因修改名稱、冷卻或輸出偏好而清除對話；assistant scope 事件只淘汰其他 scope，
+  因此重複的同 scope 事件不會誤清目前 session。
 
 歷史以 `source=ephemeral_conversation` 的 JSON 放入不可信 `conversation_history`，不包含 viewer 名稱或 ID。
 健康度只輸出 active sessions、內容字元數與 eviction/rejection counters，永不輸出 key 或對話內容。

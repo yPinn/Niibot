@@ -13,6 +13,7 @@ Twitch globals into that grouping.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -21,6 +22,7 @@ from services.emote_sync import (
     EmoteFetch,
     bot_tokens_for,
     build_other_channel_groups,
+    notify_config_change,
     other_channel_emote_ids,
     resolve_bot_id,
     resolve_bot_ids,
@@ -44,6 +46,27 @@ def _pool_with(conn: AsyncMock) -> MagicMock:
     pool.acquire.return_value.__aenter__ = AsyncMock(return_value=conn)
     pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
     return pool
+
+
+class TestNotifyConfigChange:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_memory_clear_intent_is_explicit_in_payload(self):
+        conn = AsyncMock()
+        pool = _pool_with(conn)
+
+        await notify_config_change(
+            pool,
+            "ch1",
+            clear_assistant_memory=True,
+        )
+
+        _, payload = conn.execute.await_args.args
+        assert json.loads(payload) == {
+            "channel_id": "ch1",
+            "table": "ai_settings",
+            "clear_assistant_memory": True,
+        }
 
 
 class TestResolveBotId:
