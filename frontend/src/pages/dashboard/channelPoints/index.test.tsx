@@ -11,8 +11,10 @@ vi.mock('@/api/events', () => ({
   updateFirstRedemptionSettings: vi.fn(),
 }))
 vi.mock('@/api/checkin', () => ({
+  applyCheckinImport: vi.fn(),
   getCheckinLeaderboard: vi.fn(),
   getCheckinSettings: vi.fn(),
+  previewCheckinImport: vi.fn(),
   updateCheckinSettings: vi.fn(),
 }))
 vi.mock('@/api/vip', () => ({

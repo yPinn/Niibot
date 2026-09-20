@@ -152,6 +152,8 @@ export const API_ENDPOINTS = {
   checkin: {
     settings: join('/api/checkin/settings'),
     leaderboard: join('/api/checkin/leaderboard'),
+    importPreview: join('/api/checkin/import/summary/preview'),
+    importApply: join('/api/checkin/import/apply'),
   },
   vip: {
     state: join('/api/vip/state'),

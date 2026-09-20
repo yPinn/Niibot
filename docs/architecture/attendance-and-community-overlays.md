@@ -38,7 +38,7 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 
 `!checkin`／`!簽到` 以不可變 ledger 記錄成功日期，唯一鍵為
 `(channel_id, user_id, checkin_date)`，由資料庫保證同一頻道每日只成功一次。
-累積 `count` 定義為該頻道的成功簽到天數；current／best daily streak 是可重算 projection。
+累積 `count` 定義為該頻道的成功簽到天數加上已確認的外部 carry-over；`current_streak` 是可重算 projection。
 
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
@@ -62,6 +62,22 @@ in-process async delay；bot 若在等待期間重啟，可能漏送聊天回覆
 每筆 `recorded` check-in 恰好建立一筆 `viewer_card_draws`，並與 `viewer_checkins`、`community_overlay_events`
 在同一個資料庫 transaction 寫入。抽卡失敗時整筆 transaction 回滾，不留下「簽到成功但沒有卡」的半成品；
 duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發布、不可變的官方 fallback pool。
+
+### 舊 Bot 彙總資料轉移
+
+後台可從 CSV、TSV、XLSX 或可匿名讀取的 Google Sheets 匯入每位觀眾的 aggregate summary。
+所有格式先正規化為同一組欄位：`Username` 或 `Twitch User ID`、`Count`、`LastDate`，以及可選的
+`DisplayName`、`Streak`、`TodayOrder`。欄名只做 exact alias mapping，不使用模糊推測；Twitch login
+會批次解析成 stable user id，找不到或與既有 Niibot ledger／carry-over 衝突的列不可套用。
+
+外部 `Count` 寫入 `viewer_checkin_carryovers`，不展開成虛構 `viewer_checkins`，因此不補歷史卡片或
+Overlay event。`$(count)` 與排行榜使用 carry-over + 真實 ledger；來源 streak 只作下一次簽到的 continuity
+seed，隔日接續、日期 gap 歸 1。`TodayOrder` 只保留 audit，不是聊天室模板變數。
+
+Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 分鐘記憶體 cache 中保存。Apply 僅限 owner、
+要求 `X-Niibot-Action: checkin-import` 與「舊 Bot 已停用」確認，並以 channel advisory lock 與整批 transaction
+阻止匯入 cutover 和即時簽到互相競爭。Google Sheets 只接受 HTTPS `docs.google.com/spreadsheets` 文件 URL，
+由 server 重建固定 CSV export URL、拒絕 redirect；私人試算表 OAuth 與任意 URL 不支援。
 
 頻道點數採平台管理、Niibot 唯讀的權限模型：實況主在 Twitch 建立獎勵並設定成本、每人每場上限、
 全頻道單場上限與是否略過請求佇列；Niibot 只以 `channel:read:redemptions` 讀取並監聽，不要求

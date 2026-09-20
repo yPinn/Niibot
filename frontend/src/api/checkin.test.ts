@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { requestUrl } from '@/test/requestUrl'
 
-import { getCheckinLeaderboard, getCheckinSettings, updateCheckinSettings } from './checkin'
+import {
+  applyCheckinImport,
+  getCheckinLeaderboard,
+  getCheckinSettings,
+  previewCheckinImport,
+  updateCheckinSettings,
+} from './checkin'
 
 describe('check-in settings API', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -60,6 +66,60 @@ describe('check-in settings API', () => {
         'X-Niibot-Action': 'checkin-settings',
       },
       body: JSON.stringify(update),
+    })
+  })
+
+  it('previews an XLSX upload as multipart without setting a content type boundary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ rows: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const upload = new File(['workbook'], 'checkins.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+
+    await previewCheckinImport({
+      source: 'chiwabots',
+      sourceTimezone: 'Asia/Taipei',
+      throughDate: '2026-09-10',
+      upload,
+    })
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
+      '/api/checkin/import/summary/preview'
+    )
+    const options = fetchMock.mock.calls[0][1]
+    expect(options.headers).toEqual({ 'X-Niibot-Action': 'checkin-import' })
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.body.get('upload')).toBe(upload)
+    expect(options.body.get('source_timezone')).toBe('Asia/Taipei')
+  })
+
+  it('applies only selected preview rows with the cutover confirmation', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ batch_id: 'batch-1', imported_rows: 1 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await applyCheckinImport('preview-1', ['row-1'], true)
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/import/apply')
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-import',
+      },
+      body: JSON.stringify({
+        import_id: 'preview-1',
+        selected_keys: ['row-1'],
+        old_source_disabled: true,
+      }),
     })
   })
 })

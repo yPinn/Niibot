@@ -43,6 +43,7 @@ import { useInputInsert } from '@/hooks/useInputInsert'
 import { tokenizeVars } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
 
+import { CheckinImportSheet } from './CheckinImportSheet'
 import { CheckinLeaderboard } from './CheckinLeaderboard'
 
 // Curated IANA zones, not a free-text field — a typo here silently breaks
@@ -95,6 +96,7 @@ const CHECKIN_VARIABLES = [
   { var: '$(@user)', desc: '帶 @ 的觀眾顯示名稱' },
   { var: '$(user)', desc: '不帶 @ 的觀眾顯示名稱' },
   { var: '$(count)', desc: '這個頻道的累積簽到天數' },
+  { var: '$(streak)', desc: '目前連續簽到天數' },
   { var: '$(date)', desc: '依設定時區計算的簽到日期' },
 ]
 
@@ -102,6 +104,7 @@ const PREVIEW_VALUES: Record<string, string> = {
   '@user': '@Viewer',
   user: 'Viewer',
   count: '12',
+  streak: '4',
   date: '2026-08-31',
 }
 
@@ -133,6 +136,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
   const [leaderboard, setLeaderboard] = useState<CheckinLeaderboardEntry[]>([])
   const [leaderboardLoading, setLeaderboardLoading] = useState(false)
   const [leaderboardLoadFailed, setLeaderboardLoadFailed] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
 
   // Existing settings may hold an IANA zone outside the curated list (typed
   // in before this became a dropdown) — keep it selectable instead of
@@ -246,190 +250,208 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="gap-section sm:max-w-4xl">
-        <SheetHeader>
-          <SheetTitle>Check-in settings</SheetTitle>
-          <SheetDescription>
-            時區與回覆模板由聊天指令與 Twitch 點數簽到共用；獎勵綁定仍在表格管理。
-          </SheetDescription>
-        </SheetHeader>
+    <>
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent className="gap-section sm:max-w-4xl">
+          <SheetHeader>
+            <SheetTitle>Check-in settings</SheetTitle>
+            <SheetDescription>
+              時區與回覆模板由聊天指令與 Twitch 點數簽到共用；獎勵綁定仍在表格管理。
+            </SheetDescription>
+          </SheetHeader>
 
-        <div className="grid flex-1 items-start gap-section overflow-y-auto px-page pb-page lg:grid-cols-2">
-          <div className="space-y-card">
-            {loading ? (
-              <div className="space-y-4">
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-16 w-full" />
-                <Skeleton className="h-48 w-full" />
-                <Skeleton className="h-48 w-full" />
-              </div>
-            ) : loadFailed ? (
-              <Alert variant="destructive">
-                <Icon icon="fa-solid fa-circle-exclamation" />
-                <AlertTitle>簽到設定載入失敗</AlertTitle>
-                <AlertDescription>
-                  <Button size="sm" variant="outline" onClick={() => void loadSettings()}>
-                    重新載入
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            ) : (
-              <>
-                <section className="space-y-2" aria-labelledby="checkin-timezone-label">
-                  <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
-                    時區
-                  </Label>
-                  <Select
-                    value={form.timezone}
-                    onValueChange={value => updateForm('timezone', value)}
+          <div className="grid flex-1 items-start gap-section overflow-y-auto px-page pb-page lg:grid-cols-2">
+            <div className="space-y-card">
+              {loading ? (
+                <div className="space-y-4">
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-16 w-full" />
+                  <Skeleton className="h-48 w-full" />
+                  <Skeleton className="h-48 w-full" />
+                </div>
+              ) : loadFailed ? (
+                <Alert variant="destructive">
+                  <Icon icon="fa-solid fa-circle-exclamation" />
+                  <AlertTitle>簽到設定載入失敗</AlertTitle>
+                  <AlertDescription>
+                    <Button size="sm" variant="outline" onClick={() => void loadSettings()}>
+                      重新載入
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  <section className="space-y-2" aria-labelledby="checkin-timezone-label">
+                    <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
+                      時區
+                    </Label>
+                    <Select
+                      value={form.timezone}
+                      onValueChange={value => updateForm('timezone', value)}
+                    >
+                      <SelectTrigger id="checkin-timezone" aria-label="時區" className="w-full">
+                        <SelectValue placeholder="選擇時區" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {timezoneOptions.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-label text-muted-foreground">決定每日簽到跨日的時間點。</p>
+                  </section>
+
+                  <section
+                    className="space-y-2 border-t pt-card"
+                    aria-labelledby="checkin-reply-delay-label"
                   >
-                    <SelectTrigger id="checkin-timezone" aria-label="時區" className="w-full">
-                      <SelectValue placeholder="選擇時區" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timezoneOptions.map(option => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-label text-muted-foreground">決定每日簽到跨日的時間點。</p>
-                </section>
+                    <Label id="checkin-reply-delay-label" htmlFor="checkin-reply-delay">
+                      回覆延遲（秒）
+                    </Label>
+                    <Input
+                      id="checkin-reply-delay"
+                      aria-label="簽到回覆延遲秒數"
+                      type="number"
+                      min={0}
+                      max={30}
+                      step={1}
+                      value={form.replyDelaySeconds}
+                      onChange={event => updateReplyDelay(Number(event.target.value))}
+                    />
+                    <p className="text-label text-muted-foreground">
+                      補償畫面比聊天室晚顯示的秒數；預設 0 秒（不延遲）。
+                    </p>
+                  </section>
 
-                <section
-                  className="space-y-2 border-t pt-card"
-                  aria-labelledby="checkin-reply-delay-label"
-                >
-                  <Label id="checkin-reply-delay-label" htmlFor="checkin-reply-delay">
-                    回覆延遲（秒）
-                  </Label>
-                  <Input
-                    id="checkin-reply-delay"
-                    aria-label="簽到回覆延遲秒數"
-                    type="number"
-                    min={0}
-                    max={30}
-                    step={1}
-                    value={form.replyDelaySeconds}
-                    onChange={event => updateReplyDelay(Number(event.target.value))}
-                  />
-                  <p className="text-label text-muted-foreground">
-                    補償畫面比聊天室晚顯示的秒數；預設 0 秒（不延遲）。
-                  </p>
-                </section>
+                  <section className="space-y-3 border-t pt-card">
+                    <Tabs defaultValue="success">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="success">成功訊息</TabsTrigger>
+                        <TabsTrigger value="duplicate">已簽到訊息</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="success" className="space-y-3">
+                        <p className="text-label text-muted-foreground">
+                          當今天第一次簽到成功時回覆。
+                        </p>
+                        <Textarea
+                          id="checkin-success-template"
+                          aria-label="簽到成功訊息"
+                          ref={successInputRef}
+                          value={form.successTemplate}
+                          maxLength={500}
+                          rows={3}
+                          className="font-mono text-sub"
+                          onChange={event => updateForm('successTemplate', event.target.value)}
+                        />
+                        <VariableInserter
+                          variables={CHECKIN_VARIABLES}
+                          onInsert={insertSuccessVariable}
+                        />
+                        <EmoteInserter
+                          emotes={emotes}
+                          otherChannels={otherChannels}
+                          onInsert={insertSuccessVariable}
+                          loading={emotesLoading}
+                          error={emotesError}
+                        />
+                        <TemplatePartsPreview
+                          parts={successPreviewParts}
+                          limit={TWITCH_MESSAGE_LIMIT}
+                          legend={PREVIEW_LEGEND}
+                        />
+                      </TabsContent>
+                      <TabsContent value="duplicate" className="space-y-3">
+                        <p className="text-label text-muted-foreground">
+                          同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
+                        </p>
+                        <Textarea
+                          id="checkin-duplicate-template"
+                          aria-label="已簽到訊息"
+                          ref={duplicateInputRef}
+                          value={form.duplicateTemplate}
+                          maxLength={500}
+                          rows={3}
+                          className="font-mono text-sub"
+                          onChange={event => updateForm('duplicateTemplate', event.target.value)}
+                        />
+                        <VariableInserter
+                          variables={CHECKIN_VARIABLES}
+                          onInsert={insertDuplicateVariable}
+                        />
+                        <EmoteInserter
+                          emotes={emotes}
+                          otherChannels={otherChannels}
+                          onInsert={insertDuplicateVariable}
+                          loading={emotesLoading}
+                          error={emotesError}
+                        />
+                        <TemplatePartsPreview
+                          parts={duplicatePreviewParts}
+                          limit={TWITCH_MESSAGE_LIMIT}
+                          legend={PREVIEW_LEGEND}
+                        />
+                      </TabsContent>
+                    </Tabs>
+                  </section>
 
-                <section className="space-y-3 border-t pt-card">
-                  <Tabs defaultValue="success">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="success">成功訊息</TabsTrigger>
-                      <TabsTrigger value="duplicate">已簽到訊息</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="success" className="space-y-3">
-                      <p className="text-label text-muted-foreground">
-                        當今天第一次簽到成功時回覆。
-                      </p>
-                      <Textarea
-                        id="checkin-success-template"
-                        aria-label="簽到成功訊息"
-                        ref={successInputRef}
-                        value={form.successTemplate}
-                        maxLength={500}
-                        rows={3}
-                        className="font-mono text-sub"
-                        onChange={event => updateForm('successTemplate', event.target.value)}
-                      />
-                      <VariableInserter
-                        variables={CHECKIN_VARIABLES}
-                        onInsert={insertSuccessVariable}
-                      />
-                      <EmoteInserter
-                        emotes={emotes}
-                        otherChannels={otherChannels}
-                        onInsert={insertSuccessVariable}
-                        loading={emotesLoading}
-                        error={emotesError}
-                      />
-                      <TemplatePartsPreview
-                        parts={successPreviewParts}
-                        limit={TWITCH_MESSAGE_LIMIT}
-                        legend={PREVIEW_LEGEND}
-                      />
-                    </TabsContent>
-                    <TabsContent value="duplicate" className="space-y-3">
-                      <p className="text-label text-muted-foreground">
-                        同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
-                      </p>
-                      <Textarea
-                        id="checkin-duplicate-template"
-                        aria-label="已簽到訊息"
-                        ref={duplicateInputRef}
-                        value={form.duplicateTemplate}
-                        maxLength={500}
-                        rows={3}
-                        className="font-mono text-sub"
-                        onChange={event => updateForm('duplicateTemplate', event.target.value)}
-                      />
-                      <VariableInserter
-                        variables={CHECKIN_VARIABLES}
-                        onInsert={insertDuplicateVariable}
-                      />
-                      <EmoteInserter
-                        emotes={emotes}
-                        otherChannels={otherChannels}
-                        onInsert={insertDuplicateVariable}
-                        loading={emotesLoading}
-                        error={emotesError}
-                      />
-                      <TemplatePartsPreview
-                        parts={duplicatePreviewParts}
-                        limit={TWITCH_MESSAGE_LIMIT}
-                        legend={PREVIEW_LEGEND}
-                      />
-                    </TabsContent>
-                  </Tabs>
-                </section>
+                  {validationError && (
+                    <p className="text-label text-destructive" role="alert">
+                      {validationError}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
 
-                {validationError && (
-                  <p className="text-label text-destructive" role="alert">
-                    {validationError}
-                  </p>
-                )}
-              </>
-            )}
+            <div className="lg:border-l lg:pl-section">
+              <CheckinLeaderboard
+                entries={leaderboard}
+                loading={leaderboardLoading}
+                loadFailed={leaderboardLoadFailed}
+                onRetry={() => void loadLeaderboard()}
+              />
+            </div>
           </div>
 
-          <div className="lg:border-l lg:pl-section">
-            <CheckinLeaderboard
-              entries={leaderboard}
-              loading={leaderboardLoading}
-              loadFailed={leaderboardLoadFailed}
-              onRetry={() => void loadLeaderboard()}
-            />
-          </div>
-        </div>
-
-        <SheetFooter className="shrink-0 flex-row justify-end gap-2">
-          <SheetClose asChild>
-            <Button variant="outline">取消</Button>
-          </SheetClose>
-          <Button
-            onClick={() => void handleSave()}
-            disabled={
-              loading ||
-              loadFailed ||
-              saving ||
-              !form.timezone ||
-              !form.successTemplate ||
-              !form.duplicateTemplate
-            }
-          >
-            {saving && <Spinner className="mr-1.5" />}
-            儲存設定
-          </Button>
-        </SheetFooter>
-      </SheetContent>
-    </Sheet>
+          <SheetFooter className="shrink-0 flex-row justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false)
+                setImportOpen(true)
+              }}
+            >
+              轉移舊 Bot 簽到
+            </Button>
+            <SheetClose asChild>
+              <Button variant="outline">取消</Button>
+            </SheetClose>
+            <Button
+              onClick={() => void handleSave()}
+              disabled={
+                loading ||
+                loadFailed ||
+                saving ||
+                !form.timezone ||
+                !form.successTemplate ||
+                !form.duplicateTemplate
+              }
+            >
+              {saving && <Spinner className="mr-1.5" />}
+              儲存設定
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+      <CheckinImportSheet
+        key={form.timezone || 'Asia/Taipei'}
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        defaultTimezone={form.timezone || 'Asia/Taipei'}
+      />
+    </>
   )
 }

@@ -232,13 +232,24 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
 
-模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(date)`；server 會同時驗證未知變數與 Twitch
+模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(date)`；server 會同時驗證未知變數與 Twitch
 500 字元的最壞輸出長度。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
 只有確實建立 check-in、draw 與 Overlay event 的 `recorded` 結果套用 reply delay；`duplicate` 沒有 draw／event
 且立即回覆。延遲是 in-process best-effort 校準，不等待或要求 Overlay ACK；OBS 離線也不會回滾已提交資料。
 前端 `/events` 只管理 EventSub 回覆；`/channel-points` 管理 reward → action 映射，並由每日簽到列開啟
 獨立的 `Check-in settings` 編輯面。`Community Overlay` 只顯示目前 reward 綁定摘要並導向
 `/channel-points`，不提供第二個 mutation 入口。
+
+### Daily Check-in carry-over import
+
+- `POST /api/checkin/import/summary/preview`：owner-only multipart preview。接受一個 `.csv`、`.tsv`、`.xlsx`
+  upload，或一個可匿名讀取的 Google Sheets URL；另帶 source slug、IANA source timezone 與 through date。
+  回傳 stable Twitch identity、逐列狀態及預設選取，不保存原始輸入。
+- `POST /api/checkin/import/apply`：owner-only、all-or-nothing apply。body 帶 `import_id`、`selected_keys` 與
+  `old_source_disabled: true`；相同 content／selection／policy 具 idempotency，不會重複加總。
+
+兩個 mutation 都要求 `X-Niibot-Action: checkin-import`。第一版若同一 stable viewer 已有任何 Niibot ledger
+或 carry-over，整批回 `409 CHECKIN_IMPORT.CONFLICT`；不提供 sum、max 或 overwrite。
 
 ## 租戶邊界
 
