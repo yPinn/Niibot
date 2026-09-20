@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import NoReturn
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal, NoReturn
 from uuid import UUID
 
 import asyncpg
@@ -29,6 +32,12 @@ from shared.roleplay import (
     RoleplayPackage,
     RoleplayValidationError,
     decode_roleplay_package,
+)
+from shared.roleplay.portable import (
+    PortableRoleplayCharacter,
+    RoleplayPortableError,
+    build_roleplay_character_export,
+    decode_roleplay_character_export,
 )
 
 
@@ -69,12 +78,39 @@ class RoleplayActiveSetApiError(ConflictError):
     user_message = "這個角色正在使用中，請先切換角色"
 
 
+class RoleplayImportInvalidError(AppError):
+    code = "ROLEPLAY.IMPORT_INVALID"
+    http_status = 422
+    user_message = "角色設定集無法匯入，請確認檔案內容"
+
+
+class RoleplayImportTooLargeError(AppError):
+    code = "ROLEPLAY.IMPORT_TOO_LARGE"
+    http_status = 422
+    user_message = "角色設定集超過大小上限，請確認檔案"
+
+
+@dataclass(frozen=True, slots=True)
+class RoleplayImportOutcome:
+    mode: Literal["use", "copy"]
+    roleplay_set: RoleplaySet
+    revision: RoleplayRevision | None
+    reused: bool
+
+
 class RoleplayService:
     """Decode untrusted documents, map domain failures, and emit scope changes."""
 
-    def __init__(self, repository: RoleplayRepository, pool: asyncpg.Pool) -> None:
+    def __init__(
+        self,
+        repository: RoleplayRepository,
+        pool: asyncpg.Pool,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.repository = repository
         self.pool = pool
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def list_sets(
         self, channel_id: str, *, include_archived: bool = False
@@ -86,6 +122,71 @@ class RoleplayService:
         if result is None:
             raise RoleplayNotFoundApiError()
         return result
+
+    async def export_revision(
+        self,
+        channel_id: str,
+        roleplay_set_id: UUID,
+        revision_id: int,
+    ) -> dict[str, object]:
+        roleplay_set = await self.get_set(channel_id, roleplay_set_id)
+        revision = await self.repository.get_revision(
+            channel_id,
+            roleplay_set_id,
+            revision_id,
+        )
+        if revision is None:
+            raise RoleplayNotFoundApiError()
+        return build_roleplay_character_export(
+            display_name=roleplay_set.name,
+            package=revision.package,
+            compiled=revision.compiled,
+            exported_at=self._clock(),
+        )
+
+    async def import_character(
+        self,
+        channel_id: str,
+        *,
+        mode: Literal["use", "copy"],
+        character: object,
+    ) -> RoleplayImportOutcome:
+        portable = self._decode_portable(character)
+        try:
+            if mode == "copy":
+                roleplay_set = await self.repository.create_set(
+                    channel_id,
+                    portable.display_name,
+                    portable.package,
+                )
+                return RoleplayImportOutcome(
+                    mode=mode,
+                    roleplay_set=roleplay_set,
+                    revision=None,
+                    reused=False,
+                )
+
+            imported = await self.repository.import_and_activate(
+                channel_id,
+                portable.display_name,
+                portable.package,
+            )
+        except RoleplayPersistenceError as error:
+            self._raise_persistence(error)
+        except ValueError:
+            raise RoleplayImportInvalidError() from None
+
+        await self._notify_scope_change(
+            channel_id,
+            assistant_mode=AssistantMode.ROLEPLAY,
+            active_roleplay_revision_id=imported.revision.id,
+        )
+        return RoleplayImportOutcome(
+            mode=mode,
+            roleplay_set=imported.roleplay_set,
+            revision=imported.revision,
+            reused=imported.reused,
+        )
 
     async def create_set(
         self,
@@ -194,6 +295,16 @@ class RoleplayService:
             raise RoleplayDocumentInvalidError(
                 fields={issue.path: issue.message for issue in error.issues},
                 context={"issue_codes": [issue.code for issue in error.issues]},
+            ) from None
+
+    @staticmethod
+    def _decode_portable(value: object) -> PortableRoleplayCharacter:
+        try:
+            return decode_roleplay_character_export(value)
+        except RoleplayPortableError as error:
+            raise RoleplayImportInvalidError(
+                fields={error.issue.path: error.issue.message},
+                context={"issue_code": error.issue.code},
             ) from None
 
     @staticmethod

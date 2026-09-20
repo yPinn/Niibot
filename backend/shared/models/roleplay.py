@@ -35,3 +35,12 @@ class RoleplaySet:
     @property
     def is_archived(self) -> bool:
         return self.archived_at is not None
+
+
+@dataclass(frozen=True, slots=True)
+class RoleplayImportResult:
+    """One imported character and the immutable revision selected for use."""
+
+    roleplay_set: RoleplaySet
+    revision: RoleplayRevision
+    reused: bool

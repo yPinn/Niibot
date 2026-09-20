@@ -207,6 +207,20 @@ class TestRoleplayRepository:
         assert "roleplay_set.channel_id = $1" in get_sql
         assert "roleplay_set.id = $2" in get_sql
 
+    async def test_get_revision_is_scoped_to_channel_set_and_exact_revision(self) -> None:
+        pool, conn = _pool()
+        conn.fetchrow.return_value = _revision_row()
+        repository = RoleplayRepository(pool)
+
+        revision = await repository.get_revision("ch1", _SET_ID, 41)
+
+        assert revision is not None and revision.id == 41
+        sql, channel_id, set_id, revision_id = conn.fetchrow.await_args.args
+        assert "revision.channel_id = $1" in sql
+        assert "revision.roleplay_set_id = $2" in sql
+        assert "revision.id = $3" in sql
+        assert (channel_id, set_id, revision_id) == ("ch1", _SET_ID, 41)
+
     async def test_create_serializes_channel_limit_and_stores_canonical_draft(self) -> None:
         pool, conn = _pool()
         conn.fetchval.side_effect = ["ch1", 0]
@@ -307,6 +321,77 @@ class TestRoleplayRepository:
         assert revision.id == 41
         assert conn.fetchrow.await_count == 1
         conn.execute.assert_not_awaited()
+
+    async def test_import_and_activate_creates_published_revision_atomically(self) -> None:
+        pool, conn = _pool()
+        conn.fetchval.side_effect = ["ch1", 0]
+        conn.fetchrow.side_effect = [
+            None,
+            _set_row(),
+            _revision_row(),
+            {"updated_at": _NOW},
+        ]
+        repository = RoleplayRepository(pool)
+
+        imported = await repository.import_and_activate("ch1", "月港守望者", _package())
+
+        assert imported.reused is False
+        assert imported.roleplay_set.published == imported.revision
+        assert imported.revision.id == 41
+        assert conn.transaction.call_count == 1
+        sql_calls = [call.args[0] for call in conn.fetchrow.await_args_list]
+        assert "content_digest" in sql_calls[0]
+        assert "INSERT INTO roleplay_sets" in sql_calls[1]
+        assert "INSERT INTO roleplay_revisions" in sql_calls[2]
+        assert "published_revision_id" in sql_calls[3]
+        settings_sql = conn.execute.await_args.args[0]
+        assert "assistant_mode = 'roleplay'" in settings_sql
+        assert "active_roleplay_revision_id" in settings_sql
+
+    async def test_import_and_activate_reuses_matching_current_revision_before_limit(self) -> None:
+        pool, conn = _pool()
+        conn.fetchval.return_value = "ch1"
+        conn.fetchrow.return_value = _set_row(published_revision_id=41)
+        repository = RoleplayRepository(pool)
+
+        imported = await repository.import_and_activate("ch1", "另一個檔名", _package())
+
+        assert imported.reused is True
+        assert imported.roleplay_set.id == _SET_ID
+        assert imported.revision.id == 41
+        assert conn.fetchval.await_count == 1
+        assert conn.fetchrow.await_count == 1
+        assert "content_digest = $2" in conn.fetchrow.await_args.args[0]
+        assert "assistant_mode = 'roleplay'" in conn.execute.await_args.args[0]
+
+    async def test_import_and_activate_respects_set_limit_for_new_content(self) -> None:
+        pool, conn = _pool()
+        conn.fetchval.side_effect = ["ch1", 5]
+        conn.fetchrow.return_value = None
+        repository = RoleplayRepository(pool)
+
+        with pytest.raises(RoleplaySetLimitError):
+            await repository.import_and_activate("ch1", "第六組", _package())
+
+        conn.execute.assert_not_awaited()
+
+    async def test_import_and_activate_rolls_back_when_active_pointer_write_fails(self) -> None:
+        pool, conn = _pool()
+        conn.fetchval.side_effect = ["ch1", 0]
+        conn.fetchrow.side_effect = [
+            None,
+            _set_row(),
+            _revision_row(),
+            {"updated_at": _NOW},
+        ]
+        conn.execute.side_effect = RuntimeError("settings write failed")
+        repository = RoleplayRepository(pool)
+
+        with pytest.raises(RuntimeError, match="settings write failed"):
+            await repository.import_and_activate("ch1", "月港守望者", _package())
+
+        transaction_exit = conn.transaction.return_value.__aexit__
+        assert transaction_exit.await_args.args[0] is RuntimeError
 
     async def test_activate_is_scoped_to_channel_and_revision(self) -> None:
         pool, conn = _pool()

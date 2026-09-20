@@ -8,7 +8,7 @@ from uuid import UUID
 
 import asyncpg
 
-from shared.models.roleplay import RoleplayRevision, RoleplaySet
+from shared.models.roleplay import RoleplayImportResult, RoleplayRevision, RoleplaySet
 from shared.repositories.ai_settings import AISettingsRepository
 from shared.roleplay import (
     CompiledRoleplay,
@@ -192,6 +192,27 @@ class RoleplayRepository:
                 roleplay_set_id,
             )
         return _set_from_row(row) if row is not None else None
+
+    async def get_revision(
+        self,
+        channel_id: str,
+        roleplay_set_id: UUID,
+        revision_id: int,
+    ) -> RoleplayRevision | None:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT {_QUALIFIED_REVISION_COLUMNS}
+                FROM roleplay_revisions revision
+                WHERE revision.channel_id = $1
+                  AND revision.roleplay_set_id = $2
+                  AND revision.id = $3
+                """,
+                channel_id,
+                roleplay_set_id,
+                revision_id,
+            )
+        return _revision_from_row(row) if row is not None else None
 
     async def create_set(
         self,
@@ -391,6 +412,133 @@ class RoleplayRepository:
                 )
         AISettingsRepository(self.pool).invalidate_cache(channel_id)
         return revision
+
+    async def import_and_activate(
+        self,
+        channel_id: str,
+        name: str,
+        package: RoleplayPackage,
+    ) -> RoleplayImportResult:
+        """Install and activate a verified snapshot in one tenant transaction."""
+
+        normalized_name = _validate_name(name)
+        document = encode_roleplay_package(package)
+        compiled = compile_roleplay_package(package)
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                channel = await conn.fetchval(
+                    "SELECT channel_id FROM channels WHERE channel_id = $1 FOR UPDATE",
+                    channel_id,
+                )
+                if channel is None:
+                    raise RoleplaySetNotFoundError("channel was not found")
+
+                matching_row = await conn.fetchrow(
+                    f"""
+                    {_SET_SELECT}
+                    WHERE roleplay_set.channel_id = $1
+                      AND roleplay_set.archived_at IS NULL
+                      AND revision.content_digest = $2
+                    ORDER BY roleplay_set.created_at ASC, roleplay_set.id ASC
+                    LIMIT 1
+                    FOR UPDATE OF roleplay_set
+                    """,
+                    channel_id,
+                    compiled.content_digest,
+                )
+                if matching_row is not None:
+                    roleplay_set = _set_from_row(matching_row)
+                    if roleplay_set.published is None:  # pragma: no cover - SQL invariant
+                        raise RuntimeError("matching role-play set has no published revision")
+                    revision = roleplay_set.published
+                    reused = True
+                else:
+                    active_count = await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM roleplay_sets
+                        WHERE channel_id = $1
+                          AND archived_at IS NULL
+                        """,
+                        channel_id,
+                    )
+                    if int(active_count) >= MAX_ROLEPLAY_SETS_PER_CHANNEL:
+                        raise RoleplaySetLimitError("channel role-play set limit reached")
+                    set_row = await conn.fetchrow(
+                        """
+                        INSERT INTO roleplay_sets (channel_id, name, draft)
+                        VALUES ($1, $2, $3)
+                        RETURNING id, channel_id, name, draft, draft_version,
+                                  published_revision_id, archived_at, created_at, updated_at
+                        """,
+                        channel_id,
+                        normalized_name,
+                        document,
+                    )
+                    if set_row is None:  # pragma: no cover - INSERT RETURNING invariant
+                        raise RuntimeError("failed to import role-play set")
+                    roleplay_set = _set_from_row(set_row)
+                    revision_row = await conn.fetchrow(
+                        f"""
+                        INSERT INTO roleplay_revisions
+                            (channel_id, roleplay_set_id, revision_number,
+                             schema_version, compiler_version, source_snapshot,
+                             capsule, compact_capsule, content_digest)
+                        VALUES ($1, $2, 1, $3, $4, $5, $6, $7, $8)
+                        RETURNING {_REVISION_COLUMNS}
+                        """,
+                        channel_id,
+                        roleplay_set.id,
+                        compiled.schema_version,
+                        compiled.compiler_version,
+                        document,
+                        compiled.capsule,
+                        compiled.compact_capsule,
+                        compiled.content_digest,
+                    )
+                    if revision_row is None:  # pragma: no cover - INSERT RETURNING invariant
+                        raise RuntimeError("failed to import role-play revision")
+                    revision = _revision_from_row(revision_row)
+                    pointer_row = await conn.fetchrow(
+                        """
+                        UPDATE roleplay_sets
+                        SET published_revision_id = $3
+                        WHERE channel_id = $1
+                          AND id = $2
+                        RETURNING updated_at
+                        """,
+                        channel_id,
+                        roleplay_set.id,
+                        revision.id,
+                    )
+                    if pointer_row is None:  # pragma: no cover - locked row invariant
+                        raise RuntimeError("failed to publish imported role-play set")
+                    roleplay_set = replace(
+                        roleplay_set,
+                        published=revision,
+                        updated_at=pointer_row["updated_at"],
+                    )
+                    reused = False
+
+                await conn.execute(
+                    """
+                    INSERT INTO ai_settings
+                        (channel_id, assistant_mode, active_roleplay_revision_id)
+                    VALUES ($1, 'roleplay', $2)
+                    ON CONFLICT (channel_id) DO UPDATE SET
+                        assistant_mode = 'roleplay',
+                        active_roleplay_revision_id = EXCLUDED.active_roleplay_revision_id,
+                        updated_at = NOW()
+                    """,
+                    channel_id,
+                    revision.id,
+                )
+        AISettingsRepository(self.pool).invalidate_cache(channel_id)
+        return RoleplayImportResult(
+            roleplay_set=roleplay_set,
+            revision=revision,
+            reused=reused,
+        )
 
     async def use_persona(self, channel_id: str) -> None:
         """Switch modes atomically without deleting either mode's authoring data."""

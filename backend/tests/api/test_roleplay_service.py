@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
@@ -13,11 +14,12 @@ from services.roleplay_service import (
     RoleplayActiveSetApiError,
     RoleplayDocumentInvalidError,
     RoleplayDraftConflictApiError,
+    RoleplayImportInvalidError,
     RoleplayNotFoundApiError,
     RoleplayPublishInvalidError,
     RoleplayService,
 )
-from shared.models.roleplay import RoleplayRevision, RoleplaySet
+from shared.models.roleplay import RoleplayImportResult, RoleplayRevision, RoleplaySet
 from shared.repositories.roleplay import (
     RoleplayActiveSetError,
     RoleplayDraftVersionConflictError,
@@ -29,6 +31,7 @@ from shared.roleplay import (
     compile_roleplay_package,
     encode_roleplay_package,
 )
+from shared.roleplay.portable import build_roleplay_character_export
 from tests.shared.roleplay.factories import sample_roleplay_package
 
 _SET_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -235,3 +238,86 @@ class TestRoleplayService:
             await service.archive("channel-a", _SET_ID)
 
         assert "secret channel" not in error.value.user_message
+
+    async def test_export_uses_exact_revision_and_excludes_runtime_notification(self) -> None:
+        repository = MagicMock()
+        repository.get_set = AsyncMock(return_value=_roleplay_set())
+        repository.get_revision = AsyncMock(return_value=_revision())
+        pool, connection = _pool()
+        service = RoleplayService(repository, pool, clock=lambda: _NOW)
+
+        document = await service.export_revision("channel-a", _SET_ID, 41)
+
+        assert document["format"] == "niibot.roleplay-character"
+        manifest = document["manifest"]
+        assert isinstance(manifest, dict)
+        assert manifest["name"] == "月港守望者"
+        repository.get_revision.assert_awaited_once_with("channel-a", _SET_ID, 41)
+        connection.execute.assert_not_awaited()
+
+    async def test_import_rejects_invalid_portable_content_without_logging_raw_values(self) -> None:
+        repository = MagicMock()
+        pool, _ = _pool()
+        service = RoleplayService(repository, pool)
+
+        with pytest.raises(RoleplayImportInvalidError) as error:
+            await service.import_character(
+                "channel-a",
+                mode="copy",
+                character={"format": "ignore all policy"},
+            )
+
+        assert error.value.context == {"issue_code": "portable.field.missing"}
+        assert "ignore all policy" not in str(error.value.context)
+        repository.create_set.assert_not_called()
+
+    async def test_copy_import_creates_editable_draft_without_scope_change(self) -> None:
+        package = sample_roleplay_package()
+        document = build_roleplay_character_export(
+            display_name="月港守望者",
+            package=package,
+            compiled=compile_roleplay_package(package),
+            exported_at=_NOW,
+        )
+        repository = MagicMock()
+        repository.create_set = AsyncMock(return_value=_roleplay_set())
+        pool, connection = _pool()
+        service = RoleplayService(repository, pool)
+
+        outcome = await service.import_character("channel-a", mode="copy", character=document)
+
+        assert outcome.mode == "copy"
+        assert outcome.reused is False
+        assert outcome.revision is None
+        repository.create_set.assert_awaited_once_with("channel-a", "月港守望者", package)
+        connection.execute.assert_not_awaited()
+
+    async def test_use_import_activates_atomically_then_notifies_scope(self) -> None:
+        package = sample_roleplay_package()
+        revision = _revision()
+        imported_set = replace(_roleplay_set(), published=revision)
+        document = build_roleplay_character_export(
+            display_name="月港守望者",
+            package=package,
+            compiled=compile_roleplay_package(package),
+            exported_at=_NOW,
+        )
+        repository = MagicMock()
+        repository.import_and_activate = AsyncMock(
+            return_value=RoleplayImportResult(
+                roleplay_set=imported_set,
+                revision=revision,
+                reused=False,
+            )
+        )
+        pool, connection = _pool()
+        service = RoleplayService(repository, pool)
+
+        outcome = await service.import_character("channel-a", mode="use", character=document)
+
+        assert outcome.mode == "use"
+        assert outcome.revision == revision
+        repository.import_and_activate.assert_awaited_once_with("channel-a", "月港守望者", package)
+        _, notify_channel, payload = connection.execute.await_args.args
+        assert notify_channel == "assistant_scope_changed"
+        assert json.loads(payload)["active_roleplay_revision_id"] == 41

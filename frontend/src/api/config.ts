@@ -50,6 +50,12 @@ export const API_ENDPOINTS = {
       join(
         `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/revisions`
       ),
+    roleplayRevisionExport: (channelId: string, setId: string, revisionId: number) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/revisions/${revisionId}/export`
+      ),
+    roleplayImports: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/roleplay-imports`),
     roleplayActiveRevision: (channelId: string, setId: string) =>
       join(
         `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/active-revision`

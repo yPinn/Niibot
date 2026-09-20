@@ -2,13 +2,16 @@
 
 ## 文件狀態
 
-本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic compiler、Lore resolver 與 prompt
-adapter 已完成；Phase 2 的 A/B/C runner、輕量 runtime profile 與 Groq gate 已完成。Phase 3A 已新增 tenant-owned
-draft、immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增 provider/model 共用容量與
-頻道公平 admission；Phase 3C 已新增 tenant-path authoring API、strict mutation boundary 與 versioned assistant-scope
-notification；Phase 3D 已接上 Twitch compact runtime、revision-scoped memory 與 in-flight scope recheck。
+本文件記錄產品與架構決策。Phase 1 共用 domain、validator、deterministic
+compiler、Lore resolver 與 prompt adapter 已完成；Phase 2 的 A/B/C runner、
+輕量 runtime profile 與 Groq gate 已完成。Phase 3A 已新增 tenant-owned draft、
+immutable published revision 與 Persona／Role-play active pointer；Phase 3B 已新增
+provider/model 共用容量與頻道公平 admission；Phase 3C 已新增 tenant-path authoring
+API、strict mutation boundary 與 versioned assistant-scope notification；Phase 3D 已接上
+Twitch compact runtime、revision-scoped memory 與 in-flight scope recheck。
 Phase 4 已接上 tenant-aware AI 設定頁、Persona／Role-play 模式框架、角色清單與七步非技術 Dashboard wizard。
-私人匯出／匯入與分享仍未實作。
+Phase 5 已完成已發布角色的私人檔案匯出／匯入、相同版本重用與非技術確認流程；公開連結、市集與獨立世界包仍不在
+V1 範圍。
 
 ## 核心決策
 
@@ -257,6 +260,11 @@ RoleplayCharacterPackage
 - 設定集預設 private，可在同一擁有者 workspace 內複製。
 - 匯出為 immutable snapshot；匯入後可「使用此角色」或「複製並修改」。
 - 同一作品設定建立多角色時，以內容 digest 去重；不同 digest 視為不同版本，不自動合併。
+- 私人檔案格式固定為 `niibot.roleplay-character` version 1，包含 manifest、完整角色設定集與兩份可重現的演繹摘要；
+  不包含頻道、擁有者、Bot Account、聊天室記憶或 provider 資訊。
+- 匯入上限為 128 KiB；檔案內容一律視為不可信資料，後端會重新驗證全部欄位、重算 digest 與演繹摘要，且不呼叫模型。
+- 「使用這個角色」會原子建立並啟用已發布版本；同一頻道已有完全相同的已發布版本時直接切換，不建立重複角色。
+  「複製並修改」只建立草稿並進入既有七步流程，不切換聊天室。
 - Standalone World Package、unlisted link 與公開市場延後，待實際出現多角色創作需求再評估。
 - 第三方作品角色不作為 Niibot 官方模板；公開分享需另行建立權利聲明、檢舉與下架政策。
 
@@ -274,6 +282,7 @@ RoleplayCharacterPackage
 | Twitch 背景 context  |                  最多 600 字 |
 | 完整 profile 背景    |        0–2 條、最多 1,500 字 |
 | 示例回覆             |        3 則，每則最多 120 字 |
+| 私人匯入檔案         |                 最多 128 KiB |
 
 這些是實驗 guardrails，不是最終商業方案；A/B/C eval 與實際使用量證明需要後再提高。
 
@@ -317,42 +326,53 @@ Twitch 使用輕量 capsule。429、timeout 與供應商 fallback 必須另列�
 ## 階段性實作
 
 1. 已完成：核准本文件與角色設定集範例的欄位顆粒度。
-2. 已完成：建立純 Python domain types、compiler、validator、Lore resolver、prompt adapter 與原創測試 fixture。
+2. 已完成：建立純 Python domain types、compiler、validator、Lore resolver、prompt
+   adapter 與原創測試 fixture。
 3. 已完成：Groq-only A/B/C runner、15 秒節流、逐次保存、失敗續跑與輕量 B 實測 gate。
-4. 已完成：additive DB schema、tenant ownership、strict JSON codec、draft optimistic version、immutable revision、
+4. 已完成：additive DB schema、tenant ownership、strict JSON codec、draft optimistic
+   version、immutable revision、
    active pointer 與 provider 共用容量；migration 為 `127_add_roleplay_sets.sql`。
 5. 已完成：tenant API 提供草稿建立／更新、發布、啟用、切回 Persona 與封存；只有 activate／切回 Persona 操作發送
    typed notification，其他 API instance 只失效該頻道的 AI settings cache。
-6. 已完成：Twitch compact runtime、revision-scoped memory、typed scope listener 與生成後 scope recheck。
+6. 已完成：Twitch compact runtime、revision-scoped memory、typed scope listener 與
+   生成後 scope recheck。
 7. 已完成：接入 tenant-aware 非技術 Dashboard wizard、Persona 獨立 panel 與明確模式切換。
-8. 後續：加入私人匯出／匯入；依使用證據再評估分享與公開市場。
+8. 已完成：加入 immutable revision 私人匯出、strict 匯入、相同版本重用與兩種非技術安裝流程。
+9. 後續：依使用證據再評估獨立世界包、私人連結與公開市場。
 
-Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、產生 SHA-256 content digest
+Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證完整設定、
+產生 SHA-256 content digest
 及完整／輕量兩種有界演繹摘要；compiled artifact 另記錄 compiler version，避免把編譯規則升級誤判為作者資料
 遭竄改。prompt adapter 會重新核對 package、digest、compiler version 與兩份 capsule 一致性後，才把摘要放入
 低權威 `CHANNEL_PERSONA`。Twitch 預設只把 0–1 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`；完整 profile
 的 0–2 條只供評測與未來有較寬容量的平台使用。
 
 Phase 3C 實作位於 `backend/api/routers/roleplay_router.py` 與
-`backend/api/services/roleplay_service.py`。端點使用 `/api/tenants/{channel_id}` 與 tenant access dependency，
-不從 request body 接受 owner，也不要求 legacy channel activation。list response 只含摘要，完整 draft 只由 detail
-端點回傳；mutation 要求 `X-Niibot-Action: roleplay-settings`、strict request schema、optimistic draft version 與
-有界 rate limit。發布不等於啟用，inactive publish 不打擾 runtime；只有 activate／Persona switch 發送 version 1
+`backend/api/services/roleplay_service.py`。端點使用
+`/api/tenants/{channel_id}` 與 tenant access dependency，不從 request body 接受
+owner，也不要求 legacy channel activation。list response 只含摘要，完整 draft 只由
+detail 端點回傳；mutation 要求 `X-Niibot-Action: roleplay-settings`、strict request
+schema、optimistic draft version 與有界 rate limit。發布不等於啟用，inactive publish
+不打擾 runtime；只有 activate／Persona switch 發送 version 1
 `assistant_scope_changed`。Bot Account 仍只負責 Twitch sender／credential，不進入角色 owner、revision、notification
 或記憶作用域。
 
-Phase 3D 實作位於 `backend/twitch/components/ai.py`、`backend/twitch/core/_notify_mixin.py` 與
+Phase 3D 實作位於 `backend/twitch/components/ai.py`、
+`backend/twitch/core/_notify_mixin.py` 與
 `backend/shared/assistant/memory.py`。Persona 與 Role-play 是互斥 runtime：Persona 仍使用既有人設與知識包；
-Role-play 只使用相同固定安全／Twitch contract、active immutable revision 的 compact capsule、最多一條 600 字 Lore、
+Role-play 只使用相同固定安全／Twitch contract、active immutable revision 的 compact
+capsule、最多一條 600 字 Lore、
 同 scope 的短期記憶及目前輸入。角色資料不能改寫 provider 順序、deadline、輸出上限或 sender resolver；active revision
 缺漏、損壞或與 pointer 不符時 fail closed，不呼叫模型。
 
-記憶 key 為 platform + channel + participant + assistant scope；Persona 使用穩定 `persona`，Role-play 使用
+記憶 key 為 platform + channel + participant + assistant scope；Persona 使用穩定
+`persona`，Role-play 使用
 `roleplay:<revision_id>`，不含 Bot sender。一般 `config_change` 與週期 refresh 只更新 cache；停用頻道或明確關閉記憶
 會清除整個頻道，scope notification 則只淘汰其他 scope，重複事件不清掉當前對話。模型成功後會直接重讀 DB scope；
 若生成期間已切換角色，就捨棄舊回覆與該次記憶，再提示使用者重問。實際送出仍在 send time 解析 active Bot Account。
 
-Phase 4 實作位於 `frontend/src/pages/modules/AI.tsx` 與 `frontend/src/pages/modules/ai/`。AI 設定、貼圖和角色資料都以
+Phase 4 實作位於 `frontend/src/pages/modules/AI.tsx` 與
+`frontend/src/pages/modules/ai/`。AI 設定、貼圖和角色資料都以
 目前工作區的 `channel_id` 讀取；舊 `/api/ai/*` 與 `/api/channels/emotes` 仍保留相容，新介面使用
 `/api/tenants/{channel_id}/ai/*`、tenant emotes 與既有 role-play API。工作區切換會卸載舊工作區狀態，延遲回應不能覆寫
 新頻道；owner 與 manager 共用 tenant access boundary，Bot credential 仍由目標頻道解析。
@@ -361,6 +381,17 @@ Phase 4 實作位於 `frontend/src/pages/modules/AI.tsx` 與 `frontend/src/pages
 「完成並使用／使用這個角色」後切換。Wizard 逐步保存 draft，使用 optimistic version 防止覆蓋遠端修改；發布前檢查是
 deterministic summary，不呼叫 Groq、Gemini 或 OpenRouter。完成流程固定為 save → publish → activate；若發布已成功但
 啟用暫時失敗，介面保存 revision id，重試時只做 activate，不重複發布。未儲存離開會提示，active set 不提供封存操作。
+
+Phase 5 實作位於 `backend/shared/roleplay/portable.py`、既有 role-play
+repository／service／router 與
+`frontend/src/pages/modules/ai/RoleplayImportDialog.tsx`。下載端點使用 set id 加 exact
+revision id，不依賴可能改變的 published pointer；匯入端點只接受 path tenant，沿用
+tenant access、action header、rate limit 與每頻道 5 組上限。檔案內的編譯摘要只作
+一致性檢查，runtime 永遠使用目前 compiler 重算的結果。
+
+Dashboard 只呈現角色、作品、故事時間點與背景條目數，不顯示 JSON、schema、compiler 或 digest。下載前會提醒檔案包含完整
+背景、角色未知內容與可能的後續劇情；匯入失敗會保留預覽供重試。下載檔案是使用者自行保管的 private snapshot，不提供作者
+簽章或真實性背書，也不建立可被來源作者遠端更新的依賴。
 
 ## 驗收條件
 

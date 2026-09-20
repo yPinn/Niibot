@@ -19,9 +19,14 @@ from fastapi.testclient import TestClient
 from core.dependencies import get_roleplay_service, require_tenant_access
 from core.error_handlers import register_exception_handlers
 from routers import roleplay_router
+from services.roleplay_service import RoleplayImportOutcome
 from services.tenant_service import TenantContext
 from shared.models.roleplay import RoleplayRevision, RoleplaySet
 from shared.roleplay import compile_roleplay_package, encode_roleplay_package
+from shared.roleplay.portable import (
+    MAX_PORTABLE_ROLEPLAY_BYTES,
+    build_roleplay_character_export,
+)
 from tests.shared.roleplay.factories import sample_roleplay_package
 
 _CHANNEL_ID = "channel-a"
@@ -68,6 +73,22 @@ def _service() -> MagicMock:
     service.activate = AsyncMock(return_value=_revision())
     service.archive = AsyncMock(return_value=_roleplay_set(archived=True))
     service.use_persona = AsyncMock(return_value=None)
+    service.export_revision = AsyncMock(
+        return_value=build_roleplay_character_export(
+            display_name="月港守望者",
+            package=sample_roleplay_package(),
+            compiled=compile_roleplay_package(sample_roleplay_package()),
+            exported_at=_NOW,
+        )
+    )
+    service.import_character = AsyncMock(
+        return_value=RoleplayImportOutcome(
+            mode="copy",
+            roleplay_set=_roleplay_set(),
+            revision=None,
+            reused=False,
+        )
+    )
     return service
 
 
@@ -259,3 +280,80 @@ def test_rate_limiter_is_applied_before_mutation(monkeypatch) -> None:
 
     assert response.status_code == 429
     service.use_persona.assert_not_awaited()
+
+
+def test_export_returns_exact_revision_as_private_download() -> None:
+    service = _service()
+
+    response = _client(service).get(
+        f"/api/tenants/{_CHANNEL_ID}/roleplay-sets/{_SET_ID}/revisions/41/export"
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.niibot.roleplay-character+json"
+    )
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.json()["format"] == "niibot.roleplay-character"
+    service.export_revision.assert_awaited_once_with(_CHANNEL_ID, _SET_ID, 41)
+
+
+def test_import_forwards_only_path_tenant_and_selected_result() -> None:
+    service = _service()
+    document = build_roleplay_character_export(
+        display_name="月港守望者",
+        package=sample_roleplay_package(),
+        compiled=compile_roleplay_package(sample_roleplay_package()),
+        exported_at=_NOW,
+    )
+
+    response = _client(service).post(
+        f"/api/tenants/{_CHANNEL_ID}/roleplay-imports",
+        json={"mode": "copy", "character": document},
+        headers=_ACTION,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "copy"
+    assert response.json()["reused"] is False
+    assert response.json()["active_roleplay_revision_id"] is None
+    service.import_character.assert_awaited_once_with(
+        _CHANNEL_ID,
+        mode="copy",
+        character=document,
+    )
+
+
+def test_import_rejects_tenant_override_and_requires_action_header() -> None:
+    service = _service()
+
+    response = _client(service).post(
+        f"/api/tenants/{_CHANNEL_ID}/roleplay-imports",
+        json={"mode": "copy", "character": {}, "channel_id": "channel-b"},
+        headers=_ACTION,
+    )
+    missing_header = _client(service).post(
+        f"/api/tenants/{_CHANNEL_ID}/roleplay-imports",
+        json={"mode": "copy", "character": {}},
+    )
+
+    assert response.status_code == 422
+    assert missing_header.status_code == 422
+    service.import_character.assert_not_awaited()
+
+
+def test_import_rejects_oversize_body_before_parsing_or_service_call() -> None:
+    service = _service()
+    body = b"{" + (b" " * MAX_PORTABLE_ROLEPLAY_BYTES) + b"}"
+
+    response = _client(service).post(
+        f"/api/tenants/{_CHANNEL_ID}/roleplay-imports",
+        content=body,
+        headers={**_ACTION, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "ROLEPLAY.IMPORT_TOO_LARGE"
+    service.import_character.assert_not_awaited()

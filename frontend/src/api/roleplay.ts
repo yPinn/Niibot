@@ -1,5 +1,5 @@
-import { API_ENDPOINTS } from './config'
-import { apiJson } from './errors'
+import { API_ENDPOINTS, apiFetch } from './config'
+import { ApiError, apiJson, NETWORK_ERROR, parseApiError } from './errors'
 
 export type SourceKind = 'original' | 'existing_work'
 export type CanonMode = 'original' | 'canon' | 'alternate_universe'
@@ -97,6 +97,39 @@ export interface AssistantMode {
   active_roleplay_revision_id: number | null
 }
 
+export type RoleplayImportMode = 'use' | 'copy'
+
+export interface RoleplayCharacterFile {
+  format: 'niibot.roleplay-character'
+  format_version: 1
+  manifest: {
+    name: string
+    exported_at: string
+    schema_version: number
+    compiler_version: number
+    content_digest: string
+  }
+  package: RoleplayPackage
+  compiled_preview: {
+    capsule: string
+    compact_capsule: string
+  }
+}
+
+export interface RoleplayImportResult {
+  mode: RoleplayImportMode
+  reused: boolean
+  roleplay_set: RoleplaySet
+  active_roleplay_revision_id: number | null
+}
+
+export interface RoleplayExportDownload {
+  blob: Blob
+  filename: string
+}
+
+export const MAX_ROLEPLAY_FILE_BYTES = 128 * 1024
+
 export function createEmptyRoleplayPackage(): RoleplayPackage {
   return {
     schema_version: 1,
@@ -143,6 +176,109 @@ const mutationHeaders = {
   'X-Niibot-Action': 'roleplay-settings',
 } as const
 const deleteHeaders = { 'X-Niibot-Action': 'roleplay-settings' } as const
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+export function parseRoleplayCharacterFile(text: string): RoleplayCharacterFile {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error('無法讀取這個檔案，請選擇 Niibot 匯出的角色設定集')
+  }
+  const document = record(raw)
+  if (
+    !document ||
+    document.format !== 'niibot.roleplay-character' ||
+    document.format_version !== 1
+  ) {
+    throw new Error('這不是支援的 Niibot 角色設定集')
+  }
+  const manifest = record(document.manifest)
+  const roleplayPackage = record(document.package)
+  const world = record(roleplayPackage?.world)
+  const character = record(roleplayPackage?.character)
+  const preview = record(document.compiled_preview)
+  if (
+    !manifest ||
+    typeof manifest.name !== 'string' ||
+    manifest.schema_version !== 1 ||
+    manifest.compiler_version !== 1 ||
+    typeof manifest.content_digest !== 'string' ||
+    !roleplayPackage ||
+    !world ||
+    typeof world.title !== 'string' ||
+    typeof world.story_stage !== 'string' ||
+    !character ||
+    typeof character.name !== 'string' ||
+    !Array.isArray(roleplayPackage.lore_entries) ||
+    !preview ||
+    typeof preview.capsule !== 'string' ||
+    typeof preview.compact_capsule !== 'string'
+  ) {
+    throw new Error('角色設定集內容不完整，請重新匯出後再試')
+  }
+  return raw as RoleplayCharacterFile
+}
+
+function exportedFilename(disposition: string | null): string {
+  const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded)
+    } catch {
+      // Fall through to the ASCII filename.
+    }
+  }
+  const ascii = disposition?.match(/filename="?([^";]+)"?/i)?.[1]
+  return ascii || 'niibot-roleplay.json'
+}
+
+export async function exportRoleplayRevision(
+  channelId: string,
+  setId: string,
+  revisionId: number
+): Promise<RoleplayExportDownload> {
+  let response: Response
+  try {
+    response = await apiFetch(
+      API_ENDPOINTS.tenants.roleplayRevisionExport(channelId, setId, revisionId),
+      authed
+    )
+  } catch {
+    throw new ApiError({
+      message: '網路連線出了問題，請檢查後再試',
+      status: 0,
+      code: NETWORK_ERROR,
+    })
+  }
+  if (!response.ok) throw await parseApiError(response, '下載角色設定集失敗')
+  return {
+    blob: await response.blob(),
+    filename: exportedFilename(response.headers.get('Content-Disposition')),
+  }
+}
+
+export function importRoleplayCharacter(
+  channelId: string,
+  mode: RoleplayImportMode,
+  character: RoleplayCharacterFile
+): Promise<RoleplayImportResult> {
+  return apiJson(
+    API_ENDPOINTS.tenants.roleplayImports(channelId),
+    {
+      method: 'POST',
+      ...authed,
+      headers: mutationHeaders,
+      body: JSON.stringify({ mode, character }),
+    },
+    { fallback: '匯入角色設定集失敗' }
+  )
+}
 
 export function listRoleplaySets(channelId: string): Promise<RoleplaySetSummary[]> {
   return apiJson(API_ENDPOINTS.tenants.roleplaySets(channelId), authed, {

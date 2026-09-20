@@ -65,6 +65,31 @@ async def test_roleplay_publish_activate_and_database_invariants() -> None:
         with pytest.raises(RoleplayRevisionOwnershipError):
             await repository.activate(other_channel_id, roleplay_set.id, revision.id)
 
+        imported = await repository.import_and_activate(other_channel_id, "月港守望者", package)
+        reused = await repository.import_and_activate(other_channel_id, "不同顯示名稱", package)
+        assert imported.reused is False
+        assert reused.reused is True
+        assert reused.roleplay_set.id == imported.roleplay_set.id
+        assert reused.revision.id == imported.revision.id
+
+        async with pool.acquire() as conn:
+            imported_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM roleplay_sets WHERE channel_id = $1",
+                other_channel_id,
+            )
+            imported_settings = await conn.fetchrow(
+                """
+                SELECT assistant_mode, active_roleplay_revision_id
+                FROM ai_settings
+                WHERE channel_id = $1
+                """,
+                other_channel_id,
+            )
+        assert imported_count == 1
+        assert imported_settings is not None
+        assert imported_settings["assistant_mode"] == "roleplay"
+        assert imported_settings["active_roleplay_revision_id"] == imported.revision.id
+
         async with pool.acquire() as conn:
             with pytest.raises(asyncpg.PostgresError):
                 await conn.execute(

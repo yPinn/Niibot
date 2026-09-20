@@ -7,8 +7,11 @@ import {
   archiveRoleplaySet,
   createEmptyRoleplayPackage,
   createRoleplaySet,
+  exportRoleplayRevision,
   getRoleplaySet,
+  importRoleplayCharacter,
   listRoleplaySets,
+  parseRoleplayCharacterFile,
   publishRoleplayRevision,
   updateRoleplayDraft,
   usePersonaMode,
@@ -118,6 +121,103 @@ describe('role-play API', () => {
           relationships: [{ state: 'trusted' }],
         },
       },
+    })
+  })
+
+  it('parses only the portable fields needed for a safe import preview', () => {
+    const parsed = parseRoleplayCharacterFile(
+      JSON.stringify({
+        format: 'niibot.roleplay-character',
+        format_version: 1,
+        manifest: {
+          name: '月港守望者',
+          exported_at: '2026-09-20T10:00:00Z',
+          schema_version: 1,
+          compiler_version: 1,
+          content_digest: 'a'.repeat(64),
+        },
+        package: {
+          ...createEmptyRoleplayPackage(),
+          world: {
+            ...createEmptyRoleplayPackage().world,
+            title: '月港紀事',
+            story_stage: '潮汐祭前三日',
+          },
+          character: {
+            ...createEmptyRoleplayPackage().character,
+            name: '拉娜',
+          },
+        },
+        compiled_preview: { capsule: '完整摘要', compact_capsule: '精簡摘要' },
+      })
+    )
+
+    expect(parsed.manifest.name).toBe('月港守望者')
+    expect(parsed.package.character.name).toBe('拉娜')
+    expect(parsed.package.world.story_stage).toBe('潮汐祭前三日')
+  })
+
+  it('rejects malformed or unsupported files before showing an import preview', () => {
+    expect(() => parseRoleplayCharacterFile('{bad json')).toThrow('無法讀取')
+    expect(() =>
+      parseRoleplayCharacterFile(
+        JSON.stringify({ format: 'other', format_version: 1, manifest: {}, package: {} })
+      )
+    ).toThrow('不是支援的 Niibot 角色設定集')
+  })
+
+  it('downloads an exact revision and imports through the tenant boundary', async () => {
+    const portable = {
+      format: 'niibot.roleplay-character' as const,
+      format_version: 1 as const,
+      manifest: {
+        name: '月港守望者',
+        exported_at: '2026-09-20T10:00:00Z',
+        schema_version: 1,
+        compiler_version: 1,
+        content_digest: 'a'.repeat(64),
+      },
+      package: createEmptyRoleplayPackage(),
+      compiled_preview: { capsule: '完整摘要', compact_capsule: '精簡摘要' },
+    }
+    const imported = {
+      mode: 'copy',
+      reused: false,
+      roleplay_set: { id: 'set-2', name: '月港守望者', draft_version: 1 },
+      active_roleplay_revision_id: null,
+    }
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(portable), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/vnd.niibot.roleplay-character+json',
+            'Content-Disposition':
+              'attachment; filename="niibot-roleplay.json"; filename*=UTF-8\'\'%E6%9C%88%E6%B8%AF.niibot-roleplay.json',
+          },
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse(imported))
+
+    const download = await exportRoleplayRevision('channel/a', 'set-1', 41)
+    await importRoleplayCharacter('channel/a', 'copy', portable)
+
+    expect(download.filename).toBe('月港.niibot-roleplay.json')
+    expect(await download.blob.text()).toContain('niibot.roleplay-character')
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
+      '/api/tenants/channel%2Fa/roleplay-sets/set-1/revisions/41/export'
+    )
+    expect(requestUrl(fetchMock.mock.calls[1][0]).pathname).toBe(
+      '/api/tenants/channel%2Fa/roleplay-imports'
+    )
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({
+      method: 'POST',
+      headers: expect.objectContaining({ 'X-Niibot-Action': 'roleplay-settings' }),
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+      mode: 'copy',
+      character: portable,
     })
   })
 })

@@ -41,6 +41,15 @@ from shared.roleplay.evaluation import (
     grade_evaluation_output,
     summarize_evaluation_runs,
 )
+from shared.roleplay.portable import (
+    MAX_PORTABLE_ROLEPLAY_BYTES,
+    PORTABLE_ROLEPLAY_FORMAT,
+    PORTABLE_ROLEPLAY_FORMAT_VERSION,
+    PortableRoleplayCharacter,
+    RoleplayPortableError,
+    build_roleplay_character_export,
+    decode_roleplay_character_export,
+)
 from shared.roleplay.prompt import build_roleplay_context_sections
 from shared.roleplay.retrieval import resolve_lore
 from shared.roleplay.validation import (
@@ -58,6 +67,9 @@ __all__ = [
     "ROLEPLAY_COMPILER_VERSION",
     "MAX_EXAMPLE_REPLIES",
     "MAX_LORE_ENTRIES",
+    "MAX_PORTABLE_ROLEPLAY_BYTES",
+    "PORTABLE_ROLEPLAY_FORMAT",
+    "PORTABLE_ROLEPLAY_FORMAT_VERSION",
     "SUPPORTED_SCHEMA_VERSION",
     "CanonMode",
     "ChannelStage",
@@ -74,6 +86,8 @@ __all__ = [
     "RelationshipState",
     "ResolvedLore",
     "RoleplayPackage",
+    "PortableRoleplayCharacter",
+    "RoleplayPortableError",
     "RoleplayRuntimeProfile",
     "RoleplayDocumentError",
     "RoleplayValidationError",
@@ -84,10 +98,12 @@ __all__ = [
     "WorldSnapshot",
     "assert_valid_roleplay_package",
     "build_evaluation_request",
+    "build_roleplay_character_export",
     "build_roleplay_context_sections",
     "canonical_roleplay_json",
     "compile_roleplay_package",
     "decode_roleplay_package",
+    "decode_roleplay_character_export",
     "encode_roleplay_package",
     "grade_evaluation_output",
     "resolve_lore",

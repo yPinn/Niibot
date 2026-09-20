@@ -14,6 +14,8 @@ vi.mock('@/api/roleplay', async importOriginal => {
     publishRoleplayRevision: vi.fn(),
     activateRoleplayRevision: vi.fn(),
     archiveRoleplaySet: vi.fn(),
+    exportRoleplayRevision: vi.fn(),
+    importRoleplayCharacter: vi.fn(),
   }
 })
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
@@ -24,8 +26,11 @@ import {
   activateRoleplayRevision,
   createEmptyRoleplayPackage,
   createRoleplaySet,
+  exportRoleplayRevision,
+  importRoleplayCharacter,
   listRoleplaySets,
   publishRoleplayRevision,
+  type RoleplayCharacterFile,
   type RoleplayPackage,
   type RoleplaySet,
   updateRoleplayDraft,
@@ -108,6 +113,29 @@ function roleplaySet(): RoleplaySet {
   }
 }
 
+function portableCharacter(overrides: Partial<RoleplayCharacterFile['manifest']> = {}) {
+  const character: RoleplayCharacterFile = {
+    format: 'niibot.roleplay-character',
+    format_version: 1,
+    manifest: {
+      name: '月港守望者',
+      exported_at: NOW,
+      schema_version: 1,
+      compiler_version: 1,
+      content_digest: 'digest-from-file',
+      ...overrides,
+    },
+    package: validPackage(),
+    compiled_preview: {
+      capsule: '完整摘要',
+      compact_capsule: '輕量摘要',
+    },
+  }
+  return new File([JSON.stringify(character)], '月港守望者.niibot-roleplay.json', {
+    type: 'application/json',
+  })
+}
+
 describe('RoleplayWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -135,6 +163,7 @@ describe('RoleplayWorkspace', () => {
 
     expect(await screen.findByText('還沒有故事角色')).toBeInTheDocument()
     expect(screen.getByText(/跟著七個步驟/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '匯入角色設定集' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '建立故事角色' }))
     expect(screen.getByRole('heading', { name: '作品與故事範圍' })).toBeInTheDocument()
 
@@ -187,6 +216,269 @@ describe('RoleplayWorkspace', () => {
 
     expect(await screen.findByText(/已達 5 組上限/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '建立故事角色' })).toBeDisabled()
+  })
+
+  it('previews an imported character and opens a copied draft without changing runtime', async () => {
+    const user = userEvent.setup()
+    const copied = { ...roleplaySet(), id: 'copied-set', published: null }
+    vi.mocked(importRoleplayCharacter).mockResolvedValue({
+      mode: 'copy',
+      reused: false,
+      roleplay_set: copied,
+      active_roleplay_revision_id: null,
+    })
+    const onModeChange = vi.fn()
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={onModeChange}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    await user.upload(screen.getByLabelText('選擇角色設定集'), portableCharacter())
+
+    expect(await screen.findByText('拉娜')).toBeInTheDocument()
+    expect(screen.getByText('月港')).toBeInTheDocument()
+    expect(screen.getByText('第一艘失蹤船返港後的夜晚')).toBeInTheDocument()
+    expect(screen.getByText('1 條背景條目')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '複製並修改' }))
+
+    await waitFor(() => expect(importRoleplayCharacter).toHaveBeenCalledTimes(1))
+    expect(importRoleplayCharacter).toHaveBeenCalledWith(
+      'channel-a',
+      'copy',
+      expect.objectContaining({ format: 'niibot.roleplay-character' })
+    )
+    expect(onModeChange).not.toHaveBeenCalled()
+    expect(screen.getByRole('heading', { name: '作品與故事範圍' })).toBeInTheDocument()
+  })
+
+  it('reuses the same published version when using an imported character', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listRoleplaySets).mockResolvedValue([roleplaySet()])
+    vi.mocked(importRoleplayCharacter).mockResolvedValue({
+      mode: 'use',
+      reused: true,
+      roleplay_set: roleplaySet(),
+      active_roleplay_revision_id: 40,
+    })
+    const onModeChange = vi.fn()
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={onModeChange}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    await user.upload(
+      screen.getByLabelText('選擇角色設定集'),
+      portableCharacter({ content_digest: 'digest' })
+    )
+
+    expect(await screen.findByText(/已有相同版本/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '使用這個角色' }))
+
+    await waitFor(() => expect(onModeChange).toHaveBeenCalledWith('roleplay', 40))
+    expect(importRoleplayCharacter).toHaveBeenCalledWith(
+      'channel-a',
+      'use',
+      expect.objectContaining({ format: 'niibot.roleplay-character' })
+    )
+  })
+
+  it('warns before downloading a published character and releases the browser URL', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listRoleplaySets).mockResolvedValue([roleplaySet()])
+    vi.mocked(exportRoleplayRevision).mockResolvedValue({
+      blob: new Blob(['{}'], { type: 'application/json' }),
+      filename: '月港守望者.niibot-roleplay.json',
+    })
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:roleplay-download')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '更多角色操作' }))
+    await user.click(screen.getByRole('menuitem', { name: '下載設定集' }))
+
+    expect(screen.getByText(/檔案包含完整作品範圍/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '確認下載設定集' }))
+
+    await waitFor(() => expect(exportRoleplayRevision).toHaveBeenCalledTimes(1))
+    expect(exportRoleplayRevision).toHaveBeenCalledWith('channel-a', 'set-1', 40)
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:roleplay-download')
+    expect(toast.success).toHaveBeenCalledWith('角色設定集已下載')
+  })
+
+  it('rejects an oversized imported file before sending it', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    const oversized = new File([new Uint8Array(128 * 1024 + 1)], 'too-large.niibot-roleplay.json', {
+      type: 'application/json',
+    })
+    await user.upload(screen.getByLabelText('選擇角色設定集'), oversized)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('檔案大小不能超過 128 KB')
+    expect(importRoleplayCharacter).not.toHaveBeenCalled()
+  })
+
+  it('keeps new imports disabled at the limit but allows an exact-version reuse', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listRoleplaySets).mockResolvedValue(
+      Array.from({ length: 5 }, (_, index) => ({
+        ...roleplaySet(),
+        id: `set-${index + 1}`,
+        name: `角色 ${index + 1}`,
+        published: {
+          ...roleplaySet().published!,
+          content_digest: index === 0 ? 'digest' : `digest-${index + 1}`,
+        },
+      }))
+    )
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    await user.upload(screen.getByLabelText('選擇角色設定集'), portableCharacter())
+
+    expect(await screen.findByText(/請先封存一組未使用的角色/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '複製並修改' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '使用這個角色' })).toBeDisabled()
+
+    await user.upload(
+      screen.getByLabelText('選擇角色設定集'),
+      portableCharacter({ content_digest: 'digest' })
+    )
+
+    expect(await screen.findByText(/已有相同版本/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '複製並修改' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '使用這個角色' })).toBeEnabled()
+  })
+
+  it('keeps the import preview open with a useful error so the action can be retried', async () => {
+    const user = userEvent.setup()
+    vi.mocked(importRoleplayCharacter)
+      .mockRejectedValueOnce(new Error('這份角色設定集版本目前不支援'))
+      .mockResolvedValueOnce({
+        mode: 'use',
+        reused: false,
+        roleplay_set: roleplaySet(),
+        active_roleplay_revision_id: 40,
+      })
+    const onModeChange = vi.fn()
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={onModeChange}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    await user.upload(screen.getByLabelText('選擇角色設定集'), portableCharacter())
+    await user.click(await screen.findByRole('button', { name: '使用這個角色' }))
+
+    expect(await screen.findByText('這份角色設定集版本目前不支援')).toBeInTheDocument()
+    expect(screen.getByText('拉娜')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '使用這個角色' }))
+    await waitFor(() => expect(onModeChange).toHaveBeenCalledWith('roleplay', 40))
+  })
+
+  it('closes the import dialog with Escape and returns focus to its trigger', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    const trigger = await screen.findByRole('button', { name: '匯入角色設定集' })
+    await user.click(trigger)
+    expect(screen.getByRole('dialog', { name: '匯入角色設定集' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(trigger).toHaveFocus()
+  })
+
+  it('keeps the import dialog open while the selected action is still running', async () => {
+    const user = userEvent.setup()
+    let finishImport:
+      ((result: Awaited<ReturnType<typeof importRoleplayCharacter>>) => void) | null = null
+    vi.mocked(importRoleplayCharacter).mockReturnValue(
+      new Promise(resolve => {
+        finishImport = resolve
+      })
+    )
+
+    render(
+      <RoleplayWorkspace
+        channelId="channel-a"
+        assistantMode="persona"
+        activeRevisionId={null}
+        onModeChange={vi.fn()}
+      />
+    )
+
+    await user.click(await screen.findByRole('button', { name: '匯入角色設定集' }))
+    await user.upload(screen.getByLabelText('選擇角色設定集'), portableCharacter())
+    await user.click(await screen.findByRole('button', { name: '使用這個角色' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.getByRole('dialog', { name: '匯入角色設定集' })).toBeInTheDocument()
+    finishImport?.({
+      mode: 'use',
+      reused: false,
+      roleplay_set: roleplaySet(),
+      active_roleplay_revision_id: 40,
+    })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 })
 

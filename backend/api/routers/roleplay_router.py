@@ -2,19 +2,28 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from core.dependencies import get_roleplay_service, require_tenant_access
 from core.rate_limit import RateLimiter
-from services.roleplay_service import RoleplayService
+from services.roleplay_service import (
+    RoleplayImportInvalidError,
+    RoleplayImportOutcome,
+    RoleplayImportTooLargeError,
+    RoleplayService,
+)
 from services.tenant_service import TenantContext
 from shared.models.roleplay import RoleplayRevision, RoleplaySet
 from shared.roleplay import encode_roleplay_package
+from shared.roleplay.portable import MAX_PORTABLE_ROLEPLAY_BYTES
 
 router = APIRouter(prefix="/api/tenants/{channel_id}", tags=["roleplay"])
 
@@ -98,8 +107,22 @@ class RoleplayActivateRequest(BaseModel):
     revision_id: int = Field(ge=1, strict=True)
 
 
+class RoleplayImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["use", "copy"]
+    character: dict[str, object]
+
+
 class AssistantModeResponse(BaseModel):
     assistant_mode: Literal["persona", "roleplay"]
+    active_roleplay_revision_id: int | None
+
+
+class RoleplayImportResponse(BaseModel):
+    mode: Literal["use", "copy"]
+    reused: bool
+    roleplay_set: RoleplaySetResponse
     active_roleplay_revision_id: int | None
 
 
@@ -151,6 +174,35 @@ def _rate_key(request: Request, tenant: TenantContext) -> str:
     return f"{tenant.user_id}:{tenant.channel_id}:{client_ip}"
 
 
+def _import_response(outcome: RoleplayImportOutcome) -> RoleplayImportResponse:
+    return RoleplayImportResponse(
+        mode=outcome.mode,
+        reused=outcome.reused,
+        roleplay_set=_set_response(outcome.roleplay_set),
+        active_roleplay_revision_id=(outcome.revision.id if outcome.revision is not None else None),
+    )
+
+
+async def _read_import_request(request: Request) -> RoleplayImportRequest:
+    content_length = request.headers.get("content-length")
+    if content_length and content_length.isdigit():
+        if int(content_length) > MAX_PORTABLE_ROLEPLAY_BYTES:
+            raise RoleplayImportTooLargeError()
+    raw = await request.body()
+    if len(raw) > MAX_PORTABLE_ROLEPLAY_BYTES:
+        raise RoleplayImportTooLargeError()
+    try:
+        return RoleplayImportRequest.model_validate_json(raw)
+    except ValidationError:
+        raise RoleplayImportInvalidError() from None
+
+
+def _download_disposition(name: str) -> str:
+    safe_name = re.sub(r"[\x00-\x1f\x7f/\\]+", "-", name).strip(" .-")[:60]
+    encoded = quote(f"{safe_name or 'roleplay-character'}.niibot-roleplay.json", safe="")
+    return f"attachment; filename=\"niibot-roleplay.json\"; filename*=UTF-8''{encoded}"
+
+
 @router.get("/roleplay-sets", response_model=list[RoleplaySetSummaryResponse])
 async def list_roleplay_sets(
     request: Request,
@@ -197,6 +249,52 @@ async def get_roleplay_set(
     _read_limiter.require(_rate_key(request, tenant))
     roleplay_set = await service.get_set(tenant.channel_id, roleplay_set_id)
     return _set_response(roleplay_set)
+
+
+@router.get("/roleplay-sets/{roleplay_set_id}/revisions/{revision_id}/export")
+async def export_roleplay_revision(
+    roleplay_set_id: UUID,
+    revision_id: int,
+    request: Request,
+    tenant: TenantContext = Depends(require_tenant_access),
+    service: RoleplayService = Depends(get_roleplay_service),
+) -> JSONResponse:
+    _read_limiter.require(_rate_key(request, tenant))
+    document = await service.export_revision(
+        tenant.channel_id,
+        roleplay_set_id,
+        revision_id,
+    )
+    manifest = document.get("manifest")
+    name = manifest.get("name") if isinstance(manifest, dict) else "roleplay-character"
+    return JSONResponse(
+        content=document,
+        media_type="application/vnd.niibot.roleplay-character+json",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": _download_disposition(str(name)),
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/roleplay-imports", response_model=RoleplayImportResponse)
+async def import_roleplay_character(
+    request: Request,
+    _action: Literal["roleplay-settings"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_access),
+    service: RoleplayService = Depends(get_roleplay_service),
+) -> RoleplayImportResponse:
+    key = _rate_key(request, tenant)
+    _mutation_limiter.require(key)
+    _publish_limiter.require(key)
+    body = await _read_import_request(request)
+    outcome = await service.import_character(
+        tenant.channel_id,
+        mode=body.mode,
+        character=body.character,
+    )
+    return _import_response(outcome)
 
 
 @router.patch("/roleplay-sets/{roleplay_set_id}", response_model=RoleplaySetResponse)
