@@ -152,6 +152,7 @@ export const API_ENDPOINTS = {
   checkin: {
     settings: join('/api/checkin/settings'),
     leaderboard: join('/api/checkin/leaderboard'),
+    importColumns: join('/api/checkin/import/summary/columns'),
     importPreview: join('/api/checkin/import/summary/preview'),
     importApply: join('/api/checkin/import/apply'),
   },

@@ -242,13 +242,17 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 
 ### Daily Check-in carry-over import
 
+- `POST /api/checkin/import/summary/columns`：owner-only multipart 欄位檢查。接受一個 upload 或公開
+  Google Sheets URL，只回傳 bounded headers、格式、工作表名稱與 exact-alias 建議 mapping；不解析 Twitch
+  身份、不保存原始內容。
 - `POST /api/checkin/import/summary/preview`：owner-only multipart preview。接受一個 `.csv`、`.tsv`、`.xlsx`
   upload，或一個可匿名讀取的 Google Sheets URL；另帶 source slug、IANA source timezone 與 through date。
-  回傳 stable Twitch identity、逐列狀態及預設選取，不保存原始輸入。
+  可帶 `column_mapping` JSON，以 canonical field → zero-based source column index 手動覆寫欄位對應；回傳
+  stable Twitch identity、逐列狀態及預設選取，不保存原始輸入。
 - `POST /api/checkin/import/apply`：owner-only、all-or-nothing apply。body 帶 `import_id`、`selected_keys` 與
   `old_source_disabled: true`；相同 content／selection／policy 具 idempotency，不會重複加總。
 
-兩個 mutation 都要求 `X-Niibot-Action: checkin-import`。第一版若同一 stable viewer 已有任何 Niibot ledger
+三個 POST 都要求 `X-Niibot-Action: checkin-import`。第一版若同一 stable viewer 已有任何 Niibot ledger
 或 carry-over，整批回 `409 CHECKIN_IMPORT.CONFLICT`；不提供 sum、max 或 overwrite。
 
 ## 租戶邊界

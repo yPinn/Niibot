@@ -54,13 +54,35 @@ export interface CheckinImportPreview {
   default_selection: Record<string, boolean>
 }
 
-export interface CheckinImportPreviewInput {
-  source: string
-  sourceTimezone: string
-  throughDate: string
+export type CheckinImportCanonicalField =
+  | 'platform_user_id'
+  | 'username'
+  | 'display_name'
+  | 'total_days'
+  | 'last_checkin_date'
+  | 'current_streak'
+  | 'daily_order'
+
+export type CheckinImportColumnMapping = Partial<Record<CheckinImportCanonicalField, number>>
+
+export interface CheckinImportColumns {
+  source_format: 'csv' | 'tsv' | 'xlsx' | 'google_sheets'
+  sheet_name: string | null
+  headers: string[]
+  suggested_mapping: CheckinImportColumnMapping
+}
+
+export interface CheckinImportSourceInput {
   upload?: File
   sheetUrl?: string
   sheetName?: string
+}
+
+export interface CheckinImportPreviewInput extends CheckinImportSourceInput {
+  source: string
+  sourceTimezone: string
+  throughDate: string
+  columnMapping?: CheckinImportColumnMapping
 }
 
 export interface CheckinImportApplyResult {
@@ -111,6 +133,7 @@ export function previewCheckinImport(
   if (input.upload) body.set('upload', input.upload)
   if (input.sheetUrl) body.set('sheet_url', input.sheetUrl)
   if (input.sheetName) body.set('sheet_name', input.sheetName)
+  if (input.columnMapping) body.set('column_mapping', JSON.stringify(input.columnMapping))
   return apiJson(
     API_ENDPOINTS.checkin.importPreview,
     {
@@ -120,6 +143,25 @@ export function previewCheckinImport(
       body,
     },
     { fallback: '讀取簽到資料失敗' }
+  )
+}
+
+export function inspectCheckinImportColumns(
+  input: CheckinImportSourceInput
+): Promise<CheckinImportColumns> {
+  const body = new FormData()
+  if (input.upload) body.set('upload', input.upload)
+  if (input.sheetUrl) body.set('sheet_url', input.sheetUrl)
+  if (input.sheetName) body.set('sheet_name', input.sheetName)
+  return apiJson(
+    API_ENDPOINTS.checkin.importColumns,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Niibot-Action': 'checkin-import' },
+      body,
+    },
+    { fallback: '讀取來源欄位失敗' }
   )
 }
 

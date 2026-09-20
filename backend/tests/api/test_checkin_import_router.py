@@ -49,6 +49,7 @@ def _preview() -> CheckinImportPreview:
         source_timezone="Asia/Taipei",
         through_date=date(2026, 9, 10),
         content_sha256="a" * 64,
+        column_mapping=(("last_checkin_date", 2), ("total_days", 1), ("username", 0)),
         sheet_name=None,
         rows=(
             ImportPreviewRow(
@@ -105,6 +106,61 @@ def test_preview_accepts_csv_upload_and_returns_default_ready_selection() -> Non
     kwargs = service.preview.await_args.kwargs
     assert kwargs["channel_id"] == _TENANT.channel_id
     assert kwargs["parsed"].rows[0].username == "alice"
+
+
+def test_columns_inspection_returns_headers_and_suggested_mapping() -> None:
+    service = MagicMock()
+
+    response = _client(service).post(
+        "/api/checkin/import/summary/columns",
+        headers={"X-Niibot-Action": "checkin-import"},
+        files={
+            "upload": (
+                "checkins.csv",
+                "觀眾名稱,COUNT,簽到日期\nalice,15,2026-09-10\n".encode(),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source_format": "csv",
+        "sheet_name": None,
+        "headers": ["觀眾名稱", "COUNT", "簽到日期"],
+        "suggested_mapping": {"total_days": 1},
+    }
+
+
+def test_preview_accepts_manual_column_index_mapping() -> None:
+    service = MagicMock()
+    service.preview = AsyncMock(return_value=_preview())
+
+    response = _client(service).post(
+        "/api/checkin/import/summary/preview",
+        headers={"X-Niibot-Action": "checkin-import"},
+        data={
+            "source": "other-bot",
+            "source_timezone": "Asia/Taipei",
+            "through_date": "2026-09-10",
+            "column_mapping": (
+                '{"username":0,"total_days":1,"last_checkin_date":2,"current_streak":3}'
+            ),
+        },
+        files={
+            "upload": (
+                "checkins.csv",
+                "觀眾,累積,末次,連續\nalice,15,2026-09-10,3\n".encode(),
+                "text/csv",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    row = service.preview.await_args.kwargs["parsed"].rows[0]
+    assert row.username == "alice"
+    assert row.total_days == 15
+    assert row.current_streak == 3
 
 
 def test_preview_requires_mutation_header_and_exactly_one_input() -> None:

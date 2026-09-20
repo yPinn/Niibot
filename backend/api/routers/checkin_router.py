@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime
 from typing import Literal
@@ -22,6 +23,7 @@ from core.rate_limit import RateLimiter
 from services.checkin_import.formats import (
     CheckinImportValidationError,
     fetch_google_sheet_csv,
+    inspect_summary_bytes,
     parse_summary_bytes,
 )
 from services.checkin_import.models import (
@@ -45,6 +47,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/checkin", tags=["checkin"])
 
 _checkin_import_http = httpx.AsyncClient(timeout=10.0, follow_redirects=False)
+_inspect_rate_limiter = RateLimiter(max_calls=10, period=60.0)
 _preview_rate_limiter = RateLimiter(max_calls=5, period=60.0)
 _apply_rate_limiter = RateLimiter(max_calls=2, period=60.0)
 _MAX_UPLOAD_READ = 5 * 1024 * 1024 + 1
@@ -117,6 +120,13 @@ class CheckinImportPreviewResponse(BaseModel):
     default_selection: dict[str, bool]
 
 
+class CheckinImportColumnsResponse(BaseModel):
+    source_format: str
+    sheet_name: str | None
+    headers: list[str]
+    suggested_mapping: dict[str, int]
+
+
 class CheckinImportApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -143,6 +153,45 @@ def get_checkin_import_service(
 def _require_import_rate(limiter: RateLimiter, tenant: TenantContext) -> None:
     if not limiter.allow(f"{tenant.user_id}:{tenant.channel_id}"):
         raise CheckinImportRateLimitedError()
+
+
+def _parse_column_mapping(raw: str | None) -> dict[str, int] | None:
+    if raw is None:
+        return None
+    try:
+        value = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise CheckinImportValidationError("欄位對應格式無效") from exc
+    if (
+        not isinstance(value, dict)
+        or len(value) > 7
+        or any(
+            not isinstance(key, str) or isinstance(index, bool) or not isinstance(index, int)
+            for key, index in value.items()
+        )
+    ):
+        raise CheckinImportValidationError("欄位對應格式無效")
+    return {key: index for key, index in value.items()}
+
+
+async def _read_import_source(
+    *,
+    sheet_url: str | None,
+    sheet_name: str | None,
+    upload: UploadFile | None,
+) -> tuple[str, bytes, Literal["google_sheets"] | None]:
+    if (upload is None) == (not sheet_url):
+        raise CheckinImportValidationError("必須擇一提供檔案或 Google Sheets 連結")
+    if sheet_url:
+        return (
+            "google-sheet.csv",
+            await fetch_google_sheet_csv(sheet_url, _checkin_import_http),
+            "google_sheets",
+        )
+    assert upload is not None
+    if not upload.filename:
+        raise CheckinImportValidationError("檔名不可為空")
+    return upload.filename, await upload.read(_MAX_UPLOAD_READ), None
 
 
 @router.get("/settings", response_model=CheckinSettingsResponse)
@@ -191,6 +240,47 @@ async def update_checkin_settings(
     return CheckinSettingsResponse.model_validate(settings)
 
 
+@router.post("/import/summary/columns", response_model=CheckinImportColumnsResponse)
+async def inspect_checkin_import_columns(
+    sheet_url: str | None = Form(default=None, max_length=2_048),
+    sheet_name: str | None = Form(default=None, max_length=128),
+    upload: UploadFile | None = File(default=None),
+    _action: Literal["checkin-import"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_owner),
+) -> CheckinImportColumnsResponse:
+    """Read only bounded headers so owners can confirm or override column mapping."""
+    _require_import_rate(_inspect_rate_limiter, tenant)
+    try:
+        filename, content, source_format = await _read_import_source(
+            sheet_url=sheet_url,
+            sheet_name=sheet_name,
+            upload=upload,
+        )
+        inspected = inspect_summary_bytes(
+            filename,
+            content,
+            sheet_name=sheet_name,
+            source_format=source_format,
+        )
+    except CheckinImportValidationError as exc:
+        LOGGER.info("checkin_import_columns_invalid", extra={"reason": type(exc).__name__})
+        raise CheckinImportInvalidError() from None
+    finally:
+        if upload is not None:
+            await upload.close()
+
+    LOGGER.info(
+        "checkin_import_columns_ready",
+        extra={"source_format": inspected.format, "column_count": len(inspected.headers)},
+    )
+    return CheckinImportColumnsResponse(
+        source_format=inspected.format,
+        sheet_name=inspected.sheet_name,
+        headers=list(inspected.headers),
+        suggested_mapping=inspected.suggested_mapping,
+    )
+
+
 @router.post("/import/summary/preview", response_model=CheckinImportPreviewResponse)
 async def preview_checkin_import(
     source: str = Form(..., min_length=1, max_length=64),
@@ -198,6 +288,7 @@ async def preview_checkin_import(
     through_date: date = Form(...),
     sheet_url: str | None = Form(default=None, max_length=2_048),
     sheet_name: str | None = Form(default=None, max_length=128),
+    column_mapping: str | None = Form(default=None, max_length=2_048),
     upload: UploadFile | None = File(default=None),
     _action: Literal["checkin-import"] = Header(alias="X-Niibot-Action"),
     tenant: TenantContext = Depends(require_self_tenant_owner),
@@ -205,34 +296,25 @@ async def preview_checkin_import(
 ) -> CheckinImportPreviewResponse:
     """Build an owner-only, tenant-bound preview without persisting raw input."""
     _require_import_rate(_preview_rate_limiter, tenant)
-    if (upload is None) == (not sheet_url):
-        raise CheckinImportInvalidError()
-
     try:
         timezone = ZoneInfo(source_timezone)
     except ZoneInfoNotFoundError:
         raise CheckinImportInvalidError() from None
 
     try:
-        if sheet_url:
-            content = await fetch_google_sheet_csv(sheet_url, _checkin_import_http)
-            parsed = parse_summary_bytes(
-                "google-sheet.csv",
-                content,
-                through_date=through_date,
-                source_format="google_sheets",
-            )
-        else:
-            assert upload is not None
-            if not upload.filename:
-                raise CheckinImportValidationError("檔名不可為空")
-            content = await upload.read(_MAX_UPLOAD_READ)
-            parsed = parse_summary_bytes(
-                upload.filename,
-                content,
-                through_date=through_date,
-                sheet_name=sheet_name,
-            )
+        filename, content, source_format = await _read_import_source(
+            sheet_url=sheet_url,
+            sheet_name=sheet_name,
+            upload=upload,
+        )
+        parsed = parse_summary_bytes(
+            filename,
+            content,
+            through_date=through_date,
+            sheet_name=sheet_name,
+            source_format=source_format,
+            column_mapping=_parse_column_mapping(column_mapping),
+        )
         preview = await service.preview(
             channel_id=tenant.channel_id,
             source=source,

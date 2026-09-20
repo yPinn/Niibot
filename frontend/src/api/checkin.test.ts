@@ -6,6 +6,7 @@ import {
   applyCheckinImport,
   getCheckinLeaderboard,
   getCheckinSettings,
+  inspectCheckinImportColumns,
   previewCheckinImport,
   updateCheckinSettings,
 } from './checkin'
@@ -85,6 +86,7 @@ describe('check-in settings API', () => {
       sourceTimezone: 'Asia/Taipei',
       throughDate: '2026-09-10',
       upload,
+      columnMapping: { username: 0, total_days: 1, last_checkin_date: 2 },
     })
 
     expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
@@ -95,6 +97,32 @@ describe('check-in settings API', () => {
     expect(options.body).toBeInstanceOf(FormData)
     expect(options.body.get('upload')).toBe(upload)
     expect(options.body.get('source_timezone')).toBe('Asia/Taipei')
+    expect(options.body.get('column_mapping')).toBe(
+      '{"username":0,"total_days":1,"last_checkin_date":2}'
+    )
+  })
+
+  it('inspects source headers before validating rows', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ headers: ['viewer', 'total', 'date'] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await inspectCheckinImportColumns({
+      sheetUrl: 'https://docs.google.com/spreadsheets/d/abc123/edit?gid=0#gid=0',
+    })
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
+      '/api/checkin/import/summary/columns'
+    )
+    const options = fetchMock.mock.calls[0][1]
+    expect(options.headers).toEqual({ 'X-Niibot-Action': 'checkin-import' })
+    expect(options.body).toBeInstanceOf(FormData)
+    expect(options.body.get('sheet_url')).toBe(
+      'https://docs.google.com/spreadsheets/d/abc123/edit?gid=0#gid=0'
+    )
   })
 
   it('applies only selected preview rows with the cutover confirmation', async () => {

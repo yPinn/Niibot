@@ -67,7 +67,8 @@ duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發�
 
 後台可從 CSV、TSV、XLSX 或可匿名讀取的 Google Sheets 匯入每位觀眾的 aggregate summary。
 所有格式先正規化為同一組欄位：`Username` 或 `Twitch User ID`、`Count`、`LastDate`，以及可選的
-`DisplayName`、`Streak`、`TodayOrder`。欄名只做 exact alias mapping，不使用模糊推測；Twitch login
+`DisplayName`、`Streak`、`TodayOrder`。系統先以 exact alias 建議對應，不使用模糊推測；使用者可在欄位
+檢查步驟以來源 column index 手動 map canonical field，處理其他 Bot 的大小寫或自訂命名。Twitch login
 會批次解析成 stable user id，找不到或與既有 Niibot ledger／carry-over 衝突的列不可套用。
 
 外部 `Count` 寫入 `viewer_checkin_carryovers`，不展開成虛構 `viewer_checkins`，因此不補歷史卡片或
@@ -77,7 +78,8 @@ seed，隔日接續、日期 gap 歸 1。`TodayOrder` 只保留 audit，不是�
 Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 分鐘記憶體 cache 中保存。Apply 僅限 owner、
 要求 `X-Niibot-Action: checkin-import` 與「舊 Bot 已停用」確認，並以 channel advisory lock 與整批 transaction
 阻止匯入 cutover 和即時簽到互相競爭。Google Sheets 只接受 HTTPS `docs.google.com/spreadsheets` 文件 URL，
-由 server 重建固定 CSV export URL、拒絕 redirect；私人試算表 OAuth 與任意 URL 不支援。
+由 server 重建固定 CSV export URL；只允許一次 HTTPS `doc-*-sheets.googleusercontent.com` 官方 export
+redirect，其他 host、第二次 redirect、私人試算表 OAuth 與任意 URL 都不支援。
 
 頻道點數採平台管理、Niibot 唯讀的權限模型：實況主在 Twitch 建立獎勵並設定成本、每人每場上限、
 全頻道單場上限與是否略過請求佇列；Niibot 只以 `channel:read:redemptions` 讀取並監聽，不要求

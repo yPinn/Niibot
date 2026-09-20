@@ -14,6 +14,7 @@ from services.checkin_import.formats import (
     InvalidSummaryRow,
     build_google_sheets_export_url,
     fetch_google_sheet_csv,
+    inspect_summary_bytes,
     parse_summary_bytes,
 )
 
@@ -155,6 +156,62 @@ def test_platform_user_id_can_replace_username() -> None:
     assert parsed.rows[0].username is None
 
 
+def test_manual_column_mapping_accepts_unknown_source_headers() -> None:
+    parsed = parse_summary_bytes(
+        "checkins.csv",
+        "觀眾帳戶,累計簽到,最近一次,連續紀錄\nalice,8,2026-09-09,3\n".encode(),
+        through_date=date(2026, 9, 10),
+        column_mapping={
+            "username": 0,
+            "total_days": 1,
+            "last_checkin_date": 2,
+            "current_streak": 3,
+        },
+    )
+
+    assert parsed.rows[0].username == "alice"
+    assert parsed.rows[0].total_days == 8
+    assert parsed.rows[0].last_checkin_date == date(2026, 9, 9)
+    assert parsed.rows[0].current_streak == 3
+
+
+def test_column_inspection_returns_headers_and_safe_alias_suggestions() -> None:
+    inspected = inspect_summary_bytes(
+        "checkins.csv",
+        b"user name,COUNT,custom date\nalice,8,2026-09-09\n",
+    )
+
+    assert inspected.headers == ("user name", "COUNT", "custom date")
+    assert inspected.suggested_mapping == {"username": 0, "total_days": 1}
+
+
+def test_column_inspection_enforces_row_limit_before_returning_headers() -> None:
+    payload = b"Username,Count,LastDate\n" + b"alice,1,2026-09-10\n" * 10_001
+
+    with pytest.raises(CheckinImportValidationError, match="資料列數"):
+        inspect_summary_bytes("checkins.csv", payload)
+
+
+@pytest.mark.parametrize(
+    "column_mapping",
+    [
+        {"username": 0, "total_days": 1, "last_checkin_date": 9},
+        {"username": 0, "total_days": 1, "last_checkin_date": 1},
+        {"unknown": 0, "total_days": 1, "last_checkin_date": 2},
+    ],
+)
+def test_manual_column_mapping_rejects_out_of_range_duplicate_and_unknown_fields(
+    column_mapping: dict[str, int],
+) -> None:
+    with pytest.raises(CheckinImportValidationError):
+        parse_summary_bytes(
+            "checkins.csv",
+            b"viewer,total,last\nalice,8,2026-09-09\n",
+            through_date=date(2026, 9, 10),
+            column_mapping=column_mapping,
+        )
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -162,6 +219,8 @@ def test_platform_user_id_can_replace_username() -> None:
         "https://evil.example/spreadsheets/d/abc123/edit",
         "https://docs.google.com/other/d/abc123/edit",
         "https://docs.google.com/spreadsheets/d/abc123/edit?gid=not-a-number",
+        "https://docs.google.com/spreadsheets/d/abc123/edit?gid=0#gid=1",
+        "https://docs.google.com:bad/spreadsheets/d/abc123/edit?gid=0",
         "https://docs.google.com/spreadsheets/d/../../metadata/edit",
     ],
 )
@@ -172,13 +231,65 @@ def test_google_sheets_url_rejects_ssrf_and_ambiguous_inputs(url: str) -> None:
 
 def test_google_sheets_url_builds_a_controlled_export_url() -> None:
     result = build_google_sheets_export_url(
-        "https://docs.google.com/spreadsheets/d/abcDEF_123-xyz/edit?usp=sharing&gid=42"
+        "https://docs.google.com/spreadsheets/d/abcDEF_123-xyz/edit?usp=sharing&gid=42#gid=42"
     )
 
     assert result == (
         "https://docs.google.com/spreadsheets/d/abcDEF_123-xyz/export?format=csv&gid=42"
     )
     assert "usp" not in result
+
+
+@pytest.mark.asyncio
+async def test_google_sheets_fetch_follows_one_allowlisted_export_redirect() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "docs.google.com":
+            return httpx.Response(
+                307,
+                headers={
+                    "location": (
+                        "https://doc-0k-6o-sheets.googleusercontent.com/export/token/"
+                        "abc123?format=csv&gid=0"
+                    )
+                },
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/csv"},
+            content=b"Username,Count,LastDate\nalice,2,2026-09-10\n",
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        payload = await fetch_google_sheet_csv(
+            "https://docs.google.com/spreadsheets/d/abc123/edit?gid=0#gid=0", client
+        )
+
+    assert payload.startswith(b"Username")
+    assert len(seen) == 2
+    assert seen[1].startswith("https://doc-0k-6o-sheets.googleusercontent.com/")
+
+
+@pytest.mark.asyncio
+async def test_google_sheets_fetch_rejects_a_second_redirect() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            307,
+            headers={
+                "location": (
+                    "https://doc-0k-6o-sheets.googleusercontent.com/export/token/"
+                    "abc123?format=csv&gid=0"
+                )
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(CheckinImportValidationError, match="多次重新導向"):
+            await fetch_google_sheet_csv(
+                "https://docs.google.com/spreadsheets/d/abc123/edit?gid=0", client
+            )
 
 
 @pytest.mark.asyncio

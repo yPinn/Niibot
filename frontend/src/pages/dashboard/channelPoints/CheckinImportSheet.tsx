@@ -4,7 +4,11 @@ import { toast } from 'sonner'
 import {
   applyCheckinImport,
   type CheckinImportApplyResult,
+  type CheckinImportCanonicalField,
+  type CheckinImportColumnMapping,
+  type CheckinImportColumns,
   type CheckinImportPreview,
+  inspectCheckinImportColumns,
   previewCheckinImport,
 } from '@/api/checkin'
 import { Icon, Spinner } from '@/components/primitives'
@@ -40,6 +44,20 @@ const STATUS_LABELS = {
   conflict: '已有資料',
 }
 
+const MAPPING_FIELDS: ReadonlyArray<{
+  field: CheckinImportCanonicalField
+  label: string
+  hint: string
+}> = [
+  { field: 'username', label: 'Username', hint: '與 Twitch User ID 擇一' },
+  { field: 'platform_user_id', label: 'Twitch User ID', hint: '與 Username 擇一' },
+  { field: 'total_days', label: 'Count', hint: '必要' },
+  { field: 'last_checkin_date', label: 'LastDate', hint: '必要，YYYY-MM-DD' },
+  { field: 'display_name', label: 'DisplayName', hint: '可選' },
+  { field: 'current_streak', label: 'Streak', hint: '可選' },
+  { field: 'daily_order', label: 'TodayOrder', hint: '可選，只作稽核' },
+]
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 function downloadExample(delimiter: ',' | '\t', extension: 'csv' | 'tsv') {
@@ -70,10 +88,13 @@ export function CheckinImportSheet({
   const [throughDate, setThroughDate] = useState(today)
   const [upload, setUpload] = useState<File | null>(null)
   const [sheetUrl, setSheetUrl] = useState('')
+  const [columns, setColumns] = useState<CheckinImportColumns | null>(null)
+  const [columnMapping, setColumnMapping] = useState<CheckinImportColumnMapping>({})
   const [preview, setPreview] = useState<CheckinImportPreview | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [oldSourceDisabled, setOldSourceDisabled] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [inspecting, setInspecting] = useState(false)
   const [applying, setApplying] = useState(false)
   const [receipt, setReceipt] = useState<CheckinImportApplyResult | null>(null)
 
@@ -84,16 +105,55 @@ export function CheckinImportSheet({
     return result
   }, [preview])
 
+  const hasSource = mode === 'upload' ? Boolean(upload) : Boolean(sheetUrl.trim())
+  const mappingReady =
+    (columnMapping.username !== undefined || columnMapping.platform_user_id !== undefined) &&
+    columnMapping.total_days !== undefined &&
+    columnMapping.last_checkin_date !== undefined
+
+  const resetPreviewState = () => {
+    setPreview(null)
+    setSelectedKeys([])
+    setOldSourceDisabled(false)
+    setReceipt(null)
+  }
+
+  const resetParsedState = () => {
+    setColumns(null)
+    setColumnMapping({})
+    resetPreviewState()
+  }
+
+  const sourceInput = () => ({
+    upload: mode === 'upload' ? (upload ?? undefined) : undefined,
+    sheetUrl: mode === 'google' ? sheetUrl.trim() || undefined : undefined,
+  })
+
+  const handleInspect = async () => {
+    if (!hasSource) return
+    setInspecting(true)
+    try {
+      const inspected = await inspectCheckinImportColumns(sourceInput())
+      setColumns(inspected)
+      setColumnMapping(inspected.suggested_mapping)
+      resetPreviewState()
+    } catch (error) {
+      toastApiError(error, '讀取來源欄位失敗')
+    } finally {
+      setInspecting(false)
+    }
+  }
+
   const handlePreview = async () => {
-    if (!sourceTimezone || !throughDate || (mode === 'upload' ? !upload : !sheetUrl.trim())) return
+    if (!sourceTimezone || !throughDate || !columns || !mappingReady || !hasSource) return
     setLoading(true)
     try {
       const next = await previewCheckinImport({
         source,
         sourceTimezone,
         throughDate,
-        upload: mode === 'upload' ? (upload ?? undefined) : undefined,
-        sheetUrl: mode === 'google' ? sheetUrl.trim() : undefined,
+        ...sourceInput(),
+        columnMapping,
       })
       setPreview(next)
       setSelectedKeys(
@@ -130,8 +190,17 @@ export function CheckinImportSheet({
 
   const switchMode = (next: InputMode) => {
     setMode(next)
-    setPreview(null)
-    setSelectedKeys([])
+    resetParsedState()
+  }
+
+  const updateMapping = (field: CheckinImportCanonicalField, rawIndex: string) => {
+    setColumnMapping(current => {
+      const next = { ...current }
+      if (!rawIndex) delete next[field]
+      else next[field] = Number(rawIndex)
+      return next
+    })
+    resetPreviewState()
   }
 
   return (
@@ -161,7 +230,10 @@ export function CheckinImportSheet({
                 aria-label="簽到資料來源"
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
                 value={source}
-                onChange={event => setSource(event.target.value)}
+                onChange={event => {
+                  setSource(event.target.value)
+                  resetPreviewState()
+                }}
               >
                 <option value="chiwabots">ChiwaBots</option>
                 <option value="nightbot">Nightbot</option>
@@ -175,7 +247,10 @@ export function CheckinImportSheet({
                 id="checkin-import-timezone"
                 aria-label="來源時區"
                 value={sourceTimezone}
-                onChange={event => setSourceTimezone(event.target.value)}
+                onChange={event => {
+                  setSourceTimezone(event.target.value)
+                  resetPreviewState()
+                }}
               />
             </div>
             <div className="space-y-2">
@@ -185,7 +260,10 @@ export function CheckinImportSheet({
                 aria-label="資料截止日"
                 type="date"
                 value={throughDate}
-                onChange={event => setThroughDate(event.target.value)}
+                onChange={event => {
+                  setThroughDate(event.target.value)
+                  resetPreviewState()
+                }}
               />
             </div>
           </div>
@@ -217,7 +295,10 @@ export function CheckinImportSheet({
                   aria-label="選擇簽到資料檔案"
                   type="file"
                   accept=".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  onChange={event => setUpload(event.target.files?.[0] ?? null)}
+                  onChange={event => {
+                    setUpload(event.target.files?.[0] ?? null)
+                    resetParsedState()
+                  }}
                 />
                 <p className="text-label text-muted-foreground">
                   XLSX 讀取第一個可見工作表；公式欄位需先貼成值。最多 10,000 筆。
@@ -232,7 +313,10 @@ export function CheckinImportSheet({
                   type="url"
                   placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0"
                   value={sheetUrl}
-                  onChange={event => setSheetUrl(event.target.value)}
+                  onChange={event => {
+                    setSheetUrl(event.target.value)
+                    resetParsedState()
+                  }}
                 />
                 <p className="text-label text-muted-foreground">
                   僅支援已開放「知道連結的使用者可查看」或已發布的試算表；私人表格 OAuth 尚未支援。
@@ -263,18 +347,67 @@ export function CheckinImportSheet({
             </div>
             <Button
               type="button"
-              onClick={() => void handlePreview()}
-              disabled={
-                loading ||
-                !sourceTimezone ||
-                !throughDate ||
-                (mode === 'upload' ? !upload : !sheetUrl.trim())
-              }
+              onClick={() => void handleInspect()}
+              disabled={inspecting || !hasSource}
             >
-              {loading && <Spinner className="mr-1.5" />}
-              讀取並驗證
+              {inspecting && <Spinner className="mr-1.5" />}
+              {columns ? '重新讀取欄位' : '讀取欄位'}
             </Button>
           </div>
+
+          {columns && (
+            <section className="space-y-3 border-t pt-card" aria-labelledby="checkin-column-map">
+              <div>
+                <h3 id="checkin-column-map" className="font-medium">
+                  對應來源欄位
+                </h3>
+                <p className="text-label text-muted-foreground">
+                  已自動填入可辨識的欄位；大小寫或命名不同時，可手動選擇來源欄位。
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {MAPPING_FIELDS.map(({ field, label, hint }) => (
+                  <div key={field} className="space-y-1.5">
+                    <Label htmlFor={`checkin-map-${field}`}>
+                      {label} <span className="text-muted-foreground">（{hint}）</span>
+                    </Label>
+                    <select
+                      id={`checkin-map-${field}`}
+                      aria-label={`${label} 對應欄位`}
+                      className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                      value={columnMapping[field]?.toString() ?? ''}
+                      onChange={event => updateMapping(field, event.target.value)}
+                    >
+                      <option value="">不匯入</option>
+                      {columns.headers.map((header, index) => (
+                        <option
+                          key={`${index}-${header}`}
+                          value={index}
+                          disabled={
+                            !header ||
+                            Object.entries(columnMapping).some(
+                              ([mappedField, mappedIndex]) =>
+                                mappedField !== field && mappedIndex === index
+                            )
+                          }
+                        >
+                          {index + 1}. {header || '（空白欄位）'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                onClick={() => void handlePreview()}
+                disabled={loading || !sourceTimezone || !throughDate || !mappingReady || !hasSource}
+              >
+                {loading && <Spinner className="mr-1.5" />}
+                驗證資料
+              </Button>
+            </section>
+          )}
 
           {preview && (
             <section

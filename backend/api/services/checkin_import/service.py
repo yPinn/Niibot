@@ -190,6 +190,7 @@ class CheckinImportService:
             source_timezone=source_timezone,
             through_date=through_date,
             content_sha256=parsed.content_sha256,
+            column_mapping=parsed.column_mapping,
             sheet_name=parsed.sheet_name,
             rows=tuple(preview_rows),
         )
@@ -253,6 +254,7 @@ class CheckinImportService:
 
         idempotency_payload = {
             "content": preview.content_sha256,
+            "column_mapping": preview.column_mapping,
             "keys": sorted(selected_set),
             "policy": "aggregate-block-existing-v1",
             "source": preview.source,

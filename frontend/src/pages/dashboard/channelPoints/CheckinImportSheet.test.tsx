@@ -3,13 +3,18 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/api/checkin', () => ({
+  inspectCheckinImportColumns: vi.fn(),
   previewCheckinImport: vi.fn(),
   applyCheckinImport: vi.fn(),
 }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }))
 
-import { applyCheckinImport, previewCheckinImport } from '@/api/checkin'
+import {
+  applyCheckinImport,
+  inspectCheckinImportColumns,
+  previewCheckinImport,
+} from '@/api/checkin'
 
 import { CheckinImportSheet } from './CheckinImportSheet'
 
@@ -51,9 +56,17 @@ const PREVIEW = {
   default_selection: { 'row-ready': true, 'row-conflict': false },
 }
 
+const COLUMNS = {
+  source_format: 'csv' as const,
+  sheet_name: null,
+  headers: ['觀眾帳戶', '累計簽到', '最近一次', '連續紀錄'],
+  suggested_mapping: {},
+}
+
 describe('CheckinImportSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(inspectCheckinImportColumns).mockResolvedValue(COLUMNS)
     vi.mocked(previewCheckinImport).mockResolvedValue(PREVIEW)
     vi.mocked(applyCheckinImport).mockResolvedValue({
       batch_id: 'batch-1',
@@ -75,9 +88,24 @@ describe('CheckinImportSheet', () => {
         type: 'text/csv',
       })
     )
-    await user.click(screen.getByRole('button', { name: '讀取並驗證' }))
+    await user.click(screen.getByRole('button', { name: '讀取欄位' }))
+    await user.selectOptions(screen.getByLabelText('Username 對應欄位'), '0')
+    await user.selectOptions(screen.getByLabelText('Count 對應欄位'), '1')
+    await user.selectOptions(screen.getByLabelText('LastDate 對應欄位'), '2')
+    await user.selectOptions(screen.getByLabelText('Streak 對應欄位'), '3')
+    await user.click(screen.getByRole('button', { name: '驗證資料' }))
 
     expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(previewCheckinImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        columnMapping: {
+          username: 0,
+          total_days: 1,
+          last_checkin_date: 2,
+          current_streak: 3,
+        },
+      })
+    )
     expect(screen.getByText('已有資料')).toBeInTheDocument()
     expect(screen.getByLabelText('選取 Bob')).toBeDisabled()
     expect(screen.getByRole('button', { name: '套用轉移' })).toBeDisabled()
@@ -100,9 +128,9 @@ describe('CheckinImportSheet', () => {
       screen.getByLabelText('Google Sheets 連結'),
       'https://docs.google.com/spreadsheets/d/abc123/edit?gid=0'
     )
-    await user.click(screen.getByRole('button', { name: '讀取並驗證' }))
+    await user.click(screen.getByRole('button', { name: '讀取欄位' }))
 
-    expect(previewCheckinImport).toHaveBeenCalledWith(
+    expect(inspectCheckinImportColumns).toHaveBeenCalledWith(
       expect.objectContaining({
         sheetUrl: 'https://docs.google.com/spreadsheets/d/abc123/edit?gid=0',
         upload: undefined,

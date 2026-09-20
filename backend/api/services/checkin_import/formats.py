@@ -33,6 +33,7 @@ _MAX_XLSX_UNCOMPRESSED_BYTES = 25 * 1024 * 1024
 _MAX_XLSX_COMPRESSION_RATIO = 100
 _GOOGLE_HOST = "docs.google.com"
 _GOOGLE_PATH = re.compile(r"^/spreadsheets/d/([A-Za-z0-9_-]{6,128})(?:/[^?]*)?$")
+_GOOGLE_EXPORT_HOST = re.compile(r"^doc-[a-z0-9-]{1,96}-sheets\.googleusercontent\.com$")
 _TWITCH_LOGIN = re.compile(r"^[A-Za-z0-9_]{1,25}$")
 
 
@@ -67,7 +68,17 @@ class ParsedSummary:
     format: Literal["csv", "tsv", "xlsx", "google_sheets"]
     sheet_name: str | None
     content_sha256: str
+    column_mapping: tuple[tuple[str, int], ...]
     rows: tuple[SummaryRow | InvalidSummaryRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class InspectedSummary:
+    format: Literal["csv", "tsv", "xlsx", "google_sheets"]
+    sheet_name: str | None
+    content_sha256: str
+    headers: tuple[str, ...]
+    suggested_mapping: dict[str, int]
 
 
 _HEADER_ALIASES: dict[str, frozenset[str]] = {
@@ -152,23 +163,66 @@ def _iso_date(value: object, *, field: str, row_number: int) -> date:
     return parsed
 
 
-def _map_headers(headers: list[object]) -> dict[str, int]:
+def _validated_headers(headers: list[object]) -> tuple[str, ...]:
     if not headers or all(not str(header).strip() for header in headers):
         raise CheckinImportValidationError("找不到欄位標題")
     if len(headers) > _MAX_COLUMNS:
         raise CheckinImportValidationError("欄位數超過上限")
 
-    mapped: dict[str, int] = {}
-    for index, raw in enumerate(headers):
-        text = str(raw).strip()
+    values: list[str] = []
+    for raw in headers:
+        text = "" if raw is None else str(raw).strip()
         if len(text) > _MAX_HEADER_LENGTH:
             raise CheckinImportValidationError("欄位標題太長")
+        values.append(text)
+    return tuple(values)
+
+
+def _header_candidates(headers: tuple[str, ...]) -> dict[str, list[int]]:
+    candidates: dict[str, list[int]] = {}
+    for index, text in enumerate(headers):
         canonical = _NORMALIZED_ALIASES.get(_normalize_header(text))
         if canonical is None:
             continue
-        if canonical in mapped:
-            raise CheckinImportValidationError(f"欄位 {canonical} 重複或意義不明")
-        mapped[canonical] = index
+        candidates.setdefault(canonical, []).append(index)
+    return candidates
+
+
+def _suggested_mapping(headers: tuple[str, ...]) -> dict[str, int]:
+    return {
+        canonical: indexes[0]
+        for canonical, indexes in _header_candidates(headers).items()
+        if len(indexes) == 1
+    }
+
+
+def _map_headers(
+    headers: list[object], column_mapping: dict[str, int] | None = None
+) -> dict[str, int]:
+    validated = _validated_headers(headers)
+    mapped: dict[str, int]
+    if column_mapping is None:
+        candidates = _header_candidates(validated)
+        ambiguous = next(
+            (canonical for canonical, indexes in candidates.items() if len(indexes) > 1), None
+        )
+        if ambiguous is not None:
+            raise CheckinImportValidationError(f"欄位 {ambiguous} 重複或意義不明")
+        mapped = {canonical: indexes[0] for canonical, indexes in candidates.items()}
+    else:
+        mapped = {}
+        used_indexes: set[int] = set()
+        for canonical, index in column_mapping.items():
+            if canonical not in _HEADER_ALIASES:
+                raise CheckinImportValidationError("欄位對應包含未知的 Niibot 變數")
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise CheckinImportValidationError("欄位對應位置必須是整數")
+            if index < 0 or index >= len(validated) or not validated[index]:
+                raise CheckinImportValidationError("欄位對應位置超出範圍")
+            if index in used_indexes:
+                raise CheckinImportValidationError("同一來源欄位不可對應多個 Niibot 變數")
+            mapped[canonical] = index
+            used_indexes.add(index)
 
     missing = {"total_days", "last_checkin_date"}.difference(mapped)
     if missing:
@@ -179,11 +233,14 @@ def _map_headers(headers: list[object]) -> dict[str, int]:
 
 
 def _canonical_rows(
-    rows: list[list[object]], *, through_date: date
-) -> tuple[SummaryRow | InvalidSummaryRow, ...]:
+    rows: list[list[object]],
+    *,
+    through_date: date,
+    column_mapping: dict[str, int] | None = None,
+) -> tuple[tuple[SummaryRow | InvalidSummaryRow, ...], dict[str, int]]:
     if not rows:
         raise CheckinImportValidationError("匯入檔案是空的")
-    mapping = _map_headers(rows[0])
+    mapping = _map_headers(rows[0], column_mapping)
     normalized: list[SummaryRow | InvalidSummaryRow] = []
     seen: set[str] = set()
 
@@ -268,7 +325,7 @@ def _canonical_rows(
 
     if not normalized:
         raise CheckinImportValidationError("沒有可匯入的資料列")
-    return tuple(normalized)
+    return tuple(normalized), mapping
 
 
 def _parse_text(content: bytes, *, delimiter: str) -> list[list[object]]:
@@ -279,9 +336,16 @@ def _parse_text(content: bytes, *, delimiter: str) -> list[list[object]]:
     except UnicodeDecodeError as exc:
         raise CheckinImportValidationError("文字檔必須使用 UTF-8 編碼") from exc
     try:
-        return [
-            list(row) for row in csv.reader(io.StringIO(text), delimiter=delimiter, strict=True)
-        ]
+        rows: list[list[object]] = []
+        for row_number, row in enumerate(
+            csv.reader(io.StringIO(text), delimiter=delimiter, strict=True), start=1
+        ):
+            if row_number > _MAX_ROWS + 1:
+                raise CheckinImportValidationError("資料列數超過上限")
+            if len(row) > _MAX_COLUMNS:
+                raise CheckinImportValidationError("欄位數超過上限")
+            rows.append(list(row))
+        return rows
     except csv.Error as exc:
         raise CheckinImportValidationError("文字表格格式無效") from exc
 
@@ -342,15 +406,13 @@ def _parse_xlsx(content: bytes, *, sheet_name: str | None) -> tuple[str, list[li
         workbook.close()
 
 
-def parse_summary_bytes(
+def _tabular_rows(
     filename: str,
     content: bytes,
     *,
-    through_date: date,
     sheet_name: str | None = None,
     source_format: Literal["google_sheets"] | None = None,
-) -> ParsedSummary:
-    """Parse one upload or a fetched Google Sheets CSV into canonical rows."""
+) -> tuple[Literal["csv", "tsv", "xlsx", "google_sheets"], str | None, list[list[object]]]:
     suffix = filename.rsplit(".", 1)[-1].casefold() if "." in filename else ""
     selected_sheet: str | None = None
     if source_format == "google_sheets":
@@ -367,12 +429,63 @@ def parse_summary_bytes(
         selected_sheet, raw_rows = _parse_xlsx(content, sheet_name=sheet_name)
     else:
         raise CheckinImportValidationError("只支援 CSV、TSV 或 XLSX 檔案")
+    return tabular_format, selected_sheet, raw_rows
 
+
+def inspect_summary_bytes(
+    filename: str,
+    content: bytes,
+    *,
+    sheet_name: str | None = None,
+    source_format: Literal["google_sheets"] | None = None,
+) -> InspectedSummary:
+    """Return bounded source headers and exact alias suggestions without parsing viewer rows."""
+    tabular_format, selected_sheet, raw_rows = _tabular_rows(
+        filename,
+        content,
+        sheet_name=sheet_name,
+        source_format=source_format,
+    )
+    if not raw_rows:
+        raise CheckinImportValidationError("匯入檔案是空的")
+    headers = _validated_headers(raw_rows[0])
+    return InspectedSummary(
+        format=tabular_format,
+        sheet_name=selected_sheet,
+        content_sha256=hashlib.sha256(content).hexdigest(),
+        headers=headers,
+        suggested_mapping=_suggested_mapping(headers),
+    )
+
+
+def parse_summary_bytes(
+    filename: str,
+    content: bytes,
+    *,
+    through_date: date,
+    sheet_name: str | None = None,
+    source_format: Literal["google_sheets"] | None = None,
+    column_mapping: dict[str, int] | None = None,
+) -> ParsedSummary:
+    """Parse one upload or a fetched Google Sheets CSV into canonical rows."""
+    tabular_format, selected_sheet, raw_rows = _tabular_rows(
+        filename,
+        content,
+        sheet_name=sheet_name,
+        source_format=source_format,
+    )
+
+    canonical_rows, resolved_mapping = _canonical_rows(
+        raw_rows,
+        through_date=through_date,
+        column_mapping=column_mapping,
+    )
     return ParsedSummary(
         format=tabular_format,
         sheet_name=selected_sheet,
         content_sha256=hashlib.sha256(content).hexdigest(),
-        rows=_canonical_rows(raw_rows, through_date=through_date),
+        column_mapping=tuple(sorted(resolved_mapping.items())),
+        rows=canonical_rows,
     )
 
 
@@ -382,10 +495,14 @@ def build_google_sheets_export_url(url: str) -> str:
         parsed = urlsplit(url)
     except ValueError as exc:
         raise CheckinImportValidationError("Google Sheets 連結無效") from exc
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise CheckinImportValidationError("Google Sheets 連結無效") from exc
     if (
         parsed.scheme != "https"
         or parsed.hostname != _GOOGLE_HOST
-        or parsed.port is not None
+        or port is not None
         or parsed.username is not None
         or parsed.password is not None
     ):
@@ -396,38 +513,76 @@ def build_google_sheets_export_url(url: str) -> str:
 
     params = parse_qs(parsed.query, keep_blank_values=True)
     fragment_params = parse_qs(parsed.fragment, keep_blank_values=True)
-    gids = params.get("gid", []) + fragment_params.get("gid", [])
-    if len(gids) > 1 or (gids and not re.fullmatch(r"[0-9]{1,20}", gids[0])):
+    gids = set(params.get("gid", []) + fragment_params.get("gid", []))
+    if len(gids) > 1 or (gids and not re.fullmatch(r"[0-9]{1,20}", next(iter(gids)))):
         raise CheckinImportValidationError("Google Sheets 工作表代碼無效")
-    gid = gids[0] if gids else "0"
+    gid = next(iter(gids)) if gids else "0"
     path = f"/spreadsheets/d/{match.group(1)}/export"
     return urlunsplit(("https", _GOOGLE_HOST, path, urlencode({"format": "csv", "gid": gid}), ""))
 
 
+def _google_export_redirect(location: str | None) -> str:
+    if not location:
+        raise CheckinImportValidationError("Google Sheets 匯出重新導向無效")
+    try:
+        parsed = urlsplit(location)
+    except ValueError as exc:
+        raise CheckinImportValidationError("Google Sheets 匯出重新導向無效") from exc
+    try:
+        hostname = (parsed.hostname or "").casefold()
+        port = parsed.port
+    except ValueError as exc:
+        raise CheckinImportValidationError("Google Sheets 匯出重新導向無效") from exc
+    if (
+        parsed.scheme != "https"
+        or port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or not _GOOGLE_EXPORT_HOST.fullmatch(hostname)
+        or not parsed.path.startswith("/export/")
+        or parsed.fragment
+    ):
+        raise CheckinImportValidationError("Google Sheets 匯出重新導向不安全")
+    return location
+
+
+async def _read_google_csv_response(response: httpx.Response) -> bytes:
+    if response.status_code in {401, 403}:
+        raise CheckinImportValidationError("這份 Google Sheets 尚未開放連結讀取")
+    if response.status_code != 200:
+        raise CheckinImportValidationError("Google Sheets 暫時無法讀取")
+    content_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
+    if content_type not in {"text/csv", "text/plain", "application/octet-stream"}:
+        raise CheckinImportValidationError("Google Sheets 回傳的格式不是 CSV")
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        size += len(chunk)
+        if size > _MAX_GOOGLE_BYTES:
+            raise CheckinImportValidationError("Google Sheets 匯出大小超過上限")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def fetch_google_sheet_csv(url: str, http: httpx.AsyncClient) -> bytes:
-    """Fetch a bounded anonymous CSV export without following redirects."""
+    """Fetch a bounded anonymous CSV export through one allowlisted Google redirect."""
     export_url = build_google_sheets_export_url(url)
     try:
+        redirect_url: str | None = None
         async with http.stream(
             "GET", export_url, follow_redirects=False, timeout=httpx.Timeout(10.0)
         ) as response:
             if 300 <= response.status_code < 400:
-                raise CheckinImportValidationError("Google Sheets 匯出發生重新導向")
-            if response.status_code in {401, 403}:
-                raise CheckinImportValidationError("這份 Google Sheets 尚未開放連結讀取")
-            if response.status_code != 200:
-                raise CheckinImportValidationError("Google Sheets 暫時無法讀取")
-            content_type = response.headers.get("content-type", "").split(";", 1)[0].strip()
-            if content_type not in {"text/csv", "text/plain", "application/octet-stream"}:
-                raise CheckinImportValidationError("Google Sheets 回傳的格式不是 CSV")
-            chunks: list[bytes] = []
-            size = 0
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > _MAX_GOOGLE_BYTES:
-                    raise CheckinImportValidationError("Google Sheets 匯出大小超過上限")
-                chunks.append(chunk)
-            return b"".join(chunks)
+                redirect_url = _google_export_redirect(response.headers.get("location"))
+            else:
+                return await _read_google_csv_response(response)
+
+        async with http.stream(
+            "GET", redirect_url, follow_redirects=False, timeout=httpx.Timeout(10.0)
+        ) as response:
+            if 300 <= response.status_code < 400:
+                raise CheckinImportValidationError("Google Sheets 匯出發生多次重新導向")
+            return await _read_google_csv_response(response)
     except CheckinImportValidationError:
         raise
     except httpx.HTTPError as exc:

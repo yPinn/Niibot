@@ -37,6 +37,7 @@ class CheckinImportPreview:
     source_timezone: str
     through_date: date
     content_sha256: str
+    column_mapping: tuple[tuple[str, int], ...]
     sheet_name: str | None
     rows: tuple[ImportPreviewRow, ...]
 
