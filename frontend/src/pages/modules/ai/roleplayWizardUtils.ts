@@ -2,6 +2,7 @@ export function stepForFieldPath(path: string): number {
   if (path === 'name' || path.startsWith('package.name') || path.startsWith('world.')) {
     return path.startsWith('world.story_stage') ? 2 : 0
   }
+  if (path.startsWith('character.signature_phrases')) return 5
   if (path.startsWith('character.relationships') || path.startsWith('character.knowledge')) {
     return 3
   }

@@ -13,9 +13,11 @@ from shared.roleplay.contracts import (
 )
 from shared.roleplay.normalization import normalize_roleplay_text
 
-SUPPORTED_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2})
+SUPPORTED_SCHEMA_VERSION = 2
 MAX_LORE_ENTRIES = 30
 MAX_EXAMPLE_REPLIES = 3
+MAX_SIGNATURE_PHRASES = 3
 
 
 class RoleplayValidationError(ValueError):
@@ -78,7 +80,7 @@ def validate_roleplay_package(package: RoleplayPackage) -> tuple[ValidationIssue
     """Return every deterministic validation issue in stable traversal order."""
 
     issues: list[ValidationIssue] = []
-    if package.schema_version != SUPPORTED_SCHEMA_VERSION:
+    if package.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         issues.append(
             _issue(
                 "package.schema_version.unsupported",
@@ -129,6 +131,26 @@ def validate_roleplay_package(package: RoleplayPackage) -> tuple[ValidationIssue
         max_chars=200,
     )
     _validate_text(issues, character.voice, path="character.voice", max_chars=800)
+    if package.schema_version == 1 and character.signature_phrases:
+        issues.append(
+            _issue(
+                "character.signature_phrases.unsupported",
+                "character.signature_phrases",
+                "舊版角色設定不支援招牌語句，請先升級設定集",
+            )
+        )
+    if len(character.signature_phrases) > MAX_SIGNATURE_PHRASES:
+        issues.append(
+            _issue(
+                "character.signature_phrases.too_many",
+                "character.signature_phrases",
+                f"角色招牌語句最多 {MAX_SIGNATURE_PHRASES} 句",
+            )
+        )
+    for index, phrase in enumerate(character.signature_phrases):
+        path = f"character.signature_phrases.{index}"
+        _validate_text(issues, phrase.text, path=f"{path}.text", max_chars=40)
+        _validate_text(issues, phrase.use_when, path=f"{path}.use_when", max_chars=100)
 
     if len(character.relationships) > 20:
         issues.append(

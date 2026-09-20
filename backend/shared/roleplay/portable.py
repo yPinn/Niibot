@@ -13,9 +13,12 @@ from shared.roleplay.codec import (
     decode_roleplay_package,
     encode_roleplay_package,
 )
-from shared.roleplay.compiler import ROLEPLAY_COMPILER_VERSION, compile_roleplay_package
+from shared.roleplay.compiler import (
+    SUPPORTED_ROLEPLAY_COMPILER_VERSIONS,
+    compile_roleplay_package,
+)
 from shared.roleplay.contracts import CompiledRoleplay, RoleplayPackage, ValidationIssue
-from shared.roleplay.validation import SUPPORTED_SCHEMA_VERSION, RoleplayValidationError
+from shared.roleplay.validation import SUPPORTED_SCHEMA_VERSIONS, RoleplayValidationError
 
 PORTABLE_ROLEPLAY_FORMAT = "niibot.roleplay-character"
 PORTABLE_ROLEPLAY_FORMAT_VERSION = 1
@@ -106,7 +109,17 @@ def build_roleplay_character_export(
     """Build one exact export from a verified immutable revision."""
 
     name = _display_name(display_name)
-    expected = compile_roleplay_package(package)
+    try:
+        expected = compile_roleplay_package(
+            package,
+            compiler_version=compiled.compiler_version,
+        )
+    except ValueError:
+        _fail(
+            "portable.compiler_version.unsupported",
+            "manifest.compiler_version",
+            "這份角色設定需要其他版本，無法直接匯出",
+        )
     if compiled != expected:
         _fail(
             "portable.revision.inconsistent",
@@ -165,14 +178,14 @@ def decode_roleplay_character_export(value: object) -> PortableRoleplayCharacter
     display_name = _display_name(manifest["name"])
     exported_at = _exported_at(manifest["exported_at"])
     schema_version = _integer(manifest["schema_version"], path="manifest.schema_version")
-    if schema_version != SUPPORTED_SCHEMA_VERSION:
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         _fail(
             "portable.schema_version.unsupported",
             "manifest.schema_version",
             "這份角色內容版本目前不支援",
         )
     compiler_version = _integer(manifest["compiler_version"], path="manifest.compiler_version")
-    if compiler_version != ROLEPLAY_COMPILER_VERSION:
+    if compiler_version not in SUPPORTED_ROLEPLAY_COMPILER_VERSIONS:
         _fail(
             "portable.compiler_version.unsupported",
             "manifest.compiler_version",
@@ -184,7 +197,7 @@ def decode_roleplay_character_export(value: object) -> PortableRoleplayCharacter
 
     try:
         package = decode_roleplay_package(document["package"])
-        compiled = compile_roleplay_package(package)
+        compiled = compile_roleplay_package(package, compiler_version=compiler_version)
     except RoleplayDocumentError as error:
         issue = error.issues[0]
         path = f"package.{issue.path}" if issue.path else "package"

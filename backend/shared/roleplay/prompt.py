@@ -23,7 +23,13 @@ def build_roleplay_context_sections(
 ) -> tuple[InputSection, ...]:
     """Build only low-authority role and lore sections for one request."""
 
-    expected = compile_roleplay_package(package)
+    try:
+        expected = compile_roleplay_package(
+            package,
+            compiler_version=compiled.compiler_version,
+        )
+    except ValueError as error:
+        raise ValueError("compiled role-play compiler version does not match runtime") from error
     if compiled.schema_version != package.schema_version:
         raise ValueError("compiled role-play schema version does not match package")
     if compiled.compiler_version != expected.compiler_version:

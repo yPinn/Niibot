@@ -54,6 +54,13 @@ class RoleplayRuntimeProfile(StrEnum):
     FULL = "full"
 
 
+class SignaturePhraseMode(StrEnum):
+    """Whether a short signature phrase may be quoted or should be adapted."""
+
+    EXACT = "exact"
+    ADAPTED = "adapted"
+
+
 @dataclass(frozen=True, slots=True)
 class WorldSnapshot:
     """Versioned world, canon scope, and timeline state used by a character."""
@@ -86,6 +93,15 @@ class CharacterKnowledge:
 
 
 @dataclass(frozen=True, slots=True)
+class SignaturePhrase:
+    """One short, contextual phrase that may occasionally color a reply."""
+
+    text: str
+    use_when: str
+    mode: SignaturePhraseMode
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterSheet:
     """Stable character core interpreted within one world snapshot."""
 
@@ -97,6 +113,7 @@ class CharacterSheet:
     voice: str
     relationships: tuple[Relationship, ...]
     knowledge: CharacterKnowledge
+    signature_phrases: tuple[SignaturePhrase, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

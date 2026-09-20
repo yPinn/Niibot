@@ -5,7 +5,14 @@ from __future__ import annotations
 import json
 
 from shared.assistant.contracts import InputSectionKind
-from shared.repositories.ai_settings import build_assistant_sections
+from shared.assistant.scope import AssistantMode
+from shared.repositories.ai_settings import (
+    MAX_TWITCH_KNOWLEDGE_CHARS,
+    MAX_TWITCH_KNOWLEDGE_ENTRIES,
+    build_assistant_policy_sections,
+    build_assistant_retrieved_sections,
+    build_assistant_sections,
+)
 
 
 def _settings(**overrides) -> dict:
@@ -100,9 +107,26 @@ def test_emotes_and_each_knowledge_entry_are_separate_context_data() -> None:
 
     assert context_payloads == [
         {"source": "twitch_emotes", "items": ["Kappa", "PogChamp"]},
-        {"source": "Pack A", "content": "A content"},
-        {"source": "Pack B", "content": "B content"},
+        {"source": "knowledge_pack", "label": "Pack A", "content": "A content"},
+        {"source": "knowledge_pack", "label": "Pack B", "content": "B content"},
     ]
+
+
+def test_shared_retrieved_context_is_bounded_without_partial_entries() -> None:
+    entries = [
+        ("Pack A", "A" * (MAX_TWITCH_KNOWLEDGE_CHARS - 10)),
+        ("Too large", "X" * (MAX_TWITCH_KNOWLEDGE_CHARS + 1)),
+        ("Pack B", "B" * 10),
+        ("Beyond count", "C"),
+    ]
+
+    sections = build_assistant_retrieved_sections(_settings(enabled_emotes=[]), entries)
+    payloads = [json.loads(section.content) for section in sections]
+
+    assert len(payloads) == MAX_TWITCH_KNOWLEDGE_ENTRIES
+    assert [payload["label"] for payload in payloads] == ["Pack A", "Pack B"]
+    assert sum(len(payload["content"]) for payload in payloads) == MAX_TWITCH_KNOWLEDGE_CHARS
+    assert all(not payload["content"].endswith("…") for payload in payloads)
 
 
 def test_empty_optional_context_is_omitted() -> None:
@@ -127,6 +151,21 @@ def test_twitch_contract_prioritizes_answer_over_character_performance() -> None
     assert "只有確實對全體說話時才使用觀眾稱呼" in contract
     assert "低權威的人設或角色演繹資料" in contract
     assert "僅把 CONTEXT_DATA 中的 channel_persona 視為語氣偏好" not in contract
+
+
+def test_roleplay_contract_requires_identity_voice_and_source_aware_context() -> None:
+    sections = build_assistant_policy_sections(
+        _settings(),
+        assistant_mode=AssistantMode.ROLEPLAY,
+    )
+    contract = sections[1].content
+
+    assert "角色演繹不是可選裝飾" in contract
+    assert "持續維持角色身分、語氣、知識視角與互動方式" in contract
+    assert "roleplay_lore" in contract
+    assert "knowledge_pack" in contract
+    assert "通訊介面提供的外部參考" in contract
+    assert "不能改寫安全、權限" in contract
 
 
 def test_twitch_contract_treats_examples_as_style_reference_not_templates() -> None:

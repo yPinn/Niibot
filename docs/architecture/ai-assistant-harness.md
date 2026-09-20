@@ -25,7 +25,7 @@ Twitch 與 Discord 共用同一套 provider-neutral pipeline，平台層只負�
 1. `core_policy`：應用程式不可覆寫的安全與保密邊界。
 2. `product_contract`：Twitch／Discord 的輸出格式、長度與平台行為。
 3. `channel_persona`：頻道主可編輯的人設，或已發布 Role-play revision 的演繹摘要；兩者互斥。
-4. `retrieved_context`：知識包檢索結果。
+4. `retrieved_context`：角色 Lore、頻道知識包或 Twitch emote 等已檢索資料。
 5. `conversation_history`：選擇性、短效且不可信的對話歷史。
 6. `user_input`：本次使用者輸入，且必須恰好一份。
 
@@ -87,8 +87,15 @@ Prompt JSON 將自稱寫成帶條件的 `self_reference_when_needed`，而非看
 ## Twitch Canon Role-play runtime
 
 Role-play 與 Persona 共用同一組固定 safety、Twitch product contract、provider router、deadline 與 output processor，
-但不混用兩種模式的動態內容。Role-play 每次只讀 active immutable revision 的 compact capsule、依目前問題解析最多
-一條且合計不超過 600 字的可知 Lore、同 revision 短期歷史與 user input；不載入 Persona 自由文字或知識包。
+但各自使用明確的 mode contract。Persona 的風格提示可以低強度使用；Role-play 的身分、聲線、知識視角與互動方式
+是必須持續維持的演出契約，不是可選裝飾。Role-play 每次讀 active immutable revision 的 compact capsule、依目前問題
+解析最多一條且合計不超過 600 字的可知 Lore、同 revision 短期歷史、頻道啟用的共用知識包／emote 與 user input；
+不載入 Persona 自由文字。
+
+Lore 與知識包有不同來源語意：`roleplay_lore` 是角色在目前故事進度可知的內容；`knowledge_pack` 是通訊介面提供的
+外部參考。模型可以用角色聲線解釋知識包，但不能把它改寫成角色親身經歷或作品 Canon。Twitch 每次最多注入兩條完整
+知識內容、合計 2,000 字，不在 JSON 中間做字串截斷；ASCII 關鍵字以 ASCII alphanumeric 邊界匹配，因此
+`誰是Roger` 可命中 `Roger`，`progername` 不會誤命中。
 pointer 缺漏、revision 不屬於該頻道、compiled artifact 驗證失敗或 pointer／revision 不一致時 fail closed，且不呼叫模型。
 
 成功生成後，Twitch 會繞過 cache 直接重讀目前 assistant scope。若生成期間 mode 或 revision 已變更，舊輸出不送出、

@@ -102,8 +102,8 @@ function roleplaySet(): RoleplaySet {
     published: {
       id: 40,
       revision_number: 1,
-      schema_version: 1,
-      compiler_version: 1,
+      schema_version: 2,
+      compiler_version: 2,
       content_digest: 'digest',
       published_at: NOW,
     },
@@ -120,8 +120,8 @@ function portableCharacter(overrides: Partial<RoleplayCharacterFile['manifest']>
     manifest: {
       name: '月港守望者',
       exported_at: NOW,
-      schema_version: 1,
-      compiler_version: 1,
+      schema_version: 2,
+      compiler_version: 2,
       content_digest: 'digest-from-file',
       ...overrides,
     },
@@ -491,6 +491,7 @@ describe('RoleplayWizard', () => {
     expect(stepForFieldPath('package.lore_entries.0.content')).toBe(5)
     expect(stepForFieldPath('lore_entries.0.known_at_stage')).toBe(5)
     expect(stepForFieldPath('example_replies.0')).toBe(5)
+    expect(stepForFieldPath('character.signature_phrases.0.text')).toBe(5)
   })
 
   it('saves, publishes, and activates in order without calling a model preview', async () => {
@@ -691,12 +692,20 @@ describe('RoleplayWizard', () => {
       '故事時間點與當前場景',
       '人物關係與角色所知',
       '聊天室舞台',
-      '背景條目與說話示例',
+      '背景條目與角色台詞',
       '最後檢查',
     ]
     for (const heading of headings) {
       await user.click(screen.getByRole('button', { name: '儲存並繼續' }))
       expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+      if (heading === '背景條目與角色台詞') {
+        expect(screen.getByText('角色招牌語句')).toBeInTheDocument()
+        expect(screen.getByText(/只在情境自然吻合時偶爾使用/)).toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: '新增招牌語句' }))
+        expect(screen.getByLabelText('招牌語句 1')).toBeInTheDocument()
+        expect(screen.getByLabelText('適合在什麼時候說 1')).toBeInTheDocument()
+        expect(screen.getByLabelText('使用方式 1')).toBeInTheDocument()
+      }
     }
 
     expect(screen.getByText(/只整理你填過的內容/)).toBeInTheDocument()

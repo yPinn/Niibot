@@ -18,8 +18,11 @@ from shared.repositories.roleplay import (
     RoleplaySetLimitError,
 )
 from shared.roleplay import (
+    CharacterSheet,
     RoleplayDocumentError,
     RoleplayPackage,
+    SignaturePhrase,
+    SignaturePhraseMode,
     canonical_roleplay_json,
     decode_roleplay_package,
     encode_roleplay_package,
@@ -125,6 +128,48 @@ class TestRoleplayDocumentCodec:
 
         assert decoded == package
         assert canonical_roleplay_json(decoded) == canonical_roleplay_json(package)
+
+    def test_schema_v1_encoding_stays_byte_shape_compatible(self) -> None:
+        encoded = encode_roleplay_package(_package())
+        character = encoded["character"]
+
+        assert isinstance(character, dict)
+        assert "signature_phrases" not in character
+
+    def test_schema_v2_round_trip_preserves_signature_phrase_intent(self) -> None:
+        package = _package()
+        phrase = SignaturePhrase(
+            text="先看潮聲，再談答案。",
+            use_when="需要謹慎判斷時",
+            mode=SignaturePhraseMode.ADAPTED,
+        )
+        version_two = RoleplayPackage(
+            schema_version=2,
+            name=package.name,
+            world=package.world,
+            character=CharacterSheet(
+                name=package.character.name,
+                role=package.character.role,
+                motivation=package.character.motivation,
+                stable_traits=package.character.stable_traits,
+                boundaries=package.character.boundaries,
+                voice=package.character.voice,
+                relationships=package.character.relationships,
+                knowledge=package.character.knowledge,
+                signature_phrases=(phrase,),
+            ),
+            scene=package.scene,
+            lore_entries=package.lore_entries,
+            example_replies=package.example_replies,
+        )
+
+        encoded = encode_roleplay_package(version_two)
+        decoded = decode_roleplay_package(encoded)
+
+        assert decoded == version_two
+        assert encoded["character"]["signature_phrases"] == [  # type: ignore[index]
+            {"text": phrase.text, "use_when": phrase.use_when, "mode": "adapted"}
+        ]
 
     def test_unknown_field_is_rejected_with_stable_path(self) -> None:
         document = _document()

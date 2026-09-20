@@ -26,6 +26,8 @@ from shared.roleplay import (
     RoleplayRuntimeProfile,
     RoleplayValidationError,
     Scene,
+    SignaturePhrase,
+    SignaturePhraseMode,
     SourceKind,
     SpoilerPolicy,
     WorldSnapshot,
@@ -210,6 +212,34 @@ class TestRoleplayValidation:
 
         assert codes >= {"package.lore_entries.too_many", "package.examples.too_many"}
 
+    def test_signature_phrases_require_schema_v2_and_stay_short(self) -> None:
+        base = _package()
+        phrases = tuple(
+            SignaturePhrase(
+                text="太長" * 30 if index == 0 else f"招牌句 {index}",
+                use_when="自然符合情境時",
+                mode=SignaturePhraseMode.ADAPTED,
+            )
+            for index in range(4)
+        )
+        character = replace(base.character, signature_phrases=phrases)
+
+        legacy_codes = {
+            issue.code for issue in validate_roleplay_package(replace(base, character=character))
+        }
+        current_codes = {
+            issue.code
+            for issue in validate_roleplay_package(
+                replace(base, schema_version=2, character=character)
+            )
+        }
+
+        assert "character.signature_phrases.unsupported" in legacy_codes
+        assert current_codes >= {
+            "character.signature_phrases.too_many",
+            "character.signature_phrases.0.text.too_long",
+        }
+
 
 class TestRoleplayCompiler:
     def test_compilation_is_deterministic_and_bounded(self) -> None:
@@ -220,7 +250,7 @@ class TestRoleplayCompiler:
 
         assert first == second
         assert first.schema_version == 1
-        assert first.compiler_version == 1
+        assert first.compiler_version == 2
         assert len(first.content_digest) == 64
         assert 0 < len(first.capsule) <= 900
         assert 0 < len(first.compact_capsule) <= 500
@@ -235,6 +265,51 @@ class TestRoleplayCompiler:
         assert "第一人稱" in first.compact_capsule
         assert "自然相關" in first.compact_capsule
 
+    def test_current_compiler_includes_bounded_contextual_signature_phrases(self) -> None:
+        base = _package()
+        package = replace(
+            base,
+            schema_version=2,
+            character=replace(
+                base.character,
+                signature_phrases=(
+                    SignaturePhrase(
+                        text="風向不會替我們做決定。",
+                        use_when="提醒對方先做好準備時",
+                        mode=SignaturePhraseMode.EXACT,
+                    ),
+                    SignaturePhrase(
+                        text="先看潮聲，再談答案。",
+                        use_when="需要謹慎判斷未知資訊時",
+                        mode=SignaturePhraseMode.ADAPTED,
+                    ),
+                ),
+            ),
+        )
+
+        compiled = compile_roleplay_package(package)
+
+        for capsule in (compiled.capsule, compiled.compact_capsule):
+            assert "角色招牌語句" in capsule
+            assert "風向不會替我們做決定" in capsule
+            assert "提醒對方先做好準備時" in capsule
+            assert "逐字" in capsule
+            assert "改寫" in capsule
+            assert "每次至多一句" in capsule
+            assert "不拼接" in capsule
+
+    def test_legacy_compiler_remains_reproducible_for_existing_revisions(self) -> None:
+        package = _package()
+
+        legacy = compile_roleplay_package(package, compiler_version=1)
+        current = compile_roleplay_package(package)
+
+        assert legacy.compiler_version == 1
+        assert current.compiler_version == 2
+        assert "不猜測、不劇透" in legacy.compact_capsule
+        assert "看法或預測" not in legacy.compact_capsule
+        assert legacy.content_digest == current.content_digest
+
     def test_digest_and_capsule_change_with_story_stage(self) -> None:
         first_package = _package()
         second_package = replace(
@@ -248,6 +323,18 @@ class TestRoleplayCompiler:
         assert first.content_digest != second.content_digest
         assert first.capsule != second.capsule
         assert first.compact_capsule != second.compact_capsule
+
+    def test_unknown_facts_allow_clearly_labeled_current_opinions_not_invented_canon(self) -> None:
+        compiled = compile_roleplay_package(_package())
+
+        for capsule in (compiled.capsule, compiled.compact_capsule):
+            assert "不知道" in capsule
+            assert "不捏造、不劇透" in capsule
+            assert "看法" in capsule
+            assert "依目前" in capsule
+            assert "標明" in capsule
+            assert "Canon 事實" in capsule
+            assert "不猜測" not in capsule
 
     def test_invalid_package_cannot_compile(self) -> None:
         invalid = replace(_package(), name="")
@@ -388,7 +475,7 @@ class TestRoleplayPromptAdapter:
         assert persona_payload == {
             "source": "roleplay_compiled_revision",
             "schema_version": 1,
-            "compiler_version": 1,
+            "compiler_version": 2,
             "content_digest": compiled.content_digest,
             "profile": "compact",
             "performance_capsule": compiled.compact_capsule,
@@ -510,3 +597,13 @@ class TestRoleplayPromptAdapter:
 
         with pytest.raises(ValueError, match="compiler version"):
             build_roleplay_context_sections(tampered, package, "你好")
+
+    def test_adapter_accepts_and_recomputes_a_supported_legacy_compiler(self) -> None:
+        package = _package()
+        compiled = compile_roleplay_package(package, compiler_version=1)
+
+        sections = build_roleplay_context_sections(compiled, package, "你好")
+
+        payload = json.loads(sections[0].content)
+        assert payload["compiler_version"] == 1
+        assert payload["performance_capsule"] == compiled.compact_capsule

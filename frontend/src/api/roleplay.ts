@@ -24,8 +24,16 @@ export interface RoleplayLoreEntry {
   priority: number
 }
 
+export type RoleplaySignaturePhraseMode = 'exact' | 'adapted'
+
+export interface RoleplaySignaturePhrase {
+  text: string
+  use_when: string
+  mode: RoleplaySignaturePhraseMode
+}
+
 export interface RoleplayPackage {
-  schema_version: 1
+  schema_version: 1 | 2
   name: string
   world: {
     title: string
@@ -45,6 +53,7 @@ export interface RoleplayPackage {
     voice: string
     relationships: RoleplayRelationship[]
     knowledge: { known: string[]; unknown: string[] }
+    signature_phrases?: RoleplaySignaturePhrase[]
   }
   scene: {
     location: string
@@ -132,7 +141,7 @@ export const MAX_ROLEPLAY_FILE_BYTES = 128 * 1024
 
 export function createEmptyRoleplayPackage(): RoleplayPackage {
   return {
-    schema_version: 1,
+    schema_version: 2,
     name: '',
     world: {
       title: '',
@@ -152,6 +161,7 @@ export function createEmptyRoleplayPackage(): RoleplayPackage {
       voice: '',
       relationships: [],
       knowledge: { known: [], unknown: [] },
+      signature_phrases: [],
     },
     scene: {
       location: '',
@@ -167,6 +177,17 @@ export function createEmptyRoleplayPackage(): RoleplayPackage {
     },
     lore_entries: [],
     example_replies: [],
+  }
+}
+
+export function upgradeRoleplayPackage(roleplayPackage: RoleplayPackage): RoleplayPackage {
+  return {
+    ...roleplayPackage,
+    schema_version: 2,
+    character: {
+      ...roleplayPackage.character,
+      signature_phrases: [...(roleplayPackage.character.signature_phrases ?? [])],
+    },
   }
 }
 
@@ -203,11 +224,14 @@ export function parseRoleplayCharacterFile(text: string): RoleplayCharacterFile 
   const world = record(roleplayPackage?.world)
   const character = record(roleplayPackage?.character)
   const preview = record(document.compiled_preview)
+  const schemaVersion = manifest?.schema_version
+  const compilerVersion = manifest?.compiler_version
+  const signaturePhrases = character?.signature_phrases
   if (
     !manifest ||
     typeof manifest.name !== 'string' ||
-    manifest.schema_version !== 1 ||
-    manifest.compiler_version !== 1 ||
+    (schemaVersion !== 1 && schemaVersion !== 2) ||
+    (compilerVersion !== 1 && compilerVersion !== 2) ||
     typeof manifest.content_digest !== 'string' ||
     !roleplayPackage ||
     !world ||
@@ -215,6 +239,8 @@ export function parseRoleplayCharacterFile(text: string): RoleplayCharacterFile 
     typeof world.story_stage !== 'string' ||
     !character ||
     typeof character.name !== 'string' ||
+    roleplayPackage.schema_version !== schemaVersion ||
+    (schemaVersion === 2 && !Array.isArray(signaturePhrases)) ||
     !Array.isArray(roleplayPackage.lore_entries) ||
     !preview ||
     typeof preview.capsule !== 'string' ||

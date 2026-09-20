@@ -534,12 +534,67 @@ class TestRoleplayRuntime:
             }
         ]
         assert len(lore_payloads[0]["content"]) <= 600
-        comp.module_config_repo.get_enabled_packs.assert_not_awaited()
+        comp.module_config_repo.get_enabled_packs.assert_awaited_once()
         match_packs.assert_not_called()
         comp.memory_store.get.assert_called_once_with(
             ConversationKey("twitch", "ch_test", "viewer-id", "roleplay:41")
         )
         comp.harness.respond.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_active_roleplay_also_uses_channel_knowledge_and_emotes(self) -> None:
+        scope = AssistantScope(AssistantMode.ROLEPLAY, 41)
+        comp = _make_component(
+            ai_settings={
+                "enabled": True,
+                "memory_enabled": False,
+                "min_role": "everyone",
+                "cooldown": 15,
+                "max_tokens": 200,
+                "enabled_emotes": ["Kappa"],
+                "assistant_mode": "roleplay",
+                "active_roleplay_revision_id": 41,
+            },
+            current_scope=scope,
+        )
+        comp.roleplay_repo.get_active_revision.return_value = _revision()
+        comp.module_config_repo.get_enabled_packs.return_value = ["xd_ent"]
+
+        with (
+            patch(PATCH_ON_COOLDOWN, return_value=False),
+            patch(PATCH_RECORD_COOLDOWN),
+            patch(
+                PATCH_MATCH_PACKS,
+                return_value=[("叉滴娛樂 / people / roger", "Roger 是實況主。")],
+            ) as match_packs,
+        ):
+            await _ai(comp, _make_ctx(), message="誰是Roger？")
+
+        request = comp.harness.respond.await_args.args[0]
+        payloads = [
+            json.loads(section.content)
+            for section in request.sections
+            if section.kind is InputSectionKind.RETRIEVED_CONTEXT
+        ]
+        contract = next(
+            section.content
+            for section in request.sections
+            if section.kind is InputSectionKind.PRODUCT_CONTRACT
+        )
+
+        assert payloads == [
+            {"source": "twitch_emotes", "items": ["Kappa"]},
+            {
+                "source": "knowledge_pack",
+                "label": "叉滴娛樂 / people / roger",
+                "content": "Roger 是實況主。",
+            },
+        ]
+        assert "角色演繹不是可選裝飾" in contract
+        assert "knowledge_pack" in contract
+        comp.module_config_repo.get_enabled_packs.assert_awaited_once()
+        match_packs.assert_called_once()
+        assert match_packs.call_args.args[1:] == (["xd_ent"], "誰是Roger？")
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("active_revision", [None, _revision(revision_id=42)])

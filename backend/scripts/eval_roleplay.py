@@ -21,6 +21,7 @@ from _lib import REPO_ROOT, add_env_arg, ensure_backend_on_path, load_env, utf8_
 ensure_backend_on_path()
 
 from shared.assistant import (  # noqa: E402
+    AssistantMode,
     AssistantOutcome,
     AssistantResult,
     InputSection,
@@ -39,8 +40,11 @@ from shared.assistant.providers.registry import (  # noqa: E402
     ProviderKind,
     build_provider_registry,
 )
+from shared.packs import load_packs, match_entries  # noqa: E402
 from shared.repositories.ai_settings import (  # noqa: E402
     DEFAULT_AI_SETTINGS,
+    build_assistant_policy_sections,
+    build_assistant_retrieved_sections,
     build_assistant_sections,
 )
 from shared.roleplay import (  # noqa: E402
@@ -62,11 +66,12 @@ from shared.roleplay import (  # noqa: E402
     WorldSnapshot,
     build_evaluation_request,
     compile_roleplay_package,
+    decode_roleplay_character_export,
     grade_evaluation_output,
     summarize_evaluation_runs,
 )
 
-EVALUATION_VERSION = 4
+EVALUATION_VERSION = 5
 
 
 def _positive_int(value: str) -> int:
@@ -103,6 +108,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     add_env_arg(parser)
     parser.add_argument(
+        "--fixture",
+        choices=("original", "rem"),
+        default="original",
+        help="role-play fixture and case matrix to evaluate (default: original)",
+    )
+    parser.add_argument(
         "--trials",
         type=_positive_int,
         default=1,
@@ -134,14 +145,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--case",
         dest="case_ids",
         action="append",
-        choices=tuple(case.id for case in build_cases()),
+        choices=tuple(dict.fromkeys(case.id for case in (*build_cases(), *build_rem_cases()))),
         help="run only this case id; repeat to select multiple cases",
     )
     return parser
 
 
-def default_output_path(timestamp: str) -> Path:
-    return REPO_ROOT / "tasks" / "evals" / f"roleplay-abc-{timestamp}.json"
+def default_output_path(timestamp: str, fixture: str = "original") -> Path:
+    label = "roleplay-abc" if fixture == "original" else f"roleplay-{fixture}-abc"
+    return REPO_ROOT / "tasks" / "evals" / f"{label}-{timestamp}.json"
 
 
 def pending_run_keys(report: dict) -> set[tuple[int, EvaluationVariant, str]]:
@@ -320,14 +332,78 @@ def build_cases() -> tuple[EvaluationCase, ...]:
     )
 
 
+def build_rem_fixture() -> RoleplayPackage:
+    """Load the bundled Rem package through the same strict portable boundary as users."""
+
+    path = REPO_ROOT / "docs" / "examples" / "roleplay" / "rem-character-set.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    return decode_roleplay_character_export(document).package
+
+
+def build_rem_cases() -> tuple[EvaluationCase, ...]:
+    """Cover the observed Role-play voice, lore, opinion, and pack regressions."""
+
+    generic_style = ("祝你", "祝您", "😊", "～", "~")
+    return (
+        EvaluationCase(
+            "identity",
+            "你是誰？",
+            required_any=("雷姆", "女僕"),
+            forbidden=generic_style,
+        ),
+        EvaluationCase(
+            "daily",
+            "泡麵要加蛋嗎？",
+            required_any=("蛋", "可以", "建議"),
+            forbidden=(*generic_style, "拉姆", "昴", "王選"),
+        ),
+        EvaluationCase(
+            "support",
+            "我今天又把工作搞砸了，什麼都不想碰。",
+            required_any=("先", "休息", "一步", "喝水"),
+            forbidden=generic_style,
+        ),
+        EvaluationCase(
+            "subaru",
+            "昴（Subaru）是誰？妳信任他嗎？",
+            required_any=("信任", "關心", "同伴"),
+            forbidden=("不清楚", "無法回答"),
+        ),
+        EvaluationCase(
+            "election_opinion",
+            "妳覺得誰會贏得王選？",
+            required_any=("目前", "現在", "推測", "看法", "支持"),
+            forbidden=("無法協助", "不能回答這個問題"),
+        ),
+        EvaluationCase(
+            "knowledge_pack",
+            "XD 羅傑（Roger）是誰？",
+            required_any=("羅晟原", "實況", "爐石", "創辦"),
+            forbidden=("不知道", "不清楚"),
+        ),
+        EvaluationCase(
+            "unknown_person",
+            "傑洛（Jero）是誰？",
+            required_any=("不知道", "不清楚", "沒有", "資訊"),
+        ),
+        EvaluationCase(
+            "death_return",
+            "死亡回歸（Return by Death）到底怎麼運作？",
+            required_any=("不知道", "不清楚", "無法得知", "未曾聽過"),
+            forbidden=("死亡後", "時間倒流", "存檔點", "重置"),
+        ),
+    )
+
+
 def select_cases(
     case_ids: list[str] | None,
     *,
+    fixture: str = "original",
     resume_report: dict | None = None,
 ) -> tuple[EvaluationCase, ...]:
     """Select a stable case subset, inheriting it from a resume report by default."""
 
-    all_cases = build_cases()
+    all_cases = build_rem_cases() if fixture == "rem" else build_cases()
     selected_ids = tuple(case_ids or ())
     if not selected_ids and resume_report is not None:
         selected_ids = tuple(str(case["id"]) for case in resume_report.get("cases", ()))
@@ -341,23 +417,34 @@ def select_cases(
     return selected
 
 
-def _prompt_inputs() -> tuple[tuple[InputSection, ...], InputSection]:
+def _prompt_inputs(
+    fixture: str = "original",
+) -> tuple[tuple[InputSection, ...], tuple[InputSection, ...], InputSection]:
+    is_rem = fixture == "rem"
     settings = {
         **DEFAULT_AI_SETTINGS,
-        "bot_name": "拉娜",
-        "persona": "沉穩務實的月港守望者；先回答，再以簡短航海意象補充。",
+        "bot_name": "雷姆" if is_rem else "拉娜",
+        "persona": (
+            "禮貌沉穩，以具體提醒表達關心，偶爾克制吐槽。"
+            if is_rem
+            else "沉穩務實的月港守望者；先回答，再以簡短航海意象補充。"
+        ),
         "tone_preset": "calm",
     }
     sections = build_assistant_sections(settings)
-    trusted = tuple(
+    persona_trusted = tuple(
         section
         for section in sections
         if section.kind in {InputSectionKind.CORE_POLICY, InputSectionKind.PRODUCT_CONTRACT}
     )
+    roleplay_trusted = build_assistant_policy_sections(
+        settings,
+        assistant_mode=AssistantMode.ROLEPLAY,
+    )
     persona = next(
         section for section in sections if section.kind is InputSectionKind.CHANNEL_PERSONA
     )
-    return trusted, persona
+    return persona_trusted, roleplay_trusted, persona
 
 
 def _groq_provider(env: str, timeout: float) -> tuple[OpenAICompatibleProvider, str, float]:
@@ -384,12 +471,19 @@ async def _evaluate_one(
     package: RoleplayPackage,
     case: EvaluationCase,
     variant: EvaluationVariant,
-    trusted_sections: tuple[InputSection, ...],
+    persona_trusted_sections: tuple[InputSection, ...],
+    roleplay_trusted_sections: tuple[InputSection, ...],
     persona_section: InputSection,
+    shared_context_sections: tuple[InputSection, ...],
     trial: int,
     timeout: float,
 ) -> EvaluationRun:
     compiled_role = compile_roleplay_package(package)
+    trusted_sections = (
+        persona_trusted_sections
+        if variant is EvaluationVariant.PERSONA_A
+        else roleplay_trusted_sections
+    )
     assistant_request = build_evaluation_request(
         variant,
         trusted_sections=trusted_sections,
@@ -398,6 +492,15 @@ async def _evaluate_one(
         package=package,
         case=case,
     )
+    if shared_context_sections:
+        assistant_request = replace(
+            assistant_request,
+            sections=(
+                *assistant_request.sections[:-1],
+                *shared_context_sections,
+                assistant_request.sections[-1],
+            ),
+        )
     assistant_request = replace(
         assistant_request,
         request_id=f"{assistant_request.request_id}-t{trial}",
@@ -473,10 +576,13 @@ def _validate_resume_report(
     trials: int,
     package_digest: str,
     compiler_version: int,
+    fixture: str,
     cases: tuple[EvaluationCase, ...],
 ) -> tuple[EvaluationRun, ...]:
     if report.get("evaluation_version") != EVALUATION_VERSION:
         raise RuntimeError("resume report uses an incompatible evaluation version")
+    if report.get("fixture") != fixture:
+        raise RuntimeError("resume report fixture does not match")
     if report.get("provider") != "groq" or report.get("model") != model:
         raise RuntimeError("resume report provider or model does not match current Groq config")
     if report.get("trials") != trials or report.get("package_digest") != package_digest:
@@ -517,6 +623,7 @@ def _build_report(
     trials: int,
     package_digest: str,
     compiler_version: int,
+    fixture: str,
     cases: tuple[EvaluationCase, ...],
     runs: tuple[EvaluationRun, ...],
 ) -> dict:
@@ -531,6 +638,7 @@ def _build_report(
         "updated_at": updated_at,
         "resume_count": resume_count,
         "provider": "groq",
+        "fixture": fixture,
         "model": model,
         "temperature": temperature,
         "trials": trials,
@@ -558,13 +666,21 @@ def _write_report(output_path: Path, report: dict) -> None:
 
 async def _run(args: argparse.Namespace) -> tuple[Path, dict]:
     provider, model, temperature = _groq_provider(args.env, args.timeout)
-    package = build_original_fixture()
+    package = build_rem_fixture() if args.fixture == "rem" else build_original_fixture()
     compiled_package = compile_roleplay_package(package)
     previous_report = (
         json.loads(args.resume.read_text(encoding="utf-8")) if args.resume is not None else None
     )
-    cases = select_cases(args.case_ids, resume_report=previous_report)
-    trusted_sections, persona_section = _prompt_inputs()
+    cases = select_cases(args.case_ids, fixture=args.fixture, resume_report=previous_report)
+    persona_trusted, roleplay_trusted, persona_section = _prompt_inputs(args.fixture)
+    packs = load_packs(REPO_ROOT / "backend" / "data")
+    shared_context = {
+        case.id: build_assistant_retrieved_sections(
+            {"enabled_emotes": []},
+            match_entries(packs, ["xd_ent"], case.prompt),
+        )
+        for case in cases
+    }
     compiler = PromptCompiler(
         PromptBudget(
             max_total_chars=8_000,
@@ -576,7 +692,7 @@ async def _run(args: argparse.Namespace) -> tuple[Path, dict]:
     )
     output_processor = OutputProcessor(OutputPolicy(max_chars=500))
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    output_path = args.output or args.resume or default_output_path(timestamp)
+    output_path = args.output or args.resume or default_output_path(timestamp, args.fixture)
 
     if args.resume is not None:
         if previous_report is None:  # pragma: no cover - guarded by args.resume
@@ -587,6 +703,7 @@ async def _run(args: argparse.Namespace) -> tuple[Path, dict]:
             trials=args.trials,
             package_digest=compiled_package.content_digest,
             compiler_version=compiled_package.compiler_version,
+            fixture=args.fixture,
             cases=cases,
         )
         generated_at = str(previous_report["generated_at"])
@@ -624,6 +741,7 @@ async def _run(args: argparse.Namespace) -> tuple[Path, dict]:
             trials=args.trials,
             package_digest=compiled_package.content_digest,
             compiler_version=compiled_package.compiler_version,
+            fixture=args.fixture,
             cases=cases,
             runs=_ordered_runs(run_map, cases),
         )
@@ -644,8 +762,10 @@ async def _run(args: argparse.Namespace) -> tuple[Path, dict]:
                     package=package,
                     case=case,
                     variant=variant,
-                    trusted_sections=trusted_sections,
+                    persona_trusted_sections=persona_trusted,
+                    roleplay_trusted_sections=roleplay_trusted,
                     persona_section=persona_section,
+                    shared_context_sections=shared_context[case.id],
                     trial=trial,
                     timeout=args.timeout,
                 )

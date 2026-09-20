@@ -28,6 +28,7 @@ V1 範圍。
 
 - 每頻道建立、保存與切換私人角色設定集。
 - 一份角色設定集包含必要作品背景、人物小傳、故事進度、預設場景、聊天室舞台與背景條目。
+- 可選擇最多三句短的「角色招牌語句」，逐句標記適用情境與保留原文／依口吻改寫。
 - 同一頻道可基於既有作品設定建立另一位角色。
 - 建立流程使用創作用語及分步問題，不顯示 raw prompt、JSON、dependency 或 revision。
 - 發布前編譯最多 900 字的完整摘要與最多 500 字的 Twitch 摘要，並執行 deterministic compatibility checks。
@@ -57,6 +58,7 @@ V1 範圍。
 | `knowledge_boundary` | 角色所知       | 目前知道、相信及明確不知道的事情   |
 | `channel_stage`      | 聊天室舞台     | 角色如何進入 Twitch／Discord 情境  |
 | `lore_entry`         | 背景條目       | 問題命中時才讀取的設定資料         |
+| `signature_phrase`   | 角色招牌語句   | 情境吻合時偶爾使用的一句短台詞     |
 | `runtime_capsule`    | 演繹摘要       | 系統送給模型的精簡角色狀態         |
 | `roleplay_package`   | 角色設定集     | 建立、匯出、安裝與分享單位         |
 
@@ -125,7 +127,7 @@ V1 只保存一個 active story stage 與 default scene，不建立完整 timeli
 
 另行確認實況主與觀眾的關係，不把任何參與者自動映射成原作人物。
 
-### 7. 說話示例與背景條目
+### 7. 背景條目與角色台詞
 
 引導使用者提供三種不同用途的原創示例：一般回答、情緒支持、未知或婉拒。背景條目逐筆詢問：
 
@@ -136,6 +138,10 @@ V1 只保存一個 active story stage 與 default scene，不建立完整 timeli
 - 事實摘要是什麼？
 
 進階使用者才看到 trigger 與 priority；系統可以建議，但不能未經確認自動發布。
+
+招牌語句與一般「說話示例」分開：使用者需填短句、適用情境，以及「保留這句原文」或「依角色口吻改寫」。
+第一版最多三句，每次回答至多使用一句，且只能在情境自然吻合時出現；不得拼接長段原文或用台詞取代真正答案。
+既有作品的原文由建立者確認權利與版本，系統不自動抓取字幕或小說內容。
 
 ### 8. 預覽與發布
 
@@ -347,6 +353,10 @@ Phase 1 實作位於 `backend/shared/roleplay/`。發布前 compiler 會驗證�
 低權威 `CHANNEL_PERSONA`。Twitch 預設只把 0–1 條已知且允許的 Lore 放入 `RETRIEVED_CONTEXT`；完整 profile
 的 0–2 條只供評測與未來有較寬容量的平台使用。
 
+內容 schema v1 與 v2、compiler v1 與 v2 都能重算。v1 JSON 維持原有欄位與 digest；v2 才加入
+`signature_phrases`。已發布的 compiler v1 revision 繼續用 v1 規則驗證，新建或重新發布才使用 compiler v2，避免
+部署後讓既有角色因摘要規則更新而失效。
+
 Phase 3C 實作位於 `backend/api/routers/roleplay_router.py` 與
 `backend/api/services/roleplay_service.py`。端點使用
 `/api/tenants/{channel_id}` 與 tenant access dependency，不從 request body 接受
@@ -359,10 +369,10 @@ schema、optimistic draft version 與有界 rate limit。發布不等於啟用�
 
 Phase 3D 實作位於 `backend/twitch/components/ai.py`、
 `backend/twitch/core/_notify_mixin.py` 與
-`backend/shared/assistant/memory.py`。Persona 與 Role-play 是互斥 runtime：Persona 仍使用既有人設與知識包；
-Role-play 只使用相同固定安全／Twitch contract、active immutable revision 的 compact
-capsule、最多一條 600 字 Lore、
-同 scope 的短期記憶及目前輸入。角色資料不能改寫 provider 順序、deadline、輸出上限或 sender resolver；active revision
+`backend/shared/assistant/memory.py`。Persona 與 Role-play 是互斥 runtime：兩者都可使用頻道啟用的共用知識包；
+Role-play 不讀 Persona 自由文字，而是使用專用固定 contract、active immutable revision 的 compact capsule、
+最多一條 600 字 Lore、最多兩條合計 2,000 字的完整知識包內容、同 scope 的短期記憶及目前輸入。知識包被標成
+通訊介面提供的外部參考，不會變成角色親身記憶。角色資料不能改寫 provider 順序、deadline、輸出上限或 sender resolver；active revision
 缺漏、損壞或與 pointer 不符時 fail closed，不呼叫模型。
 
 記憶 key 為 platform + channel + participant + assistant scope；Persona 使用穩定

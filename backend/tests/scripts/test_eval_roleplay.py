@@ -18,6 +18,7 @@ def test_parser_uses_one_bounded_trial_and_ignored_task_artifact_by_default() ->
     args = cli.build_parser().parse_args([])
 
     assert args.env == "prod"
+    assert args.fixture == "original"
     assert args.trials == 1
     assert args.timeout == 15.0
     assert args.delay == 15.0
@@ -39,6 +40,13 @@ def test_parser_accepts_a_repeatable_bounded_case_filter() -> None:
     args = cli.build_parser().parse_args(["--case", "relationship", "--case", "general_knowledge"])
 
     assert args.case_ids == ["relationship", "general_knowledge"]
+
+
+def test_parser_accepts_the_rem_runtime_fixture_and_pack_case() -> None:
+    args = cli.build_parser().parse_args(["--fixture", "rem", "--case", "knowledge_pack"])
+
+    assert args.fixture == "rem"
+    assert args.case_ids == ["knowledge_pack"]
 
 
 def test_original_fixture_and_eval_matrix_are_stable_and_valid() -> None:
@@ -71,6 +79,33 @@ def test_original_fixture_and_eval_matrix_are_stable_and_valid() -> None:
         spoiler,
         "我目前沒有相關資訊，無法得知事故的原因。",
     ).passed
+
+
+def test_rem_fixture_and_runtime_regression_matrix_are_importable() -> None:
+    package = cli.build_rem_fixture()
+    cases = cli.build_rem_cases()
+
+    assert package.schema_version == 2
+    assert package.character.name == "雷姆"
+    assert package.character.signature_phrases
+    assert validate_roleplay_package(package) == ()
+    assert [case.id for case in cases] == [
+        "identity",
+        "daily",
+        "support",
+        "subaru",
+        "election_opinion",
+        "knowledge_pack",
+        "unknown_person",
+        "death_return",
+    ]
+
+
+def test_eval_uses_distinct_trusted_mode_contracts() -> None:
+    persona_trusted, roleplay_trusted, _ = cli._prompt_inputs("rem")
+
+    assert "不必每則都使用" in persona_trusted[1].content
+    assert "不是可選裝飾" in roleplay_trusted[1].content
 
 
 def test_default_output_path_stays_in_gitignored_tasks_directory() -> None:

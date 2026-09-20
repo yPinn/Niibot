@@ -223,3 +223,15 @@ def test_match_cjk_key_uses_substring_not_word_boundary():
     results = match_entries({"xd": pack}, ["xd"], "請問羅傑是誰?")
 
     assert any("roger detail" in c for _, c in results)
+
+
+def test_ascii_key_matches_when_adjacent_to_cjk_but_not_inside_ascii_word():
+    pack = _pack(
+        "xd",
+        "XD",
+        [PackEntry(keys=["roger"], content="roger detail", path=("people", "roger"))],
+    )
+
+    assert match_entries({"xd": pack}, ["xd"], "誰是Roger？")
+    assert match_entries({"xd": pack}, ["xd"], "Roger是誰？")
+    assert match_entries({"xd": pack}, ["xd"], "progername") == []

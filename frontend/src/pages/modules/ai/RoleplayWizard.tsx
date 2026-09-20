@@ -11,7 +11,9 @@ import {
   type RoleplayPackage,
   type RoleplayRelationship,
   type RoleplaySet,
+  type RoleplaySignaturePhrase,
   updateRoleplayDraft,
+  upgradeRoleplayPackage,
 } from '@/api/roleplay'
 import { Icon, Spinner } from '@/components/primitives'
 import {
@@ -38,7 +40,7 @@ const STEPS = [
   '故事時間點與當前場景',
   '人物關係與角色所知',
   '聊天室舞台',
-  '背景條目與說話示例',
+  '背景條目與角色台詞',
   '最後檢查',
 ] as const
 
@@ -159,17 +161,18 @@ export function RoleplayWizard({
   onSaved,
   onModeChange,
 }: RoleplayWizardProps) {
+  const initialDraft = initialSet
+    ? upgradeRoleplayPackage(initialSet.draft)
+    : createEmptyRoleplayPackage()
   const [step, setStep] = useState(0)
   const [setId, setSetId] = useState<string | null>(initialSet?.id ?? null)
   const [draftVersion, setDraftVersion] = useState(initialSet?.draft_version ?? 1)
   const [setName, setSetName] = useState(initialSet?.name ?? '')
-  const [draft, setDraft] = useState<RoleplayPackage>(
-    initialSet?.draft ?? createEmptyRoleplayPackage()
-  )
+  const [draft, setDraft] = useState<RoleplayPackage>(initialDraft)
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [lastSavedSignature, setLastSavedSignature] = useState(() =>
-    draftSignature(initialSet?.name ?? '', initialSet?.draft ?? createEmptyRoleplayPackage())
+    draftSignature(initialSet?.name ?? '', initialDraft)
   )
   const [pendingRevision, setPendingRevision] = useState<{
     setId: string
@@ -216,6 +219,10 @@ export function RoleplayWizard({
           .map(item => item.subject)
           .filter(Boolean)
           .join('、') || '未列出',
+      ],
+      [
+        '角色招牌語句',
+        (draft.character.signature_phrases ?? []).map(item => item.text).join('、') || '未設定',
       ],
     ],
     [draft]
@@ -919,6 +926,83 @@ export function RoleplayWizard({
                 ))}
               </div>
               <Separator />
+              <div className="flex flex-col gap-element">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Label>角色招牌語句</Label>
+                    <p className="mt-1 max-w-prose text-label text-muted-foreground">
+                      只在情境自然吻合時偶爾使用；每次回答至多一句。引用既有作品時，請只填你有權使用的短句。
+                    </p>
+                  </div>
+                  {(draft.character.signature_phrases ?? []).length < 3 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        replaceCharacter({
+                          signature_phrases: [
+                            ...(draft.character.signature_phrases ?? []),
+                            { text: '', use_when: '', mode: 'adapted' },
+                          ],
+                        })
+                      }
+                    >
+                      新增招牌語句
+                    </Button>
+                  )}
+                </div>
+                {(draft.character.signature_phrases ?? []).map((phrase, index) => (
+                  <div key={index} className="grid gap-3 rounded-md bg-muted/50 p-3 sm:grid-cols-2">
+                    <Input
+                      aria-label={`招牌語句 ${index + 1}`}
+                      value={phrase.text}
+                      maxLength={40}
+                      placeholder="一句能讓人認出角色的短句"
+                      onChange={event => updateSignaturePhrase(index, { text: event.target.value })}
+                    />
+                    <Input
+                      aria-label={`適合在什麼時候說 ${index + 1}`}
+                      value={phrase.use_when}
+                      maxLength={100}
+                      placeholder="例如：安慰受挫的觀眾時"
+                      onChange={event =>
+                        updateSignaturePhrase(index, { use_when: event.target.value })
+                      }
+                    />
+                    <select
+                      aria-label={`使用方式 ${index + 1}`}
+                      className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                      value={phrase.mode}
+                      onChange={event =>
+                        updateSignaturePhrase(index, {
+                          mode: event.target.value as RoleplaySignaturePhrase['mode'],
+                        })
+                      }
+                    >
+                      <option value="adapted">依角色口吻改寫</option>
+                      <option value="exact">保留這句原文</option>
+                    </select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-fit sm:justify-self-end"
+                      onClick={() =>
+                        replaceCharacter({
+                          signature_phrases: (draft.character.signature_phrases ?? []).filter(
+                            (_, itemIndex) => itemIndex !== index
+                          ),
+                        })
+                      }
+                    >
+                      移除此句
+                    </Button>
+                  </div>
+                ))}
+                <FieldError path="character.signature_phrases" errors={errors} />
+              </div>
+              <Separator />
               <StringListEditor
                 label="說話示例"
                 description="最多三句不同情境的原創示例；只參考語氣，不會照抄成固定台詞。"
@@ -1004,5 +1088,11 @@ export function RoleplayWizard({
       lore_entries[index] = { ...lore_entries[index], ...patch }
       return { ...current, lore_entries }
     })
+  }
+
+  function updateSignaturePhrase(index: number, patch: Partial<RoleplaySignaturePhrase>) {
+    const signature_phrases = [...(draft.character.signature_phrases ?? [])]
+    signature_phrases[index] = { ...signature_phrases[index], ...patch }
+    replaceCharacter({ signature_phrases })
   }
 }

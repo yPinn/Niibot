@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { requestUrl } from '@/test/requestUrl'
@@ -11,9 +13,11 @@ import {
   getRoleplaySet,
   importRoleplayCharacter,
   listRoleplaySets,
+  MAX_ROLEPLAY_FILE_BYTES,
   parseRoleplayCharacterFile,
   publishRoleplayRevision,
   updateRoleplayDraft,
+  upgradeRoleplayPackage,
   usePersonaMode,
 } from './roleplay'
 
@@ -31,7 +35,7 @@ describe('role-play API', () => {
     const draft = createEmptyRoleplayPackage()
 
     expect(draft).toEqual({
-      schema_version: 1,
+      schema_version: 2,
       name: '',
       world: {
         title: '',
@@ -51,6 +55,7 @@ describe('role-play API', () => {
         voice: '',
         relationships: [],
         knowledge: { known: [], unknown: [] },
+        signature_phrases: [],
       },
       scene: {
         location: '',
@@ -67,6 +72,22 @@ describe('role-play API', () => {
       lore_entries: [],
       example_replies: [],
     })
+  })
+
+  it('upgrades a legacy editable draft without mutating its stored shape', () => {
+    const current = createEmptyRoleplayPackage()
+    const legacy = {
+      ...current,
+      schema_version: 1 as const,
+      character: { ...current.character, signature_phrases: undefined },
+    }
+
+    const upgraded = upgradeRoleplayPackage(legacy)
+
+    expect(upgraded.schema_version).toBe(2)
+    expect(upgraded.character.signature_phrases).toEqual([])
+    expect(legacy.schema_version).toBe(1)
+    expect(legacy.character.signature_phrases).toBeUndefined()
   })
 
   it('keeps reads tenant-scoped and every mutation preflighted', async () => {
@@ -132,8 +153,8 @@ describe('role-play API', () => {
         manifest: {
           name: '月港守望者',
           exported_at: '2026-09-20T10:00:00Z',
-          schema_version: 1,
-          compiler_version: 1,
+          schema_version: 2,
+          compiler_version: 2,
           content_digest: 'a'.repeat(64),
         },
         package: {
@@ -157,6 +178,22 @@ describe('role-play API', () => {
     expect(parsed.package.world.story_stage).toBe('潮汐祭前三日')
   })
 
+  it('accepts the bundled Rem character set through the import preview parser', () => {
+    const raw = readFileSync(
+      resolve(import.meta.dirname, '../../../docs/examples/roleplay/rem-character-set.json'),
+      'utf8'
+    )
+
+    const parsed = parseRoleplayCharacterFile(raw)
+
+    expect(Buffer.byteLength(raw)).toBeLessThanOrEqual(MAX_ROLEPLAY_FILE_BYTES)
+    expect(parsed.manifest.name).toBe('宅邸平穩期的雷姆')
+    expect(parsed.package.character.name).toBe('雷姆')
+    expect(parsed.package.world.story_stage).toContain('王選前')
+    expect(parsed.package.lore_entries).toHaveLength(8)
+    expect(parsed.package.character.signature_phrases).toHaveLength(1)
+  })
+
   it('rejects malformed or unsupported files before showing an import preview', () => {
     expect(() => parseRoleplayCharacterFile('{bad json')).toThrow('無法讀取')
     expect(() =>
@@ -173,8 +210,8 @@ describe('role-play API', () => {
       manifest: {
         name: '月港守望者',
         exported_at: '2026-09-20T10:00:00Z',
-        schema_version: 1,
-        compiler_version: 1,
+        schema_version: 2,
+        compiler_version: 2,
         content_digest: 'a'.repeat(64),
       },
       package: createEmptyRoleplayPackage(),

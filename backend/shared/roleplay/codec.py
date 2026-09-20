@@ -18,6 +18,8 @@ from shared.roleplay.contracts import (
     RelationshipState,
     RoleplayPackage,
     Scene,
+    SignaturePhrase,
+    SignaturePhraseMode,
     SourceKind,
     SpoilerPolicy,
     ValidationIssue,
@@ -150,8 +152,18 @@ def _decode_knowledge(value: object) -> CharacterKnowledge:
     )
 
 
-def _decode_character(value: object) -> CharacterSheet:
-    fields = (
+def _decode_signature_phrase(value: object, index: int) -> SignaturePhrase:
+    path = f"character.signature_phrases.{index}"
+    data = _object(value, path=path, fields=("text", "use_when", "mode"))
+    return SignaturePhrase(
+        text=_string(data["text"], path=f"{path}.text"),
+        use_when=_string(data["use_when"], path=f"{path}.use_when"),
+        mode=_enum(data["mode"], SignaturePhraseMode, path=f"{path}.mode"),
+    )
+
+
+def _decode_character(value: object, *, schema_version: int) -> CharacterSheet:
+    base_fields = (
         "name",
         "role",
         "motivation",
@@ -161,8 +173,14 @@ def _decode_character(value: object) -> CharacterSheet:
         "relationships",
         "knowledge",
     )
+    fields = (*base_fields, "signature_phrases") if schema_version >= 2 else base_fields
     data = _object(value, path="character", fields=fields)
     relationships = _items(data["relationships"], path="character.relationships")
+    phrase_items = (
+        _items(data["signature_phrases"], path="character.signature_phrases")
+        if schema_version >= 2
+        else []
+    )
     return CharacterSheet(
         name=_string(data["name"], path="character.name"),
         role=_string(data["role"], path="character.role"),
@@ -174,6 +192,9 @@ def _decode_character(value: object) -> CharacterSheet:
             _decode_relationship(item, index) for index, item in enumerate(relationships)
         ),
         knowledge=_decode_knowledge(data["knowledge"]),
+        signature_phrases=tuple(
+            _decode_signature_phrase(item, index) for index, item in enumerate(phrase_items)
+        ),
     )
 
 
@@ -258,11 +279,12 @@ def decode_roleplay_package(value: object) -> RoleplayPackage:
     )
     data = _object(value, path="", fields=fields)
     lore = _items(data["lore_entries"], path="lore_entries")
+    schema_version = _integer(data["schema_version"], path="schema_version")
     return RoleplayPackage(
-        schema_version=_integer(data["schema_version"], path="schema_version"),
+        schema_version=schema_version,
         name=_string(data["name"], path="name"),
         world=_decode_world(data["world"]),
-        character=_decode_character(data["character"]),
+        character=_decode_character(data["character"], schema_version=schema_version),
         scene=_decode_scene(data["scene"]),
         lore_entries=tuple(_decode_lore(item, index) for index, item in enumerate(lore)),
         example_replies=_strings(data["example_replies"], path="example_replies"),

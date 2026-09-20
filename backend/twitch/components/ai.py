@@ -34,6 +34,7 @@ from shared.packs import match_entries as match_pack_entries
 from shared.repositories.ai_settings import (
     AISettingsRepository,
     build_assistant_policy_sections,
+    build_assistant_retrieved_sections,
     build_assistant_sections,
 )
 from shared.repositories.module_config import ModuleConfigRepository
@@ -269,9 +270,9 @@ class AIComponent(BotComponent):
         message: str,
     ) -> tuple[AssistantScope, tuple[InputSection, ...]]:
         scope = self._scope_from_settings(ai_settings)
+        enabled_packs = await self.module_config_repo.get_enabled_packs()
+        matched = match_pack_entries(_PACKS, enabled_packs, message) if enabled_packs else []
         if scope.assistant_mode is AssistantMode.PERSONA:
-            enabled_packs = await self.module_config_repo.get_enabled_packs()
-            matched = match_pack_entries(_PACKS, enabled_packs, message) if enabled_packs else []
             return scope, build_assistant_sections(ai_settings, matched)
 
         revision = await self.roleplay_repo.get_active_revision(channel_id)
@@ -288,8 +289,12 @@ class AIComponent(BotComponent):
         return (
             scope,
             (
-                *build_assistant_policy_sections(ai_settings),
+                *build_assistant_policy_sections(
+                    ai_settings,
+                    assistant_mode=AssistantMode.ROLEPLAY,
+                ),
                 *roleplay_sections,
+                *build_assistant_retrieved_sections(ai_settings, matched),
             ),
         )
 
