@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, Response, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.dependencies import (
     get_attendance_service,
@@ -34,7 +34,10 @@ from services.checkin_import.formats import (
     parse_summary_bytes,
 )
 from services.checkin_import.models import (
+    CheckinImportPreview,
     CheckinImportResult,
+    IdentityRemap,
+    IdentityTargetType,
     ImportPreviewRow,
     ImportRowStatus,
 )
@@ -154,12 +157,59 @@ class CheckinImportApplyRequest(BaseModel):
     old_source_disabled: bool
 
 
+class CheckinIdentityMappingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    row_key: str = Field(pattern=r"^row-[a-f0-9]{24}$")
+    target_type: Literal["username", "user_id"]
+    value: str = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_target(self) -> CheckinIdentityMappingInput:
+        if self.target_type == "user_id":
+            valid = self.value.isascii() and self.value.isdigit()
+        else:
+            valid = re.fullmatch(r"[A-Za-z0-9_]{1,25}", self.value) is not None
+        if not valid:
+            raise ValueError("invalid Twitch identity target")
+        return self
+
+
+class CheckinIdentityPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    import_id: str = Field(min_length=8, max_length=128)
+    mappings: list[CheckinIdentityMappingInput] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_rows(self) -> CheckinIdentityPreviewRequest:
+        row_keys = [mapping.row_key for mapping in self.mappings]
+        if len(row_keys) != len(set(row_keys)):
+            raise ValueError("mapping row keys must be unique")
+        return self
+
+
 class CheckinImportApplyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     batch_id: str
     imported_rows: int
     already_applied: bool
+
+
+def _to_import_preview_response(
+    import_id: str, preview: CheckinImportPreview
+) -> CheckinImportPreviewResponse:
+    return CheckinImportPreviewResponse(
+        import_id=import_id,
+        source=preview.source,
+        source_format=preview.source_format,
+        source_timezone=preview.source_timezone,
+        through_date=preview.through_date,
+        sheet_name=preview.sheet_name,
+        rows=list(preview.rows),
+        default_selection={row.key: row.status is ImportRowStatus.READY for row in preview.rows},
+    )
 
 
 class CheckinDataCountsResponse(BaseModel):
@@ -481,6 +531,44 @@ async def preview_checkin_import(
         rows=list(preview.rows),
         default_selection={row.key: row.status is ImportRowStatus.READY for row in preview.rows},
     )
+
+
+@router.post("/import/identity/preview", response_model=CheckinImportPreviewResponse)
+async def preview_checkin_identity_mapping(
+    body: CheckinIdentityPreviewRequest,
+    _action: Literal["checkin-import"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_owner),
+    service: CheckinImportService = Depends(get_checkin_import_service),
+) -> CheckinImportPreviewResponse:
+    """Verify owner-supplied replacements for unresolved source identities."""
+    _require_import_rate(_preview_rate_limiter, tenant)
+    try:
+        preview = load_preview(tenant.user_id, tenant.channel_id, body.import_id)
+    except PreviewNotFoundError:
+        raise CheckinImportPreviewExpiredError() from None
+
+    try:
+        remapped = await service.remap_identities(
+            channel_id=tenant.channel_id,
+            preview=preview,
+            mappings=tuple(
+                IdentityRemap(
+                    row_key=mapping.row_key,
+                    target_type=IdentityTargetType(mapping.target_type),
+                    value=mapping.value,
+                )
+                for mapping in body.mappings
+            ),
+        )
+    except ValueError:
+        raise CheckinImportInvalidError() from None
+
+    import_id = stash_preview(tenant.user_id, tenant.channel_id, remapped)
+    LOGGER.info(
+        "checkin_import_identity_preview_ready",
+        extra={"mapping_count": len(body.mappings), "row_count": len(remapped.rows)},
+    )
+    return _to_import_preview_response(import_id, remapped)
 
 
 @router.post("/import/apply", response_model=CheckinImportApplyResponse)

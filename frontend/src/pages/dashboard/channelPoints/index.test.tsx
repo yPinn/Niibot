@@ -303,7 +303,7 @@ describe('Channel Points page', () => {
     const leaderboard = screen.getByRole('region', { name: '簽到排行榜' })
     const [firstPlace] = within(leaderboard).getAllByRole('listitem')
     expect(firstPlace).toHaveTextContent('Alice')
-    expect(firstPlace).toHaveTextContent('@alice')
+    expect(firstPlace).not.toHaveTextContent('@alice')
     expect(firstPlace).toHaveTextContent('12 天')
     expect(within(leaderboard).getByText('bob')).toBeInTheDocument()
 

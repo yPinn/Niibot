@@ -6,14 +6,16 @@ vi.mock('@/api/checkin', () => ({
   inspectCheckinImportColumns: vi.fn(),
   previewCheckinImport: vi.fn(),
   applyCheckinImport: vi.fn(),
+  remapCheckinImportIdentities: vi.fn(),
 }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 import {
   applyCheckinImport,
   inspectCheckinImportColumns,
   previewCheckinImport,
+  remapCheckinImportIdentities,
 } from '@/api/checkin'
 
 import { CheckinImportSheet } from './CheckinImportSheet'
@@ -38,6 +40,10 @@ const PREVIEW = {
       daily_order: 5,
       status: 'ready' as const,
       issues: [],
+      source_user_id: null,
+      source_username: 'alice',
+      source_display_name: null,
+      identity_resolution: 'username' as const,
     },
     {
       key: 'row-conflict',
@@ -51,6 +57,10 @@ const PREVIEW = {
       daily_order: null,
       status: 'conflict' as const,
       issues: ['這位觀眾已有資料'],
+      source_user_id: null,
+      source_username: 'bob',
+      source_display_name: null,
+      identity_resolution: 'username' as const,
     },
   ],
   default_selection: { 'row-ready': true, 'row-conflict': false },
@@ -86,6 +96,7 @@ describe('CheckinImportSheet', () => {
       imported_rows: 1,
       already_applied: false,
     })
+    vi.mocked(remapCheckinImportIdentities).mockResolvedValue(PREVIEW)
   })
 
   it('previews recognized files without writing, then requires explicit cutover confirmation', async () => {
@@ -126,7 +137,8 @@ describe('CheckinImportSheet', () => {
     )
     expect(applyCheckinImport).not.toHaveBeenCalled()
     expect(screen.getByText(/尚未寫入任何資料/)).toBeInTheDocument()
-    expect(screen.getByText('已有資料')).toBeInTheDocument()
+    expect(screen.getByText('資料衝突')).toBeInTheDocument()
+    expect(screen.queryByText('101')).not.toBeInTheDocument()
     expect(screen.getByLabelText('選取 Bob')).toBeDisabled()
     expect(screen.getByRole('button', { name: '確認匯入 1 筆' })).toBeDisabled()
 
@@ -137,7 +149,10 @@ describe('CheckinImportSheet', () => {
     await user.click(screen.getByRole('button', { name: '確認匯入 1 筆' }))
 
     expect(applyCheckinImport).toHaveBeenCalledWith('preview-1', ['row-ready'], true)
-    expect(await screen.findByText(/批次編號：batch-1/)).toBeInTheDocument()
+    expect(await screen.findByText(/已匯入 1 位觀眾/)).toBeInTheDocument()
+    expect(screen.queryByText('batch-1')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '查看技術資訊' }))
+    expect(screen.getByText(/batch-1/)).toBeInTheDocument()
     expect(onOpenChange).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '關閉' }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -158,11 +173,11 @@ describe('CheckinImportSheet', () => {
     expect(previewCheckinImport).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /確認匯入/ })).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('Username 對應欄位'), '0')
-    await user.selectOptions(screen.getByLabelText('Count 對應欄位'), '1')
-    await user.selectOptions(screen.getByLabelText('LastDate 對應欄位'), '2')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Twitch 帳號 對應欄位' }), '0')
+    await user.selectOptions(screen.getByLabelText('累積天數 對應欄位'), '1')
+    await user.selectOptions(screen.getByLabelText('最後簽到 對應欄位'), '2')
     await user.click(screen.getByText('其他欄位（可選）'))
-    await user.selectOptions(screen.getByLabelText('Streak 對應欄位'), '3')
+    await user.selectOptions(screen.getByLabelText('連續天數 對應欄位'), '3')
     await user.click(screen.getByRole('button', { name: '更新預覽' }))
 
     expect(await screen.findByText('Alice')).toBeInTheDocument()
@@ -198,5 +213,128 @@ describe('CheckinImportSheet', () => {
         upload: undefined,
       })
     )
+  })
+
+  it('maps an unresolved old username to a verified current account for review', async () => {
+    const unresolved = {
+      ...PREVIEW,
+      import_id: 'preview-old',
+      rows: [
+        PREVIEW.rows[0],
+        {
+          key: 'row-old',
+          source_row: 3,
+          user_id: null,
+          username: null,
+          display_name: null,
+          total_days: 8,
+          last_checkin_date: '2026-09-09',
+          current_streak: 1,
+          daily_order: 4,
+          status: 'unresolved' as const,
+          issues: ['找不到可確認的 Twitch 帳號'],
+          source_user_id: null,
+          source_username: 'alice_old',
+          source_display_name: null,
+          identity_resolution: null,
+        },
+      ],
+      default_selection: { 'row-ready': true, 'row-old': false },
+    }
+    const remapped = {
+      ...unresolved,
+      import_id: 'preview-new',
+      rows: [
+        unresolved.rows[0],
+        {
+          ...unresolved.rows[1],
+          user_id: '202',
+          username: 'alice_new',
+          display_name: 'Alice New',
+          status: 'review' as const,
+          issues: ['已配對目前帳號，請確認'],
+          identity_resolution: 'manual' as const,
+        },
+      ],
+    }
+    vi.mocked(previewCheckinImport).mockResolvedValue(unresolved)
+    vi.mocked(remapCheckinImportIdentities).mockResolvedValue(remapped)
+    const user = userEvent.setup()
+    render(<CheckinImportSheet open onOpenChange={vi.fn()} defaultTimezone="Asia/Taipei" />)
+
+    await user.upload(
+      screen.getByLabelText('選擇簽到資料檔案'),
+      new File(['Username,Count,LastDate'], 'checkins.csv', { type: 'text/csv' })
+    )
+    await user.click(screen.getByRole('button', { name: '讀取並預覽' }))
+
+    expect(await screen.findByText('@alice_old')).toBeInTheDocument()
+    expect(screen.getByText('待配對')).toBeInTheDocument()
+    const readyName = screen.getByText('Alice')
+    const oldName = screen.getByText('@alice_old')
+    expect(
+      oldName.compareDocumentPosition(readyName) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '指定 alice_old 的現行帳號' }))
+    await user.type(screen.getByLabelText('目前 Twitch 帳號'), 'alice_new')
+    await user.click(screen.getByRole('button', { name: '驗證配對' }))
+
+    expect(remapCheckinImportIdentities).toHaveBeenCalledWith('preview-old', [
+      { rowKey: 'row-old', targetType: 'username', value: 'alice_new' },
+    ])
+    expect(await screen.findByText('Alice New')).toBeInTheDocument()
+    expect(screen.getByText('@alice_new')).toBeInTheDocument()
+    expect(screen.getByText(/來源 @alice_old/)).toBeInTheDocument()
+    expect(screen.getByText('待確認')).toBeInTheDocument()
+    expect(screen.getByLabelText('選取 Alice New')).not.toBeDisabled()
+    expect(screen.getByLabelText('選取 Alice New')).not.toBeChecked()
+    expect(screen.queryByText('202')).not.toBeInTheDocument()
+  })
+
+  it('keeps the mapping form open when Twitch cannot find the replacement account', async () => {
+    const unresolved = {
+      ...PREVIEW,
+      import_id: 'preview-old',
+      rows: [
+        {
+          ...PREVIEW.rows[0],
+          key: 'row-old',
+          user_id: null,
+          username: null,
+          display_name: null,
+          status: 'unresolved' as const,
+          issues: ['找不到 Twitch 帳號，可指定目前帳號'],
+          source_username: 'alice_old',
+          identity_resolution: null,
+        },
+      ],
+      default_selection: { 'row-old': false },
+    }
+    const notFound = {
+      ...unresolved,
+      import_id: 'preview-retry',
+      rows: [
+        {
+          ...unresolved.rows[0],
+          issues: ['找不到指定的 Twitch 帳號，請重新輸入'],
+        },
+      ],
+    }
+    vi.mocked(previewCheckinImport).mockResolvedValue(unresolved)
+    vi.mocked(remapCheckinImportIdentities).mockResolvedValue(notFound)
+    const user = userEvent.setup()
+    render(<CheckinImportSheet open onOpenChange={vi.fn()} defaultTimezone="Asia/Taipei" />)
+
+    await user.upload(
+      screen.getByLabelText('選擇簽到資料檔案'),
+      new File(['Username,Count,LastDate'], 'checkins.csv', { type: 'text/csv' })
+    )
+    await user.click(screen.getByRole('button', { name: '讀取並預覽' }))
+    await user.click(screen.getByRole('button', { name: '指定 alice_old 的現行帳號' }))
+    await user.type(screen.getByLabelText('目前 Twitch 帳號'), 'missing_user')
+    await user.click(screen.getByRole('button', { name: '驗證配對' }))
+
+    expect(await screen.findByText('找不到指定的 Twitch 帳號，請重新輸入')).toBeInTheDocument()
+    expect(screen.getByLabelText('目前 Twitch 帳號')).toHaveValue('missing_user')
   })
 })

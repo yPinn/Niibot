@@ -15,6 +15,25 @@ class ImportRowStatus(StrEnum):
     CONFLICT = "conflict"
 
 
+class IdentityResolution(StrEnum):
+    TWITCH_ID = "twitch_id"
+    USERNAME = "username"
+    DISPLAY_AS_LOGIN = "display_as_login"
+    MANUAL = "manual"
+
+
+class IdentityTargetType(StrEnum):
+    USERNAME = "username"
+    USER_ID = "user_id"
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityRemap:
+    row_key: str
+    target_type: IdentityTargetType
+    value: str
+
+
 @dataclass(frozen=True, slots=True)
 class ImportPreviewRow:
     key: str
@@ -28,6 +47,10 @@ class ImportPreviewRow:
     daily_order: int | None
     status: ImportRowStatus
     issues: tuple[str, ...] = ()
+    source_user_id: str | None = None
+    source_username: str | None = None
+    source_display_name: str | None = None
+    identity_resolution: IdentityResolution | None = None
 
 
 @dataclass(frozen=True, slots=True)

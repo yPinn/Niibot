@@ -28,6 +28,7 @@ export interface CheckinLeaderboardEntry {
 }
 
 export type CheckinImportRowStatus = 'ready' | 'review' | 'invalid' | 'unresolved' | 'conflict'
+export type CheckinIdentityResolution = 'twitch_id' | 'username' | 'display_as_login' | 'manual'
 
 export interface CheckinImportRow {
   key: string
@@ -41,6 +42,10 @@ export interface CheckinImportRow {
   daily_order: number | null
   status: CheckinImportRowStatus
   issues: string[]
+  source_user_id: string | null
+  source_username: string | null
+  source_display_name: string | null
+  identity_resolution: CheckinIdentityResolution | null
 }
 
 export interface CheckinImportPreview {
@@ -89,6 +94,12 @@ export interface CheckinImportApplyResult {
   batch_id: string
   imported_rows: number
   already_applied: boolean
+}
+
+export interface CheckinIdentityMapping {
+  rowKey: string
+  targetType: 'username' | 'user_id'
+  value: string
 }
 
 export type CheckinClearScope = 'imported' | 'all'
@@ -266,5 +277,31 @@ export function applyCheckinImport(
       }),
     },
     { fallback: '套用簽到資料失敗' }
+  )
+}
+
+export function remapCheckinImportIdentities(
+  importId: string,
+  mappings: readonly CheckinIdentityMapping[]
+): Promise<CheckinImportPreview> {
+  return apiJson(
+    API_ENDPOINTS.checkin.importIdentityPreview,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-import',
+      },
+      body: JSON.stringify({
+        import_id: importId,
+        mappings: mappings.map(mapping => ({
+          row_key: mapping.rowKey,
+          target_type: mapping.targetType,
+          value: mapping.value,
+        })),
+      }),
+    },
+    { fallback: '驗證 Twitch 帳號失敗' }
   )
 }

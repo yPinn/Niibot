@@ -58,6 +58,11 @@ export function CheckinLeaderboard({
         <ol className="divide-y rounded-md border">
           {entries.map(entry => {
             const displayName = entry.display_name || entry.username
+            const showHandle =
+              entry.display_name !== null &&
+              entry.display_name.localeCompare(entry.username, undefined, {
+                sensitivity: 'accent',
+              }) !== 0
             const rankColor =
               entry.rank === 1
                 ? 'text-rank-gold'
@@ -80,7 +85,7 @@ export function CheckinLeaderboard({
                 <div className="min-w-0">
                   <p className="truncate text-sub font-medium">{displayName}</p>
                   <p className="mt-0.5 truncate text-label text-muted-foreground">
-                    @{entry.username} · 最後簽到{' '}
+                    {showHandle && <>@{entry.username} · </>}最後簽到{' '}
                     <time dateTime={entry.last_checkin_date}>{entry.last_checkin_date}</time>
                   </p>
                 </div>

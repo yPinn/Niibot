@@ -24,6 +24,7 @@ from routers.checkin_router import get_checkin_import_service, router
 from services.checkin_import.models import (
     CheckinImportPreview,
     CheckinImportResult,
+    IdentityResolution,
     ImportPreviewRow,
     ImportRowStatus,
 )
@@ -221,6 +222,138 @@ def test_apply_uses_tenant_bound_preview_and_confirmation() -> None:
         selected_keys=["row-ready"],
         old_source_disabled=True,
     )
+
+
+def test_identity_preview_remaps_only_tenant_bound_unresolved_rows() -> None:
+    unresolved = CheckinImportPreview(
+        source="other-bot",
+        source_format="csv",
+        source_timezone="Asia/Taipei",
+        through_date=date(2026, 9, 10),
+        content_sha256="b" * 64,
+        column_mapping=(("last_checkin_date", 2), ("total_days", 1), ("username", 0)),
+        sheet_name=None,
+        rows=(
+            ImportPreviewRow(
+                key="row-aaaaaaaaaaaaaaaaaaaaaaaa",
+                source_row=2,
+                user_id=None,
+                username=None,
+                display_name=None,
+                total_days=15,
+                last_checkin_date=date(2026, 9, 10),
+                current_streak=3,
+                daily_order=None,
+                status=ImportRowStatus.UNRESOLVED,
+                source_username="alice_old",
+            ),
+        ),
+    )
+    remapped = CheckinImportPreview(
+        source=unresolved.source,
+        source_format=unresolved.source_format,
+        source_timezone=unresolved.source_timezone,
+        through_date=unresolved.through_date,
+        content_sha256=unresolved.content_sha256,
+        column_mapping=unresolved.column_mapping,
+        sheet_name=None,
+        rows=(
+            ImportPreviewRow(
+                key=unresolved.rows[0].key,
+                source_row=2,
+                user_id="101",
+                username="alice_new",
+                display_name="Alice New",
+                total_days=15,
+                last_checkin_date=date(2026, 9, 10),
+                current_streak=3,
+                daily_order=None,
+                status=ImportRowStatus.REVIEW,
+                source_username="alice_old",
+                identity_resolution=IdentityResolution.MANUAL,
+            ),
+        ),
+    )
+    import_id = stash_preview(_TENANT.user_id, _TENANT.channel_id, unresolved)
+    service = MagicMock()
+    service.remap_identities = AsyncMock(return_value=remapped)
+
+    response = _client(service).post(
+        "/api/checkin/import/identity/preview",
+        headers={"X-Niibot-Action": "checkin-import"},
+        json={
+            "import_id": import_id,
+            "mappings": [
+                {
+                    "row_key": unresolved.rows[0].key,
+                    "target_type": "username",
+                    "value": "alice_new",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["import_id"] != import_id
+    assert body["rows"][0]["status"] == "review"
+    assert body["default_selection"] == {unresolved.rows[0].key: False}
+    service.remap_identities.assert_awaited_once()
+
+
+def test_identity_preview_rejects_invalid_target_and_cross_tenant_preview() -> None:
+    service = MagicMock()
+    service.remap_identities = AsyncMock()
+    client = _client(service)
+    cross_tenant_id = stash_preview(_TENANT.user_id, "other-channel", _preview())
+
+    invalid_target = client.post(
+        "/api/checkin/import/identity/preview",
+        headers={"X-Niibot-Action": "checkin-import"},
+        json={
+            "import_id": "preview-missing",
+            "mappings": [
+                {
+                    "row_key": "row-aaaaaaaaaaaaaaaaaaaaaaaa",
+                    "target_type": "user_id",
+                    "value": "not-id",
+                }
+            ],
+        },
+    )
+    invalid_target_type = client.post(
+        "/api/checkin/import/identity/preview",
+        headers={"X-Niibot-Action": "checkin-import"},
+        json={
+            "import_id": "preview-missing",
+            "mappings": [
+                {
+                    "row_key": "row-aaaaaaaaaaaaaaaaaaaaaaaa",
+                    "target_type": "display_name",
+                    "value": "Alice",
+                }
+            ],
+        },
+    )
+    cross_tenant = client.post(
+        "/api/checkin/import/identity/preview",
+        headers={"X-Niibot-Action": "checkin-import"},
+        json={
+            "import_id": cross_tenant_id,
+            "mappings": [
+                {
+                    "row_key": "row-aaaaaaaaaaaaaaaaaaaaaaaa",
+                    "target_type": "username",
+                    "value": "alice",
+                }
+            ],
+        },
+    )
+
+    assert invalid_target.status_code == 422
+    assert invalid_target_type.status_code == 422
+    assert cross_tenant.status_code == 404
+    service.remap_identities.assert_not_awaited()
 
 
 def test_apply_rejects_preview_from_another_tenant() -> None:

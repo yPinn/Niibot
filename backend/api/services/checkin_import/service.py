@@ -6,6 +6,8 @@ import hashlib
 import json
 import re
 import secrets
+from collections import Counter
+from dataclasses import replace
 from datetime import date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -19,11 +21,16 @@ from .formats import InvalidSummaryRow, ParsedSummary, SummaryRow
 from .models import (
     CheckinImportPreview,
     CheckinImportResult,
+    IdentityRemap,
+    IdentityResolution,
+    IdentityTargetType,
     ImportPreviewRow,
     ImportRowStatus,
 )
 
 _SOURCE_SLUG = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_TWITCH_LOGIN = re.compile(r"^[A-Za-z0-9_]{1,25}$")
+_TWITCH_USER_ID = re.compile(r"^[0-9]{1,32}$")
 _PREVIEW_CACHE: AsyncTTLCache = AsyncTTLCache(maxsize=64, ttl=600.0, name="checkin_import.preview")
 
 
@@ -100,9 +107,20 @@ class CheckinImportService:
         )
         logins = list(
             dict.fromkeys(
-                row.username.casefold()
+                login.casefold()
                 for row in valid_rows
-                if not row.platform_user_id and row.username
+                for login in (
+                    row.username,
+                    (
+                        row.display_name
+                        if not row.platform_user_id
+                        and not row.username
+                        and row.display_name
+                        and _TWITCH_LOGIN.fullmatch(row.display_name)
+                        else None
+                    ),
+                )
+                if login
             )
         )
         try:
@@ -110,27 +128,6 @@ class CheckinImportService:
             users_by_login = await self._users_by_logins(logins)
         except TwitchUsersLookupError as exc:
             raise CheckinIdentityLookupError() from exc
-
-        resolved: list[tuple[SummaryRow, dict | None, list[str]]] = []
-        for row in valid_rows:
-            issues: list[str] = []
-            if row.platform_user_id:
-                user = users_by_id.get(row.platform_user_id)
-                if (
-                    user
-                    and row.username
-                    and str(user.get("login", "")).casefold() != row.username.casefold()
-                ):
-                    issues.append("Twitch User ID 與 Username 不一致")
-            else:
-                user = users_by_login.get((row.username or "").casefold())
-            if user is None:
-                issues.append("找不到可確認的 Twitch 帳號")
-            resolved.append((row, user, issues))
-
-        resolved_ids = [str(user["id"]) for _, user, _ in resolved if user and user.get("id")]
-        conflicts = await self._existing_user_ids(channel_id, resolved_ids)
-        duplicate_ids = {user_id for user_id in resolved_ids if resolved_ids.count(user_id) > 1}
 
         preview_rows: list[ImportPreviewRow] = [
             ImportPreviewRow(
@@ -149,39 +146,11 @@ class CheckinImportService:
             for row in parsed.rows
             if isinstance(row, InvalidSummaryRow)
         ]
-        for row, user, issues in resolved:
-            user_id = str(user["id"]) if user and user.get("id") else None
-            if user_id in duplicate_ids:
-                issues.append("多列資料解析到同一個 Twitch 帳號")
-            if user_id in conflicts:
-                issues.append("這位觀眾已有 Niibot 簽到或轉移資料")
-            if user is None:
-                status = ImportRowStatus.UNRESOLVED
-            elif issues:
-                status = ImportRowStatus.CONFLICT
-            else:
-                status = ImportRowStatus.READY
-            preview_rows.append(
-                ImportPreviewRow(
-                    key=_row_key(row, user_id),
-                    source_row=row.source_row,
-                    user_id=user_id,
-                    username=(
-                        str(user.get("login")) if user and user.get("login") else row.username
-                    ),
-                    display_name=(
-                        str(user.get("display_name"))
-                        if user and user.get("display_name")
-                        else row.display_name
-                    ),
-                    total_days=row.total_days,
-                    last_checkin_date=row.last_checkin_date,
-                    current_streak=row.current_streak,
-                    daily_order=row.daily_order,
-                    status=status,
-                    issues=tuple(issues),
-                )
-            )
+        preview_rows.extend(
+            self._resolve_row(row, users_by_id=users_by_id, users_by_login=users_by_login)
+            for row in valid_rows
+        )
+        preview_rows = await self._with_identity_conflicts(channel_id, preview_rows)
         preview_rows.sort(key=lambda row: row.source_row)
 
         return CheckinImportPreview(
@@ -194,6 +163,173 @@ class CheckinImportService:
             sheet_name=parsed.sheet_name,
             rows=tuple(preview_rows),
         )
+
+    @staticmethod
+    def _resolve_row(
+        row: SummaryRow,
+        *,
+        users_by_id: dict[str, dict],
+        users_by_login: dict[str, dict],
+    ) -> ImportPreviewRow:
+        user: dict | None = None
+        status = ImportRowStatus.UNRESOLVED
+        issues: list[str] = []
+        resolution: IdentityResolution | None = None
+
+        if row.platform_user_id:
+            user = users_by_id.get(row.platform_user_id)
+            resolution = IdentityResolution.TWITCH_ID
+            if user is None:
+                issues.append("找不到來源 Twitch ID")
+                if row.username and users_by_login.get(row.username.casefold()):
+                    issues.append("來源帳號指向其他有效帳號")
+                    status = ImportRowStatus.CONFLICT
+            else:
+                status = ImportRowStatus.READY
+                current_login = str(user.get("login", "")).casefold()
+                if row.username and current_login != row.username.casefold():
+                    login_user = users_by_login.get(row.username.casefold())
+                    if login_user and str(login_user.get("id", "")) != str(user.get("id", "")):
+                        status = ImportRowStatus.CONFLICT
+                        issues.append("來源 Twitch ID 與帳號指向不同使用者")
+                    else:
+                        status = ImportRowStatus.REVIEW
+                        issues.append("來源帳號已變更，將使用 Twitch 目前名稱")
+        elif row.username:
+            user = users_by_login.get(row.username.casefold())
+            resolution = IdentityResolution.USERNAME
+            if user is None:
+                issues.append("找不到 Twitch 帳號，可指定目前帳號")
+            else:
+                status = ImportRowStatus.READY
+        elif row.display_name and _TWITCH_LOGIN.fullmatch(row.display_name):
+            user = users_by_login.get(row.display_name.casefold())
+            resolution = IdentityResolution.DISPLAY_AS_LOGIN
+            if user is None:
+                issues.append("找不到 Twitch 帳號，可指定目前帳號")
+            else:
+                status = ImportRowStatus.REVIEW
+                issues.append("顯示名稱已按 Twitch 帳號查證，請確認")
+        else:
+            issues.append("顯示名稱無法唯一查詢，請指定目前帳號")
+
+        user_id = str(user["id"]) if user and user.get("id") else None
+        return ImportPreviewRow(
+            key=_row_key(row, user_id),
+            source_row=row.source_row,
+            user_id=user_id,
+            username=str(user.get("login")) if user and user.get("login") else None,
+            display_name=(
+                str(user.get("display_name")) if user and user.get("display_name") else None
+            ),
+            total_days=row.total_days,
+            last_checkin_date=row.last_checkin_date,
+            current_streak=row.current_streak,
+            daily_order=row.daily_order,
+            status=status,
+            issues=tuple(issues),
+            source_user_id=row.platform_user_id,
+            source_username=row.username,
+            source_display_name=row.display_name,
+            identity_resolution=resolution if user is not None else None,
+        )
+
+    async def _with_identity_conflicts(
+        self,
+        channel_id: str,
+        rows: list[ImportPreviewRow],
+    ) -> list[ImportPreviewRow]:
+        resolved_ids = [row.user_id for row in rows if row.user_id]
+        duplicate_ids = {user_id for user_id, count in Counter(resolved_ids).items() if count > 1}
+        existing_ids = await self._existing_user_ids(channel_id, resolved_ids)
+        result: list[ImportPreviewRow] = []
+        for row in rows:
+            issues = list(row.issues)
+            status = row.status
+            if row.user_id in duplicate_ids:
+                status = ImportRowStatus.CONFLICT
+                if "多列資料解析到同一個 Twitch 帳號" not in issues:
+                    issues.append("多列資料解析到同一個 Twitch 帳號")
+            if row.user_id in existing_ids:
+                status = ImportRowStatus.CONFLICT
+                if "這位觀眾已有 Niibot 簽到或轉移資料" not in issues:
+                    issues.append("這位觀眾已有 Niibot 簽到或轉移資料")
+            result.append(replace(row, status=status, issues=tuple(issues)))
+        return result
+
+    async def remap_identities(
+        self,
+        *,
+        channel_id: str,
+        preview: CheckinImportPreview,
+        mappings: tuple[IdentityRemap, ...],
+    ) -> CheckinImportPreview:
+        if not mappings or len(mappings) > 100:
+            raise ValueError("identity mappings must contain 1 to 100 rows")
+        mapping_keys = [mapping.row_key for mapping in mappings]
+        if len(mapping_keys) != len(set(mapping_keys)):
+            raise ValueError("identity mapping row keys must be unique")
+
+        rows_by_key = {row.key: row for row in preview.rows}
+        for mapping in mappings:
+            row = rows_by_key.get(mapping.row_key)
+            if row is None or row.status is not ImportRowStatus.UNRESOLVED:
+                raise ValueError("only unresolved rows may be remapped")
+            if mapping.target_type is IdentityTargetType.USER_ID:
+                if not _TWITCH_USER_ID.fullmatch(mapping.value):
+                    raise ValueError("invalid Twitch user id")
+            elif not _TWITCH_LOGIN.fullmatch(mapping.value):
+                raise ValueError("invalid Twitch username")
+
+        ids = list(
+            dict.fromkeys(
+                mapping.value
+                for mapping in mappings
+                if mapping.target_type is IdentityTargetType.USER_ID
+            )
+        )
+        logins = list(
+            dict.fromkeys(
+                mapping.value.casefold()
+                for mapping in mappings
+                if mapping.target_type is IdentityTargetType.USERNAME
+            )
+        )
+        try:
+            users_by_id = await self._users_by_ids(ids)
+            users_by_login = await self._users_by_logins(logins)
+        except TwitchUsersLookupError as exc:
+            raise CheckinIdentityLookupError() from exc
+
+        targets = {mapping.row_key: mapping for mapping in mappings}
+        remapped_rows: list[ImportPreviewRow] = []
+        for row in preview.rows:
+            target = targets.get(row.key)
+            if target is None:
+                remapped_rows.append(row)
+                continue
+            user = (
+                users_by_id.get(target.value)
+                if target.target_type is IdentityTargetType.USER_ID
+                else users_by_login.get(target.value.casefold())
+            )
+            if user is None or not user.get("id") or not user.get("login"):
+                remapped_rows.append(replace(row, issues=("找不到指定的 Twitch 帳號，請重新輸入",)))
+                continue
+            remapped_rows.append(
+                replace(
+                    row,
+                    user_id=str(user["id"]),
+                    username=str(user["login"]),
+                    display_name=(str(user["display_name"]) if user.get("display_name") else None),
+                    status=ImportRowStatus.REVIEW,
+                    issues=("已配對目前帳號，請確認",),
+                    identity_resolution=IdentityResolution.MANUAL,
+                )
+            )
+
+        checked_rows = await self._with_identity_conflicts(channel_id, remapped_rows)
+        return replace(preview, rows=tuple(checked_rows))
 
     async def _users_by_ids(self, user_ids: list[str]) -> dict[str, dict]:
         users: dict[str, dict] = {}
@@ -244,7 +380,7 @@ class CheckinImportService:
             raise ValueError("selected row keys must be unique and non-empty")
         selected = [row for row in preview.rows if row.key in selected_set]
         if len(selected) != len(selected_set) or any(
-            row.status is not ImportRowStatus.READY
+            row.status not in {ImportRowStatus.READY, ImportRowStatus.REVIEW}
             or not row.user_id
             or row.total_days is None
             or row.last_checkin_date is None
@@ -256,7 +392,8 @@ class CheckinImportService:
             "content": preview.content_sha256,
             "column_mapping": preview.column_mapping,
             "keys": sorted(selected_set),
-            "policy": "aggregate-block-existing-v1",
+            "identities": sorted((row.key, row.user_id) for row in selected),
+            "policy": "aggregate-block-existing-v2",
             "source": preview.source,
             "source_format": preview.source_format,
             "source_timezone": preview.source_timezone,

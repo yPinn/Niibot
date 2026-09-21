@@ -54,7 +54,11 @@ class SummaryRow:
 
     @property
     def source_key(self) -> str:
-        return self.platform_user_id or (self.username or "").casefold()
+        if self.platform_user_id:
+            return f"id:{self.platform_user_id}"
+        if self.username:
+            return f"username:{self.username.casefold()}"
+        return f"display:{(self.display_name or '').casefold()}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,11 +123,17 @@ _NORMALIZED_ALIASES = {
 }
 
 
-def _safe_text(value: object, *, field: str, row_number: int) -> str:
+def _safe_text(
+    value: object,
+    *,
+    field: str,
+    row_number: int,
+    max_length: int = _MAX_CELL_LENGTH,
+) -> str:
     if value is None:
         return ""
     text = str(value).strip()
-    if len(text) > _MAX_CELL_LENGTH:
+    if len(text) > max_length:
         raise CheckinImportValidationError(f"第 {row_number} 列的 {field} 太長")
     return text
 
@@ -227,8 +237,8 @@ def _map_headers(
     missing = {"total_days", "last_checkin_date"}.difference(mapped)
     if missing:
         raise CheckinImportValidationError("缺少 Count 或 LastDate 必要欄位")
-    if "platform_user_id" not in mapped and "username" not in mapped:
-        raise CheckinImportValidationError("缺少 Username 或 Twitch User ID")
+    if not {"platform_user_id", "username", "display_name"}.intersection(mapped):
+        raise CheckinImportValidationError("缺少觀眾識別欄位")
     return mapped
 
 
@@ -267,7 +277,12 @@ def _canonical_rows(
                 _safe_text(value("username"), field="Username", row_number=row_number) or None
             )
             display_name = (
-                _safe_text(value("display_name"), field="DisplayName", row_number=row_number)
+                _safe_text(
+                    value("display_name"),
+                    field="DisplayName",
+                    row_number=row_number,
+                    max_length=128,
+                )
                 or None
             )
             if platform_user_id is not None and not platform_user_id.isascii():
@@ -276,7 +291,7 @@ def _canonical_rows(
                 raise CheckinImportValidationError(f"第 {row_number} 列的 Twitch User ID 無效")
             if username is not None and not _TWITCH_LOGIN.fullmatch(username):
                 raise CheckinImportValidationError(f"第 {row_number} 列的 Username 無效")
-            if platform_user_id is None and username is None:
+            if platform_user_id is None and username is None and display_name is None:
                 raise CheckinImportValidationError(f"第 {row_number} 列缺少觀眾身份")
 
             total_days = _positive_int(
@@ -304,7 +319,12 @@ def _canonical_rows(
                     order_raw, field="TodayOrder", row_number=row_number, allow_zero=False
                 )
 
-            key = platform_user_id or (username or "").casefold()
+            if platform_user_id:
+                key = f"id:{platform_user_id}"
+            elif username:
+                key = f"username:{username.casefold()}"
+            else:
+                key = f"display:{(display_name or '').casefold()}"
             if key in seen:
                 raise CheckinImportValidationError(f"第 {row_number} 列的觀眾重複")
             seen.add(key)

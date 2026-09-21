@@ -11,6 +11,7 @@ import {
   getCheckinSettings,
   inspectCheckinImportColumns,
   previewCheckinImport,
+  remapCheckinImportIdentities,
   updateCheckinSettings,
 } from './checkin'
 
@@ -150,6 +151,35 @@ describe('check-in settings API', () => {
         import_id: 'preview-1',
         selected_keys: ['row-1'],
         old_source_disabled: true,
+      }),
+    })
+  })
+
+  it('revalidates manual identity mappings through a tenant-bound preview', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ import_id: 'preview-2', rows: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await remapCheckinImportIdentities('preview-1', [
+      { rowKey: 'row-1', targetType: 'username', value: 'alice_new' },
+    ])
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
+      '/api/checkin/import/identity/preview'
+    )
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-import',
+      },
+      body: JSON.stringify({
+        import_id: 'preview-1',
+        mappings: [{ row_key: 'row-1', target_type: 'username', value: 'alice_new' }],
       }),
     })
   })

@@ -156,6 +156,34 @@ def test_platform_user_id_can_replace_username() -> None:
     assert parsed.rows[0].username is None
 
 
+def test_display_name_can_be_the_only_source_identity() -> None:
+    parsed = parse_summary_bytes(
+        "checkins.csv",
+        "DisplayName,Count,LastDate\n愛麗絲,8,2026-09-09\n".encode(),
+        through_date=date(2026, 9, 10),
+    )
+
+    assert parsed.rows[0].platform_user_id is None
+    assert parsed.rows[0].username is None
+    assert parsed.rows[0].display_name == "愛麗絲"
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    ["", "x" * 129],
+    ids=["empty", "too-long"],
+)
+def test_display_name_only_identity_must_be_present_and_bounded(display_name: str) -> None:
+    parsed = parse_summary_bytes(
+        "checkins.csv",
+        f"DisplayName,Count,LastDate\n{display_name},8,2026-09-09\n".encode(),
+        through_date=date(2026, 9, 10),
+    )
+
+    assert isinstance(parsed.rows[0], InvalidSummaryRow)
+    assert parsed.rows[0].issue
+
+
 def test_manual_column_mapping_accepts_unknown_source_headers() -> None:
     parsed = parse_summary_bytes(
         "checkins.csv",

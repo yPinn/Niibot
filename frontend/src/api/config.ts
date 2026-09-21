@@ -157,6 +157,7 @@ export const API_ENDPOINTS = {
     dataClear: join('/api/checkin/data/clear'),
     importColumns: join('/api/checkin/import/summary/columns'),
     importPreview: join('/api/checkin/import/summary/preview'),
+    importIdentityPreview: join('/api/checkin/import/identity/preview'),
     importApply: join('/api/checkin/import/apply'),
   },
   vip: {
