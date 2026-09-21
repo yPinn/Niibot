@@ -1,6 +1,6 @@
 import { reportVideoMetadata } from '@/api/videoQueue'
 
-import { makeMountDiv } from './shared'
+import { makeMountDiv, mountPosterSidePanels } from './shared'
 import type { MountContext, PlayerStrategy, YTPlayer } from './types'
 
 let _ytReadyPromise: Promise<void> | null = null
@@ -29,22 +29,21 @@ function mount(ctx: MountContext): () => void {
     current,
     currentId,
     joinElapsed,
+    isPreview,
+    overlayKey,
     muted,
+    volumePercent,
     username,
     containerRef,
     leftContainerRef,
     rightContainerRef,
     playerRef,
-    leftPlayerRef,
-    rightPlayerRef,
     progressRef,
     setElapsed,
+    notifyPlaybackStarted,
     handleVideoEnd,
   } = ctx
 
-  // All-ready barrier: all players hold at autoplay:0 until every onReady has fired,
-  // then startAll() calls playVideo() on all simultaneously — zero staggered delay.
-  const totalPlayers = current.is_vertical ? 3 : 1
   let readyCount = 0
   let allStarted = false
   let fallbackTimer = 0 as ReturnType<typeof setTimeout>
@@ -65,7 +64,7 @@ function mount(ctx: MountContext): () => void {
 
     // Seek all players to the correct position when joining mid-video (>2s in)
     if (joinElapsed > 2) {
-      for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+      for (const ref of [playerRef]) {
         if (ref.current)
           try {
             ref.current.seekTo(joinElapsed, true)
@@ -75,7 +74,7 @@ function mount(ctx: MountContext): () => void {
       }
     }
 
-    for (const ref of [playerRef, leftPlayerRef, rightPlayerRef]) {
+    for (const ref of [playerRef]) {
       if (ref.current)
         try {
           ref.current.playVideo()
@@ -87,17 +86,6 @@ function mount(ctx: MountContext): () => void {
       if (!playerRef.current) return
       const t = playerRef.current.getCurrentTime()
       setElapsed(t)
-      // Sync side players — resync if drift exceeds 0.3s
-      for (const ref of [leftPlayerRef, rightPlayerRef]) {
-        if (ref.current) {
-          try {
-            const st = ref.current.getCurrentTime()
-            if (Math.abs(st - t) > 0.3) ref.current.seekTo(t, true)
-          } catch {
-            /* ignore */
-          }
-        }
-      }
       // ENDED fallback: polling check to catch missed onStateChange ENDED events
       const d = playerRef.current.getDuration()
       if (d > 0 && t >= d - 0.5) {
@@ -110,7 +98,7 @@ function mount(ctx: MountContext): () => void {
 
   function onPlayerReady() {
     readyCount++
-    if (readyCount >= totalPlayers) {
+    if (readyCount >= 1) {
       clearTimeout(fallbackTimer)
       startAll()
     }
@@ -118,32 +106,6 @@ function mount(ctx: MountContext): () => void {
 
   // 8s fallback in case a player never fires onReady
   fallbackTimer = setTimeout(startAll, 8000)
-
-  // Muted side player for vertical video blurred columns.
-  function createSidePlayer(
-    containerRefArg: typeof leftContainerRef,
-    playerRefArg: typeof leftPlayerRef
-  ) {
-    if (!containerRefArg.current) {
-      onPlayerReady() // container not mounted — count as ready so barrier doesn't stall
-      return
-    }
-    playerRefArg.current = new window.YT.Player(makeMountDiv(containerRefArg.current), {
-      width: '100%',
-      height: '100%',
-      videoId: current.video_id,
-      playerVars: {
-        autoplay: 0,
-        controls: 0,
-        rel: 0,
-        modestbranding: 1,
-        mute: 1,
-        iv_load_policy: 3,
-        vq: 'highres',
-      },
-      events: { onReady: onPlayerReady },
-    })
-  }
 
   // Center player — pass an imperative child div so YT.Player's
   // parentNode.replaceChild() never detaches containerRef from the DOM
@@ -155,55 +117,36 @@ function mount(ctx: MountContext): () => void {
       autoplay: 0,
       controls: 0,
       rel: 0,
-      modestbranding: 1,
       iv_load_policy: 3,
-      cc_load_policy: 3,
-      mute: muted ? 1 : 0,
-      vq: 'highres',
+      // Begin muted while the iframe initializes, then apply the explicit
+      // preview/OBS mute state through the official API in onReady.
+      mute: 1,
     },
     events: {
       onReady: event => {
-        event.target.setPlaybackQuality('highres')
+        event.target.setVolume(volumePercent)
+        if (muted || volumePercent === 0) event.target.mute()
+        else event.target.unMute()
         const duration = event.target.getDuration()
         // Report duration to backend (fallback for entries where API returned null)
-        if (duration > 0 && !current.duration_seconds && username) {
-          reportVideoMetadata(username, currentId, Math.round(duration)).catch(() => {})
+        if (duration > 0 && !current.duration_seconds && username && overlayKey && !isPreview) {
+          reportVideoMetadata(username, currentId, Math.round(duration), overlayKey).catch(() => {})
         }
         onPlayerReady()
       },
       onStateChange: event => {
         if (event.data === 1) {
-          // YT.PlayerState.PLAYING — sync side panels
-          for (const ref of [leftPlayerRef, rightPlayerRef]) {
-            if (ref.current)
-              try {
-                ref.current.playVideo()
-              } catch {
-                /* ignore */
-              }
-          }
-        }
-        if (event.data === 2) {
-          // YT.PlayerState.PAUSED — pause side panels in lockstep
-          for (const ref of [leftPlayerRef, rightPlayerRef]) {
-            if (ref.current)
-              try {
-                ref.current.pauseVideo()
-              } catch {
-                /* ignore */
-              }
-          }
+          notifyPlaybackStarted('confirmed')
         }
         if (event.data === 0) handleVideoEnd(currentId) // YT.PlayerState.ENDED
       },
-      onError: () => handleVideoEnd(currentId),
+      onError: () => handleVideoEnd(currentId, 'provider_error'),
+      onAutoplayBlocked: () => handleVideoEnd(currentId, 'autoplay_blocked'),
     },
   })
 
-  // Side players for vertical videos (blurred background columns)
   if (current.is_vertical) {
-    createSidePlayer(leftContainerRef, leftPlayerRef)
-    createSidePlayer(rightContainerRef, rightPlayerRef)
+    mountPosterSidePanels(current, [leftContainerRef, rightContainerRef])
   }
 
   return () => {

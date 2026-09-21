@@ -27,7 +27,15 @@ import type { MountContext, PlayerStrategy } from './types'
 // Bilibili's `-412` risk-control block means we usually have no real duration,
 // so that ceiling is otherwise the only thing that ends a Bilibili entry.
 function mount(ctx: MountContext): (() => void) | void {
-  const { current, joinElapsed, currentId, muted, containerRef, handleVideoEnd } = ctx
+  const {
+    current,
+    joinElapsed,
+    currentId,
+    muted,
+    containerRef,
+    notifyPlaybackStarted,
+    handleVideoEnd,
+  } = ctx
 
   if (hasAlreadyEnded(ctx)) {
     handleVideoEnd(currentId)
@@ -50,6 +58,7 @@ function mount(ctx: MountContext): (() => void) | void {
   iframe.tabIndex = -1
   iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
+  iframe.addEventListener('load', () => notifyPlaybackStarted('best_effort'), { once: true })
 
   const onMessage = (event: MessageEvent) => {
     if (event.source !== iframe.contentWindow) return

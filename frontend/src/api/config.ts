@@ -186,6 +186,8 @@ export const API_ENDPOINTS = {
     public: (u: string) => join(`/api/video-queue/public/${u}`),
     stream: (u: string) => join(`/api/video-queue/public/${u}/stream`),
     advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
+    playbackStarted: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/playback-started`),
     metadata: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
     clipSource: (u: string, id: number) =>
@@ -193,10 +195,13 @@ export const API_ENDPOINTS = {
     reelSource: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/reel-source`),
     state: join('/api/video-queue/state'),
+    dashboardAdvance: join('/api/video-queue/advance'),
     history: join('/api/video-queue/history'),
+    rankings: join('/api/video-queue/rankings'),
     skip: join('/api/video-queue/skip'),
     clear: join('/api/video-queue/clear'),
     settings: join('/api/video-queue/settings'),
+    rotateKey: join('/api/video-queue/settings/rotate-key'),
     setNext: (id: number) => join(`/api/video-queue/entries/${id}/set-next`),
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),

@@ -11,6 +11,7 @@ function makePlayer() {
     pause: vi.fn(),
     seek: vi.fn(),
     setMuted: vi.fn(),
+    setVolume: vi.fn(),
     getCurrentTime: vi.fn(() => 0),
     getDuration: vi.fn(() => 0),
     getEnded: vi.fn(() => false),
@@ -27,11 +28,15 @@ function installTwitch(player: ReturnType<typeof makePlayer>) {
     ENDED: string
     PLAYING: string
     PAUSE: string
+    PLAYBACK_BLOCKED: string
+    READY: string
     mock: { calls: unknown[][] }
   }
   Player.ENDED = 'video.ended'
   Player.PLAYING = 'video.play'
   Player.PAUSE = 'video.pause'
+  Player.PLAYBACK_BLOCKED = 'video.blocked'
+  Player.READY = 'video.ready'
   ;(window as unknown as { Twitch: unknown }).Twitch = { Player }
   return Player
 }
@@ -54,7 +59,9 @@ function ctx(overrides: Partial<MountContext> = {}): MountContext {
     currentId: 7,
     joinElapsed: 0,
     isPreview: false,
+    overlayKey: '11111111-1111-4111-8111-111111111111',
     muted: false,
+    volumePercent: 35,
     username: 'streamer',
     containerRef: { current: div },
     leftContainerRef: { current: null },
@@ -64,8 +71,10 @@ function ctx(overrides: Partial<MountContext> = {}): MountContext {
     rightPlayerRef: { current: null },
     progressRef: { current: null },
     clipTimerRef: { current: null },
+    playbackStartTimerRef: { current: null },
     currentIdRef: { current: null },
     setElapsed: vi.fn(),
+    notifyPlaybackStarted: vi.fn(),
     handleVideoEnd: vi.fn(),
     ...overrides,
   } as MountContext
@@ -93,6 +102,20 @@ describe('twitchVodStrategy', () => {
     expect(opts).toMatchObject({ video: '123456', controls: false, autoplay: true, muted: false })
     expect(opts.time).toBe('100s') // start_seconds 90 + joinElapsed 10
     expect(player.addEventListener).toHaveBeenCalledWith('video.ended', expect.any(Function))
+    expect(player.addEventListener).toHaveBeenCalledWith('video.blocked', expect.any(Function))
+    expect(player.addEventListener).toHaveBeenCalledWith('video.ready', expect.any(Function))
+    expect(player.setVolume).toHaveBeenCalledWith(0.35)
+  })
+
+  it('keeps the same joined playback position while muting a dashboard preview', () => {
+    const player = makePlayer()
+    const Player = installTwitch(player)
+
+    twitchVodStrategy.mount(ctx({ joinElapsed: 10, isPreview: true, muted: true }))
+
+    const opts = Player.mock.calls[0][1] as Record<string, unknown>
+    expect(opts).toMatchObject({ time: '100s', muted: true })
+    expect(player.setMuted).toHaveBeenCalledWith(true)
   })
 
   it('advances when the play window elapses', () => {
