@@ -73,7 +73,9 @@ duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發�
 
 外部 `Count` 寫入 `viewer_checkin_carryovers`，不展開成虛構 `viewer_checkins`，因此不補歷史卡片或
 Overlay event。`$(count)` 與排行榜使用 carry-over + 真實 ledger；來源 streak 只作下一次簽到的 continuity
-seed，隔日接續、日期 gap 歸 1。`TodayOrder` 只保留 audit，不是聊天室模板變數。
+seed，隔日接續、日期 gap 歸 1。`$(today_order)` 在匯入截止日 duplicate 使用來源 `TodayOrder`；後續真實
+簽到則以頻道 + 本地日期 advisory lock 序列化，再依 immutable ledger id 計算穩定的當日順序。來源沒有
+`TodayOrder` 時，截止日 duplicate 明確代入 `0`，不虛構排序。
 
 Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 分鐘記憶體 cache 中保存。Apply 僅限 owner、
 要求 `X-Niibot-Action: checkin-import` 與「舊 Bot 已停用」確認，並以 channel advisory lock 與整批 transaction
@@ -217,7 +219,7 @@ channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位�
 - Dashboard 將三種責任分開：`/events` 只編輯 EventSub 回覆模板；`/channel-points` 是 reward → action
   映射的唯一寫入位置，並以獨立 `Check-in settings` sheet 編輯共用 timezone、成功與重複模板；
   `Live Display` 只呈現顯示內容、各 block 外觀、測試與 OBS 連結；簽到入口細節仍導向 `/channel-points`。
-- 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
+- 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。
 - OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
   前端以 `X-Overlay-Key` header 對 `GET /api/live-display/public/stream` 開一條可重連 SSE 長連線。

@@ -95,9 +95,10 @@ const EMPTY_FORM: CheckinForm = {
 const CHECKIN_VARIABLES = [
   { var: '$(@user)', desc: '帶 @ 的觀眾顯示名稱' },
   { var: '$(user)', desc: '不帶 @ 的觀眾顯示名稱' },
-  { var: '$(count)', desc: '這個頻道的累積簽到天數' },
-  { var: '$(streak)', desc: '目前連續簽到天數' },
-  { var: '$(date)', desc: '依設定時區計算的簽到日期' },
+  { var: '$(count)', desc: '累積簽到天數，包含轉移資料' },
+  { var: '$(streak)', desc: '目前連續天數，可接續轉移紀錄' },
+  { var: '$(today_order)', desc: '今天第幾位完成簽到' },
+  { var: '$(date)', desc: '本次依設定時區計算的簽到日期' },
 ]
 
 const PREVIEW_VALUES: Record<string, string> = {
@@ -105,6 +106,7 @@ const PREVIEW_VALUES: Record<string, string> = {
   user: 'Viewer',
   count: '12',
   streak: '4',
+  today_order: '7',
   date: '2026-08-31',
 }
 

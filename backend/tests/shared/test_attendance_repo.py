@@ -95,6 +95,7 @@ class TestRecordCheckin:
             "carried_total_days": 15,
             "last_source_date": _DAY,
             "current_streak": 3,
+            "source_daily_order": 5,
         }
         conn.fetchval.return_value = 0
         collection_repo = _collection_repo()
@@ -113,11 +114,35 @@ class TestRecordCheckin:
         assert result.checkin_id is None
         assert result.total_days == 15
         assert result.current_streak == 3
+        assert result.today_order == 5
         collection_repo.draw_for_checkin.assert_not_awaited()
         assert all(
             "INSERT INTO viewer_checkins" not in call.args[0]
             for call in conn.fetchrow.await_args_list
         )
+
+    async def test_carryover_earlier_day_does_not_reuse_cutoff_daily_order(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = {
+            "carried_total_days": 15,
+            "last_source_date": _DAY,
+            "current_streak": 3,
+            "source_daily_order": 5,
+        }
+        conn.fetchval.return_value = 0
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=_DAY - timedelta(days=1),
+            occurred_at=_NOW - timedelta(days=1),
+        )
+
+        assert result.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert result.today_order == 0
 
     async def test_success_writes_checkin_and_event_in_one_transaction(self):
         pool, conn = _pool()
@@ -139,9 +164,21 @@ class TestRecordCheckin:
 
         assert result.status is CheckinStatus.RECORDED
         assert result.total_days == 1
+        assert result.today_order == 1
         assert result.event_id == 90
         assert result.collection == _collection_draw()
         conn.transaction.assert_called_once_with()
+        daily_lock = next(
+            call
+            for call in conn.execute.await_args_list
+            if "checkin-daily-order:" in str(call.args)
+        )
+        assert "pg_advisory_xact_lock(hashtextextended($1, 0))" in daily_lock.args[0]
+        assert daily_lock.args[1] == "checkin-daily-order:ch1:2026-08-30"
+        daily_order_call = next(
+            call for call in conn.fetchval.await_args_list if "id <= $3" in call.args[0]
+        )
+        assert daily_order_call.args[1:] == ("ch1", _DAY, 7)
         collection_repo.draw_for_checkin.assert_awaited_once_with(
             conn,
             channel_id="ch1",
@@ -176,6 +213,7 @@ class TestRecordCheckin:
 
         assert result.status is CheckinStatus.ALREADY_CHECKED_IN
         assert result.total_days == 4
+        assert result.today_order == 4
         assert result.event_id is None
         assert result.collection is None
         collection_repo.draw_for_checkin.assert_not_awaited()

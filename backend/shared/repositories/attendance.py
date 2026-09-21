@@ -214,6 +214,7 @@ class AttendanceRepository:
                     """
                     SELECT carryover.carried_total_days,
                            carryover.last_source_date,
+                           carryover.source_daily_order,
                            streak.current_streak
                     FROM viewer_checkin_carryovers AS carryover
                     LEFT JOIN viewer_daily_checkin_streaks AS streak
@@ -246,7 +247,16 @@ class AttendanceRepository:
                         event_id=None,
                         occurred_at=occurred_at,
                         current_streak=int(carryover["current_streak"] or 0),
+                        today_order=(
+                            int(carryover["source_daily_order"] or 0)
+                            if checkin_date == carryover["last_source_date"]
+                            else 0
+                        ),
                     )
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    f"checkin-daily-order:{channel_id}:{checkin_date.isoformat()}",
+                )
                 row = await conn.fetchrow(
                     f"""
                     INSERT INTO viewer_checkins
@@ -290,6 +300,20 @@ class AttendanceRepository:
                     )
                 )
                 total_days = carried_total_days + ledger_days
+                today_order = int(
+                    await conn.fetchval(
+                        """
+                        SELECT COUNT(*)
+                        FROM viewer_checkins
+                        WHERE channel_id = $1
+                          AND checkin_date = $2
+                          AND id <= $3
+                        """,
+                        channel_id,
+                        checkin_date,
+                        int(row["id"]),
+                    )
+                )
 
                 if recorded:
                     current_streak = int(
@@ -392,5 +416,6 @@ class AttendanceRepository:
             event_id=event_id,
             occurred_at=occurred_at,
             current_streak=current_streak,
+            today_order=today_order,
             collection=collection,
         )

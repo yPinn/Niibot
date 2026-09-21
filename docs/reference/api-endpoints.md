@@ -232,8 +232,9 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
 
-模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(date)`；server 會同時驗證未知變數與 Twitch
-500 字元的最壞輸出長度。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
+模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`；server 會同時驗證
+未知變數與 Twitch 500 字元的最壞輸出長度。`$(count)` 包含 carry-over，`$(streak)` 可接續匯入紀錄；
+`$(today_order)` 是頻道當地日期內的穩定簽到順序。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
 只有確實建立 check-in、draw 與 Overlay event 的 `recorded` 結果套用 reply delay；`duplicate` 沒有 draw／event
 且立即回覆。延遲是 in-process best-effort 校準，不等待或要求 Overlay ACK；OBS 離線也不會回滾已提交資料。
 前端 `/events` 只管理 EventSub 回覆；`/channel-points` 管理 reward → action 映射，並由每日簽到列開啟

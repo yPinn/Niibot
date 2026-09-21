@@ -292,6 +292,10 @@ describe('Channel Points page', () => {
     expect(screen.getByText(/聊天指令與 Twitch 點數簽到共用/)).toBeInTheDocument()
     expect(getCheckinSettings).toHaveBeenCalledOnce()
     expect(getCheckinLeaderboard).toHaveBeenCalledOnce()
+    const todayOrderVariable = screen.getByRole('button', { name: '$(today_order)' })
+    expect(todayOrderVariable).toBeInTheDocument()
+    await user.hover(todayOrderVariable)
+    expect(screen.getByText('今天第幾位完成簽到')).toBeInTheDocument()
 
     const leaderboard = screen.getByRole('region', { name: '簽到排行榜' })
     const [firstPlace] = within(leaderboard).getAllByRole('listitem')

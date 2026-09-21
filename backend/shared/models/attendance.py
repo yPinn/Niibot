@@ -57,6 +57,7 @@ class CheckinResult:
     event_id: int | None
     occurred_at: datetime
     current_streak: int = 1
+    today_order: int = 0
     collection: CollectionDraw | None = None
 
     @property

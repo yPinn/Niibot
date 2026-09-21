@@ -121,6 +121,58 @@ async def test_checkin_draw_and_overlay_event_commit_as_one_fact() -> None:
 
 
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_concurrent_viewers_receive_distinct_stable_daily_order() -> None:
+    pool = await _create_pool(max_size=3)
+    channel_id = f"test-checkin-order-{uuid4().hex}"
+    occurred_at = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
+    repository = AttendanceRepository(pool)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+
+        first, second = await asyncio.gather(
+            repository.record_checkin(
+                channel_id=channel_id,
+                user_id="viewer-1",
+                username="viewer1",
+                display_name="Viewer One",
+                checkin_date=occurred_at.date(),
+                occurred_at=occurred_at,
+            ),
+            repository.record_checkin(
+                channel_id=channel_id,
+                user_id="viewer-2",
+                username="viewer2",
+                display_name="Viewer Two",
+                checkin_date=occurred_at.date(),
+                occurred_at=occurred_at,
+            ),
+        )
+
+        assert {first.today_order, second.today_order} == {1, 2}
+        by_user = {first.user_id: first, second.user_id: second}
+
+        duplicate = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer1",
+            display_name="Viewer One",
+            checkin_date=occurred_at.date(),
+            occurred_at=occurred_at,
+        )
+
+        assert duplicate.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert duplicate.today_order == by_user["viewer-1"].today_order
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
 async def test_collection_failure_rolls_back_the_enclosing_checkin_transaction() -> None:
     pool = await _create_pool(max_size=1)
     channel_id = f"test-collection-rollback-{uuid4().hex}"

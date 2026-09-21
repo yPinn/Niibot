@@ -293,7 +293,7 @@ class TestAttendanceService:
         settings = CheckinSettings(
             channel_id="ch1",
             timezone="Asia/Taipei",
-            success_template="$(user) 連續 $(streak) 天，累積 $(count) 天",
+            success_template="$(user) 今天第 $(today_order) 位，連續 $(streak) 天，累積 $(count) 天",
             duplicate_template="already $(streak)",
         )
         result = CheckinResult(
@@ -308,6 +308,7 @@ class TestAttendanceService:
             event_id=2,
             occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
             current_streak=4,
+            today_order=7,
         )
         repo = MagicMock()
         repo.get_or_create_settings = AsyncMock(return_value=settings)
@@ -321,7 +322,7 @@ class TestAttendanceService:
             occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
         )
 
-        assert outcome.message == "Alice 連續 4 天，累積 16 天"
+        assert outcome.message == "Alice 今天第 7 位，連續 4 天，累積 16 天"
 
     async def test_duplicate_reply_is_immediate_even_when_channel_delay_is_configured(self):
         settings = CheckinSettings(
