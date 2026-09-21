@@ -43,6 +43,7 @@ import { useInputInsert } from '@/hooks/useInputInsert'
 import { tokenizeVars } from '@/lib/templateParts'
 import { toastApiError } from '@/lib/toast-error'
 
+import { CheckinDataManagement } from './CheckinDataManagement'
 import { CheckinImportSheet } from './CheckinImportSheet'
 import { CheckinLeaderboard } from './CheckinLeaderboard'
 
@@ -407,13 +408,14 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
               )}
             </div>
 
-            <div className="lg:border-l lg:pl-section">
+            <div className="space-y-card lg:border-l lg:pl-section">
               <CheckinLeaderboard
                 entries={leaderboard}
                 loading={leaderboardLoading}
                 loadFailed={leaderboardLoadFailed}
                 onRetry={() => void loadLeaderboard()}
               />
+              <CheckinDataManagement onDataChanged={loadLeaderboard} />
             </div>
           </div>
 

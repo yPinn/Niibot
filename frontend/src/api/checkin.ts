@@ -1,5 +1,5 @@
-import { API_ENDPOINTS } from './config'
-import { apiJson } from './errors'
+import { API_ENDPOINTS, apiFetch } from './config'
+import { ApiError, apiJson, NETWORK_ERROR, parseApiError } from './errors'
 
 export interface CheckinSettings {
   channel_id: string
@@ -91,6 +91,31 @@ export interface CheckinImportApplyResult {
   already_applied: boolean
 }
 
+export type CheckinClearScope = 'imported' | 'all'
+
+export interface CheckinDataCounts {
+  participant_count: number
+  total_days: number
+  imported_viewers: number
+  imported_days: number
+  ledger_checkins: number
+  card_draws: number
+  checkin_events: number
+}
+
+export interface CheckinDataSummary extends CheckinDataCounts {
+  confirmation_text: string
+}
+
+export interface CheckinDataClearResult extends CheckinDataCounts {
+  scope: CheckinClearScope
+}
+
+export interface CheckinDataDownload {
+  blob: Blob
+  filename: string
+}
+
 export function getCheckinSettings(): Promise<CheckinSettings> {
   return apiJson(
     API_ENDPOINTS.checkin.settings,
@@ -120,6 +145,61 @@ export function updateCheckinSettings(update: CheckinSettingsUpdate): Promise<Ch
       body: JSON.stringify(update),
     },
     { fallback: '儲存簽到設定失敗' }
+  )
+}
+
+export function getCheckinDataSummary(): Promise<CheckinDataSummary> {
+  return apiJson(
+    API_ENDPOINTS.checkin.dataSummary,
+    { credentials: 'include' },
+    { fallback: '載入簽到資料摘要失敗' }
+  )
+}
+
+function downloadFilename(response: Response): string {
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.replace(/^"|"$/g, ''))
+    } catch {
+      // Fall through to the ASCII filename when the extended value is invalid.
+    }
+  }
+  return disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'niibot-checkins.csv'
+}
+
+export async function exportCheckinData(): Promise<CheckinDataDownload> {
+  let response: Response
+  try {
+    response = await apiFetch(API_ENDPOINTS.checkin.dataExport, { credentials: 'include' })
+  } catch {
+    throw new ApiError({
+      message: '網路連線出了問題，請檢查後再試',
+      status: 0,
+      code: NETWORK_ERROR,
+    })
+  }
+  if (!response.ok) throw await parseApiError(response, '匯出簽到資料失敗')
+  return { blob: await response.blob(), filename: downloadFilename(response) }
+}
+
+export function clearCheckinData(
+  scope: CheckinClearScope,
+  confirmation: string
+): Promise<CheckinDataClearResult> {
+  return apiJson(
+    API_ENDPOINTS.checkin.dataClear,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-data',
+      },
+      body: JSON.stringify({ scope, confirmation }),
+    },
+    { fallback: '清除簽到資料失敗' }
   )
 }
 

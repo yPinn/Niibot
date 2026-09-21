@@ -83,6 +83,22 @@ Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 �
 由 server 重建固定 CSV export URL；只允許一次 HTTPS `doc-*-sheets.googleusercontent.com` 官方 export
 redirect，其他 host、第二次 redirect、私人試算表 OAuth 與任意 URL 都不支援。
 
+### 可攜匯出與資料清除
+
+owner 可把 carry-over 與真實 ledger 合併匯出為 importer-compatible CSV。`Count` 是兩者加總，`LastDate`
+取較新的來源日期，`TodayOrder` 必須跟該日期來自同一側；匯出不虛構逐日 ledger，也不包含收藏卡或 Overlay
+event。因此 CSV 適合跨 Bot 移轉與重建 count/streak continuity，不是完整事件備份。
+
+後台只提供一個「清除簽到資料」入口，確認對話框內有兩個 closed scope：`imported` 只移除 carry-over 與
+import batch，保留 Niibot 後續 ledger/draw/event，再從 ledger 重建 streak；`all` 清除兩側簽到資料、
+`checkin.recorded` event 與對應 `viewer_card_draws`。timezone、訊息模板、reward mapping、收藏 catalog/pool
+都不在 reset 邊界。兩種操作都要求 owner、專用 action header、server-side impact summary、頻道名稱 typed
+confirmation、rate limit、audit log，以及與 import/live check-in 相同的 exclusive advisory lock。
+
+`viewer_card_draws` 平時仍為 immutable。完整清除利用 deferred check-in FK，先在同一交易刪除對應
+`viewer_checkins`；migration 131 的 trigger 只在來源 check-in 已不存在時允許刪除該 draw。若任一步驟失敗，
+deferred constraint 使整個清除交易回滾，不會留下半套資料。
+
 頻道點數採平台管理、Niibot 唯讀的權限模型：實況主在 Twitch 建立獎勵並設定成本、每人每場上限、
 全頻道單場上限與是否略過請求佇列；Niibot 只以 `channel:read:redemptions` 讀取並監聽，不要求
 `channel:manage:redemptions`，也不建立、修改、完成、取消或退款獎勵。設定以 Twitch `reward_id` 穩定綁定；

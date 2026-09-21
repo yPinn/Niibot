@@ -256,6 +256,21 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 三個 POST 都要求 `X-Niibot-Action: checkin-import`。第一版若同一 stable viewer 已有任何 Niibot ledger
 或 carry-over，整批回 `409 CHECKIN_IMPORT.CONFLICT`；不提供 sum、max 或 overwrite。
 
+### Daily Check-in data management
+
+- `GET /api/checkin/data/summary`：owner-only，回傳匯入承接值與完整簽到資料兩種清除範圍的影響數量，
+  以及 destructive confirmation 使用的頻道名稱。
+- `GET /api/checkin/data/export`：owner-only，下載 UTF-8 BOM CSV。欄位固定為 `Username`、
+  `Twitch User ID`、`DisplayName`、`Count`、`LastDate`、`Streak`、`TodayOrder`，可直接走同一個
+  carry-over importer。文字欄位會防止試算表公式執行；回應為 `private, no-store`。
+- `POST /api/checkin/data/clear`：owner-only，body 只接受 `scope: imported | all` 與頻道名稱確認字串，
+  並要求 `X-Niibot-Action: checkin-data`。`imported` 只撤銷 carry-over/import batch 並依真實 ledger
+  重算 streak；`all` 另清除簽到 ledger、對應收藏卡及 `checkin.recorded` 畫面事件。兩者都保留時區、
+  回覆模板、reward mapping 與收藏卡池設定，並在同一交易寫入 tenant audit event。
+
+匯出是跨 Bot 可攜的「每位觀眾彙總」，不是 lossless 備份；它不包含逐日簽到歷史、抽卡結果或 Overlay
+事件。完整清除以前應先下載 CSV。清除與即時簽到／匯入共用 channel advisory lock，避免 cutover 競爭。
+
 ## 租戶邊界
 
 `channels_router` 與 `commands_router` 的 channel-scoped 端點已改用

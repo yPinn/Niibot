@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import re
 from datetime import date, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.dependencies import (
@@ -20,6 +22,11 @@ from core.dependencies import (
     require_self_tenant_owner,
 )
 from core.rate_limit import RateLimiter
+from services.checkin_data_service import (
+    CheckinClearScope,
+    CheckinDataService,
+    CheckinDataSummary,
+)
 from services.checkin_import.formats import (
     CheckinImportValidationError,
     fetch_google_sheet_csv,
@@ -50,6 +57,8 @@ _checkin_import_http = httpx.AsyncClient(timeout=10.0, follow_redirects=False)
 _inspect_rate_limiter = RateLimiter(max_calls=10, period=60.0)
 _preview_rate_limiter = RateLimiter(max_calls=5, period=60.0)
 _apply_rate_limiter = RateLimiter(max_calls=2, period=60.0)
+_data_read_rate_limiter = RateLimiter(max_calls=10, period=60.0)
+_data_clear_rate_limiter = RateLimiter(max_calls=2, period=60.0)
 _MAX_UPLOAD_READ = 5 * 1024 * 1024 + 1
 
 
@@ -75,6 +84,16 @@ class CheckinImportPreviewExpiredError(NotFoundError):
 class CheckinImportRateLimitedError(RateLimitedError):
     code = "CHECKIN_IMPORT.RATE_LIMITED"
     user_message = "匯入操作太頻繁，請稍後再試"
+
+
+class CheckinDataConfirmationInvalidError(InvalidInputError):
+    code = "CHECKIN_DATA.CONFIRMATION_INVALID"
+    user_message = "頻道名稱不相符，未清除任何資料"
+
+
+class CheckinDataRateLimitedError(RateLimitedError):
+    code = "CHECKIN_DATA.RATE_LIMITED"
+    user_message = "簽到資料操作太頻繁，請稍後再試"
 
 
 class CheckinSettingsResponse(BaseModel):
@@ -143,6 +162,31 @@ class CheckinImportApplyResponse(BaseModel):
     already_applied: bool
 
 
+class CheckinDataCountsResponse(BaseModel):
+    participant_count: int
+    total_days: int
+    imported_viewers: int
+    imported_days: int
+    ledger_checkins: int
+    card_draws: int
+    checkin_events: int
+
+
+class CheckinDataSummaryResponse(CheckinDataCountsResponse):
+    confirmation_text: str
+
+
+class CheckinDataClearRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    scope: Literal["imported", "all"]
+    confirmation: str = Field(min_length=1, max_length=128)
+
+
+class CheckinDataClearResponse(CheckinDataCountsResponse):
+    scope: CheckinClearScope
+
+
 def get_checkin_import_service(
     pool=Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
@@ -150,9 +194,30 @@ def get_checkin_import_service(
     return CheckinImportService(pool, twitch_api)
 
 
+def get_checkin_data_service(pool=Depends(get_db_pool)) -> CheckinDataService:
+    return CheckinDataService(pool)
+
+
 def _require_import_rate(limiter: RateLimiter, tenant: TenantContext) -> None:
     if not limiter.allow(f"{tenant.user_id}:{tenant.channel_id}"):
         raise CheckinImportRateLimitedError()
+
+
+def _require_data_rate(limiter: RateLimiter, tenant: TenantContext) -> None:
+    if not limiter.allow(f"{tenant.user_id}:{tenant.channel_id}"):
+        raise CheckinDataRateLimitedError()
+
+
+def _data_counts(summary: CheckinDataSummary) -> dict[str, int]:
+    return {
+        "participant_count": summary.participant_count,
+        "total_days": summary.total_days,
+        "imported_viewers": summary.imported_viewers,
+        "imported_days": summary.imported_days,
+        "ledger_checkins": summary.ledger_checkins,
+        "card_draws": summary.card_draws,
+        "checkin_events": summary.checkin_events,
+    }
 
 
 def _parse_column_mapping(raw: str | None) -> dict[str, int] | None:
@@ -238,6 +303,71 @@ async def update_checkin_settings(
 
     LOGGER.info("checkin_settings_updated")
     return CheckinSettingsResponse.model_validate(settings)
+
+
+@router.get("/data/summary", response_model=CheckinDataSummaryResponse)
+async def get_checkin_data_summary(
+    tenant: TenantContext = Depends(require_self_tenant_owner),
+    service: CheckinDataService = Depends(get_checkin_data_service),
+) -> CheckinDataSummaryResponse:
+    _require_data_rate(_data_read_rate_limiter, tenant)
+    summary = await service.get_summary(tenant.channel_id)
+    return CheckinDataSummaryResponse(
+        **_data_counts(summary),
+        confirmation_text=tenant.channel_name or tenant.channel_id,
+    )
+
+
+@router.get("/data/export")
+async def export_checkin_data(
+    tenant: TenantContext = Depends(require_self_tenant_owner),
+    service: CheckinDataService = Depends(get_checkin_data_service),
+) -> Response:
+    _require_data_rate(_data_read_rate_limiter, tenant)
+    content = await service.export_csv(tenant.channel_id)
+    raw_name = tenant.channel_name or tenant.channel_id
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "-", raw_name).strip("-_")[:40] or "channel"
+    filename = f"{safe_name}-niibot-checkins-{date.today().isoformat()}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/data/clear", response_model=CheckinDataClearResponse)
+async def clear_checkin_data(
+    body: CheckinDataClearRequest,
+    _action: Literal["checkin-data"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_owner),
+    service: CheckinDataService = Depends(get_checkin_data_service),
+) -> CheckinDataClearResponse:
+    scope = CheckinClearScope(body.scope)
+    expected = tenant.channel_name or tenant.channel_id
+    confirmed = hmac.compare_digest(
+        body.confirmation.strip().casefold().encode("utf-8"),
+        expected.casefold().encode("utf-8"),
+    )
+    if not confirmed:
+        raise CheckinDataConfirmationInvalidError()
+    _require_data_rate(_data_clear_rate_limiter, tenant)
+    summary = await service.clear(
+        channel_id=tenant.channel_id,
+        actor_user_id=tenant.user_id,
+        scope=scope,
+    )
+    LOGGER.warning(
+        "checkin_data_cleared",
+        extra={"scope": scope.value},
+    )
+    return CheckinDataClearResponse(
+        **_data_counts(summary),
+        scope=scope,
+    )
 
 
 @router.post("/import/summary/columns", response_model=CheckinImportColumnsResponse)

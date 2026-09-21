@@ -4,6 +4,9 @@ import { requestUrl } from '@/test/requestUrl'
 
 import {
   applyCheckinImport,
+  clearCheckinData,
+  exportCheckinData,
+  getCheckinDataSummary,
   getCheckinLeaderboard,
   getCheckinSettings,
   inspectCheckinImportColumns,
@@ -148,6 +151,63 @@ describe('check-in settings API', () => {
         selected_keys: ['row-1'],
         old_source_disabled: true,
       }),
+    })
+  })
+
+  it('loads the owner-only data-management impact summary', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ participant_count: 2 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getCheckinDataSummary()
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/data/summary')
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
+  })
+
+  it('downloads the portable CSV filename from the response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('Username\r\nalice\r\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv',
+          'Content-Disposition':
+            'attachment; filename="niibot-checkins.csv"; filename*=UTF-8\'\'owner-checkins.csv',
+        },
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const download = await exportCheckinData()
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/data/export')
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
+    expect(download.filename).toBe('owner-checkins.csv')
+    expect(await download.blob.text()).toContain('alice')
+  })
+
+  it('clears only the selected data scope with an explicit action header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ scope: 'imported' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await clearCheckinData('imported', 'owner_login')
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/data/clear')
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-data',
+      },
+      body: JSON.stringify({ scope: 'imported', confirmation: 'owner_login' }),
     })
   })
 })

@@ -5,6 +5,7 @@ from pathlib import Path
 _VERSIONS = Path(__file__).parents[2] / "shared" / "migrations" / "versions"
 _SCHEMA = _VERSIONS / "112_add_checkin_collections.sql"
 _SEED = _VERSIONS / "113_seed_official_checkin_starter_pool.sql"
+_CHECKIN_RESET = _VERSIONS / "131_allow_checkin_collection_reset.sql"
 
 
 def test_collection_schema_separates_catalog_pool_and_draw_facts() -> None:
@@ -103,3 +104,16 @@ def test_official_starter_catalog_uses_original_product_identifiers() -> None:
         assert original_key in sql
     for protected_term in ("greed island", "hunter x hunter", "pokemon", "yu-gi-oh"):
         assert protected_term not in sql
+
+
+def test_checkin_reset_keeps_draws_immutable_until_the_parent_is_removed() -> None:
+    sql = _CHECKIN_RESET.read_text(encoding="utf-8")
+
+    assert "CREATE OR REPLACE FUNCTION fn_prevent_viewer_card_draw_change()" in sql
+    assert "NOT EXISTS" in sql
+    assert "FROM viewer_checkins" in sql
+    assert "channel_id = OLD.channel_id" in sql
+    assert "user_id = OLD.user_id" in sql
+    assert "id = OLD.checkin_id" in sql
+    assert "DISABLE TRIGGER" not in sql
+    assert "DROP TRIGGER" not in sql

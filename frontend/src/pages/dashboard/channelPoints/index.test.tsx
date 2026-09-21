@@ -12,6 +12,9 @@ vi.mock('@/api/events', () => ({
 }))
 vi.mock('@/api/checkin', () => ({
   applyCheckinImport: vi.fn(),
+  clearCheckinData: vi.fn(),
+  exportCheckinData: vi.fn(),
+  getCheckinDataSummary: vi.fn(),
   getCheckinLeaderboard: vi.fn(),
   getCheckinSettings: vi.fn(),
   previewCheckinImport: vi.fn(),
