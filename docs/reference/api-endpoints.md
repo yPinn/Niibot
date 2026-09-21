@@ -186,31 +186,42 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   且 `video_queue_settings` 沒有 NOTIFY trigger，送出會是不誠實的過期值）。5 分鐘 hard lease、15 秒
   heartbeat、429 容量上限，行為與 Live Display stream 一致；詳見
   [docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md)。
-- 既有 `GET /api/video-queue/public/{username}`、`POST .../advance`、
-  `PATCH .../entries/{id}/metadata` 等 REST 端點不變，dashboard 與 overlay 的 kickstart／advance
-  互動仍走 REST；`stream` 只是取代原本的 overlay 狀態輪詢。
+- `GET /api/video-queue/public/{username}` 維持匿名唯讀；`POST .../advance` 與
+  `PATCH .../entries/{id}/metadata`、`POST .../entries/{id}/playback-started` 必須帶
+  `X-Overlay-Key` capability。播放開始只接受 `confirmed`／`best_effort`，同一 entry 重送不重複計次；
+  dashboard preview 永不 mutation，登入 dashboard 改走 `POST /api/video-queue/advance`。`stream` 只取代狀態輪詢。
 - `GET /api/video-queue/public/{username}/entries/{id}/clip-source`（無需認證、rate-limited、
   scoped 到該頻道佇列裡的 `twitch_clip` entry）：回 `{url}` — Twitch clip 的簽章直連 MP4，讓 overlay
   用 `<video>` 播（embed iframe 在 OBS 無法 autoplay）。走 Twitch 私有 GraphQL（`ShareClipRenderStatus`，
   非官方、Bilibili-tier 依賴，token 現拿不存）；失敗回 404，overlay fallback 回 iframe。
   詳見 [docs/architecture/video-queue-platforms.md](../architecture/video-queue-platforms.md)。
+- `GET /api/video-queue/public/{username}/entries/{id}/reel-source`（匿名、rate-limited、頻道與 entry scoped）：
+  透過 InstaFix 即時解析 Instagram Reel 簽章 MP4；失敗回 404，overlay 直接略過（Instagram 無 embed fallback）。
 - `GET /api/video-queue/history?limit=&cursor=`（`require_activated`，租戶自身頻道）：已播／已略過的
   entry，`ended_at` 由新到舊，keyset 分頁——`cursor` 帶上一頁最後一列的 `ended_at` ISO 字串，
   `next_cursor` 為 `null` 代表沒有更多。無新表，紀錄一直是留在 `video_queue` 裡的 terminal row，
   只是之前沒有讀取路徑；`idx_video_queue_channel_ended`（migration 107）建索引，超過 30 天由
   `video_queue_history_retention_loop`（`api/app.py` lifespan，每日）刪除。
-- `GET`／`PUT /api/video-queue/settings` 的 `max_duration_seconds`（全域影片長度上限，秒；0 = 不限）
-  與 `replay_cooldown_hours`（同一支影片在 N 小時內播過就拒收；0 = 不限）為投稿閘門，chat／點數兌換／
-  dashboard 三條加入路徑都套用（migration 109 加在 `video_queue_settings`）。`max_duration_seconds`
-  與點數兌換原有的 `max_duration_redemption` 取兩者較嚴；重播冷卻查 `video_queue` 裡 `status = 'done'`
-  且 `ended_at` 在區間內的 terminal row（`repo.played_within`）。
+- `GET /api/video-queue/rankings?scope=channel|global&days=7|30&video_type=`
+  （`require_activated`、`private, no-store`）：回傳有效播放的匿名彙總；本台依播放次數排序，全站先依不同
+  頻道數、再依播放次數排序。回應不含 contributing channel 或點播者 identity，另帶目前租戶自己的
+  `active_status`／`blocked_kind` 供操作按鈕使用。
+- `GET`／`PUT /api/video-queue/settings` 回傳／更新全域規則；`max_duration_seconds` 套用 Chat、點數兌換、
+  Donate 與 dashboard，並與點數的 `max_duration_redemption` 取較嚴者。容量、最低觀看數與
+  `replay_cooldown_hours` 套用 Chat、點數與 Donate；dashboard 是 broadcaster override。重複與重播 identity
+  使用 `(video_type, video_id)`。`volume_percent`（0–100，migration 133）套用可控播放器；嵌入式 fallback
+  只支援靜音。設定回應為 `private, no-store`。
+- `POST /api/video-queue/settings/rotate-key`（登入且 `X-Niibot-Action: video-queue`）輪替 OBS capability，
+  舊 URL 立即失效（migration 132）。
 - `GET`／`POST /api/video-queue/blocklist`、`DELETE /api/video-queue/blocklist/{id}`
   （`require_activated`，租戶自身頻道）：Video Queue 封鎖清單（`video_queue_blocklist`，migration 110）。
-  `kind`：`video`（video_id）／`keyword`（標題不分大小寫子字串）／`user`（`requested_by_id` 優先，否則
-  小寫 login）。`creator` 已在 DB CHECK 但先不開放（要等 `creator_id` metadata，B3）。三條加入路徑
-  insert 前呼叫 `VideoQueueBlocklistRepository.check`（per-channel 30s TTL 快取，Python 比對）；
-  命中時 API 回 `VIDEO_QUEUE.BLOCKED`（422），chat／兌換回中文訊息。`POST` 對 `(channel, kind,
-lower(value))` idempotent。
+  `kind`：`video`（video_id）／`creator`（平台原生 creator_id）／`keyword`（標題不分大小寫子字串）／
+  `user`（`requested_by_id` 優先，否則小寫 login）。四條加入路徑 insert 前呼叫
+  `VideoQueueBlocklistRepository.check`（per-channel 30s TTL 快取，Python 比對）；Donate 無穩定 Twitch
+  user identity，因此 `user` 規則只套用 Chat／點數兌換。
+  命中時 API 回 `VIDEO_QUEUE.BLOCKED`（422），chat／兌換回中文訊息。migration 135 起 `video`／
+  `creator` 可帶 `video_type`，`POST` 對 `(channel, kind, lower(value), COALESCE(video_type, '*'))`
+  idempotent；既有 `video_type IS NULL` 規則保留跨平台 wildcard 語意，keyword／user 不接受 provider。
 
 ## Events 與 Twitch 頻道點數
 
