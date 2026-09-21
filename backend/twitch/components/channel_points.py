@@ -22,17 +22,20 @@ from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
-    SOURCE_PRIORITY,
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
+from shared.services.video_queue_admission import (
+    AdmissionReason,
+    AdmissionRejected,
+    VideoQueueAdmissionService,
+)
 from shared.services.vip import VipService, add_calendar_months
 from shared.video_sources import (
     fetch_video_metadata,
-    metadata_gate_unverifiable,
     resolve_video_url,
     unplayable_message,
 )
@@ -813,158 +816,77 @@ class ChannelPointsComponent(commands.Component):
         user_id: str | None = payload.user.id or None
 
         try:
-            settings = await self.vq_settings_repo.get_or_create(channel_id)
-            if not settings.enabled or not settings.redemption_enabled:
-                await self._reply(broadcaster, f"@{user_name} 影片佇列目前已關閉")
-                return
-
-            resolved = await resolve_video_url(user_input, session=self._session)
-            if resolved is None:
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} 請在兌換時輸入有效的 YouTube、Twitch Clip 或 Bilibili 連結",
-                )
-                return
-
-            if await self.vq_repo.video_is_active(channel_id, resolved.video_id):
-                await self._reply(broadcaster, f"@{user_name} 該影片已在佇列中")
-                return
-
-            queue_size = await self.vq_repo.get_queue_size(channel_id)
-            if queue_size >= settings.max_queue_size:
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} 佇列已滿（{queue_size}/{settings.max_queue_size}）",
-                )
-                return
-
-            if settings.max_per_user > 0:
-                active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
-                if active >= settings.max_per_user:
-                    await self._reply(
-                        broadcaster,
-                        f"@{user_name} 每人上限 {settings.max_per_user} 首，請等待您的影片播放後再點歌",
-                    )
-                    return
-
-            if settings.user_cooldown_seconds > 0:
-                last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name, user_id)
-                if last and last.created_at:
-                    elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
-                    if elapsed < settings.user_cooldown_seconds:
-                        remaining = int(settings.user_cooldown_seconds - elapsed)
-                        m, s = divmod(remaining, 60)
-                        time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
-                        await self._reply(
-                            broadcaster, f"@{user_name} 點歌冷卻中，請等待 {time_str}"
-                        )
-                        return
-
-            metadata = await fetch_video_metadata(
-                resolved,
-                youtube_api_key=self.settings.youtube_api_key,
-                twitch_client_id=self.settings.twitch_client_id,
-                twitch_client_secret=self.settings.twitch_client_secret,
-                instafix_host=self.settings.instafix_host,
-                session=self._session,
+            admission = VideoQueueAdmissionService(
+                self.vq_repo, self.vq_settings_repo, self.vq_blocklist_repo
             )
-            title, duration_seconds, view_count = (
-                metadata.title,
-                metadata.duration_seconds,
-                metadata.view_count,
-            )
-
-            # Playability — an un-embeddable / age-restricted video only stalls the
-            # overlay on its timer ceiling, so reject it up front.
-            if not metadata.playable:
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} {unplayable_message(metadata.unplayable_reason)}",
+            try:
+                result = await admission.admit(
+                    channel_id=channel_id,
+                    url=user_input,
+                    requested_by=user_name,
+                    requested_by_id=user_id,
+                    source="redemption",
+                    resolve=lambda url: resolve_video_url(url, session=self._session),
+                    fetch_metadata=lambda resolved: fetch_video_metadata(
+                        resolved,
+                        youtube_api_key=self.settings.youtube_api_key,
+                        twitch_client_id=self.settings.twitch_client_id,
+                        twitch_client_secret=self.settings.twitch_client_secret,
+                        instafix_host=self.settings.instafix_host,
+                        session=self._session,
+                    ),
                 )
-                return
-
-            # View count check — with an authoritative source, a missing view_count
-            # is a transient failure, so reject rather than silently bypass the
-            # filter. Best-effort platforms (Bilibili) can never supply it, so the
-            # gate skips instead of blocking every submission.
-            if settings.min_view_count > 0:
-                if metadata_gate_unverifiable(
-                    view_count, best_effort=metadata.metadata_best_effort
-                ):
-                    await self._reply(broadcaster, f"@{user_name} 無法驗證影片資訊，請稍後再試")
-                    return
-                if view_count is not None and view_count < settings.min_view_count:
-                    await self._reply(
-                        broadcaster,
-                        (
-                            f"@{user_name} 影片觀看次數不足（{view_count:,} 次 < "
-                            f"{settings.min_view_count:,} 次），無法加入佇列"
-                        ),
+            except AdmissionRejected as error:
+                reason = error.reason
+                details = error.details
+                if reason in {AdmissionReason.DISABLED, AdmissionReason.SOURCE_DISABLED}:
+                    message = "影片佇列目前已關閉"
+                elif reason is AdmissionReason.INVALID_URL:
+                    message = (
+                        "請輸入有效的 YouTube、Twitch Clip/VOD、Bilibili 或 Instagram Reel 連結"
                     )
-                    return
-
-            effective_max = settings.max_duration_redemption
-            if settings.max_duration_seconds and (
-                not effective_max or settings.max_duration_seconds < effective_max
-            ):
-                effective_max = settings.max_duration_seconds
-            if effective_max > 0:
-                if metadata_gate_unverifiable(
-                    duration_seconds, best_effort=metadata.metadata_best_effort
-                ):
-                    await self._reply(broadcaster, f"@{user_name} 無法驗證影片時長，請稍後再試")
-                    return
-                if duration_seconds is not None and duration_seconds > effective_max:
-                    max_m, max_s = divmod(effective_max, 60)
-                    vid_m, vid_s = divmod(duration_seconds, 60)
-                    await self._reply(
-                        broadcaster,
-                        f"@{user_name} 影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}",
+                elif reason is AdmissionReason.DUPLICATE:
+                    message = "該影片已在佇列中"
+                elif reason is AdmissionReason.QUEUE_FULL:
+                    message = f"佇列已滿（{details['queue_size']}/{details['max_queue_size']}）"
+                elif reason is AdmissionReason.USER_LIMIT:
+                    message = f"每人上限 {details['max_per_user']} 首，請等待您的影片播放後再點播"
+                elif reason is AdmissionReason.USER_COOLDOWN:
+                    remaining = int(details["remaining_seconds"])
+                    minutes, seconds = divmod(remaining, 60)
+                    time_text = f"{minutes}:{seconds:02d}" if minutes else f"{seconds} 秒"
+                    message = f"點播冷卻中，請等待 {time_text}"
+                elif reason is AdmissionReason.NOT_PLAYABLE:
+                    message = unplayable_message(str(details.get("unplayable_reason") or ""))
+                elif reason is AdmissionReason.METADATA_UNVERIFIABLE:
+                    field = details.get("field")
+                    message = (
+                        "無法驗證影片時長，請稍後再試"
+                        if field == "duration_seconds"
+                        else "無法驗證影片資訊，請稍後再試"
                     )
-                    return
-
-            if settings.replay_cooldown_hours and await self.vq_repo.played_within(
-                channel_id, resolved.video_id, settings.replay_cooldown_hours
-            ):
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} 這部影片在 {settings.replay_cooldown_hours} 小時內播過了",
-                )
+                elif reason is AdmissionReason.MIN_VIEWS:
+                    message = (
+                        f"影片觀看次數不足（{int(details['view_count']):,} 次 < "
+                        f"{int(details['min_view_count']):,} 次），無法加入佇列"
+                    )
+                elif reason is AdmissionReason.TOO_LONG:
+                    duration = int(details["duration_seconds"])
+                    limit = int(details["limit_seconds"])
+                    vid_m, vid_s = divmod(duration, 60)
+                    max_m, max_s = divmod(limit, 60)
+                    message = f"影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}"
+                elif reason is AdmissionReason.REPLAY_COOLDOWN:
+                    message = f"這部影片在 {details['hours']} 小時內播過了"
+                elif reason is AdmissionReason.BLOCKED:
+                    message = "這部影片在封鎖清單中"
+                else:
+                    message = "點播失敗，佇列狀態已變更，請重試"
+                await self._reply(broadcaster, f"@{user_name} {message}")
                 return
 
-            if await self.vq_blocklist_repo.check(
-                channel_id,
-                video_id=resolved.video_id,
-                title=title,
-                requested_by=user_name,
-                requested_by_id=user_id,
-                creator_id=metadata.creator_id,
-            ):
-                await self._reply(broadcaster, f"@{user_name} 這部影片在封鎖清單中")
-                return
-
-            entry = await self.vq_repo.add_if_within_limits(
-                channel_id=channel_id,
-                video_id=resolved.video_id,
-                requested_by=user_name,
-                source="redemption",
-                max_queue_size=settings.max_queue_size,
-                max_per_user=settings.max_per_user,
-                requested_by_id=user_id,
-                title=title,
-                duration_seconds=duration_seconds,
-                is_vertical=metadata.is_vertical,
-                thumbnail_url=metadata.thumbnail_url,
-                video_type=resolved.video_type,
-                priority=SOURCE_PRIORITY["redemption"],
-                start_seconds=resolved.start_seconds,
-                creator_id=metadata.creator_id,
-                creator_name=metadata.creator_name,
-            )
-            if entry is None:
-                await self._reply(broadcaster, f"@{user_name} 點歌失敗，佇列狀態已變更，請重試")
-                return
-            position = await self.vq_repo.get_queue_size(channel_id)
+            title = result.metadata.title
+            duration_seconds = result.metadata.duration_seconds
             title_part = f"「{title}」" if title else ""
             dur_part = (
                 f"({duration_seconds // 60}:{duration_seconds % 60:02d})"
@@ -974,14 +896,14 @@ class ChannelPointsComponent(commands.Component):
             info = " ".join(filter(None, [title_part, dur_part]))
             await self._reply(
                 broadcaster,
-                f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({position}/{settings.max_queue_size})",
+                f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({result.position}/{result.settings.max_queue_size})",
             )
             LOGGER.info(
                 "[%s] VideoQueue: %s added '%s' (position %s)",
                 broadcaster.name,
                 user_name,
-                title or resolved.video_id,
-                position,
+                title or result.resolved.video_id,
+                result.position,
             )
 
         except Exception as e:

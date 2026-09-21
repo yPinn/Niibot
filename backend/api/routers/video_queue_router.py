@@ -6,9 +6,11 @@ import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Literal
+from uuid import UUID
 
 from asyncpg import Pool
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -26,7 +28,13 @@ from core.rate_limit import RateLimiter
 from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
-from shared.errors import AccessDeniedError, AppError, ConflictError, InvalidInputError
+from shared.errors import (
+    AccessDeniedError,
+    AppError,
+    ConflictError,
+    InvalidInputError,
+    NotFoundError,
+)
 from shared.instafix_client import fetch_instagram_reel_source
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
@@ -36,15 +44,18 @@ from shared.models.video_queue import (
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     BLOCKLIST_KINDS,
-    SOURCE_PRIORITY,
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
+from shared.services.video_queue_admission import (
+    AdmissionReason,
+    AdmissionRejected,
+    VideoQueueAdmissionService,
+)
 from shared.video_sources import (
     fetch_twitch_clip_source,
     fetch_video_metadata,
-    metadata_gate_unverifiable,
     resolve_video_url,
     unplayable_message,
 )
@@ -56,6 +67,8 @@ router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 # hits the Twitch API on a cache miss, so keying by (attacker-chosen) username
 # would hand out a fresh rate-limit bucket per guessed name for free.
 _advance_limiter = RateLimiter(max_calls=30, period=60.0)
+_metadata_limiter = RateLimiter(max_calls=30, period=60.0)
+_playback_limiter = RateLimiter(max_calls=60, period=60.0)
 _stream_limiter = RateLimiter(max_calls=30, period=60.0)
 _clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
 _reel_source_limiter = RateLimiter(max_calls=30, period=60.0)
@@ -103,6 +116,11 @@ class VideoBlockedError(InvalidInputError):
     user_message = "這部影片在封鎖清單中"
 
 
+class VideoQueueOverlayNotFoundError(NotFoundError):
+    code = "VIDEO_QUEUE.OVERLAY_NOT_FOUND"
+    user_message = "找不到這個顯示來源"
+
+
 class VideoEntryResponse(BaseModel):
     id: int
     video_id: str
@@ -119,6 +137,7 @@ class VideoEntryResponse(BaseModel):
 
 class PublicVideoQueueState(BaseModel):
     enabled: bool
+    volume_percent: int
     current: VideoEntryResponse | None
     queue: list[VideoEntryResponse]
     queue_size: int
@@ -143,6 +162,7 @@ class VideoQueueStreamState(BaseModel):
 
 class VideoQueueSettingsResponse(BaseModel):
     channel_id: str
+    overlay_key: UUID
     enabled: bool
     redemption_enabled: bool
     max_duration_redemption: int  # redemption source limit
@@ -150,8 +170,9 @@ class VideoQueueSettingsResponse(BaseModel):
     min_view_count: int
     user_cooldown_seconds: int
     max_per_user: int
-    max_duration_seconds: int  # global length cap (chat + dashboard); 0 = no limit
+    max_duration_seconds: int  # global length cap for every source; 0 = no limit
     replay_cooldown_hours: int  # 0 = no limit
+    volume_percent: int
 
 
 class VideoQueueSettingsUpdate(BaseModel):
@@ -164,6 +185,7 @@ class VideoQueueSettingsUpdate(BaseModel):
     max_per_user: int | None = Field(default=None, ge=0, le=20)
     max_duration_seconds: int | None = Field(default=None, ge=0, le=86400)
     replay_cooldown_hours: int | None = Field(default=None, ge=0, le=168)
+    volume_percent: int | None = Field(default=None, ge=0, le=100)
 
 
 class AddVideoRequest(BaseModel):
@@ -172,10 +194,17 @@ class AddVideoRequest(BaseModel):
 
 class AdvanceRequest(BaseModel):
     done_id: int | None = None  # None = kickstart (no video finished, just start first queued)
+    reason: Literal["completed", "provider_error", "autoplay_blocked", "startup_timeout"] = (
+        "completed"
+    )
 
 
 class MetadataUpdate(BaseModel):
     duration_seconds: int = Field(..., ge=1)
+
+
+class PlaybackStartedRequest(BaseModel):
+    signal: Literal["confirmed", "best_effort"]
 
 
 class VideoHistoryEntry(BaseModel):
@@ -183,6 +212,7 @@ class VideoHistoryEntry(BaseModel):
     video_id: str
     title: str | None
     duration_seconds: int | None
+    start_seconds: int
     requested_by: str
     requested_by_id: str | None
     source: str
@@ -201,9 +231,26 @@ class VideoQueueHistoryResponse(BaseModel):
     next_cursor: str | None
 
 
+class VideoQueueRankingResponse(BaseModel):
+    rank: int
+    video_type: str
+    video_id: str
+    start_seconds: int
+    title: str | None
+    thumbnail_url: str | None
+    creator_id: str | None
+    creator_name: str | None
+    play_count: int
+    channel_count: int
+    last_played_at: datetime
+    active_status: str | None
+    blocked_kind: str | None
+
+
 class BlocklistEntryResponse(BaseModel):
     id: int
     kind: str  # 'video' | 'creator' | 'keyword' | 'user'
+    video_type: str | None
     value: str
     label: str | None
     created_at: datetime | None
@@ -211,6 +258,9 @@ class BlocklistEntryResponse(BaseModel):
 
 class BlocklistAddRequest(BaseModel):
     kind: str
+    video_type: (
+        Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"] | None
+    ) = None
     value: str = Field(min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=256)
 
@@ -227,9 +277,56 @@ def _blocked_message(entry: VideoQueueBlocklistEntry) -> str:
     return f"{_BLOCK_REASON_LABEL.get(entry.kind, '這部影片')}在封鎖清單中"
 
 
+def _raise_dashboard_admission_error(error: AdmissionRejected) -> None:
+    if error.reason is AdmissionReason.DISABLED:
+        raise VideoQueueDisabledError() from error
+    if error.reason is AdmissionReason.INVALID_URL:
+        raise InvalidVideoUrlError() from error
+    if error.reason is AdmissionReason.DUPLICATE:
+        raise VideoAlreadyQueuedError() from error
+    if error.reason is AdmissionReason.NOT_PLAYABLE:
+        reason = str(error.details.get("unplayable_reason") or "")
+        raise VideoNotPlayableError(user_message=unplayable_message(reason)) from error
+    if error.reason is AdmissionReason.METADATA_UNVERIFIABLE:
+        raise VideoMetadataUnverifiableError() from error
+    if error.reason is AdmissionReason.TOO_LONG:
+        limit = int(error.details.get("limit_seconds") or 0)
+        raise VideoTooLongError(user_message=f"影片長度超過上限（{limit // 60} 分鐘）") from error
+    if error.reason is AdmissionReason.BLOCKED and error.blocked is not None:
+        raise VideoBlockedError(user_message=_blocked_message(error.blocked)) from error
+    raise InvalidInputError(user_message="這部影片目前無法加入，請稍後再試") from error
+
+
+def _protect_capability_response(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+
+
+async def _require_overlay_capability(
+    request: Request,
+    channel_id: str,
+    raw_key: str | None,
+    settings_repo: VideoQueueSettingsRepository,
+    limiter: RateLimiter,
+) -> None:
+    client_host = request.client.host if request.client else "unknown"
+    limiter.require(client_host)
+    try:
+        overlay_key = UUID(raw_key) if raw_key is not None else None
+    except ValueError:
+        overlay_key = None
+    if overlay_key is None or not await settings_repo.overlay_key_matches(channel_id, overlay_key):
+        raise VideoQueueOverlayNotFoundError()
+
+
 def _blocklist_response(e: VideoQueueBlocklistEntry) -> BlocklistEntryResponse:
     return BlocklistEntryResponse(
-        id=e.id, kind=e.kind, value=e.value, label=e.label, created_at=e.created_at
+        id=e.id,
+        kind=e.kind,
+        video_type=e.video_type,
+        value=e.value,
+        label=e.label,
+        created_at=e.created_at,
     )
 
 
@@ -285,6 +382,7 @@ async def _build_public_state(
 
     return PublicVideoQueueState(
         enabled=settings.enabled,
+        volume_percent=settings.volume_percent,
         current=_entry_response(current, started_at=current.started_at) if current else None,
         queue=[_entry_response(e, started_at=None) for e in queued],
         queue_size=len(queued),
@@ -421,25 +519,29 @@ async def advance_queue(
     request: Request,
     username: str,
     body: AdvanceRequest,
+    overlay_key: str | None = Header(default=None, alias="X-Overlay-Key"),
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> PublicVideoQueueState:
-    """Unauthenticated — OBS overlay has no cookie mechanism. Only advances queue state; no destructive operations exposed."""
-    client_host = request.client.host if request.client else "unknown"
-    _advance_limiter.require(client_host)
+    """Capability-authorised queue advance for the OBS overlay."""
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
+        await _require_overlay_capability(
+            request, channel_id, overlay_key, settings_repo, _advance_limiter
+        )
 
         if body.done_id is not None:
             # Single transaction: mark done + promote next — eliminates mark_done/set_playing race.
-            await repo.advance_queue(channel_id, body.done_id)
+            await repo.advance_queue(channel_id, body.done_id, end_reason=body.reason)
         else:
             await repo.kickstart_if_idle(channel_id)
 
         return await _build_public_state(channel_id, repo, settings_repo)
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception:
         LOGGER.exception("Failed to advance video queue")
@@ -448,22 +550,61 @@ async def advance_queue(
 
 @router.patch("/public/{username}/entries/{entry_id}/metadata", status_code=204)
 async def update_entry_metadata(
+    request: Request,
     username: str,
     entry_id: int,
     body: MetadataUpdate,
+    overlay_key: str | None = Header(default=None, alias="X-Overlay-Key"),
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> None:
-    """Unauthenticated — OBS overlay fallback. Only duration_seconds is writable, scoped to entry + channel."""
+    """Capability-authorised metadata fallback, scoped to entry + channel."""
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
         repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        await _require_overlay_capability(
+            request, channel_id, overlay_key, settings_repo, _metadata_limiter
+        )
         await repo.update_duration(entry_id, body.duration_seconds, channel_id)
     except HTTPException:
+        raise
+    except AppError:
         raise
     except Exception:
         LOGGER.exception("Failed to update video queue metadata")
         raise HTTPException(status_code=500, detail="Failed to update metadata") from None
+
+
+@router.post(
+    "/public/{username}/entries/{entry_id}/playback-started",
+    status_code=204,
+)
+async def report_playback_started(
+    request: Request,
+    username: str,
+    entry_id: int,
+    body: PlaybackStartedRequest,
+    overlay_key: str | None = Header(default=None, alias="X-Overlay-Key"),
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> None:
+    """Record the overlay's idempotent, capability-authorised start signal."""
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        await _require_overlay_capability(
+            request, channel_id, overlay_key, settings_repo, _playback_limiter
+        )
+        await repo.mark_playback_started(entry_id, channel_id, body.signal)
+    except HTTPException:
+        raise
+    except AppError:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to record video queue playback start")
+        raise HTTPException(status_code=500, detail="Failed to record playback start") from None
 
 
 class ClipSourceResponse(BaseModel):
@@ -583,6 +724,7 @@ async def clear_queue(
 def _settings_response(s: VideoQueueSettings) -> VideoQueueSettingsResponse:
     return VideoQueueSettingsResponse(
         channel_id=s.channel_id,
+        overlay_key=s.overlay_key,
         enabled=s.enabled,
         redemption_enabled=s.redemption_enabled,
         max_duration_redemption=s.max_duration_redemption,
@@ -592,16 +734,19 @@ def _settings_response(s: VideoQueueSettings) -> VideoQueueSettingsResponse:
         max_per_user=s.max_per_user,
         max_duration_seconds=s.max_duration_seconds,
         replay_cooldown_hours=s.replay_cooldown_hours,
+        volume_percent=s.volume_percent,
     )
 
 
 @router.get("/settings", response_model=VideoQueueSettingsResponse)
 async def get_video_queue_settings(
+    response: Response,
     _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
     """Get video queue settings."""
+    _protect_capability_response(response)
     try:
         settings_repo = VideoQueueSettingsRepository(pool)
         return _settings_response(await settings_repo.get_or_create(channel_id))
@@ -613,11 +758,13 @@ async def get_video_queue_settings(
 @router.put("/settings", response_model=VideoQueueSettingsResponse)
 async def update_video_queue_settings(
     body: VideoQueueSettingsUpdate,
+    response: Response,
     _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
 ) -> VideoQueueSettingsResponse:
     """Update video queue settings."""
+    _protect_capability_response(response)
     if all(v is None for v in body.model_dump().values()):
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
@@ -633,12 +780,54 @@ async def update_video_queue_settings(
             max_per_user=body.max_per_user,
             max_duration_seconds=body.max_duration_seconds,
             replay_cooldown_hours=body.replay_cooldown_hours,
+            volume_percent=body.volume_percent,
         )
         LOGGER.info("Channel %s updated video queue settings", channel_id)
         return _settings_response(s)
     except Exception:
         LOGGER.exception("Failed to update video queue settings")
         raise HTTPException(status_code=500, detail="Failed to update settings") from None
+
+
+@router.post("/settings/rotate-key", response_model=VideoQueueSettingsResponse)
+async def rotate_video_queue_overlay_key(
+    response: Response,
+    _action: Literal["video-queue"] = Header(alias="X-Niibot-Action"),
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> VideoQueueSettingsResponse:
+    """Rotate the OBS overlay capability and invalidate previous URLs."""
+    _protect_capability_response(response)
+    try:
+        settings_repo = VideoQueueSettingsRepository(pool)
+        settings = await settings_repo.rotate_overlay_key(channel_id)
+        LOGGER.info("Channel %s rotated video queue overlay key", channel_id)
+        return _settings_response(settings)
+    except Exception:
+        LOGGER.exception("Failed to rotate video queue overlay key")
+        raise HTTPException(status_code=500, detail="Failed to rotate overlay key") from None
+
+
+@router.post("/advance", response_model=PublicVideoQueueState)
+async def advance_queue_from_dashboard(
+    body: AdvanceRequest,
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """Authenticated dashboard kickstart/advance path."""
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        if body.done_id is not None:
+            await repo.advance_queue(channel_id, body.done_id, end_reason=body.reason)
+        else:
+            await repo.kickstart_if_idle(channel_id)
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except Exception:
+        LOGGER.exception("Failed to advance video queue from dashboard")
+        raise HTTPException(status_code=500, detail="Failed to advance queue") from None
 
 
 @router.get("/state", response_model=PublicVideoQueueState)
@@ -689,6 +878,7 @@ async def get_history(
                     video_id=e.video_id,
                     title=e.title,
                     duration_seconds=e.duration_seconds,
+                    start_seconds=e.start_seconds,
                     requested_by=e.requested_by,
                     requested_by_id=e.requested_by_id,
                     source=e.source,
@@ -708,6 +898,53 @@ async def get_history(
     except Exception:
         LOGGER.exception("Failed to get video queue history")
         raise HTTPException(status_code=500, detail="Failed to fetch history") from None
+
+
+@router.get("/rankings", response_model=list[VideoQueueRankingResponse])
+async def get_rankings(
+    response: Response,
+    scope: Literal["channel", "global"] = "channel",
+    days: int = Query(default=7),
+    video_type: Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"]
+    | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> list[VideoQueueRankingResponse]:
+    """Private workbench rankings; global results contain aggregates only."""
+    if days not in {7, 30}:
+        raise HTTPException(status_code=422, detail="days must be 7 or 30")
+    _protect_capability_response(response)
+    try:
+        entries = await VideoQueueRepository(pool).get_rankings(
+            channel_id,
+            scope=scope,
+            days=days,
+            video_type=video_type,
+            limit=limit,
+        )
+        return [
+            VideoQueueRankingResponse(
+                rank=e.rank,
+                video_type=e.video_type,
+                video_id=e.video_id,
+                start_seconds=e.start_seconds,
+                title=e.title,
+                thumbnail_url=e.thumbnail_url,
+                creator_id=e.creator_id,
+                creator_name=e.creator_name,
+                play_count=e.play_count,
+                channel_count=e.channel_count,
+                last_played_at=e.last_played_at,
+                active_status=e.active_status,
+                blocked_kind=e.blocked_kind,
+            )
+            for e in entries
+        ]
+    except Exception:
+        LOGGER.exception("Failed to get video queue rankings")
+        raise HTTPException(status_code=500, detail="Failed to fetch rankings") from None
 
 
 async def video_queue_history_retention_loop(db_manager) -> None:  # type: ignore[no-untyped-def]
@@ -751,11 +988,20 @@ async def add_blocklist_entry(
     """Dashboard: add a blocklist rule. Idempotent per (kind, value)."""
     if body.kind not in BLOCKLIST_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {BLOCKLIST_KINDS}")
+    if body.video_type is not None and body.kind not in {"video", "creator"}:
+        raise HTTPException(
+            status_code=422,
+            detail="video_type is only valid for video and creator rules",
+        )
+    value = body.value.strip()
+    if not value:
+        raise HTTPException(status_code=422, detail="value must not be blank")
     try:
         entry = await VideoQueueBlocklistRepository(pool).add(
             channel_id,
             body.kind,
-            body.value.strip(),
+            value,
+            video_type=body.video_type,
             label=(body.label.strip() or None) if body.label else None,
             created_by=channel_id,
         )
@@ -865,87 +1111,42 @@ async def add_video_entry(
     app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
     """Broadcaster directly adds a video to the queue from the dashboard."""
-    resolved = await resolve_video_url(body.url)
-    if resolved is None:
-        raise InvalidVideoUrlError()
-
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-
-        settings = await settings_repo.get_or_create(channel_id)
-        if not settings.enabled:
-            raise VideoQueueDisabledError()
-
-        if await repo.video_is_active(channel_id, resolved.video_id):
-            raise VideoAlreadyQueuedError()
-
-        # Dashboard bypasses max_queue_size and min_view_count — broadcaster has full authority.
-        metadata = await fetch_video_metadata(
-            resolved,
-            youtube_api_key=app_settings.youtube_api_key,
-            twitch_client_id=app_settings.client_id,
-            twitch_client_secret=app_settings.client_secret,
-            instafix_host=app_settings.instafix_host,
-        )
-
-        # ...but playability is not a policy choice — an un-embeddable / age-restricted
-        # video would only stall the overlay on its timer ceiling, so reject it.
-        if not metadata.playable:
-            raise VideoNotPlayableError(user_message=unplayable_message(metadata.unplayable_reason))
-
-        # The length cap applies to the dashboard too (unlike queue-size / views);
-        # the replay cooldown is a viewer-spam guard, so the broadcaster skips it.
-        # A missing duration from an authoritative source is a transient failure
-        # (retry); a best-effort platform (Bilibili) can never supply one, so the
-        # cap skips and the overlay's per-platform ceiling bounds playback.
-        if settings.max_duration_seconds:
-            if metadata_gate_unverifiable(
-                metadata.duration_seconds, best_effort=metadata.metadata_best_effort
-            ):
-                raise VideoMetadataUnverifiableError()
-            if (
-                metadata.duration_seconds is not None
-                and metadata.duration_seconds > settings.max_duration_seconds
-            ):
-                raise VideoTooLongError(
-                    user_message=f"影片長度超過上限（{settings.max_duration_seconds // 60} 分鐘）"
-                )
-
-        blocked = await VideoQueueBlocklistRepository(pool).check(
-            channel_id,
-            video_id=resolved.video_id,
-            title=metadata.title,
-            creator_id=metadata.creator_id,
-        )
-        if blocked is not None:
-            raise VideoBlockedError(user_message=_blocked_message(blocked))
-
         channel_repo = ChannelRepository(pool)
-        requested_by: str = (
-            await channel_repo.get_broadcaster_display_name(channel_id) or channel_id
-        )
 
-        await repo.add(
-            channel_id=channel_id,
-            video_id=resolved.video_id,
-            requested_by=requested_by,
-            source="dashboard",
-            title=metadata.title,
-            duration_seconds=metadata.duration_seconds,
-            is_vertical=metadata.is_vertical,
-            video_type=resolved.video_type,
-            priority=SOURCE_PRIORITY["dashboard"],
-            start_seconds=resolved.start_seconds,
-            thumbnail_url=metadata.thumbnail_url,
-            creator_id=metadata.creator_id,
-            creator_name=metadata.creator_name,
+        async def resolve_requester() -> str:
+            return await channel_repo.get_broadcaster_display_name(channel_id) or channel_id
+
+        admission = VideoQueueAdmissionService(
+            repo,
+            settings_repo,
+            VideoQueueBlocklistRepository(pool),
         )
+        try:
+            result = await admission.admit(
+                channel_id=channel_id,
+                url=body.url,
+                requested_by=resolve_requester,
+                source="dashboard",
+                resolve=lambda url: resolve_video_url(url),
+                fetch_metadata=lambda resolved: fetch_video_metadata(
+                    resolved,
+                    youtube_api_key=app_settings.youtube_api_key,
+                    twitch_client_id=app_settings.client_id,
+                    twitch_client_secret=app_settings.client_secret,
+                    instafix_host=app_settings.instafix_host,
+                ),
+            )
+        except AdmissionRejected as error:
+            _raise_dashboard_admission_error(error)
+
         LOGGER.info(
             "Channel %s added %s %s from dashboard",
             channel_id,
-            resolved.video_type,
-            resolved.video_id,
+            result.resolved.video_type,
+            result.resolved.video_id,
         )
         return await _build_public_state(channel_id, repo, settings_repo)
     except (HTTPException, AppError):

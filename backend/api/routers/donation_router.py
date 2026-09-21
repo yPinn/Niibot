@@ -5,7 +5,7 @@ Payment flow:
   2. POST /api/donate/{username}/checkout   → backend builds a signed payment form
   3. Browser auto-submits to the gateway
   4. Gateway POSTs a webhook to /api/donate/webhook/{platform}
-  5. Backend verifies, marks the order paid, optionally enqueues a YouTube video
+  5. Backend verifies, marks the order paid, optionally enqueues a video
 
 Per-gateway signing/verification lives in ``services.payment``; this module owns
 the order lifecycle and the HTTP surface.
@@ -26,8 +26,17 @@ from services.payment import CheckoutContext, WebhookResult, get_provider
 from shared.errors import AppError, ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.models.donation import DonationOrder, PaymentConfig
 from shared.repositories.donation import DonationRepository, generate_trade_no
-from shared.repositories.video_queue import VideoQueueRepository
-from shared.video_sources import extract_youtube_info
+from shared.repositories.video_queue import (
+    VideoQueueBlocklistRepository,
+    VideoQueueRepository,
+    VideoQueueSettingsRepository,
+)
+from shared.services.video_queue_admission import AdmissionRejected, VideoQueueAdmissionService
+from shared.video_sources import (
+    extract_youtube_info,
+    fetch_video_metadata,
+    resolve_video_url,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -64,7 +73,8 @@ def _extract_video_id(youtube_url: str | None, media_share_enabled: bool) -> str
     video_id, _ = extract_youtube_info(youtube_url)
     if not video_id:
         raise DonationInvalidError(
-            user_message="YouTube 影片網址無效", context={"youtube_url": youtube_url}
+            user_message="Donate 點播目前只支援 YouTube，請檢查影片網址",
+            context={"field": "youtube_url"},
         )
     return video_id
 
@@ -76,18 +86,39 @@ async def _enqueue_donated_video(
     message: str | None,
     platform: str,
     trade_no: str,
+    app_settings: Settings,
 ) -> None:
-    """Enqueue a donated YouTube video. Errors are logged but do not fail the webhook."""
+    """Admit paid media share without changing the already-settled payment."""
     try:
         vq_repo = VideoQueueRepository(pool)
-        await vq_repo.add(
+        admission = VideoQueueAdmissionService(
+            vq_repo,
+            VideoQueueSettingsRepository(pool),
+            VideoQueueBlocklistRepository(pool),
+        )
+        await admission.admit(
             channel_id=channel_id,
-            video_id=youtube_video_id,
+            url=f"https://youtu.be/{youtube_video_id}",
             requested_by=message or "斗內點播",
             source="donation",
+            resolve=lambda url: resolve_video_url(url),
+            fetch_metadata=lambda resolved: fetch_video_metadata(
+                resolved,
+                youtube_api_key=app_settings.youtube_api_key,
+                twitch_client_id=app_settings.client_id,
+                twitch_client_secret=app_settings.client_secret,
+                instafix_host=app_settings.instafix_host,
+            ),
         )
         LOGGER.info(
             f"[{platform} webhook] Enqueued video {youtube_video_id} for channel {channel_id}"
+        )
+    except AdmissionRejected as error:
+        LOGGER.info(
+            "[%s webhook] Paid video %s was not admitted: %s",
+            platform,
+            youtube_video_id,
+            error.reason.value,
         )
     except Exception:
         # Enqueue is best-effort; the payment itself already succeeded.
@@ -234,6 +265,7 @@ async def _apply_payment_result(
     config: PaymentConfig,
     result: WebhookResult,
     order: DonationOrder | None,
+    app_settings: Settings,
 ) -> bool:
     """Advance the order per a verified webhook result. Returns True on ack-OK."""
     if order is None:
@@ -275,6 +307,7 @@ async def _apply_payment_result(
             paid_order.message,
             platform,
             result.trade_no,
+            app_settings,
         )
 
     return True
@@ -313,5 +346,5 @@ async def payment_webhook(
         LOGGER.warning(f"[{platform} webhook] Signature/parse rejected")
         return provider.webhook_ack(False)
 
-    ok = await _apply_payment_result(repo, pool, platform, config, result, order)
+    ok = await _apply_payment_result(repo, pool, platform, config, result, order, settings)
     return provider.webhook_ack(ok)

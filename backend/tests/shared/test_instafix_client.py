@@ -106,6 +106,13 @@ def test_extract_shortcode_no_match():
     assert ic.extract_instagram_shortcode("https://example.com/not-instagram") is None
 
 
+def test_extract_shortcode_rejects_host_spoofing():
+    assert (
+        ic.extract_instagram_shortcode("https://evil.example/www.instagram.com/reel/Cabc123/")
+        is None
+    )
+
+
 @pytest.mark.asyncio
 class TestResolveInstagramUrl:
     async def test_direct_reel_url_no_http_call(self):
@@ -131,6 +138,35 @@ class TestResolveInstagramUrl:
             "https://www.instagram.com/share/abcXYZ", session=_RaisingSession()
         )
         assert shortcode is None
+
+    async def test_spoofed_share_host_is_never_requested(self):
+        session = _FakeSession({})
+
+        shortcode = await ic.resolve_instagram_url(
+            "https://evil.example/www.instagram.com/share/abcXYZ", session=session
+        )
+
+        assert shortcode is None
+        assert session.calls == []
+
+    async def test_share_link_refuses_redirect_to_private_host(self):
+        session = _FakeSession(
+            {
+                "share": lambda: _FakeResp(
+                    status=302,
+                    headers={"Location": "http://127.0.0.1/admin"},
+                    final_url="https://www.instagram.com/share/abcXYZ",
+                )
+            }
+        )
+
+        shortcode = await ic.resolve_instagram_url(
+            "https://www.instagram.com/share/abcXYZ", session=session
+        )
+
+        assert shortcode is None
+        assert len(session.calls) == 1
+        assert session.calls[0][1]["allow_redirects"] is False
 
 
 # ---------------------------------------------------------------------------

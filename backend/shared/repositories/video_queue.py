@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from uuid import UUID
 
 import asyncpg
 
@@ -15,6 +16,7 @@ from shared.cache import AsyncTTLCache, cached
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
     VideoQueueEntry,
+    VideoQueueRankingEntry,
     VideoQueueSettings,
 )
 from shared.video_sources import build_watch_url
@@ -29,7 +31,7 @@ def format_now_playing(entry: VideoQueueEntry) -> str:
     viewer reading it seconds later is told the wrong number. The overlay
     already shows a live countdown for anyone who needs one.
     """
-    url = build_watch_url(entry.video_type, entry.video_id)
+    url = build_watch_url(entry.video_type, entry.video_id, entry.start_seconds)
     title_part = f"「{entry.title}」 " if entry.title else " "
     return f"▶{title_part}{url} | 點播者：{entry.requested_by}"
 
@@ -58,7 +60,8 @@ PRIORITY_PINNED = 99
 _ENTRY_COLUMNS = (
     "id, channel_id, video_id, title, duration_seconds, is_vertical, thumbnail_url, start_seconds, "
     "requested_by, source, status, video_type, priority, "
-    "created_at, started_at, ended_at, requested_by_id, creator_id, creator_name"
+    "created_at, started_at, ended_at, requested_by_id, creator_id, creator_name, "
+    "playback_started_at, playback_signal, end_reason, played_seconds"
 )
 
 # History = terminal entries retained for the dashboard "played" tab.
@@ -66,18 +69,30 @@ HISTORY_STATUSES = ("done", "skipped")
 HISTORY_RETENTION_DAYS = 30
 
 _SETTINGS_COLUMNS = (
-    "channel_id, enabled, redemption_enabled, "
+    "channel_id, overlay_key, enabled, redemption_enabled, "
     "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
-    "max_duration_seconds, replay_cooldown_hours, "
+    "max_duration_seconds, replay_cooldown_hours, volume_percent, "
     "created_at, updated_at"
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=15, name="video_queue.settings")
 
-_BLOCKLIST_COLUMNS = "id, channel_id, kind, value, label, created_by, created_at"
+_BLOCKLIST_COLUMNS = "id, channel_id, kind, video_type, value, label, created_by, created_at"
 
 BLOCKLIST_KINDS = ("video", "creator", "keyword", "user")
+VIDEO_TYPES = ("youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel")
+PLAYBACK_SIGNALS = ("confirmed", "best_effort")
+END_REASONS = (
+    "completed",
+    "provider_error",
+    "autoplay_blocked",
+    "startup_timeout",
+    "dashboard_skip",
+    "play_now",
+    "removed",
+    "cleared",
+)
 
 # Per-channel cache of the full blocklist, refreshed on write. The check runs on
 # every submission (three add paths) and the list is tiny, so we match in Python
@@ -185,7 +200,8 @@ class VideoQueueRepository:
                     """
                     SELECT
                         COUNT(*) FILTER (
-                            WHERE video_id = $2 AND status IN ('queued', 'playing')
+                            WHERE video_id = $2 AND video_type = $5
+                            AND status IN ('queued', 'playing')
                         ) AS duplicate_count,
                         COUNT(*) FILTER (WHERE status = 'queued') AS queue_size,
                         COUNT(*) FILTER (
@@ -205,6 +221,7 @@ class VideoQueueRepository:
                     video_id,
                     requested_by_id,
                     requested_by,
+                    video_type,
                 )
                 if counts["duplicate_count"] > 0:
                     return None
@@ -309,14 +326,18 @@ class VideoQueueRepository:
             )
             return VideoQueueEntry(**dict(row)) if row else None
 
-    async def video_is_active(self, channel_id: str, video_id: str) -> bool:
-        """Return True if video_id is already queued or playing in this channel."""
+    async def video_is_active(
+        self, channel_id: str, video_id: str, video_type: str = "youtube"
+    ) -> bool:
+        """Return whether this provider-native identity is queued or playing."""
         async with self.pool.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT COUNT(*) FROM video_queue "
-                "WHERE channel_id = $1 AND video_id = $2 AND status IN ('queued', 'playing')",
+                "WHERE channel_id = $1 AND video_id = $2 AND video_type = $3 "
+                "AND status IN ('queued', 'playing')",
                 channel_id,
                 video_id,
+                video_type,
             )
             return count > 0
 
@@ -357,17 +378,46 @@ class VideoQueueRepository:
                 channel_id,
             )
 
+    async def mark_playback_started(self, entry_id: int, channel_id: str, signal: str) -> bool:
+        """Record one qualified playback fact for the current entry.
+
+        The write is idempotent across overlay reconnects. A later controlled
+        player event may upgrade an earlier iframe-style best-effort signal,
+        but never move the original start timestamp.
+        """
+        if signal not in PLAYBACK_SIGNALS:
+            raise ValueError(f"Unsupported playback signal: {signal}")
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE video_queue "
+                "SET playback_started_at = COALESCE(playback_started_at, NOW()), "
+                "    playback_signal = CASE "
+                "        WHEN playback_signal = 'confirmed' THEN playback_signal "
+                "        ELSE $3 "
+                "    END "
+                "WHERE id = $1 AND channel_id = $2 AND status = 'playing'",
+                entry_id,
+                channel_id,
+                signal,
+            )
+        return result == "UPDATE 1"
+
     async def mark_done(self, entry_id: int, channel_id: str) -> None:
         """Transition entry to 'done'. Only applies when status='playing' and entry belongs to channel."""
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE video_queue SET status = 'done', ended_at = NOW() "
+                "UPDATE video_queue SET status = 'done', ended_at = NOW(), "
+                "end_reason = 'completed', "
+                "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                 "WHERE id = $1 AND channel_id = $2 AND status = 'playing'",
                 entry_id,
                 channel_id,
             )
 
-    async def advance_queue(self, channel_id: str, done_id: int) -> None:
+    async def advance_queue(
+        self, channel_id: str, done_id: int, *, end_reason: str = "completed"
+    ) -> None:
         """Atomically mark done_id as done and promote the next queued entry to playing.
 
         Both operations run inside a single transaction to prevent a race condition
@@ -385,13 +435,19 @@ class VideoQueueRepository:
         kickstart_if_idle's own NOT EXISTS guard then stays false until the queue
         is cleared.
         """
+        if end_reason not in END_REASONS:
+            raise ValueError(f"Unsupported end reason: {end_reason}")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "UPDATE video_queue SET status = 'done', ended_at = NOW() "
+                    "UPDATE video_queue SET status = 'done', ended_at = NOW(), "
+                    "end_reason = $3, "
+                    "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                    "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                     "WHERE id = $1 AND channel_id = $2 AND status = 'playing'",
                     done_id,
                     channel_id,
+                    end_reason,
                 )
                 await conn.execute(
                     "UPDATE video_queue "
@@ -411,7 +467,10 @@ class VideoQueueRepository:
         """Transition entry to 'skipped'. Returns True if a row was affected."""
         async with self.pool.acquire() as conn:
             result = await conn.execute(
-                "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+                "end_reason = 'removed', "
+                "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                 "WHERE id = $1 AND channel_id = $2 AND status IN ('queued', 'playing')",
                 entry_id,
                 channel_id,
@@ -422,7 +481,7 @@ class VideoQueueRepository:
         """Mark all queued entries as skipped. Returns count of affected rows."""
         async with self.pool.acquire() as conn:
             result = await conn.execute(
-                "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), end_reason = 'cleared' "
                 "WHERE channel_id = $1 AND status = 'queued'",
                 channel_id,
             )
@@ -440,7 +499,10 @@ class VideoQueueRepository:
         """
         async with self.pool.acquire() as conn:
             result = await conn.execute(
-                "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+                "end_reason = 'cleared', "
+                "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                 "WHERE channel_id = $1 AND status IN ('playing', 'queued')",
                 channel_id,
             )
@@ -490,7 +552,10 @@ class VideoQueueRepository:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+                    "end_reason = 'dashboard_skip', "
+                    "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                    "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                     "WHERE channel_id = $1 AND status = 'playing'",
                     channel_id,
                 )
@@ -517,7 +582,10 @@ class VideoQueueRepository:
             async with conn.transaction():
                 # Skip current playing entry (if any)
                 await conn.execute(
-                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW() "
+                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+                    "end_reason = 'play_now', "
+                    "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+                    "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
                     "WHERE channel_id = $1 AND status = 'playing'",
                     channel_id,
                 )
@@ -648,18 +716,151 @@ class VideoQueueRepository:
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
 
-    async def played_within(self, channel_id: str, video_id: str, hours: int) -> bool:
-        """True if this video finished playing (``status = 'done'``) within the
-        last ``hours`` in this channel — the replay-cooldown check."""
+    async def get_rankings(
+        self,
+        channel_id: str,
+        *,
+        scope: str,
+        days: int,
+        video_type: str | None = None,
+        limit: int = 50,
+    ) -> list[VideoQueueRankingEntry]:
+        """Return private, anonymous playback aggregates for the workbench.
+
+        All filter values stay parameters in one static query. Besides keeping
+        the SQL injection surface closed, this makes the privacy boundary
+        obvious: requester and contributing-channel identities never leave
+        the database.
+        """
+        if scope not in {"channel", "global"}:
+            raise ValueError(f"Unsupported ranking scope: {scope}")
+        if days not in {7, 30}:
+            raise ValueError(f"Unsupported ranking window: {days}")
+        if video_type is not None and video_type not in VIDEO_TYPES:
+            raise ValueError(f"Unsupported video type: {video_type}")
+        if not 1 <= limit <= 100:
+            raise ValueError("Ranking limit must be between 1 and 100")
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                WITH qualified AS (
+                    SELECT
+                        channel_id,
+                        video_type,
+                        video_id,
+                        start_seconds,
+                        title,
+                        thumbnail_url,
+                        creator_id,
+                        creator_name,
+                        playback_started_at
+                    FROM video_queue
+                    WHERE playback_started_at IS NOT NULL
+                      AND playback_started_at >= NOW() - make_interval(days => $2)
+                      AND ($3::text IS NULL OR video_type = $3)
+                      AND ($4::text = 'global' OR channel_id = $1)
+                ), aggregated AS (
+                    SELECT
+                        video_type,
+                        video_id,
+                        (ARRAY_AGG(start_seconds ORDER BY playback_started_at DESC))[1]
+                            AS start_seconds,
+                        (ARRAY_AGG(title ORDER BY playback_started_at DESC)
+                            FILTER (WHERE title IS NOT NULL))[1] AS title,
+                        (ARRAY_AGG(thumbnail_url ORDER BY playback_started_at DESC)
+                            FILTER (WHERE thumbnail_url IS NOT NULL))[1] AS thumbnail_url,
+                        (ARRAY_AGG(creator_id ORDER BY playback_started_at DESC)
+                            FILTER (WHERE creator_id IS NOT NULL))[1] AS creator_id,
+                        (ARRAY_AGG(creator_name ORDER BY playback_started_at DESC)
+                            FILTER (WHERE creator_name IS NOT NULL))[1] AS creator_name,
+                        COUNT(*)::integer AS play_count,
+                        COUNT(DISTINCT channel_id)::integer AS channel_count,
+                        MAX(playback_started_at) AS last_played_at
+                    FROM qualified
+                    GROUP BY video_type, video_id
+                ), ranked AS (
+                    SELECT
+                        ROW_NUMBER() OVER (
+                            ORDER BY
+                                CASE WHEN $4::text = 'global' THEN channel_count END DESC NULLS LAST,
+                                play_count DESC,
+                                last_played_at DESC,
+                                video_type,
+                                video_id
+                        )::integer AS rank,
+                        *
+                    FROM aggregated
+                )
+                SELECT
+                    ranked.*,
+                    (
+                        SELECT active.status
+                        FROM video_queue AS active
+                        WHERE active.channel_id = $1
+                          AND active.video_type = ranked.video_type
+                          AND active.video_id = ranked.video_id
+                          AND active.status IN ('playing', 'queued')
+                        ORDER BY CASE active.status WHEN 'playing' THEN 0 ELSE 1 END
+                        LIMIT 1
+                    ) AS active_status,
+                    (
+                        SELECT block.kind
+                        FROM video_queue_blocklist AS block
+                        WHERE block.channel_id = $1
+                          AND block.kind IN ('video', 'creator', 'keyword')
+                          AND (
+                              block.kind = 'keyword'
+                              OR block.video_type IS NULL
+                              OR block.video_type = ranked.video_type
+                          )
+                          AND (
+                              (block.kind = 'video' AND lower(block.value) = lower(ranked.video_id))
+                              OR (
+                                  block.kind = 'creator'
+                                  AND ranked.creator_id IS NOT NULL
+                                  AND lower(block.value) = lower(ranked.creator_id)
+                              )
+                              OR (
+                                  block.kind = 'keyword'
+                                  AND ranked.title IS NOT NULL
+                                  AND STRPOS(lower(ranked.title), lower(block.value)) > 0
+                              )
+                          )
+                        ORDER BY CASE block.kind WHEN 'video' THEN 0 WHEN 'creator' THEN 1 ELSE 2 END
+                        LIMIT 1
+                    ) AS blocked_kind
+                FROM ranked
+                ORDER BY rank
+                LIMIT $5
+                """,
+                channel_id,
+                days,
+                video_type,
+                scope,
+                limit,
+            )
+        return [VideoQueueRankingEntry(**dict(row)) for row in rows]
+
+    async def played_within(
+        self,
+        channel_id: str,
+        video_id: str,
+        hours: int,
+        video_type: str = "youtube",
+    ) -> bool:
+        """True if this video actually started within the replay window."""
         async with self.pool.acquire() as conn:
             found = await conn.fetchval(
                 "SELECT 1 FROM video_queue "
-                "WHERE channel_id = $1 AND video_id = $2 AND status = 'done' "
-                "AND ended_at IS NOT NULL AND ended_at > NOW() - make_interval(hours => $3) "
+                "WHERE channel_id = $1 AND video_id = $2 AND video_type = $4 "
+                "AND playback_started_at IS NOT NULL "
+                "AND playback_started_at > NOW() - make_interval(hours => $3) "
                 "LIMIT 1",
                 channel_id,
                 video_id,
                 hours,
+                video_type,
             )
             return found is not None
 
@@ -718,6 +919,7 @@ class VideoQueueSettingsRepository:
         max_per_user: int | None = None,
         max_duration_seconds: int | None = None,
         replay_cooldown_hours: int | None = None,
+        volume_percent: int | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -734,7 +936,8 @@ class VideoQueueSettingsRepository:
                     user_cooldown_seconds    = COALESCE($7, video_queue_settings.user_cooldown_seconds),
                     max_per_user             = COALESCE($8, video_queue_settings.max_per_user),
                     max_duration_seconds     = COALESCE($9, video_queue_settings.max_duration_seconds),
-                    replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours)
+                    replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours),
+                    volume_percent           = COALESCE($11, video_queue_settings.volume_percent)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -747,10 +950,47 @@ class VideoQueueSettingsRepository:
                 max_per_user,
                 max_duration_seconds,
                 replay_cooldown_hours,
+                volume_percent,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")
             return result
+
+    async def overlay_key_matches(self, channel_id: str, overlay_key: UUID) -> bool:
+        """Return whether the capability belongs to this channel."""
+        async with self.pool.acquire() as conn:
+            matched = await conn.fetchval(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM video_queue_settings "
+                "WHERE channel_id = $1 AND overlay_key = $2"
+                ")",
+                channel_id,
+                overlay_key,
+            )
+        return bool(matched)
+
+    async def rotate_overlay_key(self, channel_id: str) -> VideoQueueSettings:
+        """Rotate the channel's overlay capability, invalidating old URLs."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO video_queue_settings (channel_id) VALUES ($1) "
+                    "ON CONFLICT (channel_id) DO NOTHING",
+                    channel_id,
+                )
+                row = await conn.fetchrow(
+                    f"""
+                    UPDATE video_queue_settings
+                    SET overlay_key = gen_random_uuid()
+                    WHERE channel_id = $1
+                    RETURNING {_SETTINGS_COLUMNS}
+                    """,
+                    channel_id,
+                )
+        if row is None:
+            raise ValueError(f"Failed to rotate video queue overlay key for channel {channel_id}")
+        _settings_cache.invalidate(f"vq_settings:{channel_id}")
+        return VideoQueueSettings(**dict(row))
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +1001,7 @@ class VideoQueueSettingsRepository:
 def _blocklist_match(
     entries: list[VideoQueueBlocklistEntry],
     *,
+    video_type: str = "youtube",
     video_id: str,
     title: str | None,
     requested_by: str | None,
@@ -781,6 +1022,12 @@ def _blocklist_match(
     creator_l = (creator_id or "").lower()
     for entry in entries:
         value_l = entry.value.lower()
+        if (
+            entry.kind in {"video", "creator"}
+            and entry.video_type is not None
+            and entry.video_type != video_type
+        ):
+            continue
         if entry.kind == "video" and value_l == video_id.lower():
             return entry
         if entry.kind == "creator" and creator_l and value_l == creator_l:
@@ -821,22 +1068,33 @@ class VideoQueueBlocklistRepository:
         kind: str,
         value: str,
         *,
+        video_type: str | None = None,
         label: str | None = None,
         created_by: str | None = None,
     ) -> VideoQueueBlocklistEntry:
-        """Insert a rule, or return the existing one for the same (channel, kind, value)."""
+        """Insert a rule, or return its provider-scoped equivalent."""
+        if kind not in BLOCKLIST_KINDS:
+            raise ValueError(f"Unsupported blocklist kind: {kind}")
+        if video_type is not None and kind not in {"video", "creator"}:
+            raise ValueError("Only video and creator rules may specify a provider")
+        if video_type is not None and video_type not in VIDEO_TYPES:
+            raise ValueError(f"Unsupported video type: {video_type}")
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
-                INSERT INTO video_queue_blocklist (channel_id, kind, value, label, created_by)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (channel_id, kind, lower(value)) DO UPDATE SET
+                INSERT INTO video_queue_blocklist
+                    (channel_id, kind, value, video_type, label, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (
+                    channel_id, kind, lower(value), (COALESCE(video_type, '*'))
+                ) DO UPDATE SET
                     label = COALESCE(EXCLUDED.label, video_queue_blocklist.label)
                 RETURNING {_BLOCKLIST_COLUMNS}
                 """,
                 channel_id,
                 kind,
                 value,
+                video_type,
                 label,
                 created_by,
             )
@@ -858,6 +1116,7 @@ class VideoQueueBlocklistRepository:
         self,
         channel_id: str,
         *,
+        video_type: str = "youtube",
         video_id: str,
         title: str | None = None,
         requested_by: str | None = None,
@@ -870,6 +1129,7 @@ class VideoQueueBlocklistRepository:
             return None
         return _blocklist_match(
             entries,
+            video_type=video_type,
             video_id=video_id,
             title=title,
             requested_by=requested_by,
