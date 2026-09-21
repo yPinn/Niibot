@@ -102,9 +102,25 @@ class TestGetEventCatalog:
             "resub",
             "gift_sub",
             "gift_recipient",
+            "watch_streak",
             "bits",
             "raid",
         ]
+
+    def test_watch_streak_exposes_shared_milestone_variables(self):
+        r = _make_client().get("/api/events/catalog")
+        by_key = {event["key"]: event for event in r.json()}
+
+        event = by_key["watch_streak"]
+        assert event["display_name"] == "連續觀看"
+        assert [variable["name"] for variable in event["variables"]] == [
+            "user",
+            "@user",
+            "streak",
+            "points",
+        ]
+        assert event["default_enabled"] is False
+        assert event["requires_affiliate"] is True
 
     def test_every_variable_has_a_preview_sample(self):
         r = _make_client().get("/api/events/catalog")

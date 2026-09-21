@@ -4,15 +4,17 @@ Each channel is a tenant and may customise the chat message the bot posts when
 one of these events fires. Defining "an event" used to mean editing several
 unsynced places; adding ``resub`` / ``gift_sub`` missed the EventSub
 subscription list, so they silently never fired. Each catalog entry binds, per
-event type: the ``event_configs`` DB key (+ migration 086 CHECK), the DB seed
+event type: the ``event_configs`` DB key (+ latest event-type CHECK migration),
+the DB seed
 (template / enabled / options), the ``$(name)`` template variables, the display
 metadata the dashboard renders, the per-event options schema, the
 ``stream_events`` bucket its trigger count reads from, and the twitchio EventSub
 class that delivers it.
 
 Subscription-related greetings (``subscribe`` / ``resub`` / ``gift_recipient``)
-are delivered by the single ``channel.chat.notification`` subscription, which is
-fixed infrastructure — those entries carry ``subscription_class=None``.
+and ``watch_streak`` are delivered by the single ``channel.chat.notification``
+subscription, which is fixed infrastructure — those entries carry
+``subscription_class=None``.
 
 ``backend/shared/`` is imported by the api and discord services too, so this
 module must NOT import ``twitchio``. ``twitch/core/eventsub_catalog.py`` maps
@@ -25,7 +27,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-EventKey = Literal["follow", "subscribe", "resub", "gift_sub", "gift_recipient", "raid", "bits"]
+EventKey = Literal[
+    "follow",
+    "subscribe",
+    "resub",
+    "gift_sub",
+    "gift_recipient",
+    "watch_streak",
+    "raid",
+    "bits",
+]
 
 # Semantic status-token names the dashboard maps to Tailwind classes. Kept as
 # bare strings here so shared/ stays framework-free.
@@ -196,6 +207,21 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
                 default=True,
             ),
         ),
+    ),
+    EventDef(
+        key="watch_streak",
+        default_template=("恭喜 $(@user) 連續觀看 $(streak) 場直播，獲得 $(points) 點忠誠點數！"),
+        default_enabled=False,
+        variables=(
+            EventVariable("user", "分享者名稱", "小明", mentionable=True),
+            EventVariable("streak", "連續觀看場數", "7"),
+            EventVariable("points", "本次獲得的忠誠點數", "450"),
+        ),
+        subscription_class=None,  # channel.chat.notification (watch_streak notice)
+        display_name="連續觀看",
+        category_label="觀看",
+        accent="online",
+        requires_affiliate=True,
     ),
     EventDef(
         key="bits",

@@ -4,7 +4,15 @@ import { apiJson } from './errors'
 export interface EventConfig {
   id: number
   channel_id: string
-  event_type: 'follow' | 'subscribe' | 'resub' | 'gift_sub' | 'gift_recipient' | 'raid' | 'bits'
+  event_type:
+    | 'follow'
+    | 'subscribe'
+    | 'resub'
+    | 'gift_sub'
+    | 'gift_recipient'
+    | 'watch_streak'
+    | 'raid'
+    | 'bits'
   message_template: string
   enabled: boolean
   options: Record<string, unknown>
