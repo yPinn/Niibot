@@ -12,6 +12,7 @@ function entry(overrides: Partial<VideoQueueHistoryEntry> = {}): VideoQueueHisto
     video_id: 'abc',
     title: 'A clip',
     duration_seconds: 42,
+    start_seconds: 0,
     requested_by: 'viewer',
     requested_by_id: null,
     source: 'chat',
@@ -31,6 +32,7 @@ describe('HistoryTable', () => {
   it('shows the empty state with no entries', () => {
     render(<HistoryTable entries={[]} onRequeue={noop} onBlock={noop} />)
     expect(screen.getByText('尚無播放紀錄')).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('renders status per entry and calls onRequeue with the row', async () => {
@@ -58,7 +60,7 @@ describe('HistoryTable', () => {
   it('disables blocking the creator when the entry has no creator_id', async () => {
     render(<HistoryTable entries={[entry({ creator_id: null })]} onRequeue={noop} onBlock={noop} />)
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
-    expect(await screen.findByRole('menuitem', { name: '封鎖此頻道' })).toHaveAttribute(
+    expect(await screen.findByRole('menuitem', { name: '封鎖此創作者' })).toHaveAttribute(
       'aria-disabled',
       'true'
     )
@@ -74,7 +76,7 @@ describe('HistoryTable', () => {
       />
     )
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
-    await userEvent.click(await screen.findByRole('menuitem', { name: '封鎖此頻道' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '封鎖此創作者' }))
     expect(onBlock).toHaveBeenCalledWith(
       expect.objectContaining({ creator_id: 'UC123' }),
       'creator'

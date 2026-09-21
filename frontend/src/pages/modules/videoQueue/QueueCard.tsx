@@ -1,6 +1,11 @@
 import { useState } from 'react'
 
-import type { BlocklistKind, VideoQueueEntry, VideoQueueHistoryEntry } from '@/api/videoQueue'
+import type {
+  BlocklistKind,
+  VideoQueueEntry,
+  VideoQueueHistoryEntry,
+  VideoQueueRankingEntry,
+} from '@/api/videoQueue'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { EmptyState, Icon, Spinner } from '@/components/primitives'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
@@ -18,9 +23,10 @@ import {
 
 import { HistoryTable } from './HistoryTable'
 import { QueueTable } from './QueueTable'
+import { RankingPanel } from './RankingPanel'
 import { formatDuration, QUEUE_PAGE_SIZE } from './utils'
 
-export type QueueTab = 'queue' | 'history'
+export type QueueTab = 'queue' | 'history' | 'ranking'
 export type HistoryState = 'idle' | 'loading' | 'more' | 'ready'
 
 function Pager({
@@ -85,6 +91,8 @@ export function QueueCard({
   onHistoryNext,
   onRequeue,
   onBlock,
+  onRankAdd,
+  onRankBlock,
 }: {
   tab: QueueTab
   onTabChange: (tab: QueueTab) => void
@@ -109,6 +117,11 @@ export function QueueCard({
   onHistoryNext: () => void
   onRequeue: (entry: VideoQueueHistoryEntry) => void
   onBlock: (entry: VideoQueueHistoryEntry, kind: BlocklistKind) => void
+  onRankAdd: (entry: VideoQueueRankingEntry) => Promise<void>
+  onRankBlock: (
+    entry: VideoQueueRankingEntry,
+    kind: Extract<BlocklistKind, 'video' | 'creator'>
+  ) => Promise<void>
 }) {
   const [confirmClear, setConfirmClear] = useState(false)
   const [queuePage, setQueuePage] = useState(0)
@@ -134,6 +147,7 @@ export function QueueCard({
           <TabsList>
             <TabsTrigger value="queue">待播</TabsTrigger>
             <TabsTrigger value="history">紀錄</TabsTrigger>
+            <TabsTrigger value="ranking">排行</TabsTrigger>
           </TabsList>
         </Tabs>
         <CardAction>
@@ -213,6 +227,8 @@ export function QueueCard({
               </>
             )}
           </>
+        ) : tab === 'ranking' ? (
+          <RankingPanel onAdd={onRankAdd} onBlock={onRankBlock} />
         ) : historyState === 'loading' ? (
           <TableSkeletonRows count={QUEUE_PAGE_SIZE} />
         ) : (

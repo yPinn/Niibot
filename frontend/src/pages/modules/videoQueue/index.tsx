@@ -3,17 +3,19 @@ import { toast } from 'sonner'
 
 import {
   addVideoToQueue,
-  advanceVideoQueue,
+  advanceVideoQueueFromDashboard,
   type BlocklistKind,
   clearVideoQueue,
   getVideoQueueHistory,
   getVideoQueueSettings,
   playVideoNow,
   removeQueueEntry,
+  rotateVideoQueueOverlayKey,
   setVideoAsNext,
   skipCurrentVideo,
   updateVideoQueueSettings,
   type VideoQueueHistoryEntry,
+  type VideoQueueRankingEntry,
   type VideoQueueSettings,
 } from '@/api/videoQueue'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
@@ -29,7 +31,6 @@ import {
   CardTitle,
   Label,
   Separator,
-  Skeleton,
   Switch,
 } from '@/components/ui'
 import { WarningBanner } from '@/components/WarningBanner'
@@ -42,9 +43,11 @@ import { BlocklistSection, type BlocklistSectionHandle } from './BlocklistSectio
 import { NowPlayingCard } from './NowPlayingCard'
 import { OverlayCard } from './OverlayCard'
 import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
-import { RulesCard, type RulesDraft } from './RulesCard'
+import type { RulesDraft } from './RulesCard'
+import { SettingsCard } from './SettingsCard'
 import { SetupGuideSheet } from './SetupGuideSheet'
 import { QUEUE_PAGE_SIZE, REDEMPTION_DURATION_OPTIONS, snapToOption, watchUrl } from './utils'
+import { VideoQueuePageSkeleton } from './VideoQueuePageSkeleton'
 
 const EMPTY_DRAFT: RulesDraft = {
   maxDurationMinutes: '',
@@ -54,6 +57,7 @@ const EMPTY_DRAFT: RulesDraft = {
   userCooldownSeconds: '',
   maxQueueSize: '',
   maxRedemptionDuration: '600',
+  volumePercent: '100',
 }
 
 export default function VideoQueue() {
@@ -75,6 +79,7 @@ export default function VideoQueue() {
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
   const [adding, setAdding] = useState(false)
+  const [rotatingOverlayUrl, setRotatingOverlayUrl] = useState(false)
   const hasInitialized = useRef(false)
 
   const [tab, setTab] = useState<QueueTab>('queue')
@@ -123,9 +128,22 @@ export default function VideoQueue() {
     }
   }
 
+  const addUrlAndRefreshQueue = useCallback(
+    async (url: string) => {
+      let newState = await addVideoToQueue(url)
+      // Starting an idle queue is part of every dashboard add path, including
+      // history and ranking actions—not only the URL input above the table.
+      if (newState.current === null && newState.queue.length > 0 && user?.name) {
+        newState = await advanceVideoQueueFromDashboard(null)
+      }
+      setState(newState)
+    },
+    [setState, user?.name]
+  )
+
   const handleRequeue = async (entry: VideoQueueHistoryEntry) => {
     try {
-      await addVideoToQueue(watchUrl(entry.video_type, entry.video_id))
+      await addUrlAndRefreshQueue(watchUrl(entry.video_type, entry.video_id, entry.start_seconds))
       toast.success('已重新加入佇列')
     } catch (e) {
       toastApiError(e, '重新點播失敗')
@@ -147,10 +165,44 @@ export default function VideoQueue() {
     }
     if (!value) return
     try {
-      await blocklistRef.current?.addBlock(kind, value, label)
+      await blocklistRef.current?.addBlock(
+        kind,
+        value,
+        label,
+        kind === 'video' || kind === 'creator' ? entry.video_type : null
+      )
       toast.success('已加入封鎖清單')
     } catch (e) {
       toastApiError(e, '加入封鎖清單失敗')
+    }
+  }
+
+  const handleAddFromRanking = async (entry: VideoQueueRankingEntry) => {
+    try {
+      await addUrlAndRefreshQueue(watchUrl(entry.video_type, entry.video_id, entry.start_seconds))
+      toast.success('已加入待播')
+    } catch (e) {
+      toastApiError(e, '加入待播失敗')
+      throw e
+    }
+  }
+
+  const handleBlockFromRanking = async (
+    entry: VideoQueueRankingEntry,
+    kind: Extract<BlocklistKind, 'video' | 'creator'>
+  ) => {
+    const value = kind === 'creator' ? entry.creator_id : entry.video_id
+    const label =
+      kind === 'creator'
+        ? (entry.creator_name ?? entry.creator_id)
+        : (entry.title ?? entry.video_id)
+    if (!value) return
+    try {
+      await blocklistRef.current?.addBlock(kind, value, label, entry.video_type)
+      toast.success(kind === 'creator' ? '已封鎖此創作者' : '已封鎖此影片')
+    } catch (e) {
+      toastApiError(e, '加入封鎖清單失敗')
+      throw e
     }
   }
 
@@ -173,6 +225,7 @@ export default function VideoQueue() {
           maxRedemptionDuration: String(
             snapToOption(REDEMPTION_DURATION_OPTIONS, queueSettings.max_duration_redemption)
           ),
+          volumePercent: String(queueSettings.volume_percent),
         })
         hasInitialized.current = true
       }
@@ -225,6 +278,7 @@ export default function VideoQueue() {
     const minViews = parseInt(draft.minViewCount, 10)
     const maxDurationMinutes = parseInt(draft.maxDurationMinutes, 10)
     const replayCooldownHours = parseInt(draft.replayCooldownHours, 10)
+    const volumePercent = parseInt(draft.volumePercent, 10)
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('佇列最多：1 ~ 100 首')
       return
@@ -245,6 +299,10 @@ export default function VideoQueue() {
       toast.error('播過多久內不能再點：0 ~ 168 小時（0 為不限）')
       return
     }
+    if (isNaN(volumePercent) || volumePercent < 0 || volumePercent > 100) {
+      toast.error('播放器音量：0 ~ 100%')
+      return
+    }
     setSaving(true)
     try {
       const updated = await updateVideoQueueSettings({
@@ -255,6 +313,7 @@ export default function VideoQueue() {
         min_view_count: minViews,
         max_duration_seconds: maxDurationMinutes * 60,
         replay_cooldown_hours: replayCooldownHours,
+        volume_percent: volumePercent,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -314,14 +373,7 @@ export default function VideoQueue() {
     if (!addUrlInput.trim()) return
     setAdding(true)
     try {
-      let newState = await addVideoToQueue(addUrlInput.trim())
-      // Nothing playing yet → advance immediately, mirroring the overlay's kickstart logic.
-      // Uses the public advance endpoint intentionally: the overlay is the authoritative player
-      // and the same unauthenticated endpoint is used there. No auth-gated advance exists.
-      if (newState.current === null && newState.queue.length > 0 && user?.name) {
-        newState = await advanceVideoQueue(user.name, null)
-      }
-      setState(newState)
+      await addUrlAndRefreshQueue(addUrlInput.trim())
       setAddUrlInput('')
       toast.success('已加入佇列')
     } catch (e) {
@@ -331,7 +383,22 @@ export default function VideoQueue() {
     }
   }
 
-  const overlayUrl = user?.name ? `${window.location.origin}/${user.name}/video-queue/overlay` : ''
+  const handleRotateOverlayUrl = async () => {
+    setRotatingOverlayUrl(true)
+    try {
+      setSettings(await rotateVideoQueueOverlayKey())
+      toast.success('OBS 網址已重設，請更新 Browser Source')
+    } catch (error) {
+      toastApiError(error, '重設 OBS 網址失敗')
+    } finally {
+      setRotatingOverlayUrl(false)
+    }
+  }
+
+  const overlayUrl =
+    user?.name && settings?.overlay_key
+      ? `${window.location.origin}/${user.name}/video-queue/overlay#key=${encodeURIComponent(settings.overlay_key)}`
+      : ''
 
   const current = state?.current ?? null
   const queue = state?.queue ?? []
@@ -365,11 +432,7 @@ export default function VideoQueue() {
         <PageHeader title="Video Queue" description="管理觀眾點播的影片">
           {headerActions}
         </PageHeader>
-        <Skeleton className="h-52 w-full rounded-xl" />
-        <div className="grid grid-cols-1 gap-section lg:grid-cols-12">
-          <Skeleton className="h-120 w-full rounded-xl lg:col-span-8" />
-          <Skeleton className="h-96 w-full rounded-xl lg:col-span-4" />
-        </div>
+        <VideoQueuePageSkeleton />
       </PageMain>
     )
   }
@@ -403,7 +466,7 @@ export default function VideoQueue() {
         delay={0.05}
         className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch"
       >
-        <div className="lg:col-span-8">
+        <div className="min-w-0 lg:col-span-8">
           <QueueCard
             tab={tab}
             onTabChange={handleTabChange}
@@ -428,10 +491,22 @@ export default function VideoQueue() {
             onHistoryNext={() => void handleHistoryNext()}
             onRequeue={handleRequeue}
             onBlock={handleBlockFromHistory}
+            onRankAdd={handleAddFromRanking}
+            onRankBlock={handleBlockFromRanking}
           />
         </div>
-        <div className="lg:col-span-4">
-          <OverlayCard url={overlayUrl} current={current} onOpenGuide={() => setHelpOpen(true)} />
+        <div className="min-w-0 lg:col-span-4">
+          <OverlayCard
+            url={overlayUrl}
+            current={current}
+            volumePercent={draft.volumePercent}
+            onVolumeChange={value => setField('volumePercent', value)}
+            onSaveOutput={handleSaveSettings}
+            saving={saving}
+            onOpenGuide={() => setHelpOpen(true)}
+            onRotateUrl={() => void handleRotateOverlayUrl()}
+            rotating={rotatingOverlayUrl}
+          />
         </div>
       </SlideUp>
 
@@ -440,10 +515,10 @@ export default function VideoQueue() {
       <SlideUp
         inView
         delay={0.1}
-        className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-start"
+        className="grid grid-cols-1 gap-section lg:grid-cols-12 lg:items-stretch"
       >
-        <div className="lg:col-span-8">
-          <RulesCard
+        <div className="min-w-0 lg:col-span-8">
+          <SettingsCard
             draft={draft}
             onField={setField}
             redemptionEnabled={settings?.redemption_enabled ?? false}
@@ -452,15 +527,15 @@ export default function VideoQueue() {
             saving={saving}
           />
         </div>
-        <div className="lg:col-span-4">
-          <Card>
+        <div className="min-w-0 lg:col-span-4">
+          <Card className="h-full">
             <CardHeader>
               <CardTitle>封鎖清單</CardTitle>
               <CardDescription>
-                符合的影片、標題關鍵字或點播者，所有點播管道都會拒絕
+                影片、創作者與標題規則套用所有來源；使用者規則只套用 Chat 與頻道點數
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-1 flex-col">
               <BlocklistSection ref={blocklistRef} hideHeader />
             </CardContent>
           </Card>

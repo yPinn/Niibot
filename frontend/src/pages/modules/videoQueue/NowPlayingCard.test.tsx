@@ -25,6 +25,22 @@ function entry(overrides: Partial<VideoQueueEntry> = {}): VideoQueueEntry {
 const noop = () => {}
 
 describe('NowPlayingCard thumbnail', () => {
+  it('preserves the Twitch VOD start offset in the external link', () => {
+    render(
+      <NowPlayingCard
+        current={entry({ video_type: 'twitch_vod', video_id: '123456', start_seconds: 90 })}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+      />
+    )
+
+    expect(screen.getByRole('link', { name: '在新分頁開啟影片' })).toHaveAttribute(
+      'href',
+      'https://www.twitch.tv/videos/123456?t=90s'
+    )
+  })
+
   it('renders the fetched poster when thumbnail_url is set', () => {
     render(
       <NowPlayingCard

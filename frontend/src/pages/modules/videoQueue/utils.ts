@@ -26,10 +26,14 @@ export function snapToOption(options: readonly { value: number }[], value: numbe
 
 /** Canonical watch URL for a queued entry — frontend mirror of the backend's
  *  `build_watch_url` (shared/video_sources.py). */
-export function watchUrl(videoType: string, videoId: string): string {
+export function watchUrl(videoType: string, videoId: string, startSeconds = 0): string {
   switch (videoType) {
     case 'twitch_clip':
       return `https://clips.twitch.tv/${videoId}`
+    case 'twitch_vod': {
+      const url = `https://www.twitch.tv/videos/${videoId}`
+      return startSeconds > 0 ? `${url}?t=${startSeconds}s` : url
+    }
     case 'bilibili':
       return `https://www.bilibili.com/video/${videoId}`
     case 'instagram_reel':

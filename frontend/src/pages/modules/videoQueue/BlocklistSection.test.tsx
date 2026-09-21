@@ -36,10 +36,25 @@ describe('BlocklistSection', () => {
     expect(screen.getByText('點播者')).toBeInTheDocument()
   })
 
+  it('uses row skeletons while the blocklist is loading', () => {
+    getVideoQueueBlocklist.mockReturnValue(new Promise(() => undefined))
+    const { container } = render(<BlocklistSection />)
+
+    expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3)
+    expect(screen.queryByText('尚無封鎖項目')).not.toBeInTheDocument()
+  })
+
+  it('fills the available list area with the shared empty state', async () => {
+    const { container } = render(<BlocklistSection />)
+
+    expect(await screen.findByText('尚無封鎖項目')).toBeInTheDocument()
+    expect(container.querySelector('[data-slot="empty"]')).toBeInTheDocument()
+  })
+
   it('adds a rule and prepends it', async () => {
     addVideoQueueBlock.mockResolvedValue(block({ id: 5, kind: 'keyword', value: 'drama' }))
     render(<BlocklistSection />)
-    await screen.findByText('目前沒有封鎖項目')
+    await screen.findByText('尚無封鎖項目')
 
     await userEvent.type(screen.getByPlaceholderText('標題關鍵字'), 'drama')
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
@@ -51,7 +66,7 @@ describe('BlocklistSection', () => {
   it('extracts a YouTube id when blocking a video URL', async () => {
     addVideoQueueBlock.mockResolvedValue(block({ id: 8, kind: 'video', value: 'dQw4w9WgXcQ' }))
     render(<BlocklistSection />)
-    await screen.findByText('目前沒有封鎖項目')
+    await screen.findByText('尚無封鎖項目')
 
     await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: '影片' }))
@@ -61,7 +76,7 @@ describe('BlocklistSection', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
 
-    expect(addVideoQueueBlock).toHaveBeenCalledWith('video', 'dQw4w9WgXcQ', undefined)
+    expect(addVideoQueueBlock).toHaveBeenCalledWith('video', 'dQw4w9WgXcQ', undefined, 'youtube')
   })
 
   it('removes a rule optimistically', async () => {
@@ -81,7 +96,7 @@ describe('BlocklistSection', () => {
     )
     const ref = createRef<BlocklistSectionHandle>()
     render(<BlocklistSection ref={ref} />)
-    await screen.findByText('目前沒有封鎖項目')
+    await screen.findByText('尚無封鎖項目')
 
     await ref.current!.addBlock('video', 'vid', 'A title')
     expect(addVideoQueueBlock).toHaveBeenCalledWith('video', 'vid', 'A title')

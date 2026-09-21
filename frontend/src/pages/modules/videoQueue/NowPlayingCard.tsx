@@ -122,7 +122,7 @@ export function NowPlayingCard({
         <CardAction className="flex items-center gap-1">
           <Button size="icon-sm" variant="ghost" asChild title="在新分頁開啟影片">
             <a
-              href={watchUrl(current.video_type, current.video_id)}
+              href={watchUrl(current.video_type, current.video_id, current.start_seconds)}
               target="_blank"
               rel="noreferrer"
             >

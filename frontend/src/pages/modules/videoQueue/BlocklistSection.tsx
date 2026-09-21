@@ -7,8 +7,10 @@ import {
   type BlocklistKind,
   getVideoQueueBlocklist,
   removeVideoQueueBlock,
+  type VideoType,
 } from '@/api/videoQueue'
-import { Icon, Spinner } from '@/components/primitives'
+import { EmptyState, Icon, Spinner } from '@/components/primitives'
+import { TableSkeletonRows } from '@/components/TableSkeletonRows'
 import {
   Badge,
   Button,
@@ -30,6 +32,14 @@ const KIND_LABEL: Record<BlocklistKind, string> = {
 
 const ADDABLE_KINDS: BlocklistKind[] = ['video', 'creator', 'keyword', 'user']
 
+const PROVIDER_LABEL: Record<VideoType, string> = {
+  youtube: 'YouTube',
+  twitch_clip: 'Twitch Clip',
+  twitch_vod: 'Twitch VOD',
+  bilibili: 'Bilibili',
+  instagram_reel: 'Instagram',
+}
+
 const KIND_PLACEHOLDER: Record<BlocklistKind, string> = {
   video: '影片 ID 或連結',
   creator: '創作者 ID（YouTube 頻道 ID／Bilibili UID／Twitch 頻道名／IG 帳號）',
@@ -37,21 +47,34 @@ const KIND_PLACEHOLDER: Record<BlocklistKind, string> = {
   user: 'Twitch 使用者名稱',
 }
 
-// Accept a full URL for the `video` kind — pull the last path/query id out of it.
-function normalizeValue(kind: BlocklistKind, raw: string): string {
+// A full video URL carries both identity pieces. Bare native ids deliberately
+// remain providerless wildcard rules because their platform cannot be inferred.
+function normalizeValue(
+  kind: BlocklistKind,
+  raw: string
+): { value: string; videoType?: VideoType } {
   const v = raw.trim()
-  if (kind !== 'video') return v
+  if (kind !== 'video') return { value: v }
   const yt = v.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/)
-  if (yt) return yt[1]
+  if (yt) return { value: yt[1], videoType: 'youtube' }
   const bili = v.match(/(BV[A-Za-z0-9]{10})/)
-  if (bili) return bili[1]
+  if (bili) return { value: bili[1], videoType: 'bilibili' }
   const clip = v.match(/(?:clips\.twitch\.tv\/|\/clip\/)([A-Za-z0-9_-]+)/)
-  if (clip) return clip[1]
-  return v
+  if (clip) return { value: clip[1], videoType: 'twitch_clip' }
+  const vod = v.match(/twitch\.tv\/videos\/(\d+)/)
+  if (vod) return { value: vod[1], videoType: 'twitch_vod' }
+  const reel = v.match(/instagram\.com\/reel\/([A-Za-z0-9_-]+)/)
+  if (reel) return { value: reel[1], videoType: 'instagram_reel' }
+  return { value: v }
 }
 
 export interface BlocklistSectionHandle {
-  addBlock: (kind: BlocklistKind, value: string, label?: string | null) => Promise<void>
+  addBlock: (
+    kind: BlocklistKind,
+    value: string,
+    label?: string | null,
+    videoType?: VideoType | null
+  ) => Promise<void>
 }
 
 export function BlocklistSection({
@@ -83,12 +106,19 @@ export function BlocklistSection({
     void load()
   }, [load])
 
-  const addBlock = useCallback(async (k: BlocklistKind, v: string, label?: string | null) => {
-    const normalized = normalizeValue(k, v)
-    if (!normalized) return
-    const created = await addVideoQueueBlock(k, normalized, label)
-    setEntries(prev => [created, ...prev.filter(e => e.id !== created.id)])
-  }, [])
+  const addBlock = useCallback(
+    async (k: BlocklistKind, v: string, label?: string | null, videoType?: VideoType | null) => {
+      const normalized = normalizeValue(k, v)
+      if (!normalized.value) return
+      const scopedType = videoType === undefined ? normalized.videoType : videoType
+      const created =
+        scopedType === undefined
+          ? await addVideoQueueBlock(k, normalized.value, label)
+          : await addVideoQueueBlock(k, normalized.value, label, scopedType)
+      setEntries(prev => [created, ...prev.filter(e => e.id !== created.id)])
+    },
+    []
+  )
 
   // Let the parent (history "封鎖" button) push a block through this component.
   useImperativeHandle(ref, () => ({ addBlock }), [addBlock])
@@ -119,7 +149,7 @@ export function BlocklistSection({
   }
 
   return (
-    <div className="flex flex-col gap-card">
+    <div className="flex h-full min-h-0 flex-col gap-card">
       {!hideHeader && (
         <div>
           <p className="text-sub text-muted-foreground">封鎖清單</p>
@@ -147,7 +177,7 @@ export function BlocklistSection({
           onChange={e => setValue(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
           placeholder={KIND_PLACEHOLDER[kind]}
-          className="w-56 max-w-full"
+          className="min-w-36 flex-1"
         />
         <Button size="sm" variant="outline" onClick={handleAdd} disabled={busy || !value.trim()}>
           {busy ? (
@@ -160,9 +190,14 @@ export function BlocklistSection({
       </div>
 
       {loading ? (
-        <Spinner />
+        <TableSkeletonRows count={3} />
       ) : entries.length === 0 ? (
-        <p className="text-label text-muted-foreground">目前沒有封鎖項目</p>
+        <EmptyState
+          className="min-h-48"
+          icon="fa-solid fa-ban"
+          title="尚無封鎖項目"
+          description="新增後會顯示在這裡"
+        />
       ) : (
         <ul className="flex flex-col gap-1">
           {entries.map(entry => (
@@ -173,6 +208,11 @@ export function BlocklistSection({
               <Badge variant="outline" className="shrink-0 text-label">
                 {KIND_LABEL[entry.kind]}
               </Badge>
+              {entry.video_type && (
+                <Badge variant="secondary" className="shrink-0 text-label">
+                  {PROVIDER_LABEL[entry.video_type]}
+                </Badge>
+              )}
               <span className="min-w-0 flex-1 truncate text-sub" title={entry.label || entry.value}>
                 {entry.label || entry.value}
               </span>
