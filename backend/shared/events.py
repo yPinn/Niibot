@@ -210,7 +210,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
     ),
     EventDef(
         key="watch_streak",
-        default_template=("恭喜 $(@user) 連續觀看 $(streak) 場直播，獲得 $(points) 點忠誠點數！"),
+        default_template="感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！",
         default_enabled=False,
         variables=(
             EventVariable("user", "分享者名稱", "小明", mentionable=True),

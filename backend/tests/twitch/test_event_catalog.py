@@ -33,6 +33,7 @@ from shared.repositories.event_config import DEFAULT_ENABLED, DEFAULT_TEMPLATES,
 
 _MIGRATIONS = Path(__file__).parents[2] / "shared/migrations/versions"
 _MIGRATION_WATCH_STREAK = _MIGRATIONS / "130_add_watch_streak_event.sql"
+_MIGRATION_WATCH_STREAK_COPY = _MIGRATIONS / "134_update_watch_streak_default.sql"
 _MIGRATION_EVENT_TYPES = _MIGRATION_WATCH_STREAK
 _MIGRATION_044 = _MIGRATIONS / "044_stream_events_add_cheer_type.sql"
 
@@ -200,6 +201,24 @@ def test_catalog_is_in_display_order():
 def test_watch_streak_forward_migration_updates_event_check():
     sql = _MIGRATION_WATCH_STREAK.read_text(encoding="utf-8")
     assert _check_constraint_values(sql) == set(EVENT_KEYS)
+
+
+def test_watch_streak_copy_migration_only_updates_untouched_default():
+    sql = _MIGRATION_WATCH_STREAK_COPY.read_text(encoding="utf-8")
+    statements = [
+        re.sub(r"\s+", " ", statement).strip()
+        for statement in re.sub(r"(?m)^--.*$", "", sql).split(";")
+        if statement.strip()
+    ]
+    assert statements == [
+        (
+            "UPDATE event_configs "
+            "SET message_template = '感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！' "
+            "WHERE event_type = 'watch_streak' "
+            "AND message_template = "
+            "'恭喜 $(@user) 連續觀看 $(streak) 場直播，獲得 $(points) 點忠誠點數！'"
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -119,6 +119,8 @@ class TestGetEventCatalog:
             "streak",
             "points",
         ]
+        assert event["default_template"] == ("感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！")
+        assert "$(points)" not in event["default_template"]
         assert event["default_enabled"] is False
         assert event["requires_affiliate"] is True
 

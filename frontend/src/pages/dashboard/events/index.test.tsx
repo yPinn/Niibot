@@ -73,7 +73,7 @@ describe('Events page', () => {
         id: 8,
         channel_id: 'channel-1',
         event_type: 'watch_streak',
-        message_template: '恭喜 $(@user) 連續觀看 $(streak) 場直播，獲得 $(points) 點忠誠點數！',
+        message_template: '感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！',
         enabled: false,
         options: {},
         trigger_count: null,
@@ -86,7 +86,7 @@ describe('Events page', () => {
         category_label: '觀看',
         accent: 'online',
         requires_affiliate: false,
-        default_template: '恭喜 $(@user) 連續觀看 $(streak) 場直播，獲得 $(points) 點忠誠點數！',
+        default_template: '感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！',
         default_enabled: false,
         variables: [
           { name: 'user', description: '分享者名稱', sample: '小明' },
@@ -102,6 +102,6 @@ describe('Events page', () => {
 
     expect(await screen.findByText('連續觀看')).toBeInTheDocument()
     expect(screen.getByText('觀看')).toBeInTheDocument()
-    expect(screen.getByText(/連續觀看 \$\(streak\)/)).toBeInTheDocument()
+    expect(screen.getByText(/感謝 \$\(@user\) 的陪伴/)).toBeInTheDocument()
   })
 })
