@@ -1,13 +1,8 @@
 const getBaseUrl = (): string => {
+  if (import.meta.env.DEV) return ''
+
   const rawBase = import.meta.env.VITE_API_URL || ''
-  if (!rawBase) {
-    if (import.meta.env.DEV) {
-      console.warn(
-        '[config] VITE_API_URL is not set — falling back to relative paths (Vite proxy).'
-      )
-    }
-    return ''
-  }
+  if (!rawBase) return ''
   const withProtocol = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`
   return withProtocol.replace(/\/$/, '')
 }

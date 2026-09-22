@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiFetch, assertTrustedOAuthUrl } from '@/api/config'
+import { API_BASE_URL, apiFetch, assertTrustedOAuthUrl } from '@/api/config'
+
+describe('API base URL', () => {
+  it('uses same-origin paths in development so requests go through the Vite proxy', () => {
+    expect(API_BASE_URL).toBe('')
+  })
+})
 
 describe('assertTrustedOAuthUrl', () => {
   it('returns the URL string for a valid Twitch OAuth URL', () => {

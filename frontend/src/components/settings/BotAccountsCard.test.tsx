@@ -177,14 +177,45 @@ describe('BotAccountsCard', () => {
     expect(screen.getByText('Bot B')).toBeInTheDocument()
     expect(screen.getByText('系統管理')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '邀請 Bot 帳號' }))
+    await user.click(screen.getByRole('button', { name: '邀請帳號' }))
 
     await waitFor(() => expect(mockCreateBotInvite).toHaveBeenCalledWith('channel-a'))
     expect(screen.getByDisplayValue(/\/bot-invite\/opaque/)).toBeInTheDocument()
     expect(screen.queryByText(/access_token|refresh_token/)).not.toBeInTheDocument()
+    const copyInvite = screen.getByRole('button', { name: '複製邀請連結' })
+    expect(copyInvite).not.toHaveTextContent('複製')
+    expect(screen.getByRole('link', { name: '開啟邀請連結' })).not.toHaveTextContent('開啟')
+    await user.hover(copyInvite)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('複製連結')
 
     await user.click(screen.getByRole('button', { name: '重新授權 Bot B' }))
     expect(mockCreateBotReauthorizationInvite).toHaveBeenCalledWith('channel-a', 'bot-b')
+  })
+
+  it('keeps copy concise and exposes repeated actions as labeled icon buttons', async () => {
+    const user = userEvent.setup()
+    render(<BotAccountsCard />)
+
+    expect(await screen.findByText('管理 Twitch 實況主與聊天室發言帳號。')).toBeInTheDocument()
+    expect(screen.getByText('管理頻道與 Dashboard；解除後 Niibot 將停止服務。')).toBeInTheDocument()
+    expect(screen.getByText('Niibot 會選用其中一個帳號在聊天室發言。')).toBeInTheDocument()
+    expect(screen.getByText('分享 30 分鐘有效的一次性連結。')).toBeInTheDocument()
+
+    const checkBroadcaster = await screen.findByRole('button', { name: '重新檢查實況主授權' })
+    const reauthorizeBroadcaster = screen.getByRole('button', {
+      name: '重新授權實況主帳號',
+    })
+    const checkBot = screen.getByRole('button', { name: '重新檢查 Bot B' })
+    const reauthorizeBot = screen.getByRole('button', { name: '重新授權 Bot B' })
+
+    expect(checkBroadcaster).not.toHaveTextContent('重新檢查')
+    expect(reauthorizeBroadcaster).not.toHaveTextContent('重新授權')
+    expect(checkBot).not.toHaveTextContent('重新檢查')
+    expect(reauthorizeBot).not.toHaveTextContent('重新授權')
+    expect(screen.getByRole('button', { name: '解除授權' })).toHaveTextContent('解除授權')
+
+    await user.hover(checkBroadcaster)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('重新檢查')
   })
 
   it('uses plain-language health states and guards tenant bot removal', async () => {
@@ -210,7 +241,7 @@ describe('BotAccountsCard', () => {
     render(<BotAccountsCard />)
 
     await screen.findByText('@alice')
-    await user.click(screen.getByRole('button', { name: '停止 Niibot 並解除授權' }))
+    await user.click(screen.getByRole('button', { name: '解除授權' }))
 
     const confirm = screen.getByRole('button', { name: '確認停止並解除' })
     expect(confirm).toBeDisabled()
@@ -231,7 +262,7 @@ describe('BotAccountsCard', () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
-    const reauthorize = await screen.findByRole('button', { name: '重新授權' })
+    const reauthorize = await screen.findByRole('button', { name: '重新授權實況主帳號' })
     await user.click(reauthorize)
 
     expect(reauthorize).toBeDisabled()
@@ -263,6 +294,40 @@ describe('BotAccountsCard', () => {
     render(<BotAccountsCard />)
 
     expect(await screen.findByText('Niibot')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '邀請 Bot 帳號' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '邀請帳號' })).not.toBeInTheDocument()
+  })
+
+  it('keeps broadcaster data visible when the bot account request fails and retries it alone', async () => {
+    mockListBotAccounts.mockRejectedValueOnce(new Error('accounts unavailable'))
+    const user = userEvent.setup()
+
+    render(<BotAccountsCard />)
+
+    expect(await screen.findByText('@alice')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('發言帳號載入失敗')
+    expect(screen.queryByText('Bot B')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重新載入聊天室發言帳號' }))
+
+    expect(await screen.findByText('Bot B')).toBeInTheDocument()
+    expect(mockGetBroadcasterAuthorization).toHaveBeenCalledTimes(1)
+    expect(mockListBotAccounts).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps bot account data visible when the broadcaster request fails and retries it alone', async () => {
+    mockGetBroadcasterAuthorization.mockRejectedValueOnce(new Error('broadcaster unavailable'))
+    const user = userEvent.setup()
+
+    render(<BotAccountsCard />)
+
+    expect(await screen.findByText('Bot B')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('實況主授權載入失敗')
+    expect(screen.queryByText('@alice')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '重新載入實況主授權' }))
+
+    expect(await screen.findByText('@alice')).toBeInTheDocument()
+    expect(mockGetBroadcasterAuthorization).toHaveBeenCalledTimes(2)
+    expect(mockListBotAccounts).toHaveBeenCalledTimes(1)
   })
 })

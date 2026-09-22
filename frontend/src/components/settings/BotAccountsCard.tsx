@@ -36,6 +36,9 @@ import {
   CardTitle,
   Input,
   Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from '@/components/ui'
 import { useTenant } from '@/contexts/TenantContext'
 import { toastApiError } from '@/lib/toast-error'
@@ -57,6 +60,40 @@ function AuthorizationBadge({ status }: { status: TwitchAuthorizationStatus }) {
   return <Badge variant={copy.variant}>{copy.label}</Badge>
 }
 
+function IconAction({
+  label,
+  tooltip,
+  icon,
+  busy = false,
+  disabled = false,
+  onClick,
+}: {
+  label: string
+  tooltip: string
+  icon: string
+  busy?: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="outline"
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          {busy ? <Spinner /> : <Icon icon={icon} size="sm" />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 function lastCheckedText(value: string | null): string {
   if (!value) return '尚未檢查'
   const date = new Date(value)
@@ -71,7 +108,10 @@ export function BotAccountsCard() {
   const { activeTenant } = useTenant()
   const [accounts, setAccounts] = useState<BotAccount[]>([])
   const [broadcaster, setBroadcaster] = useState<BroadcasterAuthorization | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [accountsLoading, setAccountsLoading] = useState(false)
+  const [broadcasterLoading, setBroadcasterLoading] = useState(false)
+  const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
+  const [broadcasterLoadFailed, setBroadcasterLoadFailed] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [invite, setInvite] = useState<BotInviteCreated | null>(null)
   const [inviteStatus, setInviteStatus] = useState<
@@ -81,22 +121,36 @@ export function BotAccountsCard() {
   const [channelConfirmation, setChannelConfirmation] = useState('')
   const canManage = activeTenant?.capabilities.includes('manage_bot_accounts') ?? false
 
-  const loadAuthorizations = useCallback(async () => {
+  const loadAccounts = useCallback(async () => {
     if (!activeTenant) return
-    setLoading(true)
+    setAccountsLoading(true)
+    setAccountsLoadFailed(false)
     try {
-      const [nextAccounts, nextBroadcaster] = await Promise.all([
-        listBotAccounts(activeTenant.channel_id),
-        getBroadcasterAuthorization(activeTenant.channel_id),
-      ])
-      setAccounts(nextAccounts)
-      setBroadcaster(nextBroadcaster)
-    } catch (error) {
-      toastApiError(error, '載入 Twitch 授權失敗')
+      setAccounts(await listBotAccounts(activeTenant.channel_id))
+    } catch {
+      setAccountsLoadFailed(true)
     } finally {
-      setLoading(false)
+      setAccountsLoading(false)
     }
   }, [activeTenant])
+
+  const loadBroadcaster = useCallback(async () => {
+    if (!activeTenant) return
+    setBroadcasterLoading(true)
+    setBroadcasterLoadFailed(false)
+    try {
+      setBroadcaster(await getBroadcasterAuthorization(activeTenant.channel_id))
+    } catch {
+      setBroadcasterLoadFailed(true)
+    } finally {
+      setBroadcasterLoading(false)
+    }
+  }, [activeTenant])
+
+  const loadAuthorizations = useCallback(
+    async () => Promise.allSettled([loadAccounts(), loadBroadcaster()]),
+    [loadAccounts, loadBroadcaster]
+  )
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => void loadAuthorizations(), 0)
@@ -257,240 +311,269 @@ export function BotAccountsCard() {
           <Icon icon="fa-brands fa-twitch" size="sm" wrapperClassName="text-muted-foreground" />
           <CardTitle>Twitch 帳號與授權</CardTitle>
         </div>
-        <CardDescription>
-          查看 Niibot 正在使用哪些 Twitch 帳號，以及授權目前是否有效。
-        </CardDescription>
+        <CardDescription>管理 Twitch 實況主與聊天室發言帳號。</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-section">
-        {loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
+        <section aria-labelledby="broadcaster-authorization-heading" className="space-y-3">
+          <div>
+            <h3 id="broadcaster-authorization-heading" className="font-semibold">
+              實況主帳號
+            </h3>
+            <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
+              管理頻道與 Dashboard；解除後 Niibot 將停止服務。
+            </p>
           </div>
-        ) : (
-          <>
-            <section aria-labelledby="broadcaster-authorization-heading" className="space-y-3">
-              <div>
-                <h3 id="broadcaster-authorization-heading" className="font-semibold">
-                  實況主帳號
-                </h3>
-                <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
-                  用來讀取頻道功能並確認你有權管理這個工作區。解除後，Niibot 會停止服務。
+
+          {broadcasterLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : broadcasterLoadFailed ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-section text-sub text-muted-foreground"
+            >
+              <span>實況主授權載入失敗。</span>
+              <IconAction
+                label="重新載入實況主授權"
+                tooltip="重新載入"
+                icon="fa-solid fa-rotate"
+                onClick={() => void loadBroadcaster()}
+              />
+            </div>
+          ) : broadcaster ? (
+            <div className="space-y-3 rounded-lg bg-muted/45 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:space-y-0">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">
+                    {broadcaster.display_name || broadcaster.channel_name}
+                  </span>
+                  <AuthorizationBadge status={broadcaster.status} />
+                  {!broadcaster.enabled && <Badge variant="outline">Niibot 已停止</Badge>}
+                </div>
+                <p className="text-label text-muted-foreground">@{broadcaster.channel_name}</p>
+                <p className="mt-1 text-label text-muted-foreground">
+                  {lastCheckedText(broadcaster.last_checked_at)}
                 </p>
               </div>
 
-              {broadcaster ? (
-                <div className="space-y-3 rounded-lg bg-muted/45 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:space-y-0">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium">
-                        {broadcaster.display_name || broadcaster.channel_name}
-                      </span>
-                      <AuthorizationBadge status={broadcaster.status} />
-                      {!broadcaster.enabled && <Badge variant="outline">Niibot 已停止</Badge>}
+              {canManage && (
+                <div className="flex flex-wrap items-center gap-1">
+                  <IconAction
+                    label="重新檢查實況主授權"
+                    tooltip="重新檢查"
+                    icon="fa-solid fa-rotate"
+                    busy={busyAction === 'check:broadcaster'}
+                    disabled={busyAction !== null}
+                    onClick={() => void checkBroadcaster()}
+                  />
+                  <IconAction
+                    label="重新授權實況主帳號"
+                    tooltip="重新授權"
+                    icon="fa-solid fa-key"
+                    busy={busyAction === 'reauthorize:broadcaster'}
+                    disabled={busyAction !== null}
+                    onClick={() => void reauthorizeBroadcaster()}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => openConfirmation({ kind: 'broadcaster' })}
+                    disabled={busyAction !== null}
+                  >
+                    解除授權
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed p-section text-sub text-muted-foreground">
+              尚未找到實況主授權。
+            </p>
+          )}
+        </section>
+
+        <section
+          aria-labelledby="bot-authorizations-heading"
+          className="space-y-3 border-t pt-section"
+        >
+          <div>
+            <h3 id="bot-authorizations-heading" className="font-semibold">
+              聊天室發言帳號
+            </h3>
+            <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
+              Niibot 會選用其中一個帳號在聊天室發言。
+            </p>
+          </div>
+
+          {accountsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : accountsLoadFailed ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-section text-sub text-muted-foreground"
+            >
+              <span>發言帳號載入失敗。</span>
+              <IconAction
+                label="重新載入聊天室發言帳號"
+                tooltip="重新載入"
+                icon="fa-solid fa-rotate"
+                onClick={() => void loadAccounts()}
+              />
+            </div>
+          ) : accounts.length === 0 ? (
+            <p className="rounded-lg border border-dashed p-section text-sub text-muted-foreground">
+              尚未設定可用的 Bot 帳號。
+            </p>
+          ) : (
+            <ul className="space-y-2" aria-label="聊天室發言帳號">
+              {accounts.map(account => (
+                <li
+                  key={account.platform_user_id}
+                  className="space-y-3 rounded-lg border px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:space-y-0"
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {account.avatar ? (
+                      <img
+                        src={account.avatar}
+                        alt=""
+                        className="size-9 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="grid size-9 shrink-0 place-items-center rounded-full bg-muted">
+                        <Icon icon="fa-solid fa-robot" size="sm" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium">{account.display_name}</span>
+                        {account.is_system_default && <Badge variant="secondary">系統管理</Badge>}
+                        {account.is_active && <Badge variant="outline">目前使用</Badge>}
+                        <AuthorizationBadge status={account.authorization_status} />
+                      </div>
+                      <p className="truncate text-label text-muted-foreground">
+                        @{account.login} · {lastCheckedText(account.last_checked_at)}
+                      </p>
                     </div>
-                    <p className="text-label text-muted-foreground">@{broadcaster.channel_name}</p>
-                    <p className="mt-1 text-label text-muted-foreground">
-                      {lastCheckedText(broadcaster.last_checked_at)}
-                    </p>
                   </div>
 
                   {canManage && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void checkBroadcaster()}
+                    <div className="flex flex-wrap items-center gap-1 sm:justify-end">
+                      <IconAction
+                        label={`重新檢查 ${account.display_name}`}
+                        tooltip="重新檢查"
+                        icon="fa-solid fa-rotate"
+                        busy={busyAction === `check:${account.platform_user_id}`}
                         disabled={busyAction !== null}
-                      >
-                        {busyAction === 'check:broadcaster' && <Spinner />}
-                        重新檢查
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => void reauthorizeBroadcaster()}
-                        disabled={busyAction !== null}
-                      >
-                        {busyAction === 'reauthorize:broadcaster' && <Spinner />}
-                        重新授權
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => openConfirmation({ kind: 'broadcaster' })}
-                        disabled={busyAction !== null}
-                      >
-                        停止 Niibot 並解除授權
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="rounded-lg border border-dashed p-section text-sub text-muted-foreground">
-                  尚未找到實況主授權。
-                </p>
-              )}
-            </section>
-
-            <section
-              aria-labelledby="bot-authorizations-heading"
-              className="space-y-3 border-t pt-section"
-            >
-              <div>
-                <h3 id="bot-authorizations-heading" className="font-semibold">
-                  聊天室發言帳號
-                </h3>
-                <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
-                  Niibot 會從這些帳號中選擇一個在聊天室發言。這類授權不會取得 Dashboard 權限。
-                </p>
-              </div>
-
-              {accounts.length === 0 ? (
-                <p className="rounded-lg border border-dashed p-section text-sub text-muted-foreground">
-                  尚未設定可用的 Bot 帳號。
-                </p>
-              ) : (
-                <ul className="space-y-2" aria-label="聊天室發言帳號">
-                  {accounts.map(account => (
-                    <li
-                      key={account.platform_user_id}
-                      className="space-y-3 rounded-lg border px-3 py-3 sm:flex sm:items-center sm:gap-3 sm:space-y-0"
-                    >
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        {account.avatar ? (
-                          <img
-                            src={account.avatar}
-                            alt=""
-                            className="size-9 shrink-0 rounded-full object-cover"
+                        onClick={() => void checkBot(account)}
+                      />
+                      {!account.is_system_default && (
+                        <>
+                          <IconAction
+                            label={`重新授權 ${account.display_name}`}
+                            tooltip="重新授權"
+                            icon="fa-solid fa-key"
+                            busy={busyAction === `reauthorize:${account.platform_user_id}`}
+                            disabled={busyAction !== null}
+                            onClick={() => void reauthorizeBot(account)}
                           />
-                        ) : (
-                          <div className="grid size-9 shrink-0 place-items-center rounded-full bg-muted">
-                            <Icon icon="fa-solid fa-robot" size="sm" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="truncate font-medium">{account.display_name}</span>
-                            {account.is_system_default && (
-                              <Badge variant="secondary">系統管理</Badge>
-                            )}
-                            {account.is_active && <Badge variant="outline">目前使用</Badge>}
-                            <AuthorizationBadge status={account.authorization_status} />
-                          </div>
-                          <p className="truncate text-label text-muted-foreground">
-                            @{account.login} · {lastCheckedText(account.last_checked_at)}
-                          </p>
-                        </div>
-                      </div>
-
-                      {canManage && (
-                        <div className="flex flex-wrap gap-2 sm:justify-end">
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={() => void checkBot(account)}
-                            disabled={busyAction !== null}
-                            aria-label={`重新檢查 ${account.display_name}`}
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => openConfirmation({ kind: 'bot', account })}
+                            disabled={
+                              busyAction !== null || account.is_active || account.is_desired
+                            }
+                            aria-label={`從這個頻道移除 ${account.display_name}`}
+                            title={
+                              account.is_active || account.is_desired
+                                ? '請先改用其他 Bot'
+                                : undefined
+                            }
                           >
-                            {busyAction === `check:${account.platform_user_id}` && <Spinner />}
-                            重新檢查
+                            從這個頻道移除
                           </Button>
-                          {!account.is_system_default && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => void reauthorizeBot(account)}
-                                disabled={busyAction !== null}
-                                aria-label={`重新授權 ${account.display_name}`}
-                              >
-                                重新授權
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => openConfirmation({ kind: 'bot', account })}
-                                disabled={
-                                  busyAction !== null || account.is_active || account.is_desired
-                                }
-                                aria-label={`從這個頻道移除 ${account.display_name}`}
-                                title={
-                                  account.is_active || account.is_desired
-                                    ? '請先改用其他 Bot'
-                                    : undefined
-                                }
-                              >
-                                從這個頻道移除
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                        </>
                       )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {canManage && (
-              <section
-                className="space-y-3 border-t pt-section"
-                aria-labelledby="invite-bot-heading"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 id="invite-bot-heading" className="font-semibold">
-                      邀請其他發言帳號
-                    </h3>
-                    <p className="mt-1 text-sub text-muted-foreground">
-                      將一次性連結交給帳號持有人；連結 30 分鐘內有效。
-                    </p>
-                  </div>
-                  <Button onClick={() => void createInvite()} disabled={busyAction !== null}>
-                    {busyAction === 'create-invite' ? (
-                      <Spinner className="mr-2" />
-                    ) : (
-                      <Icon icon="fa-solid fa-link" size="xs" />
-                    )}
-                    邀請 Bot 帳號
-                  </Button>
-                </div>
-
-                {invite && (
-                  <div className="space-y-2 rounded-lg bg-muted/45 p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-label font-medium">
-                        {inviteStatus === 'authorized'
-                          ? '已完成授權'
-                          : inviteStatus === 'pending'
-                            ? '等待對方授權'
-                            : '邀請已結束'}
-                      </p>
-                      {inviteStatus === 'pending' && <Spinner />}
                     </div>
-                    <div className="flex flex-col gap-2 sm:flex-row">
-                      <Input value={invite.public_url} readOnly aria-label="Bot 邀請 URL" />
-                      <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => void copyInvite()}>
-                          複製
-                        </Button>
-                        <Button variant="outline" asChild>
-                          <a href={invite.public_url} target="_blank" rel="noopener noreferrer">
-                            開啟
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {canManage && (
+          <section className="space-y-3 border-t pt-section" aria-labelledby="invite-bot-heading">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 id="invite-bot-heading" className="font-semibold">
+                  邀請其他發言帳號
+                </h3>
+                <p className="mt-1 text-sub text-muted-foreground">
+                  分享 30 分鐘有效的一次性連結。
+                </p>
+              </div>
+              <Button size="sm" onClick={() => void createInvite()} disabled={busyAction !== null}>
+                {busyAction === 'create-invite' ? (
+                  <Spinner className="mr-2" />
+                ) : (
+                  <Icon icon="fa-solid fa-link" size="xs" />
+                )}
+                邀請帳號
+              </Button>
+            </div>
+
+            {invite && (
+              <div className="space-y-2 rounded-lg bg-muted/45 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-label font-medium">
+                    {inviteStatus === 'authorized'
+                      ? '已完成授權'
+                      : inviteStatus === 'pending'
+                        ? '等待對方授權'
+                        : '邀請已結束'}
+                  </p>
+                  {inviteStatus === 'pending' && <Spinner />}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    className="min-w-0 flex-1"
+                    value={invite.public_url}
+                    readOnly
+                    aria-label="Bot 邀請 URL"
+                  />
+                  <div className="flex shrink-0 gap-1">
+                    <IconAction
+                      label="複製邀請連結"
+                      tooltip="複製連結"
+                      icon="fa-solid fa-copy"
+                      onClick={() => void copyInvite()}
+                    />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="icon-sm" variant="outline" asChild>
+                          <a
+                            href={invite.public_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label="開啟邀請連結"
+                          >
+                            <Icon icon="fa-solid fa-arrow-up-right-from-square" size="sm" />
                           </a>
                         </Button>
-                      </div>
-                    </div>
+                      </TooltipTrigger>
+                      <TooltipContent>開啟連結</TooltipContent>
+                    </Tooltip>
                   </div>
-                )}
-              </section>
+                </div>
+              </div>
             )}
-          </>
+          </section>
         )}
       </CardContent>
 
