@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "collections": [
+    {
+      "key": "aespa",
+      "display_name": "aespa",
+      "cards": [
+        {
+          "key": "karina-01",
+          "source": "karina-01.jpg",
+          "revision": 1,
+          "display_name": "Karina",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "karina-02",
+          "source": "karina-02.jpg",
+          "revision": 1,
+          "display_name": "Karina",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "karina-03",
+          "source": "karina-03.jpg",
+          "revision": 1,
+          "display_name": "Karina",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.35 } }
+        },
+        {
+          "key": "karina-04",
+          "source": "karina-04.jpg",
+          "revision": 1,
+          "display_name": "Karina",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "karina-05",
+          "source": "karina-05.png",
+          "revision": 1,
+          "display_name": "Karina",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.42 } }
+        },
+        {
+          "key": "winter-01",
+          "source": "winter-01.jpg",
+          "revision": 1,
+          "display_name": "Winter",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "winter-02",
+          "source": "winter-02.jpg",
+          "revision": 1,
+          "display_name": "Winter",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "winter-03",
+          "source": "winter-03.jpg",
+          "revision": 1,
+          "display_name": "Winter",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "winter-04",
+          "source": "winter-04.jpg",
+          "revision": 1,
+          "display_name": "Winter",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    },
+    {
+      "key": "bts",
+      "display_name": "BTS",
+      "cards": [
+        {
+          "key": "jungkook-01",
+          "source": "jungkook-01.jpg",
+          "revision": 1,
+          "display_name": "Jungkook",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.38 } }
+        },
+        {
+          "key": "jungkook-02",
+          "source": "jungkook-02.jpg",
+          "revision": 1,
+          "display_name": "Jungkook",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.38 } }
+        },
+        {
+          "key": "jungkook-03",
+          "source": "jungkook-03.jpg",
+          "revision": 1,
+          "display_name": "Jungkook",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.38 } }
+        },
+        {
+          "key": "v-01",
+          "source": "v-01.jpg",
+          "revision": 1,
+          "display_name": "V",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "v-02",
+          "source": "v-02.png",
+          "revision": 1,
+          "display_name": "V",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "v-03",
+          "source": "v-03.png",
+          "revision": 1,
+          "display_name": "V",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "v-04",
+          "source": "v-04.jpg",
+          "revision": 1,
+          "display_name": "V",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "v-05",
+          "source": "v-05.jpg",
+          "revision": 1,
+          "display_name": "V",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    },
+    {
+      "key": "itzy",
+      "display_name": "ITZY",
+      "cards": [
+        {
+          "key": "yuna-01",
+          "source": "yuna-01.jpg",
+          "revision": 1,
+          "display_name": "Yuna",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "yuna-02",
+          "source": "yuna-02.jpg",
+          "revision": 1,
+          "display_name": "Yuna",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "yuna-03",
+          "source": "yuna-03.jpg",
+          "revision": 1,
+          "display_name": "Yuna",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    },
+    {
+      "key": "ive",
+      "display_name": "IVE",
+      "cards": [
+        {
+          "key": "leeseo-01",
+          "source": "leeseo-01.jpg",
+          "revision": 1,
+          "display_name": "Leeseo",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "liz-01",
+          "source": "liz-01.jpg",
+          "revision": 1,
+          "display_name": "Liz",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "liz-02",
+          "source": "liz-02.jpg",
+          "revision": 1,
+          "display_name": "Liz",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "liz-03",
+          "source": "liz-03.jpg",
+          "revision": 1,
+          "display_name": "Liz",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.42 } }
+        },
+        {
+          "key": "liz-04",
+          "source": "liz-04.jpg",
+          "revision": 1,
+          "display_name": "Liz",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.42, "y": 0.45 } }
+        },
+        {
+          "key": "rei-01",
+          "source": "rei-01.jpg",
+          "revision": 1,
+          "display_name": "Rei",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "rei-02",
+          "source": "rei-02.png",
+          "revision": 1,
+          "display_name": "Rei",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.42 } }
+        },
+        {
+          "key": "wonyoung-01",
+          "source": "wonyoung-01.jpg",
+          "revision": 1,
+          "display_name": "Wonyoung",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "wonyoung-02",
+          "source": "wonyoung-02.jpg",
+          "revision": 1,
+          "display_name": "Wonyoung",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "wonyoung-03",
+          "source": "wonyoung-03.jpg",
+          "revision": 1,
+          "display_name": "Wonyoung",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "wonyoung-04",
+          "source": "wonyoung-04.jpg",
+          "revision": 1,
+          "display_name": "Wonyoung",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    },
+    {
+      "key": "le-sserafim",
+      "display_name": "LE SSERAFIM",
+      "cards": [
+        {
+          "key": "chaewon-01",
+          "source": "chaewon-01.jpg",
+          "revision": 1,
+          "display_name": "Chaewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.35 } }
+        },
+        {
+          "key": "chaewon-02",
+          "source": "chaewon-02.jpg",
+          "revision": 1,
+          "display_name": "Chaewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.42 } }
+        },
+        {
+          "key": "chaewon-03",
+          "source": "chaewon-03.jpg",
+          "revision": 1,
+          "display_name": "Chaewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.42 } }
+        }
+      ]
+    },
+    {
+      "key": "nmixx",
+      "display_name": "NMIXX",
+      "cards": [
+        {
+          "key": "haewon-01",
+          "source": "haewon-01.jpg",
+          "revision": 1,
+          "display_name": "Haewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "haewon-02",
+          "source": "haewon-02.jpg",
+          "revision": 1,
+          "display_name": "Haewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "haewon-03",
+          "source": "haewon-03.jpg",
+          "revision": 1,
+          "display_name": "Haewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "haewon-04",
+          "source": "haewon-04.jpg",
+          "revision": 1,
+          "display_name": "Haewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "haewon-05",
+          "source": "haewon-05.jpg",
+          "revision": 1,
+          "display_name": "Haewon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "sullyoon-01",
+          "source": "sullyoon-01.jpg",
+          "revision": 1,
+          "display_name": "Sullyoon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "sullyoon-02",
+          "source": "sullyoon-02.jpg",
+          "revision": 1,
+          "display_name": "Sullyoon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "sullyoon-03",
+          "source": "sullyoon-03.jpg",
+          "revision": 1,
+          "display_name": "Sullyoon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "sullyoon-04",
+          "source": "sullyoon-04.jpg",
+          "revision": 1,
+          "display_name": "Sullyoon",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    },
+    {
+      "key": "uc",
+      "display_name": null,
+      "cards": [
+        {
+          "key": "eunha-01",
+          "source": "eunha-01.jpg",
+          "revision": 1,
+          "display_name": "Eunha",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "eunha-02",
+          "source": "eunha-02.jpg",
+          "revision": 1,
+          "display_name": "Eunha",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "eunha-03",
+          "source": "eunha-03.jpg",
+          "revision": 1,
+          "display_name": "Eunha",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "eunha-04",
+          "source": "eunha-04.jpg",
+          "revision": 1,
+          "display_name": "Eunha",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        },
+        {
+          "key": "eunha-05",
+          "source": "eunha-05.jpg",
+          "revision": 1,
+          "display_name": "Eunha",
+          "crop": { "mode": "cover", "focal_point": { "x": 0.5, "y": 0.45 } }
+        }
+      ]
+    }
+  ]
+}
