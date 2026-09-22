@@ -147,6 +147,7 @@ export const API_ENDPOINTS = {
   checkin: {
     settings: join('/api/checkin/settings'),
     leaderboard: join('/api/checkin/leaderboard'),
+    collections: join('/api/checkin/collections'),
     dataSummary: join('/api/checkin/data/summary'),
     dataExport: join('/api/checkin/data/export'),
     dataClear: join('/api/checkin/data/clear'),

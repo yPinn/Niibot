@@ -16,12 +16,12 @@ export interface PageHeaderProps {
  */
 export function PageHeader({ title, description, className, children }: PageHeaderProps) {
   return (
-    <SlideUp className={cn('flex items-start justify-between gap-4', className)}>
+    <SlideUp className={cn('flex items-start justify-between gap-section', className)}>
       <div>
         <h1 className="text-page-title font-bold">{title}</h1>
         {description && <p className="text-sub text-muted-foreground">{description}</p>}
       </div>
-      {children && <div className="flex items-center gap-2 shrink-0 pt-0.5">{children}</div>}
+      {children && <div className="flex shrink-0 items-center gap-element pt-0.5">{children}</div>}
     </SlideUp>
   )
 }

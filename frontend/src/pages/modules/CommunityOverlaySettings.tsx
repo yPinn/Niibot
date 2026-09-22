@@ -59,6 +59,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
 import { CheckinBlockCard } from './communityOverlay/CheckinBlockCard'
+import { CheckinCollectionSettings } from './communityOverlay/CheckinCollectionSettings'
 import { TarotBlockCard } from './communityOverlay/TarotBlockCard'
 import { ThemeEditor, ThemePreview } from './communityOverlay/ThemeEditor'
 
@@ -617,6 +618,7 @@ export default function CommunityOverlaySettings({
                   onOpenChange={open => handleBlockOpenChange('checkin', open)}
                   onRetry={() => void loadCheckinTrigger()}
                   onTest={() => handleBlockPreview('checkin')}
+                  collectionSettings={<CheckinCollectionSettings preview={preview} />}
                 >
                   {renderThemeEditor('checkin')}
                 </CheckinBlockCard>
@@ -651,7 +653,7 @@ export default function CommunityOverlaySettings({
               <SlideUp data-layout-start="connection">
                 <Card className="min-w-0">
                   <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
-                    <CardTitle className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-element">
                       <h2 id="live-display-connection-title">OBS 連線</h2>
                       <Badge variant={access.enabled ? 'default' : 'outline'}>
                         {access.enabled ? '已啟用' : '已停用'}
@@ -684,9 +686,9 @@ export default function CommunityOverlaySettings({
                           disabled={mutation !== null}
                         >
                           {mutation === 'key' ? (
-                            <Spinner className="mr-1.5" />
+                            <Spinner />
                           ) : (
-                            <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
+                            <Icon icon="fa-solid fa-key" className="text-label" />
                           )}
                           更新連結
                         </Button>
@@ -719,13 +721,12 @@ export default function CommunityOverlaySettings({
               <SlideUp>
                 <Card className="min-w-0">
                   <CardHeader>
-                    <CardTitle className="flex flex-wrap items-center gap-2">
+                    <CardTitle className="flex flex-wrap items-center gap-element">
                       <h2 id="live-display-preview-title">預覽</h2>
                       <Badge variant="secondary">
                         {selectedBlock === 'checkin' ? '每日簽到' : '每日塔羅'}
                       </Badge>
                     </CardTitle>
-                    <CardDescription>即時查看草稿與測試播放。</CardDescription>
                   </CardHeader>
                   <CardContent className="min-w-0 border-t pt-card">
                     {renderThemePreview(selectedBlock)}

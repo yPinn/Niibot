@@ -36,6 +36,10 @@ vi.mock('@/api/events', () => ({
   updateRedemptionConfig: vi.fn(),
   NonPartnerError: class NonPartnerError extends Error {},
 }))
+vi.mock('@/api/checkin', () => ({
+  getCheckinCollections: vi.fn(),
+  updateCheckinCollection: vi.fn(),
+}))
 vi.mock('@/hooks/useDocumentTitle', () => ({ useDocumentTitle: vi.fn() }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn() }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
@@ -45,6 +49,11 @@ vi.mock('sonner', () => ({
 
 import { toast } from 'sonner'
 
+import {
+  type CheckinCollectionCatalog,
+  getCheckinCollections,
+  updateCheckinCollection,
+} from '@/api/checkin'
 import {
   type CommunityOverlayAccess,
   type CommunityOverlayThemeState,
@@ -124,6 +133,27 @@ const CHECKIN_REWARD = {
   max_per_stream: 100,
   max_per_user_per_stream: 1,
 }
+const COLLECTIONS: CheckinCollectionCatalog = {
+  selected_set_key: null,
+  total_cards: 1,
+  sets: [
+    {
+      key: 'aespa',
+      name: 'aespa',
+      card_count: 1,
+      cards: [
+        {
+          key: 'karina-01',
+          number: 1,
+          name: 'Karina',
+          portrait_url: '/images/collections/aespa/karina-01-r1.webp',
+          rarity_key: 'common',
+          rarity_name: '普通',
+        },
+      ],
+    },
+  ],
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -161,6 +191,8 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(getRedemptionConfigs).mockResolvedValue([CHECKIN_REDEMPTION])
     vi.mocked(getTwitchRewards).mockResolvedValue([CHECKIN_REWARD])
     vi.mocked(updateRedemptionConfig).mockResolvedValue(CHECKIN_REDEMPTION)
+    vi.mocked(getCheckinCollections).mockResolvedValue(COLLECTIONS)
+    vi.mocked(updateCheckinCollection).mockResolvedValue(COLLECTIONS)
   })
 
   it('renders an isolated development preview without loading tenant settings', async () => {
@@ -249,13 +281,28 @@ describe('CommunityOverlaySettings', () => {
     expect(
       within(connection).getByText('將連結加入 OBS Browser Source，設定為 1920 × 1080、透明背景。')
     ).toBeInTheDocument()
-    expect(screen.getByText('即時查看草稿與測試播放。')).toBeInTheDocument()
-    expect(screen.getByText('發布後才會套用至 OBS。')).toBeInTheDocument()
+
+    const preview = screen.getByRole('region', { name: '預覽' })
+    expect(within(preview).queryByText('即時查看草稿與測試播放。')).not.toBeInTheDocument()
+    expect(within(preview).queryByText('發布後才會套用至 OBS。')).not.toBeInTheDocument()
+    expect(preview.parentElement).toHaveClass('gap-section')
+    expect(preview.querySelector('[data-slot="card-header"]')).toHaveClass(
+      'gap-element',
+      'px-card',
+      'pb-section'
+    )
+    expect(preview.querySelector('[data-slot="card-content"]')).toHaveClass('px-card', 'pt-card')
   })
 
   it('routes the development check-in test to the real binder sample renderer', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings preview />)
+
+    const toolbar = document.querySelector('[data-layout="theme-preview-toolbar"]')
+    expect(toolbar).toHaveClass('min-h-8', 'items-center')
+    const actionSlot = toolbar?.querySelector('[data-layout="theme-preview-action"]')
+    expect(actionSlot).toHaveClass('ml-auto', 'h-8', 'w-28', 'shrink-0', 'justify-end')
+    expect(actionSlot).toBeEmptyDOMElement()
 
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
 
@@ -263,6 +310,11 @@ describe('CommunityOverlaySettings', () => {
       'src',
       `${window.location.origin}/live-display#key=${KEY}&preview=1&block=checkin&sample=checkin`
     )
+    expect(
+      within(actionSlot as HTMLElement).getByRole('button', { name: '返回草稿預覽' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('只測試動畫，不會簽到、抽卡或累積天數。')).not.toBeInTheDocument()
+    expect(screen.queryByText('只測試動畫，不會新增或覆寫抽牌紀錄。')).not.toBeInTheDocument()
     expect(triggerCommunityOverlayPreview).not.toHaveBeenCalled()
   })
 
@@ -303,7 +355,7 @@ describe('CommunityOverlaySettings', () => {
     await user.type(accent, '#112233')
     await user.click(screen.getByRole('button', { name: '左上' }))
 
-    const card = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const card = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(card).toHaveStyle({ '--overlay-accent': '#112233' })
     expect(card.closest('[data-theme-preview]')).toHaveAttribute('data-placement', 'top-left')
     expect(screen.getByText('尚未儲存')).toBeInTheDocument()
@@ -358,13 +410,13 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    const originalCard = await screen.findByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const originalCard = await screen.findByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(originalCard).toHaveAttribute('data-motion-state', 'final')
     expect(document.querySelector('[data-theme-preview]')).toHaveClass('aspect-video', 'w-full')
     expect(document.querySelector('[data-preview-content]')).toHaveClass('w-[660px]')
     await user.click(screen.getByRole('button', { name: '柔和' }))
 
-    const remountedCard = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const remountedCard = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(remountedCard).not.toBe(originalCard)
     expect(remountedCard).toHaveAttribute('data-motion-state', 'final')
   })
@@ -532,7 +584,7 @@ describe('CommunityOverlaySettings', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '返回草稿預覽' }))
-    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).toBeInTheDocument()
+    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
     expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
 
     expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
@@ -614,9 +666,7 @@ describe('CommunityOverlaySettings', () => {
     const preview = screen.getByRole('region', { name: '預覽' })
     expect(within(preview).getByText('每日簽到')).toBeInTheDocument()
     expect(within(preview).getAllByText('草稿預覽')).toHaveLength(2)
-    expect(
-      within(preview).getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
-    ).toBeInTheDocument()
+    expect(within(preview).getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
 
     const workspace = content.parentElement
     expect(workspace).toHaveAttribute('data-layout', 'live-display-workspace')
@@ -677,7 +727,7 @@ describe('CommunityOverlaySettings', () => {
     expect(within(preview).getByText('每日塔羅')).toBeInTheDocument()
     expect(within(preview).getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
     expect(
-      within(preview).queryByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+      within(preview).queryByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     ).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '收合每日塔羅設定' }))
@@ -712,7 +762,7 @@ describe('CommunityOverlaySettings', () => {
     expect(within(trigger).getByText(/10 點/)).toBeInTheDocument()
     expect(within(trigger).getByText('由 Twitch 管理獎勵')).toBeInTheDocument()
     expect(within(trigger).getByText('已啟用')).toBeInTheDocument()
-    expect(within(trigger).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(trigger).getByRole('combobox', { name: '抽卡範圍' })).toBeInTheDocument()
     expect(within(trigger).queryByRole('switch')).not.toBeInTheDocument()
     expect(within(trigger).getByRole('link', { name: '管理簽到入口' })).toHaveAttribute(
       'href',

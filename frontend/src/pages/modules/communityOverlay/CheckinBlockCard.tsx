@@ -36,6 +36,7 @@ interface CheckinBlockCardProps {
   onOpenChange: (open: boolean) => void
   onRetry: () => void
   onTest: () => void
+  collectionSettings: ReactNode
   children: ReactNode
 }
 
@@ -58,6 +59,7 @@ export function CheckinBlockCard({
   onOpenChange,
   onRetry,
   onTest,
+  collectionSettings,
   children,
 }: CheckinBlockCardProps) {
   const boundReward = getBoundReward(config, rewards)
@@ -68,13 +70,13 @@ export function CheckinBlockCard({
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <Card className="min-w-0">
         <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
-          <CardTitle className="flex flex-wrap items-center gap-2">
+          <CardTitle className="flex flex-wrap items-center gap-element">
             <h3>每日簽到</h3>
             <Badge variant="secondary">收藏卡冊</Badge>
             <Badge variant={themeChanged ? 'secondary' : 'outline'}>{themeStatus}</Badge>
           </CardTitle>
           <CardDescription>觀眾簽到時抽卡，並顯示個人卡冊。</CardDescription>
-          <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-2 justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
+          <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-element justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
             <Button
               size="sm"
               variant="outline"
@@ -82,11 +84,7 @@ export function CheckinBlockCard({
               disabled={testing}
               onClick={onTest}
             >
-              {testing ? (
-                <Spinner className="mr-1.5" />
-              ) : (
-                <Icon icon="fa-solid fa-play" className="mr-1.5 text-label" />
-              )}
+              {testing ? <Spinner /> : <Icon icon="fa-solid fa-play" className="text-label" />}
               測試動畫
             </Button>
             <CollapsibleTrigger asChild>
@@ -105,9 +103,9 @@ export function CheckinBlockCard({
           </CardAction>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col gap-section">
           {loading ? (
-            <div className="space-y-3">
+            <div className="flex flex-col gap-element">
               <Skeleton className="h-9 w-full max-w-md" />
               <Skeleton className="h-14 w-full" />
             </div>
@@ -130,7 +128,7 @@ export function CheckinBlockCard({
               </AlertDescription>
             </Alert>
           ) : (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-section">
               <BlockInfoGrid
                 className="sm:grid-cols-2"
                 cells={[
@@ -166,6 +164,7 @@ export function CheckinBlockCard({
               </Button>
             </div>
           )}
+          {collectionSettings}
         </CardContent>
 
         <CollapsibleContent>

@@ -6,12 +6,14 @@ import {
   applyCheckinImport,
   clearCheckinData,
   exportCheckinData,
+  getCheckinCollections,
   getCheckinDataSummary,
   getCheckinLeaderboard,
   getCheckinSettings,
   inspectCheckinImportColumns,
   previewCheckinImport,
   remapCheckinImportIdentities,
+  updateCheckinCollection,
   updateCheckinSettings,
 } from './checkin'
 
@@ -71,6 +73,42 @@ describe('check-in settings API', () => {
         'X-Niibot-Action': 'checkin-settings',
       },
       body: JSON.stringify(update),
+    })
+  })
+
+  it('loads the authenticated tenant card catalog', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ selected_set_key: null, total_cards: 48, sets: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await getCheckinCollections()
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/collections')
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
+  })
+
+  it('selects one card set with an explicit mutation header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ selected_set_key: 'aespa', total_cards: 48, sets: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await updateCheckinCollection('aespa')
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe('/api/checkin/collections')
+    expect(fetchMock.mock.calls[0][1]).toEqual({
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-collections',
+      },
+      body: JSON.stringify({ set_key: 'aespa' }),
     })
   })
 

@@ -27,6 +27,28 @@ export interface CheckinLeaderboardEntry {
   last_checkin_date: string
 }
 
+export interface CheckinCollectionCard {
+  key: string
+  number: number
+  name: string
+  portrait_url: string
+  rarity_key: string
+  rarity_name: string
+}
+
+export interface CheckinCollectionSet {
+  key: string
+  name: string
+  card_count: number
+  cards: CheckinCollectionCard[]
+}
+
+export interface CheckinCollectionCatalog {
+  selected_set_key: string | null
+  total_cards: number
+  sets: CheckinCollectionSet[]
+}
+
 export type CheckinImportRowStatus = 'ready' | 'review' | 'invalid' | 'unresolved' | 'conflict'
 export type CheckinIdentityResolution = 'twitch_id' | 'username' | 'display_as_login' | 'manual'
 
@@ -140,6 +162,30 @@ export function getCheckinLeaderboard(): Promise<CheckinLeaderboardEntry[]> {
     API_ENDPOINTS.checkin.leaderboard,
     { credentials: 'include' },
     { fallback: '載入簽到排行榜失敗' }
+  )
+}
+
+export function getCheckinCollections(): Promise<CheckinCollectionCatalog> {
+  return apiJson(
+    API_ENDPOINTS.checkin.collections,
+    { credentials: 'include' },
+    { fallback: '載入卡片圖鑑失敗' }
+  )
+}
+
+export function updateCheckinCollection(setKey: string | null): Promise<CheckinCollectionCatalog> {
+  return apiJson(
+    API_ENDPOINTS.checkin.collections,
+    {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'checkin-collections',
+      },
+      body: JSON.stringify({ set_key: setKey }),
+    },
+    { fallback: '更新抽卡範圍失敗' }
   )
 }
 

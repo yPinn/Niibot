@@ -1,4 +1,5 @@
 import { type ReactNode, useLayoutEffect, useRef } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
 import type {
   CommunityOverlayContentType,
@@ -90,11 +91,11 @@ function ColorControl({
   const errorId = `${id}-error`
 
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-element">
       <label htmlFor={id} className="text-sub font-medium">
         {label}
       </label>
-      <div className="flex gap-2">
+      <div className="flex gap-element">
         <input
           type="color"
           aria-label={`${label}色票`}
@@ -213,32 +214,58 @@ export function ThemePreview({
   previewMode,
   onPreviewModeChange,
 }: ThemePreviewProps) {
+  const reducedMotion = useReducedMotion()
   const activePlacement =
     previewMode === 'live' ? (livePlacement ?? theme.placement) : theme.placement
   const placementLabel = PLACEMENTS.find(option => option.value === activePlacement)?.label
 
   return (
     <div data-layout="live-display-theme-preview" className="min-w-0">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-label font-semibold">
-          {previewMode === 'draft' ? '草稿預覽' : '實際播放'}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
+      <div
+        data-layout="theme-preview-toolbar"
+        className="mb-element flex min-h-8 items-center gap-element"
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-element">
+          <p className="text-label font-semibold">
+            {previewMode === 'draft' ? '草稿預覽' : '實際播放'}
+          </p>
           <p className="text-label text-muted-foreground">
             {previewMode === 'draft'
               ? `聚焦${placementLabel} 1/4 畫面`
               : `聚焦${placementLabel}已發布版本`}
           </p>
-          {previewMode === 'live' && (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => onPreviewModeChange('draft')}
-            >
-              返回草稿預覽
-            </Button>
-          )}
+        </div>
+        <div
+          data-layout="theme-preview-action"
+          className="ml-auto flex h-8 w-28 shrink-0 justify-end"
+        >
+          <AnimatePresence initial={false}>
+            {previewMode === 'live' && (
+              <motion.div
+                key="return-to-draft"
+                initial={reducedMotion ? false : { opacity: 0, transform: 'translateY(-4px)' }}
+                animate={{ opacity: 1, transform: 'translateY(0px)' }}
+                exit={
+                  reducedMotion ? { opacity: 0 } : { opacity: 0, transform: 'translateY(-4px)' }
+                }
+                transition={{
+                  duration: reducedMotion ? 0 : 0.16,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="h-8 w-full"
+              >
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => onPreviewModeChange('draft')}
+                >
+                  返回草稿預覽
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -277,7 +304,7 @@ export function ThemePreview({
         <PreviewViewport placement={activePlacement} className="border bg-black">
           <div
             aria-hidden="true"
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-element text-muted-foreground"
           >
             <Icon icon="fa-solid fa-clapperboard" wrapperClassName="size-6" />
             <span className="text-label">等待測試動畫</span>
@@ -292,13 +319,6 @@ export function ThemePreview({
           )}
         </PreviewViewport>
       )}
-      <p className="mt-2 text-label text-muted-foreground">
-        {previewMode === 'draft'
-          ? '發布後才會套用至 OBS。'
-          : contentType === 'checkin'
-            ? '只測試動畫，不會簽到、抽卡或累積天數。'
-            : '只測試動畫，不會新增或覆寫抽牌紀錄。'}
-      </p>
     </div>
   )
 }
@@ -346,7 +366,7 @@ export function ThemeEditor({
         className="grid grid-cols-1 gap-section lg:grid-cols-2 lg:items-start"
       >
         <fieldset data-layout-panel="appearance" className="grid gap-section" disabled={disabled}>
-          <legend className="mb-2 text-sub font-medium">外觀</legend>
+          <legend className="mb-element text-sub font-medium">外觀</legend>
           <div className="grid gap-card sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
             <ColorControl
               id="overlay-surface-color"
@@ -379,7 +399,7 @@ export function ThemeEditor({
               （僅供參考，不影響儲存）
             </WarningBanner>
           )}
-          <label className="grid gap-2 text-sub font-medium">
+          <label className="grid gap-element text-sub font-medium">
             <span className="flex justify-between gap-element">
               {contentType === 'tarot' ? '牌框圓角' : '卡片圓角'}{' '}
               <output>{theme.radius_px}px</output>
@@ -400,7 +420,7 @@ export function ThemeEditor({
 
         <div data-layout-panel="placement-motion" className="grid gap-section">
           <fieldset disabled={disabled}>
-            <legend className="mb-2 text-sub font-medium">位置</legend>
+            <legend className="mb-element text-sub font-medium">位置</legend>
             <div
               role="group"
               aria-label="顯示位置"
@@ -415,7 +435,7 @@ export function ThemeEditor({
                     data-placement-option={option.value}
                     aria-label={option.label}
                     aria-pressed={selected}
-                    className={`group relative flex min-h-11 items-center justify-center p-2 text-label font-medium transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`group relative flex min-h-11 items-center justify-center p-element text-label font-medium transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${
                       selected
                         ? 'bg-primary/15 text-primary'
                         : 'bg-background text-muted-foreground hover:bg-muted/60 hover:text-foreground'
@@ -440,14 +460,14 @@ export function ThemeEditor({
                 )
               })}
             </div>
-            <p className="mt-2 text-label text-muted-foreground">
+            <p className="mt-element text-label text-muted-foreground">
               預設左下，可避開右下角實況視訊。
             </p>
           </fieldset>
 
           <fieldset className="grid gap-section" disabled={disabled}>
-            <legend className="mb-2 text-sub font-medium">動態</legend>
-            <label className="grid gap-2 text-sub font-medium">
+            <legend className="mb-element text-sub font-medium">動態</legend>
+            <label className="grid gap-element text-sub font-medium">
               <span className="flex justify-between gap-element">
                 顯示時間 <output>{formatDisplaySeconds(theme.display_ms)} 秒</output>
               </span>
@@ -463,7 +483,7 @@ export function ThemeEditor({
                 className="h-9 w-full accent-primary"
               />
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-element">
               {MOTIONS.map(option => (
                 <Button
                   key={option.value}
@@ -481,7 +501,7 @@ export function ThemeEditor({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-section">
+      <div className="flex flex-wrap items-center justify-between gap-element border-t pt-section">
         <Button
           type="button"
           variant="ghost"
@@ -489,17 +509,17 @@ export function ThemeEditor({
           disabled={disabled || (!localDirty && !hasUnpublishedChanges)}
           onClick={onReset}
         >
-          {busy === 'reset' && <Spinner className="mr-1.5" />}
+          {busy === 'reset' && <Spinner />}
           還原已發布版本
         </Button>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-element">
           <Button
             type="button"
             size="sm"
             disabled={disabled || !localDirty || !colorsValid}
             onClick={onSave}
           >
-            {busy === 'save' && <Spinner className="mr-1.5" />}
+            {busy === 'save' && <Spinner />}
             儲存草稿
           </Button>
           <Button
@@ -509,7 +529,7 @@ export function ThemeEditor({
             disabled={disabled || localDirty || !hasUnpublishedChanges}
             onClick={onPublish}
           >
-            {busy === 'publish' && <Spinner className="mr-1.5" />}
+            {busy === 'publish' && <Spinner />}
             發布至 OBS
           </Button>
         </div>
