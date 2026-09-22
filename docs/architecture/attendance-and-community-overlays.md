@@ -160,15 +160,15 @@ recorded check-in 對應一張 copy。冊別的 `total_cards` 隨已發布 set r
 表達，不讓既有冊別完成度倒退。既有歷史 check-in 必須另行執行 deterministic backfill；工具已提供，但不會
 隨 migration 或服務啟動自動修改正式資料。
 
-官方 starter pool 為原創「初途秘典」九張卡，rarity 採 common／rare／legendary，權重固定 70／25／5；
-抽選演算法先依 rarity 權重選 bucket，再在該 bucket 內等機率選卡。catalog、rarity、set、card revision、
-已發布 pool 與 draw audit 均由資料庫約束不可原地修改。Starter artwork 目前為空，renderer 使用內建原創符號
-placeholder；租戶上傳、媒體處理、pool 管理 API 與動態素材仍是後續工作。
+第一個有圖 catalog 包含 7 個 set、48 張 2:3 WebP 卡片；第一版全部使用 common rarity 並等機率抽選。
+`official-all` 是包含全部卡片的 fallback，另有每個 set 專屬的 immutable pool。頻道可在全部卡組與單一 set
+之間切換；API 只接受 set key，不暴露 pool revision id。catalog、rarity、set、card revision、已發布 pool 與
+draw audit 均由資料庫約束不可原地修改，後續評級或機率調整需發布新 revision。
 
 ### 歷史簽到補卡
 
 `backend/scripts/backfill_checkin_collections.py` 只補缺少 `viewer_card_draws` 的既有成功簽到，固定使用已發布的
-`official-starter` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
+`official-all` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
 版本化 seed 加上 channel、viewer、簽到日期與 check-in id 產生 deterministic entropy；重跑不會換卡，也不建立
 歷史 `community_overlay_events`。
 
@@ -176,7 +176,7 @@ CLI 預設為 report-only dry-run；寫入必須明確加上 `--apply`，且任�
 `DATABASE_URL` 與 `--env` 標籤不同時繞過保護。作業依
 channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位、可調 batch 大小分段 transaction。單一 batch
 失敗會完整 rollback 並保留給下次續跑，最後回報 scanned、inserted、skipped、remaining 與 failures。正式 rollout
-應先套用 migrations 112／113 並部署可讀 optional collection snapshot 的 frontend，再執行 dry-run、apply 與
+應先套用 migrations 至 136 並部署可讀 optional collection snapshot 的 frontend，再執行 dry-run、apply 與
 `successful check-ins = draws = inventory copies` 對帳；此 repository 只交付工具，不代表已對正式環境執行。
 
 ### Viewer-isolated FIFO 播放

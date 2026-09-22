@@ -63,7 +63,10 @@ class TestPublishCheckinPreview:
         assert kwargs["payload"]["total_days"] == 8
         assert kwargs["payload"]["checkin_date"] == "2026-08-31"
         assert kwargs["payload"]["preview"] is True
-        assert kwargs["payload"]["collection"]["card"]["key"] == "astral-compass"
+        assert kwargs["payload"]["collection"]["card"]["key"] == "karina-01"
+        assert kwargs["payload"]["collection"]["card"]["artwork"]["portrait_url"] == (
+            "/images/collections/aespa/karina-01-r1.webp"
+        )
         assert kwargs["payload"]["collection"]["rarity"]["key"] == "common"
         assert kwargs["payload"]["collection"]["is_new"] is False
         assert kwargs["idempotency_key"].startswith("preview-checkin:")
@@ -137,7 +140,7 @@ class TestPublishCheckinPreview:
         assert kwargs["payload"]["collection"]["progress"] == {
             "owned_copies": 8,
             "unique_cards": 7,
-            "total_cards": 9,
+            "total_cards": 48,
         }
         assert kwargs["expires_at"] == _NOW + timedelta(minutes=10)
         assert kwargs["idempotency_key"].startswith("preview-checkin:")

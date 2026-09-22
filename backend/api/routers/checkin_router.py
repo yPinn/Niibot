@@ -22,6 +22,10 @@ from core.dependencies import (
     require_self_tenant_owner,
 )
 from core.rate_limit import RateLimiter
+from services.checkin_collection_service import (
+    CheckinCollectionService,
+    CheckinCollectionSnapshot,
+)
 from services.checkin_data_service import (
     CheckinClearScope,
     CheckinDataService,
@@ -99,6 +103,11 @@ class CheckinDataRateLimitedError(RateLimitedError):
     user_message = "簽到資料操作太頻繁，請稍後再試"
 
 
+class CheckinCollectionInvalidSetError(InvalidInputError):
+    code = "CHECKIN_COLLECTION.INVALID_SET"
+    user_message = "找不到可使用的卡組，請重新選擇"
+
+
 class CheckinSettingsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -129,6 +138,40 @@ class CheckinSettingsUpdate(BaseModel):
     success_template: str | None = Field(default=None, min_length=1, max_length=500)
     duplicate_template: str | None = Field(default=None, min_length=1, max_length=500)
     reply_delay_seconds: int | None = Field(default=None, ge=0, le=30)
+
+
+class CheckinCollectionCardResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    number: int
+    name: str
+    portrait_url: str
+    rarity_key: str
+    rarity_name: str
+
+
+class CheckinCollectionSetResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    name: str
+    card_count: int
+    cards: list[CheckinCollectionCardResponse]
+
+
+class CheckinCollectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    selected_set_key: str | None
+    total_cards: int
+    sets: list[CheckinCollectionSetResponse]
+
+
+class CheckinCollectionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    set_key: str | None = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)
 
 
 class CheckinImportPreviewResponse(BaseModel):
@@ -248,6 +291,10 @@ def get_checkin_data_service(pool=Depends(get_db_pool)) -> CheckinDataService:
     return CheckinDataService(pool)
 
 
+def get_checkin_collection_service(pool=Depends(get_db_pool)) -> CheckinCollectionService:
+    return CheckinCollectionService(pool)
+
+
 def _require_import_rate(limiter: RateLimiter, tenant: TenantContext) -> None:
     if not limiter.allow(f"{tenant.user_id}:{tenant.channel_id}"):
         raise CheckinImportRateLimitedError()
@@ -325,6 +372,34 @@ async def get_checkin_leaderboard(
 ) -> list[CheckinLeaderboardEntryResponse]:
     entries = await service.get_leaderboard(tenant.channel_id)
     return [CheckinLeaderboardEntryResponse.model_validate(entry) for entry in entries]
+
+
+@router.get("/collections", response_model=CheckinCollectionResponse)
+async def get_checkin_collections(
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: CheckinCollectionService = Depends(get_checkin_collection_service),
+) -> CheckinCollectionResponse:
+    snapshot = await service.get_snapshot(tenant.channel_id)
+    return CheckinCollectionResponse.model_validate(snapshot)
+
+
+@router.patch("/collections", response_model=CheckinCollectionResponse)
+async def update_checkin_collections(
+    body: CheckinCollectionUpdate,
+    _action: Literal["checkin-collections"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: CheckinCollectionService = Depends(get_checkin_collection_service),
+) -> CheckinCollectionResponse:
+    try:
+        snapshot: CheckinCollectionSnapshot = await service.select_set(
+            tenant.channel_id,
+            body.set_key,
+        )
+    except ValueError:
+        LOGGER.info("checkin_collection_set_invalid")
+        raise CheckinCollectionInvalidSetError() from None
+    LOGGER.info("checkin_collection_set_updated")
+    return CheckinCollectionResponse.model_validate(snapshot)
 
 
 @router.patch("/settings", response_model=CheckinSettingsResponse)

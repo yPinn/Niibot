@@ -20,12 +20,19 @@ from fastapi.testclient import TestClient
 
 from core.dependencies import get_attendance_service, require_self_tenant_access
 from core.error_handlers import register_exception_handlers
+from routers.checkin_router import get_checkin_collection_service
 from routers.checkin_router import router as _checkin_router
+from services.checkin_collection_service import (
+    CheckinCollectionCard,
+    CheckinCollectionSet,
+    CheckinCollectionSnapshot,
+)
 from services.tenant_service import TenantContext
 from shared.models.attendance import CheckinLeaderboardEntry, CheckinSettings
 
 CHANNEL_ID = "channel-123"
 _ACTION_HEADERS = {"X-Niibot-Action": "checkin-settings"}
+_COLLECTION_ACTION_HEADERS = {"X-Niibot-Action": "checkin-collections"}
 _NOW = datetime(2026, 8, 31, tzinfo=UTC)
 _SETTINGS = CheckinSettings(
     channel_id=CHANNEL_ID,
@@ -61,7 +68,38 @@ def _service() -> MagicMock:
     return service
 
 
-def _make_client(service: MagicMock) -> TestClient:
+def _collection_service() -> MagicMock:
+    service = MagicMock()
+    snapshot = CheckinCollectionSnapshot(
+        selected_set_key=None,
+        total_cards=1,
+        sets=(
+            CheckinCollectionSet(
+                key="aespa",
+                name="aespa",
+                card_count=1,
+                cards=(
+                    CheckinCollectionCard(
+                        key="karina-01",
+                        number=1,
+                        name="Karina",
+                        portrait_url="/images/collections/aespa/karina-01-r1.webp",
+                        rarity_key="common",
+                        rarity_name="普通",
+                    ),
+                ),
+            ),
+        ),
+    )
+    service.get_snapshot = AsyncMock(return_value=snapshot)
+    service.select_set = AsyncMock(return_value=snapshot)
+    return service
+
+
+def _make_client(
+    service: MagicMock,
+    collection_service: MagicMock | None = None,
+) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     register_exception_handlers(app)
     app.include_router(_checkin_router)
@@ -71,6 +109,8 @@ def _make_client(service: MagicMock) -> TestClient:
         role="owner",
     )
     app.dependency_overrides[get_attendance_service] = lambda: service
+    if collection_service is not None:
+        app.dependency_overrides[get_checkin_collection_service] = lambda: collection_service
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -231,3 +271,93 @@ def test_patch_rejects_negative_reply_delay() -> None:
 
     assert response.status_code == 422
     service.update_settings.assert_not_awaited()
+
+
+def test_get_collections_returns_image_catalog_for_authenticated_tenant() -> None:
+    collection_service = _collection_service()
+
+    response = _make_client(_service(), collection_service).get("/api/checkin/collections")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "selected_set_key": None,
+        "total_cards": 1,
+        "sets": [
+            {
+                "key": "aespa",
+                "name": "aespa",
+                "card_count": 1,
+                "cards": [
+                    {
+                        "key": "karina-01",
+                        "number": 1,
+                        "name": "Karina",
+                        "portrait_url": "/images/collections/aespa/karina-01-r1.webp",
+                        "rarity_key": "common",
+                        "rarity_name": "普通",
+                    }
+                ],
+            }
+        ],
+    }
+    collection_service.get_snapshot.assert_awaited_once_with(CHANNEL_ID)
+
+
+def test_patch_collections_selects_one_set_for_authenticated_tenant() -> None:
+    collection_service = _collection_service()
+
+    response = _make_client(_service(), collection_service).patch(
+        "/api/checkin/collections",
+        json={"set_key": "aespa"},
+        headers=_COLLECTION_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    collection_service.select_set.assert_awaited_once_with(CHANNEL_ID, "aespa")
+
+
+def test_patch_collections_accepts_null_as_all_sets() -> None:
+    collection_service = _collection_service()
+
+    response = _make_client(_service(), collection_service).patch(
+        "/api/checkin/collections",
+        json={"set_key": None},
+        headers=_COLLECTION_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    collection_service.select_set.assert_awaited_once_with(CHANNEL_ID, None)
+
+
+def test_patch_collections_rejects_tenant_id_and_missing_action_header() -> None:
+    collection_service = _collection_service()
+    client = _make_client(_service(), collection_service)
+
+    extra = client.patch(
+        "/api/checkin/collections",
+        json={"channel_id": "other", "set_key": "aespa"},
+        headers=_COLLECTION_ACTION_HEADERS,
+    )
+    missing_header = client.patch(
+        "/api/checkin/collections",
+        json={"set_key": "aespa"},
+    )
+
+    assert extra.status_code == 422
+    assert missing_header.status_code == 422
+    collection_service.select_set.assert_not_awaited()
+
+
+def test_patch_collections_maps_unknown_set_without_leaking_internal_value() -> None:
+    collection_service = _collection_service()
+    collection_service.select_set = AsyncMock(side_effect=ValueError("secret-set"))
+
+    response = _make_client(_service(), collection_service).patch(
+        "/api/checkin/collections",
+        json={"set_key": "unknown"},
+        headers=_COLLECTION_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "CHECKIN_COLLECTION.INVALID_SET"
+    assert "secret-set" not in response.text

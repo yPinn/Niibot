@@ -147,7 +147,7 @@ revision 與封存非 active 設定集都不通知 runtime。Twitch compact runt
 Daily Check-in 成功時仍送出 `event_type = checkin.recorded`、`schema_version = 1`。新事件的 payload
 可額外包含 validated `collection` snapshot：draw／pool／algorithm、card revision、set、rarity、同源 artwork
 derivatives、`is_new`、`copy_count` 與進度。欄位是 additive optional contract，沒有該欄位的舊事件仍合法；
-前端遇到缺漏或 malformed collection 會顯示 legacy 簽到卡。現階段沒有租戶 cards／pool 管理 API，也沒有
+前端遇到缺漏或 malformed collection 會顯示 legacy 簽到卡。現階段沒有租戶自訂 cards／pool 管理 API，也沒有
 viewer collection 查詢端點。
 
 OBS URL 將 public key 放在 fragment，瀏覽器不會把 fragment 傳到 server；公開 API 再以
@@ -242,6 +242,9 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
   以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 0）。
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
+- `GET /api/checkin/collections`：讀取第一個有圖 catalog、目前抽卡範圍與全部 7 個 set／48 張卡片資料。
+- `PATCH /api/checkin/collections`：body 只接受 nullable `set_key`；`null` 使用包含全部卡片的官方 fallback，
+  其餘值只可指向已發布的官方單一 set pool。mutation 必須帶 `X-Niibot-Action: checkin-collections`。
 
 模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`；server 會同時驗證
 未知變數與 Twitch 500 字元的最壞輸出長度。`$(count)` 包含 carry-over，`$(streak)` 可接續匯入紀錄；

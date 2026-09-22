@@ -52,16 +52,16 @@ def build_checkin_preview_payload(now: datetime, *, total_days: int = 8) -> dict
             "card": {
                 "id": 1,
                 "revision_id": 1,
-                "key": "astral-compass",
+                "key": "karina-01",
                 "number": "001",
-                "name": "星羅羅盤",
+                "name": "Karina",
                 "artwork": {
-                    "portrait_url": None,
+                    "portrait_url": "/images/collections/aespa/karina-01-r1.webp",
                     "square_url": None,
                     "backdrop_url": None,
                 },
             },
-            "set": {"id": 1, "key": "first-path", "name": "初途秘典"},
+            "set": {"id": 1, "key": "aespa", "name": "aespa"},
             "rarity": {
                 "key": "common",
                 "label": "普通",
@@ -72,8 +72,8 @@ def build_checkin_preview_payload(now: datetime, *, total_days: int = 8) -> dict
             "copy_count": copy_count,
             "progress": {
                 "owned_copies": total_days,
-                "unique_cards": min(total_days - copy_count + 1, 9),
-                "total_cards": 9,
+                "unique_cards": min(total_days - copy_count + 1, 48),
+                "total_cards": 48,
             },
         },
     }

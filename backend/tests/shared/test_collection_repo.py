@@ -19,8 +19,8 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
         "pool_revision_id": pool_revision_id,
         "algorithm_version": ALGORITHM_VERSION,
         "set_id": 11,
-        "set_key": "first-path",
-        "set_display_name": "初途秘典",
+        "set_key": "aespa",
+        "set_display_name": "aespa",
         "total_cards": 9,
         "portrait_url": None,
         "square_url": None,
@@ -38,7 +38,7 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
             "weight": 70,
             "card_revision_id": 41,
             "card_id": 31,
-            "card_key": "astral-compass",
+            "card_key": "karina-01",
             "card_number": 1,
             "card_display_name": "星羅羅盤",
             "entry_order": 1,
@@ -68,7 +68,7 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
             "weight": 5,
             "card_revision_id": 43,
             "card_id": 33,
-            "card_key": "first-path-crown",
+            "card_key": "winter-01",
             "card_number": 9,
             "card_display_name": "初途王冠",
             "entry_order": 9,
@@ -88,7 +88,7 @@ def _draw_row(*, draw_id: int = 61, pool_revision_id: int = 51) -> dict[str, obj
         "card_bucket_size": 2,
         "card_revision_id": 41,
         "card_id": 31,
-        "card_key": "astral-compass",
+        "card_key": "karina-01",
         "card_number": 1,
         "card_display_name": "星羅羅盤",
         "description": "",
@@ -96,8 +96,8 @@ def _draw_row(*, draw_id: int = 61, pool_revision_id: int = 51) -> dict[str, obj
         "square_url": None,
         "backdrop_url": None,
         "set_id": 11,
-        "set_key": "first-path",
-        "set_display_name": "初途秘典",
+        "set_key": "aespa",
+        "set_display_name": "aespa",
         "total_cards": 9,
         "rarity_revision_id": 21,
         "rarity_key": "common",
@@ -137,7 +137,7 @@ async def test_draw_uses_caller_connection_and_persists_entropy_and_audit_values
 
     assert requested_sizes == [16]
     assert draw.id == 61
-    assert draw.selection.card.key == "astral-compass"
+    assert draw.selection.card.key == "karina-01"
     assert draw.selection.card.number == "001"
     assert draw.is_new is True
     assert draw.to_event_snapshot()["progress"] == {

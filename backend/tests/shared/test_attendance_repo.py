@@ -49,11 +49,11 @@ def _checkin_row() -> dict:
 
 def _collection_draw() -> CollectionDraw:
     rarity = RarityRevision(21, "common", "普通", 10, 20)
-    collection_set = CollectionSet(11, "first-path", "初途秘典", 9)
+    collection_set = CollectionSet(11, "aespa", "aespa", 9)
     card = CollectionCardRevision(
         card_id=31,
         revision_id=41,
-        key="astral-compass",
+        key="karina-01",
         number="001",
         name="星羅羅盤",
         description=None,
