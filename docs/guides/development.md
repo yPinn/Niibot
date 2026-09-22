@@ -9,7 +9,9 @@ npm run nb -- env init        # 複製所有 *.env.example → *.env（已存在
 npm run nb -- env init -f     # 強制覆蓋
 ```
 
-接著填入各檔 secrets。欄位對照見 [environment.md](environment.md)。
+`env init` 會在 `backend/shared.env` 缺少或留空時，自動生成
+`TWITCH_TOKEN_ENCRYPTION_KEY`；既有有效 key 不會被輪替。接著填入其餘 secrets。
+欄位對照見 [environment.md](environment.md)。
 
 `nb env` 其他子命令：`snapshot` / `backup`（快照到 `data/`）、
 `restore <日期|檔案>`、`diff`、`list`、`clean`、`gen` / `check`（從 registry 生成）。
@@ -43,6 +45,19 @@ npm run dev                      # 開發伺服器 :3000（代理 /api 到 :8000
 
 Postgres 可只開容器：`npm run dev:db`（背景啟動，對外 `:5433`）。
 
+### Settings 最小服務組合
+
+Settings 支援只啟動前端、API 與 PostgreSQL；Twitch／Discord bot process 不需要啟動。
+bot 未啟動時只會在服務狀態顯示離線，不會阻擋帳號、授權或金流設定載入。
+
+```bash
+npm run dev:api   # API + PostgreSQL（Compose 也會帶起共用的 Instafix）
+npm run dev:fe    # frontend :3000
+```
+
+讀取既有 Twitch 帳號／授權摘要不需要 token 加密金鑰；建立授權邀請、檢查、refresh、
+解除與 revoke 等 credential lifecycle 操作仍要求 `TWITCH_TOKEN_ENCRYPTION_KEY`。
+
 ## 2b. 全部走 Docker Compose
 
 所有 `npm run dev:*` 都疊 `docker-compose.yml` + `docker-compose.dev.yml`，
@@ -50,7 +65,7 @@ dev overlay 會把每個服務的埠對外。
 
 | 指令                  | 內容                        |
 | --------------------- | --------------------------- |
-| `npm run dev:api`     | API + DB                    |
+| `npm run dev:api`     | API + DB + Instafix         |
 | `npm run dev:twitch`  | Twitch bot + DB             |
 | `npm run dev:discord` | Discord bot + DB + Instafix |
 | `npm run dev:bots`    | 兩個 bot + DB + Instafix    |

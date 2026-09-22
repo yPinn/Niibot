@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from api.app import _twitch_authorization_loop
 from api.services.twitch_api import (
     TokenRefreshResult,
     TokenRevocationResult,
@@ -19,7 +21,11 @@ from api.services.twitch_authorization_service import (
 from cryptography.fernet import Fernet
 
 from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
-from shared.twitch_token_crypto import decrypt_twitch_token, encrypt_twitch_token
+from shared.twitch_token_crypto import (
+    TwitchTokenEncryptionNotConfiguredError,
+    decrypt_twitch_token,
+    encrypt_twitch_token,
+)
 
 _KEY = Fernet.generate_key().decode()
 _NOW = datetime.now(UTC)
@@ -64,6 +70,65 @@ def _service(conn: AsyncMock, twitch: MagicMock) -> TwitchAuthorizationService:
         token_encryption_key=_KEY,
         client_id="client-1",
     )
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_still_allows_broadcaster_summary_reads():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {
+        "channel_id": "channel-1",
+        "channel_name": "alice",
+        "display_name": "Alice",
+        "enabled": True,
+        "token_user_id": "channel-1",
+        "requires_reauth": False,
+        "last_checked_at": None,
+        "last_validated_at": None,
+        "invalidated_at": None,
+        "validation_error_code": None,
+    }
+    service = TwitchAuthorizationService(
+        _pool_with(conn),
+        twitch_api=MagicMock(),
+        token_encryption_key="",
+        client_id="client-1",
+    )
+
+    summary = await service.get_broadcaster_summary(channel_id="channel-1")
+
+    assert summary.channel_name == "alice"
+    assert summary.status == "not_checked"
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_rejects_credential_check_before_database_access():
+    conn = AsyncMock()
+    service = TwitchAuthorizationService(
+        _pool_with(conn),
+        twitch_api=MagicMock(),
+        token_encryption_key="",
+        client_id="client-1",
+    )
+
+    with pytest.raises(TwitchTokenEncryptionNotConfiguredError):
+        await service.check_credential(
+            user_id="bot-1",
+            token_type="bot",
+            required_scopes=set(BOT_SCOPES),
+        )
+
+    conn.fetchrow.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_disables_background_reconciliation(caplog):
+    db_manager = MagicMock(is_connected=True)
+    settings = SimpleNamespace(twitch_token_encryption_key="", client_id="client-1")
+
+    await _twitch_authorization_loop(db_manager, settings)
+
+    assert "disabled" in caplog.text.lower()
+    db_manager.pool.acquire.assert_not_called()
 
 
 @pytest.mark.asyncio

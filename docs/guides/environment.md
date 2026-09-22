@@ -11,6 +11,10 @@
 `bash scripts/env.sh init` 依範本一次複製出所有 `*.env`（見 [development.md](development.md)）。
 一律不提交任何 `.env`。註記：`(選用)` 可留空、`(dev)` 僅本機直跑時需要。
 
+本機 `env init` 會在 `backend/shared.env` 的 `TWITCH_TOKEN_ENCRYPTION_KEY` 缺少或空白時
+自動生成 Fernet key，且不覆寫既有有效值。這把 key 必須長期保留；任意輪替會讓資料庫內既有的
+Twitch OAuth credential 無法解密。正式環境仍由 secret store 提供，不會由部署流程臨時生成。
+
 > 至少設定一組 AI key（`GROQ` / `GEMINI` / `OPENROUTER`）；空的 key 會被自動跳過。
 > 優先序見 [architecture/overview.md](../architecture/overview.md) 的 AI Provider 鏈一節。
 

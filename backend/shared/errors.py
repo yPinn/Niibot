@@ -151,6 +151,13 @@ class UpstreamError(AppError):
     log_level = logging.ERROR
 
 
+class ServiceUnavailableError(AppError):
+    code = "INTERNAL.SERVICE_UNAVAILABLE"
+    http_status = 503
+    user_message = "服務暫時無法使用，請稍後再試"
+    log_level = logging.ERROR
+
+
 # ── Cross-cutting domain errors ─────────────────────────────────────────────
 # Shared by more than one router (public overlay endpoints all resolve a
 # channel by Twitch login). Defined here so the code has a single owner and

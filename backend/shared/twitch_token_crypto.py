@@ -4,12 +4,28 @@ from __future__ import annotations
 
 from cryptography.fernet import Fernet
 
+from shared.errors import ServiceUnavailableError
+
 CURRENT_TWITCH_TOKEN_ENCRYPTION_VERSION = 1
 _V1_PREFIX = "v1:"
 
 
 class TwitchTokenEncryptionError(ValueError):
     """Raised when a Twitch credential cannot be safely decoded."""
+
+
+class TwitchTokenEncryptionNotConfiguredError(ServiceUnavailableError):
+    """Missing Twitch credential encryption configuration."""
+
+    code = "TWITCH_AUTHORIZATION.NOT_CONFIGURED"
+    user_message = "Twitch 授權設定尚未完成，請聯絡管理員"
+
+
+def require_twitch_token_encryption_key(key: str | None) -> str:
+    """Return the configured key or reject token lifecycle operations."""
+    if not key:
+        raise TwitchTokenEncryptionNotConfiguredError()
+    return key
 
 
 def encrypt_twitch_token(plaintext: str, key: str) -> tuple[str, int]:

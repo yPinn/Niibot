@@ -193,6 +193,13 @@ async def _gauge_log_loop(db_manager) -> None:
 
 async def _twitch_authorization_loop(db_manager, settings) -> None:
     """Validate every stored Twitch credential at least hourly in bounded batches."""
+    if not settings.twitch_token_encryption_key:
+        LOGGER.warning(
+            "Twitch authorization reconciliation disabled: "
+            "TWITCH_TOKEN_ENCRYPTION_KEY is not configured"
+        )
+        return
+
     while True:
         try:
             delay = _TWITCH_AUTHORIZATION_INTERVAL

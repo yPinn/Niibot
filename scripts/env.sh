@@ -4,7 +4,7 @@
 # Preferred: npm run nb -- env <command>   (nb env also routes gen/check to gen_env.py)
 # Direct:    bash scripts/env.sh <command> [options]
 #
-#   init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
+#   init      [-f]              Copy examples and generate required local-only secrets
 #   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/
 #   backup    [--keep N]        Snapshot + compress to data/env-YYYYMMDD.tar.gz
 #   restore   <DATE|FILE> [-f]  Restore from snapshot or .tar.gz  (-f overwrites)
@@ -141,11 +141,25 @@ cmd_init() {
     local rel="$1" src="$ROOT/$1.example" dst="$ROOT/$1"
     if [[ ! -f "$src" ]];                        then echo "  -      $rel.example (not found)"; return; fi
     if [[ -f "$dst" ]] && [[ "$force" == false ]]; then echo "  skip   $rel (exists; -f to overwrite)"; return; fi
+    if [[ "$rel" == "backend/shared.env" && -f "$dst" ]]; then
+      if [[ -z "$_PY" ]]; then
+        echo "error: Python is required to preserve the encryption key" >&2
+        exit 1
+      fi
+      "$_PY" "$ROOT/scripts/ensure_local_env.py" --refresh-from "$src" "$dst" >/dev/null
+      echo "  copied $rel (persistent encryption key kept)"
+      return
+    fi
     cp "$src" "$dst" && echo "  copied $rel"
   }
 
   _each_section _copy_example
-  printf "\nDone. Fill in secrets before running the project.\n"
+  if [[ -z "$_PY" ]]; then
+    echo "warning: Python is unavailable; TWITCH_TOKEN_ENCRYPTION_KEY was not generated" >&2
+  elif [[ -f "$ROOT/backend/shared.env" ]]; then
+    "$_PY" "$ROOT/scripts/ensure_local_env.py" "$ROOT/backend/shared.env"
+  fi
+  printf "\nDone. Fill in the remaining secrets before running the project.\n"
 }
 
 # ── snapshot ──────────────────────────────────────────────────────────────────
@@ -332,7 +346,7 @@ case "$CMD" in
     cat <<'EOF'
 Usage: npm run nb -- env <command>   (or: bash scripts/env.sh <command> [options])
 
-  init      [-f]              Copy .env.example → .env  (skip existing; -f overwrites)
+  init      [-f]              Copy examples and generate required local-only secrets
   snapshot  [--keep N]        Snapshot live env files to data/env/YYYYMMDD/
   backup    [--keep N]        Snapshot + compress to data/env-YYYYMMDD.tar.gz
   restore   <DATE|FILE> [-f]  Restore from snapshot or .tar.gz  (-f overwrites)

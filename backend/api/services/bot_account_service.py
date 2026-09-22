@@ -15,7 +15,10 @@ import asyncpg
 
 from shared.errors import ConflictError, InvalidInputError, NotFoundError
 from shared.twitch_scopes import BOT_SCOPES
-from shared.twitch_token_crypto import encrypt_twitch_token
+from shared.twitch_token_crypto import (
+    encrypt_twitch_token,
+    require_twitch_token_encryption_key,
+)
 
 BotInvitePurpose = Literal["link_new", "reauthorize", "system_default_reset"]
 
@@ -115,8 +118,6 @@ class BotAccountService:
     """Owns invitation consumption and the credential/mapping transaction."""
 
     def __init__(self, pool: asyncpg.Pool, *, token_encryption_key: str) -> None:
-        if not token_encryption_key:
-            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required")
         self.pool = pool
         self.token_encryption_key = token_encryption_key
 
@@ -130,6 +131,7 @@ class BotAccountService:
         lifetime: timedelta = timedelta(minutes=30),
     ) -> BotInviteCreated:
         """Create a one-time invitation and return its secrets exactly once."""
+        require_twitch_token_encryption_key(self.token_encryption_key)
         if purpose != "link_new" and not expected_bot_user_id:
             raise ValueError("expected_bot_user_id is required for reset invitations")
 
@@ -312,6 +314,7 @@ class BotAccountService:
         avatar: str | None,
     ) -> BotAuthorizationResult:
         """Consume an invitation and atomically persist the bot for its tenant."""
+        token_encryption_key = require_twitch_token_encryption_key(self.token_encryption_key)
         now = datetime.now(UTC)
 
         async with self.pool.acquire() as conn:
@@ -347,10 +350,10 @@ class BotAccountService:
                     )
 
                 encrypted_access, encryption_version = encrypt_twitch_token(
-                    access_token, self.token_encryption_key
+                    access_token, token_encryption_key
                 )
                 encrypted_refresh, refresh_version = encrypt_twitch_token(
-                    refresh_token, self.token_encryption_key
+                    refresh_token, token_encryption_key
                 )
                 if refresh_version != encryption_version:
                     raise RuntimeError("Twitch credential encryption versions diverged")

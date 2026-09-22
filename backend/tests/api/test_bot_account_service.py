@@ -20,7 +20,10 @@ from api.services.bot_account_service import (
 from cryptography.fernet import Fernet
 
 from shared.twitch_scopes import BOT_SCOPES
-from shared.twitch_token_crypto import decrypt_twitch_token
+from shared.twitch_token_crypto import (
+    TwitchTokenEncryptionNotConfiguredError,
+    decrypt_twitch_token,
+)
 
 _KEY = Fernet.generate_key().decode()
 _NOW = datetime.now(UTC)
@@ -55,6 +58,51 @@ def _invite_row(**overrides):
     }
     row.update(overrides)
     return row
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_still_allows_read_only_account_queries():
+    conn = AsyncMock()
+    conn.fetch.return_value = []
+    service = BotAccountService(_pool_with(conn), token_encryption_key="")
+
+    assert await service.list_for_tenant("channel-a") == []
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_rejects_invite_before_database_write():
+    conn = AsyncMock()
+    service = BotAccountService(_pool_with(conn), token_encryption_key="")
+
+    with pytest.raises(TwitchTokenEncryptionNotConfiguredError):
+        await service.create_invite(
+            channel_id="channel-a",
+            creator_user_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        )
+
+    conn.execute.assert_not_awaited()
+    conn.fetchrow.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_missing_encryption_key_rejects_oauth_callback_before_database_write():
+    conn = AsyncMock()
+    service = BotAccountService(_pool_with(conn), token_encryption_key="")
+
+    with pytest.raises(TwitchTokenEncryptionNotConfiguredError):
+        await service.authorize_invite(
+            invite_id=_invite_row()["id"],
+            state_nonce=_STATE_NONCE,
+            platform_user_id="bot-b",
+            access_token="access",
+            refresh_token="refresh",
+            scopes=set(BOT_SCOPES),
+            login="bot_b",
+            display_name="Bot B",
+            avatar=None,
+        )
+
+    conn.fetchrow.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,11 @@ import asyncpg
 from services.twitch_api import TwitchAPIClient
 from shared.errors import ConflictError, NotFoundError
 from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
-from shared.twitch_token_crypto import decrypt_twitch_token, encrypt_twitch_token
+from shared.twitch_token_crypto import (
+    decrypt_twitch_token,
+    encrypt_twitch_token,
+    require_twitch_token_encryption_key,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -82,8 +86,6 @@ class TwitchAuthorizationService:
         token_encryption_key: str,
         client_id: str,
     ) -> None:
-        if not token_encryption_key:
-            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required")
         self.pool = pool
         self.twitch = twitch_api
         self.token_encryption_key = token_encryption_key
@@ -108,6 +110,7 @@ class TwitchAuthorizationService:
         force: bool = True,
     ) -> CredentialHealth:
         """Validate one credential under a transaction-scoped advisory lock."""
+        token_encryption_key = require_twitch_token_encryption_key(self.token_encryption_key)
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
@@ -161,12 +164,12 @@ class TwitchAuthorizationService:
                 access_token = decrypt_twitch_token(
                     str(row["token"]),
                     version=int(row["encryption_version"]),
-                    key=self.token_encryption_key,
+                    key=token_encryption_key,
                 )
                 refresh_token = decrypt_twitch_token(
                     str(row["refresh"]),
                     version=int(row["encryption_version"]),
-                    key=self.token_encryption_key,
+                    key=token_encryption_key,
                 )
 
                 validation = await self.twitch.validate_token_details(access_token)
@@ -193,10 +196,10 @@ class TwitchAuthorizationService:
                     access_token = refreshed.access_token
                     refresh_token = refreshed.refresh_token
                     encrypted_access, encryption_version = encrypt_twitch_token(
-                        access_token, self.token_encryption_key
+                        access_token, token_encryption_key
                     )
                     encrypted_refresh, refresh_version = encrypt_twitch_token(
-                        refresh_token, self.token_encryption_key
+                        refresh_token, token_encryption_key
                     )
                     if refresh_version != encryption_version:
                         raise RuntimeError("Twitch credential encryption versions diverged")
@@ -404,6 +407,7 @@ class TwitchAuthorizationService:
         return result
 
     async def check_due_credentials(self, *, limit: int = 25) -> int:
+        require_twitch_token_encryption_key(self.token_encryption_key)
         due = await self.list_due_credentials(limit=limit)
         for user_id, token_type in due:
             required = set(BOT_SCOPES if token_type == "bot" else BROADCASTER_SCOPES)
@@ -498,6 +502,7 @@ class TwitchAuthorizationService:
         bot_user_id: str,
         actor_user_id: str,
     ) -> AuthorizationRemovalResult:
+        token_encryption_key = require_twitch_token_encryption_key(self.token_encryption_key)
         access_token: str | None = None
         credential_retained = True
         async with self.pool.acquire() as conn:
@@ -555,7 +560,7 @@ class TwitchAuthorizationService:
                         access_token = decrypt_twitch_token(
                             str(credential["token"]),
                             version=int(credential["encryption_version"]),
-                            key=self.token_encryption_key,
+                            key=token_encryption_key,
                         )
 
                 await conn.execute(
@@ -605,6 +610,7 @@ class TwitchAuthorizationService:
         channel_id: str,
         owner_user_id: str,
     ) -> AuthorizationRemovalResult:
+        token_encryption_key = require_twitch_token_encryption_key(self.token_encryption_key)
         access_token: str | None = None
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -622,7 +628,7 @@ class TwitchAuthorizationService:
                 access_token = decrypt_twitch_token(
                     str(row["token"]),
                     version=int(row["encryption_version"]),
-                    key=self.token_encryption_key,
+                    key=token_encryption_key,
                 )
                 await conn.execute(
                     "UPDATE channels SET enabled = FALSE WHERE channel_id = $1",
