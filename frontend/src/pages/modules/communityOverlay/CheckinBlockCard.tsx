@@ -73,7 +73,7 @@ export function CheckinBlockCard({
             <Badge variant="secondary">收藏卡冊</Badge>
             <Badge variant={themeChanged ? 'secondary' : 'outline'}>{themeStatus}</Badge>
           </CardTitle>
-          <CardDescription>觀眾完成簽到時抽一張收藏卡，並在直播畫面收入個人卡冊。</CardDescription>
+          <CardDescription>觀眾簽到時抽卡，並顯示個人卡冊。</CardDescription>
           <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-2 justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
             <Button
               size="sm"
@@ -126,7 +126,7 @@ export function CheckinBlockCard({
               <Icon icon="fa-brands fa-twitch" />
               <AlertTitle>頻道點數尚不可用</AlertTitle>
               <AlertDescription>
-                Twitch 頻道點數僅開放給實況盟友與合作夥伴；仍可繼續使用聊天指令簽到。
+                頻道點數僅供 Twitch 實況盟友與合作夥伴使用；仍可用聊天指令簽到。
               </AlertDescription>
             </Alert>
           ) : (

@@ -60,16 +60,32 @@ import { toastApiError } from '@/lib/toast-error'
 
 import { CheckinBlockCard } from './communityOverlay/CheckinBlockCard'
 import { TarotBlockCard } from './communityOverlay/TarotBlockCard'
-import { ThemeEditor } from './communityOverlay/ThemeEditor'
+import { ThemeEditor, ThemePreview } from './communityOverlay/ThemeEditor'
 
 const CONTENT_TYPES: CommunityOverlayContentType[] = ['checkin', 'tarot']
 
 function SettingsSkeleton() {
   return (
-    <div className="flex flex-col gap-section">
-      <Skeleton className="h-72 rounded-xl" />
-      <Skeleton className="h-[36rem] rounded-xl" />
-      <Skeleton className="h-72 rounded-xl" />
+    <div
+      data-layout="live-display-workspace"
+      className="grid grid-cols-1 gap-section xl:min-h-0 xl:flex-1 xl:grid-cols-12 xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:overflow-hidden"
+    >
+      <div
+        data-layout-column="content"
+        data-layout-scroll="content"
+        className="flex min-w-0 flex-col gap-element xl:col-span-8 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain"
+      >
+        <Skeleton data-layout-panel="checkin" className="h-[36rem] rounded-xl" />
+        <Skeleton data-layout-panel="tarot" className="h-72 rounded-xl" />
+      </div>
+      <div
+        data-layout-column="support"
+        data-layout-position="fixed"
+        className="flex min-w-0 flex-col gap-section xl:sticky xl:top-0 xl:col-span-4 xl:max-h-full xl:self-start xl:overflow-y-auto xl:overscroll-contain"
+      >
+        <Skeleton data-layout-panel="connection" className="h-72 rounded-xl" />
+        <Skeleton data-layout-panel="preview" className="h-96 rounded-xl" />
+      </div>
     </div>
   )
 }
@@ -149,25 +165,6 @@ interface CommunityOverlaySettingsProps {
   preview?: boolean
 }
 
-function SettingsSectionHeader({
-  id,
-  title,
-  description,
-}: {
-  id: string
-  title: string
-  description: string
-}) {
-  return (
-    <div className="max-w-3xl">
-      <h2 id={id} className="text-section-title font-semibold">
-        {title}
-      </h2>
-      <p className="mt-1 text-sub text-muted-foreground">{description}</p>
-    </div>
-  )
-}
-
 export default function CommunityOverlaySettings({
   preview = false,
 }: CommunityOverlaySettingsProps) {
@@ -210,6 +207,7 @@ export default function CommunityOverlaySettings({
     }
   }, [])
   const [expandedBlock, setExpandedBlock] = useState<CommunityOverlayContentType | null>('checkin')
+  const [selectedBlock, setSelectedBlock] = useState<CommunityOverlayContentType>('checkin')
   const [previewModes, setPreviewModes] = useState<
     Record<CommunityOverlayContentType, 'draft' | 'live'>
   >({ checkin: 'draft', tarot: 'draft' })
@@ -507,6 +505,16 @@ export default function CommunityOverlaySettings({
     }
   }
 
+  const handleBlockOpenChange = (blockType: CommunityOverlayContentType, open: boolean) => {
+    if (open) setSelectedBlock(blockType)
+    setExpandedBlock(open ? blockType : null)
+  }
+
+  const handleBlockPreview = (blockType: CommunityOverlayContentType) => {
+    setSelectedBlock(blockType)
+    void handlePreview(blockType)
+  }
+
   const getThemePresentation = (blockType: CommunityOverlayContentType) => {
     const themeState = themeStates[blockType]
     const localDirty = themeState ? !themesEqual(draftThemes[blockType], themeState.draft) : false
@@ -521,10 +529,6 @@ export default function CommunityOverlaySettings({
   const renderThemeEditor = (blockType: CommunityOverlayContentType) => {
     const { themeState, localDirty } = getThemePresentation(blockType)
     if (!themeState) return null
-    const developmentSample = preview ? `&sample=${blockType}` : ''
-    const scopedPreviewUrl = overlayUrl
-      ? `${overlayUrl}&preview=1&block=${blockType}${developmentSample}`
-      : undefined
     return (
       <ThemeEditor
         contentType={blockType}
@@ -532,13 +536,7 @@ export default function CommunityOverlaySettings({
         localDirty={localDirty}
         hasUnpublishedChanges={themeState.has_unpublished_changes}
         busy={themeMutation?.blockType === blockType ? themeMutation.action : null}
-        previewUrl={scopedPreviewUrl}
-        previewMode={previewModes[blockType]}
         onChange={next => setDraftThemes(current => ({ ...current, [blockType]: next }))}
-        onPreviewModeChange={mode => {
-          clearPreviewAutoClose(blockType)
-          setPreviewModes(current => ({ ...current, [blockType]: mode }))
-        }}
         onSave={() => void handleSaveTheme(blockType)}
         onPublish={() => void handlePublishTheme(blockType)}
         onReset={() => void handleResetTheme(blockType)}
@@ -546,9 +544,33 @@ export default function CommunityOverlaySettings({
     )
   }
 
+  const renderThemePreview = (blockType: CommunityOverlayContentType) => {
+    const developmentSample = preview ? `&sample=${blockType}` : ''
+    const scopedPreviewUrl = overlayUrl
+      ? `${overlayUrl}&preview=1&block=${blockType}${developmentSample}`
+      : undefined
+    return (
+      <ThemePreview
+        contentType={blockType}
+        theme={draftThemes[blockType]}
+        livePlacement={themeStates[blockType]?.published.theme.placement}
+        previewUrl={scopedPreviewUrl}
+        previewMode={previewModes[blockType]}
+        onPreviewModeChange={mode => {
+          clearPreviewAutoClose(blockType)
+          setPreviewModes(current => ({ ...current, [blockType]: mode }))
+        }}
+      />
+    )
+  }
+
   return (
-    <PageMain className="w-full min-w-0">
-      <PageHeader title="Live Display" description="設定直播畫面要播放的內容與 OBS 連線。" />
+    <PageMain className="h-full w-full min-w-0 xl:overflow-y-hidden">
+      <PageHeader
+        title="Live Display"
+        description="設定直播內容與 OBS 連線。"
+        className="shrink-0"
+      />
 
       {loading ? (
         <SettingsSkeleton />
@@ -564,82 +586,20 @@ export default function CommunityOverlaySettings({
           </AlertDescription>
         </Alert>
       ) : (
-        <div className="flex min-w-0 flex-col gap-section">
-          <section aria-labelledby="live-display-connection-title" className="min-w-0">
-            <SlideUp>
-              <Card className="min-w-0">
-                <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
-                  <CardTitle className="flex flex-wrap items-center gap-2">
-                    <h2 id="live-display-connection-title">OBS 連線</h2>
-                    <Badge variant={access.enabled ? 'default' : 'outline'}>
-                      {access.enabled ? '已啟用' : '已停用'}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    加入直播畫面：把此連結加入 OBS Browser Source；建議 1920 ×
-                    1080、透明背景，通常只需設定一次。
-                  </CardDescription>
-                  <CardAction>
-                    <Switch
-                      aria-label="啟用直播畫面顯示"
-                      checked={access.enabled}
-                      disabled={mutation !== null}
-                      onCheckedChange={value => void handleEnabledChange(value)}
-                    />
-                  </CardAction>
-                </CardHeader>
-                <CardContent className="flex min-w-0 flex-col gap-card border-t pt-card sm:flex-row sm:items-center">
-                  <OverlayUrlBlock
-                    url={overlayUrl}
-                    copyLabel="點擊以複製 OBS 顯示連結"
-                    openLabel="開啟 OBS 顯示畫面"
-                  />
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        disabled={mutation !== null}
-                      >
-                        {mutation === 'key' ? (
-                          <Spinner className="mr-1.5" />
-                        ) : (
-                          <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
-                        )}
-                        更新連結
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => void handleRotateKey()}>
-                          確認更新
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </CardContent>
-              </Card>
-            </SlideUp>
-          </section>
-
+        <div
+          data-layout="live-display-workspace"
+          className="grid grid-cols-1 gap-section xl:min-h-0 xl:flex-1 xl:grid-cols-12 xl:grid-rows-[minmax(0,1fr)] xl:items-stretch xl:overflow-hidden"
+        >
           <section
             aria-labelledby="live-display-content-title"
-            className="flex min-w-0 flex-col gap-element"
+            data-layout-column="content"
+            data-layout-scroll="content"
+            className="flex min-w-0 flex-col gap-element xl:col-span-8 xl:h-full xl:min-h-0 xl:overflow-y-auto xl:overscroll-contain"
           >
-            <SettingsSectionHeader
-              id="live-display-content-title"
-              title="顯示內容"
-              description="管理直播畫面要播放的內容；每項都能直接測試，不會寫入正式紀錄。"
-            />
-            <SlideUp>
+            <h2 id="live-display-content-title" className="sr-only">
+              顯示內容
+            </h2>
+            <SlideUp data-layout-start="cards">
               <div className="flex min-w-0 flex-col gap-section">
                 <CheckinBlockCard
                   config={checkinConfig}
@@ -654,9 +614,9 @@ export default function CommunityOverlaySettings({
                     getThemePresentation('checkin').localDirty ||
                     Boolean(themeStates.checkin?.has_unpublished_changes)
                   }
-                  onOpenChange={open => setExpandedBlock(open ? 'checkin' : null)}
+                  onOpenChange={open => handleBlockOpenChange('checkin', open)}
                   onRetry={() => void loadCheckinTrigger()}
-                  onTest={() => void handlePreview('checkin')}
+                  onTest={() => handleBlockPreview('checkin')}
                 >
                   {renderThemeEditor('checkin')}
                 </CheckinBlockCard>
@@ -669,14 +629,111 @@ export default function CommunityOverlaySettings({
                     getThemePresentation('tarot').localDirty ||
                     Boolean(themeStates.tarot?.has_unpublished_changes)
                   }
-                  onOpenChange={open => setExpandedBlock(open ? 'tarot' : null)}
-                  onTest={() => void handlePreview('tarot')}
+                  onOpenChange={open => handleBlockOpenChange('tarot', open)}
+                  onTest={() => handleBlockPreview('tarot')}
                 >
                   {renderThemeEditor('tarot')}
                 </TarotBlockCard>
               </div>
             </SlideUp>
           </section>
+
+          <div
+            data-layout-column="support"
+            data-layout-position="fixed"
+            className="flex min-w-0 flex-col gap-section xl:sticky xl:top-0 xl:col-span-4 xl:max-h-full xl:self-start xl:overflow-y-auto xl:overscroll-contain"
+          >
+            <section
+              aria-labelledby="live-display-connection-title"
+              data-layout-panel="connection"
+              className="min-w-0"
+            >
+              <SlideUp data-layout-start="connection">
+                <Card className="min-w-0">
+                  <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      <h2 id="live-display-connection-title">OBS 連線</h2>
+                      <Badge variant={access.enabled ? 'default' : 'outline'}>
+                        {access.enabled ? '已啟用' : '已停用'}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>
+                      將連結加入 OBS Browser Source，設定為 1920 × 1080、透明背景。
+                    </CardDescription>
+                    <CardAction>
+                      <Switch
+                        aria-label="啟用直播畫面顯示"
+                        checked={access.enabled}
+                        disabled={mutation !== null}
+                        onCheckedChange={value => void handleEnabledChange(value)}
+                      />
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent className="flex min-w-0 flex-col gap-card border-t pt-card">
+                    <OverlayUrlBlock
+                      url={overlayUrl}
+                      copyLabel="點擊以複製 OBS 顯示連結"
+                      openLabel="開啟 OBS 顯示畫面"
+                    />
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="self-start"
+                          disabled={mutation !== null}
+                        >
+                          {mutation === 'key' ? (
+                            <Spinner className="mr-1.5" />
+                          ) : (
+                            <Icon icon="fa-solid fa-key" className="mr-1.5 text-label" />
+                          )}
+                          更新連結
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => void handleRotateKey()}>
+                            確認更新
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </CardContent>
+                </Card>
+              </SlideUp>
+            </section>
+
+            <section
+              aria-labelledby="live-display-preview-title"
+              data-layout-panel="preview"
+              className="min-w-0"
+            >
+              <SlideUp>
+                <Card className="min-w-0">
+                  <CardHeader>
+                    <CardTitle className="flex flex-wrap items-center gap-2">
+                      <h2 id="live-display-preview-title">預覽</h2>
+                      <Badge variant="secondary">
+                        {selectedBlock === 'checkin' ? '每日簽到' : '每日塔羅'}
+                      </Badge>
+                    </CardTitle>
+                    <CardDescription>即時查看草稿與測試播放。</CardDescription>
+                  </CardHeader>
+                  <CardContent className="min-w-0 border-t pt-card">
+                    {renderThemePreview(selectedBlock)}
+                  </CardContent>
+                </Card>
+              </SlideUp>
+            </section>
+          </div>
         </div>
       )}
     </PageMain>

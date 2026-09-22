@@ -46,7 +46,7 @@ export function TarotBlockCard({
             <Badge variant="secondary">牌卡</Badge>
             <Badge variant={themeChanged ? 'secondary' : 'outline'}>{themeStatus}</Badge>
           </CardTitle>
-          <CardDescription>觀眾抽牌時，直播畫面只播放牌面；完整解讀回覆在聊天室。</CardDescription>
+          <CardDescription>直播顯示牌面，完整解讀回覆在聊天室。</CardDescription>
           <CardAction className="col-start-1 row-span-1 row-start-3 flex flex-wrap items-center justify-start gap-2 justify-self-stretch sm:col-start-2 sm:row-span-2 sm:row-start-1 sm:justify-end sm:justify-self-end">
             <Button
               size="sm"
@@ -85,17 +85,17 @@ export function TarotBlockCard({
               {
                 label: '聊天指令',
                 value: '!塔羅 [主題]',
-                note: '未填為綜合；另有感情、事業、財運',
+                note: '未填為綜合；可選感情、事業、財運',
               },
               {
                 label: '主題規則',
-                value: '每個主題每天固定一張',
-                note: '同一主題重查結果不變',
+                value: '每個主題每天一張',
+                note: '同主題重查結果不變',
               },
               {
                 label: '牌面來源',
-                value: '本地版本化牌組',
-                note: '替換牌組不影響歷史事件',
+                value: '內建牌組',
+                note: '更新不影響歷史紀錄',
               },
             ]}
           />
