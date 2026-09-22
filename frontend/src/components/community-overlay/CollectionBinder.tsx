@@ -51,7 +51,7 @@ function SafeCardArtwork({ name, urls }: { name: string; urls: Array<string | nu
         role="img"
         aria-label={`${name}圖片尚未提供`}
       >
-        <span aria-hidden="true">◇</span>
+        <span className={styles.placeholderMark} aria-hidden="true" />
       </span>
     )
   }
@@ -170,7 +170,8 @@ export function CollectionBinder({
     const targetRect = targetElement.getBoundingClientRect()
     if (originRect.width <= 0 || originRect.height <= 0 || targetRect.width <= 0) return
 
-    const next = calculateCardFlightGeometry(bookRect, originRect, targetRect)
+    const viewportScale = bookElement.offsetWidth > 0 ? bookRect.width / bookElement.offsetWidth : 1
+    const next = calculateCardFlightGeometry(bookRect, originRect, targetRect, viewportScale)
     setFlightGeometry(previous => {
       if (
         previous &&
@@ -300,7 +301,12 @@ export function CollectionBinder({
                   }}
                   aria-hidden="true"
                 />
-                <span ref={cardOriginRef} className={styles.cardOrigin} aria-hidden="true" />
+                <span
+                  ref={cardOriginRef}
+                  data-testid="binder-card-origin"
+                  className={styles.cardOrigin}
+                  aria-hidden="true"
+                />
               </div>
 
               <div className={styles.result}>
@@ -416,8 +422,10 @@ export function CollectionBinder({
                 />
                 <CardHologram animated={!reveal.disabled && rarityEffect} />
               </div>
-              <strong className={styles.cardName}>{card.name}</strong>
-              <span className={styles.setName}>{collection.set.name}</span>
+              <div className={styles.cardCaption}>
+                <strong className={styles.cardName}>{card.name}</strong>
+                <span className={styles.setName}>{collection.set.name}</span>
+              </div>
             </div>
           </motion.div>
         </motion.article>

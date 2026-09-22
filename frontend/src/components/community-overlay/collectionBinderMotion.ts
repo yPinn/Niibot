@@ -23,25 +23,27 @@ export interface CardFlightGeometry {
 export function calculateCardFlightGeometry(
   book: BinderRect,
   origin: BinderRect,
-  target: BinderRect
+  target: BinderRect,
+  viewportScale = 1
 ): CardFlightGeometry {
+  const normalizedScale = Number.isFinite(viewportScale) && viewportScale > 0 ? viewportScale : 1
   const originCenterX = origin.left + origin.width / 2
   const originCenterY = origin.top + origin.height / 2
   const targetCenterX = target.left + target.width / 2
   const targetCenterY = target.top + target.height / 2
-  const scale =
+  const insertionScale =
     origin.width > 0 && origin.height > 0
       ? Math.min(target.width / origin.width, target.height / origin.height)
       : 1
 
   return {
-    left: origin.left - book.left,
-    top: origin.top - book.top,
-    width: origin.width,
-    height: origin.height,
-    x: targetCenterX - originCenterX,
-    y: targetCenterY - originCenterY,
-    scale,
+    left: (origin.left - book.left) / normalizedScale,
+    top: (origin.top - book.top) / normalizedScale,
+    width: origin.width / normalizedScale,
+    height: origin.height / normalizedScale,
+    x: (targetCenterX - originCenterX) / normalizedScale,
+    y: (targetCenterY - originCenterY) / normalizedScale,
+    scale: insertionScale,
   }
 }
 
