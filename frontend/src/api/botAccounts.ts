@@ -1,4 +1,4 @@
-import { apiCache } from '@/lib/apiCache'
+import { apiCache, CACHE_KEYS } from '@/lib/apiCache'
 
 import { API_ENDPOINTS, apiFetch } from './config'
 import { parseApiError } from './errors'
@@ -6,6 +6,41 @@ import { parseApiError } from './errors'
 export type BotInviteState = 'pending' | 'authorized' | 'declined' | 'expired'
 export type TwitchAuthorizationStatus =
   'valid' | 'requires_reauthorization' | 'temporarily_unavailable' | 'not_checked'
+
+export type TwitchCapabilityKey =
+  | 'bot_chat'
+  | 'broadcaster_chat'
+  | 'bot_emotes'
+  | 'bot_subscription_status'
+  | 'bot_whispers'
+  | 'followers'
+  | 'chatters'
+  | 'announcements'
+  | 'shoutouts'
+  | 'banned_users'
+  | 'channel_points'
+  | 'subscriptions'
+  | 'moderator_management'
+  | 'vip_management'
+  | 'channel_info'
+  | 'cheers'
+  | 'moderator_sync_realtime'
+
+export interface TwitchCapability {
+  key: TwitchCapabilityKey
+  label: string
+  credential: 'bot' | 'broadcaster'
+  available: boolean
+  missing_scopes: string[]
+  core: boolean
+}
+
+export interface TwitchCapabilitySnapshot {
+  broadcaster_status: TwitchAuthorizationStatus
+  bot_status: TwitchAuthorizationStatus
+  bot_user_id: string
+  capabilities: TwitchCapability[]
+}
 
 export interface AuthorizationHealth {
   status: TwitchAuthorizationStatus
@@ -157,6 +192,20 @@ export function getBroadcasterAuthorization(channelId: string): Promise<Broadcas
   return apiFetch(API_ENDPOINTS.tenants.broadcasterAuthorization(channelId), {
     credentials: 'include',
   }).then(response => readJson(response, '載入 Twitch 授權失敗'))
+}
+
+export function getTwitchCapabilities(
+  channelId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<TwitchCapabilitySnapshot> {
+  return apiCache.fetch(
+    CACHE_KEYS.TWITCH_CAPABILITIES(channelId),
+    () =>
+      apiFetch(API_ENDPOINTS.tenants.twitchCapabilities(channelId), {
+        credentials: 'include',
+      }).then(response => readJson(response, '載入 Twitch 功能授權失敗')),
+    { ttl: 60_000, forceRefresh: options?.forceRefresh }
+  )
 }
 
 export function checkBroadcasterAuthorization(channelId: string): Promise<AuthorizationHealth> {

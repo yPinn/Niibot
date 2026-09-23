@@ -12,11 +12,13 @@ import { getVipState, setVipRulesEnabled, type VipRewardRule } from '@/api/vip'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { SlideUp } from '@/components/primitives'
+import { TwitchCapabilityAlert } from '@/components/TwitchCapabilityAlert'
 import { Alert, AlertDescription, AlertTitle, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 import { applyDir } from '@/lib/sort'
 import { toastApiError } from '@/lib/toast-error'
 
@@ -33,6 +35,9 @@ const ACTION_TYPE_ORDER = new Map<string, number>(
 export default function ChannelPoints() {
   useDocumentTitle('Channel Points')
   const { isAffiliate } = useAuth()
+  const { loading: capabilitiesLoading, capability, isAvailable } = useTwitchCapabilities()
+  const channelPointsAvailable = isAvailable('channel_points')
+  const vipAvailable = isAvailable('vip_management')
   const [redemptions, setRedemptions] = useState<RedemptionConfig[]>([])
   const [twitchRewards, setTwitchRewards] = useState<TwitchReward[]>([])
   const [redemptionLoading, setRedemptionLoading] = useState(true)
@@ -45,12 +50,17 @@ export default function ChannelPoints() {
   const sort = useSortState<ChannelPointSortKey>('action_type')
 
   const loadChannelPoints = useCallback(async () => {
+    if (capabilitiesLoading) return
     setLoadFailed(false)
     setRedemptionLoading(true)
     setRewardsLoading(true)
     const configsPromise = getRedemptionConfigs()
-    const rewardsPromise = isAffiliate ? getTwitchRewards() : Promise.resolve([] as TwitchReward[])
-    const vipStatePromise = isAffiliate ? getVipState() : Promise.resolve(null)
+    const rewardsPromise =
+      isAffiliate && channelPointsAvailable
+        ? getTwitchRewards()
+        : Promise.resolve([] as TwitchReward[])
+    const vipStatePromise =
+      isAffiliate && channelPointsAvailable && vipAvailable ? getVipState() : Promise.resolve(null)
 
     try {
       const configs = await configsPromise
@@ -76,7 +86,7 @@ export default function ChannelPoints() {
     } catch {
       setLoadFailed(true)
     }
-  }, [isAffiliate])
+  }, [capabilitiesLoading, channelPointsAvailable, isAffiliate, vipAvailable])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -171,6 +181,12 @@ export default function ChannelPoints() {
         description="管理 Twitch 自訂獎勵與 Niibot 功能的對應關係。"
       />
 
+      <TwitchCapabilityAlert
+        capabilities={[capability('channel_points'), capability('vip_management')].filter(
+          item => item !== null
+        )}
+      />
+
       {loadFailed && (
         <Alert variant="destructive">
           <AlertTitle>部分頻道點數設定載入失敗</AlertTitle>
@@ -191,6 +207,8 @@ export default function ChannelPoints() {
           rewardsLoading={rewardsLoading}
           sort={sort}
           isAffiliate={isAffiliate}
+          channelPointsAvailable={channelPointsAvailable}
+          vipAvailable={vipAvailable}
           onToggle={handleToggle}
           onRewardSelect={(redemption, rewardId) => void handleRewardSelect(redemption, rewardId)}
           onEditCheckinSettings={() => setCheckinSettingsOpen(true)}

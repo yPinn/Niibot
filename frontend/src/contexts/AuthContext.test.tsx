@@ -276,6 +276,7 @@ describe('AuthProvider reauth-required interceptor', () => {
 
     await waitFor(() =>
       expect(mockToast.error).toHaveBeenLastCalledWith('無法啟動 Twitch 登入', {
+        id: 'twitch-oauth-start-failed',
         description: '登入服務暫時無法使用，請稍後再試',
       })
     )

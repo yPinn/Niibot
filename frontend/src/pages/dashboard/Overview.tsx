@@ -14,10 +14,13 @@ import TwitchPlayer from '@/components/TwitchPlayer'
 import { Skeleton } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 
 export default function Dashboard() {
   useDocumentTitle('Dashboard')
   const { user, isInitialized, channels } = useAuth()
+  const { loading: capabilitiesLoading, isAvailable } = useTwitchCapabilities()
+  const moderatorManagementAvailable = isAvailable('moderator_management')
 
   const defaultChannel = useMemo(() => {
     const fallback = user?.name ?? 'niibot_' // dev fallback — user is always set in production
@@ -33,14 +36,14 @@ export default function Dashboard() {
   const [showModDialog, setShowModDialog] = useState(false)
 
   useEffect(() => {
-    if (!isInitialized || !user) return
+    if (!isInitialized || !user || capabilitiesLoading || !moderatorManagementAvailable) return
     if (user.name.toLowerCase() === BOT_USERNAME) return
     getBotModStatus()
       .then(res => {
         if (res.ok && !res.data.is_moderator) setShowModDialog(true)
       })
       .catch(() => {})
-  }, [isInitialized, user])
+  }, [capabilitiesLoading, isInitialized, moderatorManagementAvailable, user])
 
   const fetchStats = useCallback(async () => {
     if (!user) return

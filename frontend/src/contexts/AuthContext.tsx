@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const startReauthorization = () => {
       void openTwitchOAuth().catch(error => {
         toast.error('無法啟動 Twitch 登入', {
+          id: 'twitch-oauth-start-failed',
           description: errorMessage(error, '登入服務暫時無法使用，請稍後再試'),
         })
       })
@@ -87,7 +88,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const handleReauthRequired = () => {
       toast.error('需要重新授權 Twitch 帳號', {
-        description: '此功能需要額外的 Twitch 授權，請重新登入以繼續',
+        id: 'twitch-credential-reauth',
+        description: '目前的 Twitch 授權已失效，請重新授權後繼續',
         action: { label: '重新授權', onClick: startReauthorization },
         duration: 12000,
       })

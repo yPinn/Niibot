@@ -11,6 +11,7 @@ import {
   getBotInviteStatus,
   getBroadcasterAuthorization,
   getPublicBotInvite,
+  getTwitchCapabilities,
   listBotAccounts,
   unlinkBotAccount,
 } from './botAccounts'
@@ -146,5 +147,33 @@ describe('bot account APIs', () => {
         headers: { 'X-Niibot-Action': 'twitch-authorization-management' },
       })
     }
+  })
+
+  it('loads a scope-safe capability snapshot for one tenant', async () => {
+    const payload = {
+      broadcaster_status: 'valid',
+      bot_status: 'valid',
+      bot_user_id: 'bot-1',
+      capabilities: [
+        {
+          key: 'channel_points',
+          label: 'Channel Points',
+          credential: 'broadcaster',
+          available: false,
+          missing_scopes: ['channel:read:redemptions'],
+          core: false,
+        },
+      ],
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(payload))
+
+    await expect(getTwitchCapabilities('channel/a', { forceRefresh: true })).resolves.toEqual(
+      payload
+    )
+
+    expect(requestUrl(fetchMock.mock.calls[0][0]).pathname).toBe(
+      '/api/tenants/channel%2Fa/twitch-capabilities'
+    )
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
   })
 })

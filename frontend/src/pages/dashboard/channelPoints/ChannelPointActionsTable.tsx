@@ -1,6 +1,7 @@
 import type { RedemptionConfig, TwitchReward } from '@/api/events'
 import type { VipRewardRule } from '@/api/vip'
 import { AffiliateLockOverlay } from '@/components/AffiliateLockOverlay'
+import { LockOverlay } from '@/components/LockOverlay'
 import { SortableHead } from '@/components/SortableHead'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
 import { TableShell } from '@/components/TableShell'
@@ -50,6 +51,8 @@ interface ChannelPointActionsTableProps {
   rewardsLoading: boolean
   sort: SortState<ChannelPointSortKey>
   isAffiliate: boolean
+  channelPointsAvailable: boolean
+  vipAvailable: boolean
   onToggle: (redemption: RedemptionConfig) => void
   onRewardSelect: (redemption: RedemptionConfig, rewardId: string) => void
   onEditCheckinSettings: () => void
@@ -66,6 +69,8 @@ export function ChannelPointActionsTable({
   rewardsLoading,
   sort,
   isAffiliate,
+  channelPointsAvailable,
+  vipAvailable,
   onToggle,
   onRewardSelect,
   onEditCheckinSettings,
@@ -81,6 +86,14 @@ export function ChannelPointActionsTable({
       {!isAffiliate && (
         <AffiliateLockOverlay
           message="取得 Twitch 實況盟友或合作夥伴資格後即可設定頻道點數動作"
+          className="rounded-[inherit]"
+        />
+      )}
+      {isAffiliate && !channelPointsAvailable && (
+        <LockOverlay
+          icon="fa-solid fa-lock"
+          title="需要 Twitch 功能授權"
+          description="更新授權後即可管理 Channel Points；其他功能仍可照常使用。"
           className="rounded-[inherit]"
         />
       )}
@@ -154,6 +167,7 @@ export function ChannelPointActionsTable({
                           </span>
                         ) : (
                           <Select
+                            disabled={!channelPointsAvailable}
                             value={
                               redemption.reward_id ??
                               twitchRewards.find(reward => reward.title === redemption.reward_name)
@@ -205,8 +219,8 @@ export function ChannelPointActionsTable({
                           }
                           disabled={
                             redemption.action_type === 'vip'
-                              ? vipRules.length === 0
-                              : !redemption.reward_id
+                              ? vipRules.length === 0 || !vipAvailable
+                              : !redemption.reward_id || !channelPointsAvailable
                           }
                           onCheckedChange={() =>
                             redemption.action_type === 'vip' ? onToggleVip() : onToggle(redemption)
@@ -220,6 +234,7 @@ export function ChannelPointActionsTable({
                             size="sm"
                             aria-label={`編輯${actionLabel}設定`}
                             onClick={onEditCheckinSettings}
+                            disabled={!channelPointsAvailable}
                           >
                             設定
                           </Button>
@@ -230,6 +245,7 @@ export function ChannelPointActionsTable({
                             size="sm"
                             aria-label={`編輯${actionLabel}設定`}
                             onClick={onEditFirstSettings}
+                            disabled={!channelPointsAvailable}
                           >
                             設定
                           </Button>
@@ -240,6 +256,7 @@ export function ChannelPointActionsTable({
                             size="sm"
                             aria-label={`管理${actionLabel}設定`}
                             onClick={onEditVipSettings}
+                            disabled={!channelPointsAvailable || !vipAvailable}
                           >
                             管理
                           </Button>

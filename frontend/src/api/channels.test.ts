@@ -17,16 +17,30 @@ vi.mock('@/api/config', () => ({
 }))
 
 vi.mock('@/lib/apiCache', () => ({
-  apiCache: { clear: vi.fn(), fetch: vi.fn(), get: vi.fn(), set: vi.fn(), invalidate: vi.fn() },
-  CACHE_KEYS: { CHANNELS: 'channels:twitch-monitored' },
+  apiCache: {
+    clear: vi.fn(),
+    delete: vi.fn(),
+    fetch: vi.fn(),
+    get: vi.fn(),
+    set: vi.fn(),
+    invalidate: vi.fn(),
+  },
+  CACHE_KEYS: {
+    CHANNELS: 'channels:twitch-monitored',
+    BOT_MOD_STATUS: 'channels:bot-mod-status',
+  },
 }))
 
 import { getBotModStatus, grantBotMod } from '@/api/channels'
 import { apiFetch } from '@/api/config'
+import { apiCache } from '@/lib/apiCache'
 
 const mockApiFetch = apiFetch as ReturnType<typeof vi.fn>
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(apiCache.fetch).mockImplementation((_key, fetcher) => fetcher())
+})
 afterEach(() => vi.restoreAllMocks())
 
 // ---------------------------------------------------------------------------
@@ -62,6 +76,11 @@ describe('getBotModStatus', () => {
     expect(mockApiFetch).toHaveBeenCalledWith(
       '/api/channels/twitch/mod-status',
       expect.objectContaining({ credentials: 'include' })
+    )
+    expect(apiCache.fetch).toHaveBeenCalledWith(
+      'channels:bot-mod-status',
+      expect.any(Function),
+      expect.objectContaining({ ttl: 60_000 })
     )
   })
 })
@@ -101,5 +120,6 @@ describe('grantBotMod', () => {
       '/api/channels/twitch/grant-mod',
       expect.objectContaining({ method: 'POST', credentials: 'include' })
     )
+    expect(apiCache.delete).toHaveBeenCalledWith('channels:bot-mod-status')
   })
 })

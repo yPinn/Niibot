@@ -16,10 +16,13 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { useServiceStatus } from '@/contexts/ServiceStatusContext'
 import { useGrantMod } from '@/hooks/useGrantMod'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 
 export function OnlineDropdown() {
   const { user, isInitialized } = useAuth()
   const { twitch: botStatus } = useServiceStatus()
+  const { loading: capabilitiesLoading, isAvailable } = useTwitchCapabilities()
+  const moderatorManagementAvailable = isAvailable('moderator_management')
   const [myChannelSubscribed, setMyChannelSubscribed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isMod, setIsMod] = useState<boolean | null>(null)
@@ -39,19 +42,22 @@ export function OnlineDropdown() {
   const fetchMyStatus = useCallback(async () => {
     if (!user) return
     try {
-      const [channelData, modRes] = await Promise.all([getTwitchChannelStatus(), getBotModStatus()])
+      const [channelData, modRes] = await Promise.all([
+        getTwitchChannelStatus(),
+        moderatorManagementAvailable ? getBotModStatus() : Promise.resolve(null),
+      ])
       if (channelData) setMyChannelSubscribed(channelData.subscribed)
-      if (modRes.ok) setIsMod(modRes.data.is_moderator)
+      if (modRes?.ok) setIsMod(modRes.data.is_moderator)
     } catch (error) {
       if (import.meta.env.DEV) console.error('Failed to fetch status:', error)
     }
-  }, [user])
+  }, [moderatorManagementAvailable, user])
 
   useEffect(() => {
-    if (!isInitialized || !user || hasLoadedRef.current) return
+    if (!isInitialized || !user || capabilitiesLoading || hasLoadedRef.current) return
     hasLoadedRef.current = true
     fetchMyStatus()
-  }, [isInitialized, user, fetchMyStatus])
+  }, [capabilitiesLoading, isInitialized, user, fetchMyStatus])
 
   const toggleMyChannelSubscription = async () => {
     if (!user) return
@@ -99,13 +105,21 @@ export function OnlineDropdown() {
       <DropdownMenuContent align="end" className="w-(--radix-dropdown-menu-trigger-width)">
         <DropdownMenuItem
           onClick={handleGrantMod}
-          disabled={grantingMod || isMod === true || !botStatus.online}
+          disabled={
+            grantingMod || isMod === true || !botStatus.online || !moderatorManagementAvailable
+          }
         >
           <Icon
             icon={grantingMod ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-sword'}
             wrapperClassName={isMod ? 'text-status-success' : ''}
           />
-          {grantingMod ? '授予中…' : isMod ? '已是管理員' : '授予 Mod'}
+          {grantingMod
+            ? '授予中…'
+            : isMod
+              ? '已是管理員'
+              : moderatorManagementAvailable
+                ? '授予 Mod'
+                : 'MOD 授權未開啟'}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

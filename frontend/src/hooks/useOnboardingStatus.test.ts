@@ -1,6 +1,10 @@
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, type MockedFunction, vi } from 'vitest'
 
+const capabilityMocks = vi.hoisted(() => ({
+  isAvailable: vi.fn(() => true),
+}))
+
 import type { ModStatusResult } from '@/api/channels'
 import { getBotModStatus } from '@/api/channels'
 import type { CommandConfig } from '@/api/commands'
@@ -19,6 +23,16 @@ vi.mock('@/api/triggers')
 vi.mock('@/api/events')
 vi.mock('@/api/timers')
 vi.mock('@/contexts/AuthContext')
+vi.mock('@/hooks/useTwitchCapabilities', () => ({
+  useTwitchCapabilities: () => ({
+    loading: false,
+    error: false,
+    snapshot: null,
+    capability: vi.fn(),
+    refresh: vi.fn(),
+    ...capabilityMocks,
+  }),
+}))
 
 const mockUseAuth = useAuth as MockedFunction<typeof useAuth>
 const mockGetBotModStatus = getBotModStatus as MockedFunction<typeof getBotModStatus>
@@ -86,6 +100,7 @@ const CUSTOM_TIMER: TimerConfig = {
 describe('useOnboardingStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    capabilityMocks.isAvailable.mockReturnValue(true)
   })
 
   it('aggregates every source as done when everything is set up', async () => {
@@ -150,5 +165,20 @@ describe('useOnboardingStatus', () => {
     expect(mockGetTriggerConfigs).not.toHaveBeenCalled()
     expect(mockGetEventConfigs).not.toHaveBeenCalled()
     expect(mockGetTimerConfigs).not.toHaveBeenCalled()
+  })
+
+  it('does not probe MOD relation when the optional MOD scope is locked', async () => {
+    mockUseAuth.mockReturnValue(authValue())
+    capabilityMocks.isAvailable.mockReturnValue(false)
+    mockGetCommandConfigs.mockResolvedValue([])
+    mockGetTriggerConfigs.mockResolvedValue([])
+    mockGetEventConfigs.mockResolvedValue([])
+    mockGetTimerConfigs.mockResolvedValue([])
+
+    const { result } = renderHook(() => useOnboardingStatus())
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.status.modDone).toBeNull()
+    expect(mockGetBotModStatus).not.toHaveBeenCalled()
   })
 })

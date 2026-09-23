@@ -114,6 +114,10 @@ export interface GrantModResponse {
 export type ModStatusResult = { ok: true; data: ModStatusResponse } | { ok: false; status: number }
 
 export async function getBotModStatus(): Promise<ModStatusResult> {
+  return apiCache.fetch(CACHE_KEYS.BOT_MOD_STATUS, fetchBotModStatus, { ttl: 60_000 })
+}
+
+async function fetchBotModStatus(): Promise<ModStatusResult> {
   try {
     const response = await apiFetch(API_ENDPOINTS.channels.twitch.modStatus, {
       credentials: 'include',
@@ -131,7 +135,9 @@ export async function grantBotMod(): Promise<GrantModResponse> {
     credentials: 'include',
   })
   if (!response.ok) throw await parseApiError(response, '授予 Bot 板主失敗')
-  return response.json()
+  const result = (await response.json()) as GrantModResponse
+  apiCache.delete(CACHE_KEYS.BOT_MOD_STATUS)
+  return result
 }
 
 export async function toggleTwitchChannel(

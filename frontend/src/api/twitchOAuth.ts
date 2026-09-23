@@ -26,6 +26,16 @@ export async function getTwitchOAuthUrl(): Promise<string> {
 // Using apiFetch() would trigger the 401 redirect loop on the login page itself.
 
 export async function openTwitchOAuth(): Promise<void> {
-  const oauthUrl = await getTwitchOAuthUrl()
-  window.location.href = oauthUrl
+  if (!oauthStartPromise) {
+    oauthStartPromise = getTwitchOAuthUrl()
+      .then(oauthUrl => {
+        window.location.href = oauthUrl
+      })
+      .finally(() => {
+        oauthStartPromise = null
+      })
+  }
+  return oauthStartPromise
 }
+
+let oauthStartPromise: Promise<void> | null = null

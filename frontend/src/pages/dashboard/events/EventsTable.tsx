@@ -1,3 +1,4 @@
+import type { TwitchCapabilityKey } from '@/api/botAccounts'
 import type { EventConfig, EventDefinition } from '@/api/events'
 import { Icon, SlideUp } from '@/components/primitives'
 import { SortableHead } from '@/components/SortableHead'
@@ -33,6 +34,7 @@ interface EventsTableProps {
   error: string | null
   sort: SortState<EventSortKey>
   isAffiliate: boolean
+  isCapabilityAvailable: (key: TwitchCapabilityKey) => boolean
   onToggle: (event: EventConfig) => void
   onEdit: (event: EventConfig) => void
 }
@@ -44,6 +46,7 @@ export function EventsTable({
   error,
   sort,
   isAffiliate,
+  isCapabilityAvailable,
   onToggle,
   onEdit,
 }: EventsTableProps) {
@@ -96,7 +99,12 @@ export function EventsTable({
                 {events.map(event => {
                   const defn = catalog.get(event.event_type)
                   const name = defn?.display_name ?? event.event_type
-                  const locked = !isAffiliate && (defn?.requires_affiliate ?? false)
+                  const affiliateLocked = !isAffiliate && (defn?.requires_affiliate ?? false)
+                  const requiredCapability = defn?.capability_key
+                  const scopeLocked = Boolean(
+                    requiredCapability && !isCapabilityAvailable(requiredCapability)
+                  )
+                  const locked = affiliateLocked || scopeLocked
                   return (
                     <TableRow key={event.event_type} className={locked ? 'opacity-50' : ''}>
                       <TableCell className="font-medium">
@@ -111,8 +119,10 @@ export function EventsTable({
                         )}
                       </TableCell>
                       <TableCell className="hidden md:table-cell max-w-0 truncate font-mono text-label">
-                        {locked ? (
+                        {affiliateLocked ? (
                           <span className="text-muted-foreground">需要實況盟友資格</span>
+                        ) : scopeLocked ? (
+                          <span className="text-muted-foreground">需要更新 Twitch 授權</span>
                         ) : (
                           event.message_template
                         )}
