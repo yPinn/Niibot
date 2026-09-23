@@ -61,10 +61,15 @@ def _build_checkin_preview_inventory(
     *, total_days: int, copy_count: int, unique_cards: int
 ) -> list[dict[str, object]]:
     inventory: list[dict[str, object]] = []
+    distributed_copies = copy_count + max(0, unique_cards - 1)
+    final_card_extra_copies = max(0, total_days - distributed_copies)
     for index, (key, name, portrait_url) in enumerate(
         _CHECKIN_PREVIEW_CARDS[:unique_cards],
         start=1,
     ):
+        card_copy_count = copy_count if index == 1 else 1
+        if index == unique_cards:
+            card_copy_count += final_card_extra_copies
         inventory.append(
             {
                 "card": {
@@ -80,14 +85,8 @@ def _build_checkin_preview_inventory(
                     },
                 },
                 "rarity": dict(_CHECKIN_PREVIEW_RARITY),
-                "copy_count": copy_count if index == 1 else 1,
+                "copy_count": card_copy_count,
             }
-        )
-
-    distributed_copies = copy_count + max(0, unique_cards - 1)
-    if inventory and total_days > distributed_copies:
-        inventory[-1]["copy_count"] = int(inventory[-1]["copy_count"]) + (
-            total_days - distributed_copies
         )
     return inventory
 
