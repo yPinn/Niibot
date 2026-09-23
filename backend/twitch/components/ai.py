@@ -60,6 +60,11 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _CHAT_FILTER_PATH = DATA_DIR / "chat_filter.json"
 
+# Groq tracks rate limits per (account, model), not per account, so this second
+# free model gets its own independent RPM/TPM/RPD bucket on the same API key
+# instead of competing with the primary model configured via GROQ_MODEL.
+_GROQ_SECONDARY_MODEL = "openai/gpt-oss-20b"
+
 _FALLBACK_SUBSTRINGS: list[str] = ["尼哥", "黑鬼"]
 _FALLBACK_PINYIN: list[str] = ["nige", "heigui"]
 
@@ -136,24 +141,36 @@ class AIComponent(BotComponent):
         )
 
         settings = get_settings()
+        # Guard against GROQ_MODEL being set to the same model as the secondary
+        # bucket, which would make both kinds hit one real Groq quota.
+        groq_secondary_config = (
+            ProviderConfig(settings.groq_api_key, _GROQ_SECONDARY_MODEL)
+            if settings.groq_model != _GROQ_SECONDARY_MODEL
+            else ProviderConfig()
+        )
         self.harness = build_assistant_harness(
             configs={
                 ProviderKind.GROQ: ProviderConfig(
                     settings.groq_api_key,
                     settings.groq_model,
                 ),
+                ProviderKind.GROQ_SECONDARY: groq_secondary_config,
                 ProviderKind.OPENROUTER: ProviderConfig(
                     settings.openrouter_api_key,
                     settings.openrouter_model,
                 ),
             },
-            provider_order=(ProviderKind.GROQ, ProviderKind.OPENROUTER),
+            provider_order=(
+                ProviderKind.GROQ,
+                ProviderKind.GROQ_SECONDARY,
+                ProviderKind.OPENROUTER,
+            ),
             provider_timeout_seconds=4.0,
             router_policy=RouterPolicy(
                 total_timeout_seconds=8.0,
                 per_attempt_timeout_seconds=4.0,
-                max_attempts=2,
-                failure_threshold=2,
+                max_attempts=3,
+                failure_threshold=3,
                 cooldown_seconds=60.0,
             ),
             prompt_budget=PromptBudget(
@@ -449,7 +466,7 @@ class AIComponent(BotComponent):
             LOGGER.info(
                 "AI request completed: request_id=%s outcome=%s provider=%s model=%s "
                 "attempts=%d fallbacks=%d latency_ms=%d input_tokens=%s "
-                "output_tokens=%s total_tokens=%s",
+                "output_tokens=%s total_tokens=%s cached_tokens=%s",
                 request_id,
                 response.output.outcome.value,
                 generation.provider,
@@ -460,6 +477,7 @@ class AIComponent(BotComponent):
                 usage.input_tokens if usage else None,
                 usage.output_tokens if usage else None,
                 usage.total_tokens if usage else None,
+                usage.cached_tokens if usage else None,
             )
 
             if response.output.outcome is AssistantOutcome.OK:

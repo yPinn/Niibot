@@ -52,22 +52,48 @@ class ProviderBudgetPolicy:
 def twitch_free_tier_budgets() -> dict[ProviderKind, ProviderBudgetPolicy]:
     """Reserve most direct-provider capacity for latency-sensitive Twitch chat.
 
-    The paired Discord allocation keeps the two single-process runtimes below
-    the September 2026 account limits with headroom. Horizontal replicas need
-    a distributed limiter before they can safely reuse these allocations.
+    Confirmed September 2026 account-wide free-tier ceilings (per-key, shared
+    across every process on the account) this split stays under:
+      - Groq openai/gpt-oss-120b, no billing on file: 30 RPM / 8,000 TPM /
+        1,000 RPD (https://console.groq.com/docs/rate-limits).
+      - OpenRouter ":free" models with $10+ lifetime credit purchased:
+        20 RPM (hard account cap, does not scale with API key count) /
+        1,000 RPD (https://openrouter.ai/docs/guides/best-practices... and
+        https://openrouter.zendesk.com/hc/en-us/articles/39501163636379).
+    The paired Discord allocation below takes the smaller remaining share so
+    the two single-process runtimes combined stay within ~85-95% of the above
+    with headroom for estimation slack and Groq prompt-cache misses (a cold
+    cache bills/limits the static prefix at full weight — see
+    https://console.groq.com/docs/prompt-caching). Horizontal replicas need a
+    distributed limiter before they can safely reuse these allocations. If
+    OpenRouter credit ever drops back under $10, its real cap falls to 50
+    RPD/20 RPM account-wide and this split must shrink accordingly.
+
+    GROQ_SECONDARY (openai/gpt-oss-20b on the same Groq account) is a second,
+    fully independent 30 RPM / 8,000 TPM / 1,000 RPD bucket — Groq tracks
+    limits per (account, model), not per account
+    (https://console.groq.com/docs/rate-limits). Discord does not use this
+    model, so Twitch can claim nearly the whole bucket.
     """
 
     return {
         ProviderKind.GROQ: ProviderBudgetPolicy(
-            requests_per_minute=20,
-            tokens_per_minute=5_600,
-            requests_per_day=700,
+            requests_per_minute=22,
+            tokens_per_minute=6_000,
+            requests_per_day=780,
+            max_queue_depth=32,
+            max_wait_seconds=0.15,
+        ),
+        ProviderKind.GROQ_SECONDARY: ProviderBudgetPolicy(
+            requests_per_minute=26,
+            tokens_per_minute=7_200,
+            requests_per_day=900,
             max_queue_depth=32,
             max_wait_seconds=0.15,
         ),
         ProviderKind.OPENROUTER: ProviderBudgetPolicy(
-            requests_per_minute=12,
-            requests_per_day=650,
+            requests_per_minute=13,
+            requests_per_day=750,
             max_queue_depth=32,
             max_wait_seconds=0.15,
         ),
@@ -75,13 +101,17 @@ def twitch_free_tier_budgets() -> dict[ProviderKind, ProviderBudgetPolicy]:
 
 
 def discord_free_tier_budgets() -> dict[ProviderKind, ProviderBudgetPolicy]:
-    """Return the smaller quota share for the less latency-sensitive runtime."""
+    """Return the smaller quota share for the less latency-sensitive runtime.
+
+    See twitch_free_tier_budgets() for the confirmed account-wide ceilings
+    this is split from.
+    """
 
     return {
         ProviderKind.GROQ: ProviderBudgetPolicy(
-            requests_per_minute=4,
-            tokens_per_minute=1_600,
-            requests_per_day=100,
+            requests_per_minute=5,
+            tokens_per_minute=1_700,
+            requests_per_day=120,
             max_queue_depth=16,
             max_wait_seconds=0.5,
         ),

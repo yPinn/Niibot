@@ -37,6 +37,7 @@ from shared.assistant.providers.registry import (
 def _spec(kind: ProviderKind = ProviderKind.GROQ):
     models = {
         ProviderKind.GROQ: "openai/gpt-oss-120b",
+        ProviderKind.GROQ_SECONDARY: "openai/gpt-oss-20b",
         ProviderKind.GEMINI: "gemini-3.5-flash",
         ProviderKind.OPENROUTER: "inclusionai/ling-3.0-flash-vl:free",
     }

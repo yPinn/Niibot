@@ -85,9 +85,10 @@ class TokenUsage:
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    cached_tokens: int | None = None  # subset of input_tokens served from provider cache
 
     def __post_init__(self) -> None:
-        counts = (self.input_tokens, self.output_tokens, self.total_tokens)
+        counts = (self.input_tokens, self.output_tokens, self.total_tokens, self.cached_tokens)
         if any(count is not None and count < 0 for count in counts):
             raise ValueError("token counts must not be negative")
 
