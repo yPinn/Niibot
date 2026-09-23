@@ -8,7 +8,11 @@ import {
   useTransform,
 } from 'motion/react'
 
-import type { CheckinCollectionSnapshot, CommunityOverlayTheme } from '@/api/communityOverlay'
+import type {
+  CheckinCollectionSnapshot,
+  CheckinOwnedCollectionCardSnapshot,
+  CommunityOverlayTheme,
+} from '@/api/communityOverlay'
 
 import { resolveSameOriginArtwork } from './artwork'
 import { CardHologram, getOverlayThemeStyle, MysticCardBackPattern } from './CardVisualPrimitives'
@@ -39,15 +43,38 @@ interface CollectionBinderProps {
   staticPreview?: boolean
 }
 
-function SafeCardArtwork({ name, urls }: { name: string; urls: Array<string | null> }) {
+const COLLECTION_PAGE_SIZE = 9
+
+function catalogPosition(number: string): number {
+  const parsed = /^\d+$/.test(number) ? Number.parseInt(number, 10) : 1
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1
+}
+
+function catalogNumber(position: number): string {
+  return String(position).padStart(3, '0')
+}
+
+function SafeCardArtwork({
+  name,
+  urls,
+  testId = 'card-artwork',
+  className = styles.artwork,
+  placeholderClassName = styles.artworkPlaceholder,
+}: {
+  name: string
+  urls: Array<string | null>
+  testId?: string
+  className?: string
+  placeholderClassName?: string
+}) {
   const artworkUrl = urls.map(url => resolveSameOriginArtwork(url)).find(Boolean) ?? null
   const [failed, setFailed] = useState(false)
 
   if (!artworkUrl || failed) {
     return (
       <span
-        data-testid="card-artwork"
-        className={styles.artworkPlaceholder}
+        data-testid={testId}
+        className={placeholderClassName}
         role="img"
         aria-label={`${name}圖片尚未提供`}
       >
@@ -58,8 +85,8 @@ function SafeCardArtwork({ name, urls }: { name: string; urls: Array<string | nu
 
   return (
     <img
-      data-testid="card-artwork"
-      className={styles.artwork}
+      data-testid={testId}
+      className={className}
       src={artworkUrl}
       alt={name}
       decoding="async"
@@ -79,6 +106,26 @@ export function CollectionBinder({
   const prefersReducedMotion = useReducedMotion()
   const { collection } = event.payload
   const { card, rarity, progress } = collection
+  const selectedPosition = Math.min(catalogPosition(card.number), progress.total_cards)
+  const pageIndex = Math.floor((selectedPosition - 1) / COLLECTION_PAGE_SIZE)
+  const pageStart = pageIndex * COLLECTION_PAGE_SIZE + 1
+  const pageCount = Math.max(1, Math.ceil(progress.total_cards / COLLECTION_PAGE_SIZE))
+  const fallbackItem: CheckinOwnedCollectionCardSnapshot = {
+    card,
+    rarity,
+    copy_count: collection.copy_count,
+  }
+  const suppliedInventory = collection.owned_cards?.length ? collection.owned_cards : [fallbackItem]
+  const inventory = suppliedInventory.some(item => item.card.id === card.id)
+    ? suppliedInventory
+    : [...suppliedInventory, fallbackItem]
+  const inventoryByPosition = new Map(
+    inventory.map(item => [catalogPosition(item.card.number), item] as const)
+  )
+  inventoryByPosition.set(
+    selectedPosition,
+    inventory.find(item => item.card.id === card.id) ?? fallbackItem
+  )
   const actor = event.actor_display_name || '觀眾'
   const reveal = buildCollectionBinderMotion(theme, Boolean(prefersReducedMotion), staticPreview)
   const themeStyle = getOverlayThemeStyle(theme)
@@ -284,7 +331,6 @@ export function CollectionBinder({
         <div data-testid="binder-leaf-stack" className={styles.leafStack}>
           <div data-testid="binder-pages" data-phase="open close" className={styles.pages}>
             <div data-testid="binder-right-page" className={`${styles.page} ${styles.rightPage}`}>
-              <div className={styles.pageRule} aria-hidden="true" />
               <div
                 data-testid="binder-card-stage"
                 data-phase="card"
@@ -311,7 +357,6 @@ export function CollectionBinder({
 
               <div className={styles.result}>
                 <strong>{collection.is_new ? 'NEW' : `×${collection.copy_count}`}</strong>
-                <span>{collection.is_new ? '已登錄至卡冊' : '持有數量已更新'}</span>
               </div>
             </div>
           </div>
@@ -339,37 +384,95 @@ export function CollectionBinder({
               className={`${styles.coverFace} ${styles.coverInner}`}
             >
               <div data-testid="binder-left-page" className={`${styles.page} ${styles.leftPage}`}>
-                <div className={styles.identity}>
-                  <strong title={actor}>@{actor}</strong>
-                  <span>第 {event.payload.total_days} 次簽到</span>
-                </div>
                 <div className={styles.slotGrid} aria-hidden="true">
-                  {Array.from({ length: 6 }, (_, index) => (
-                    <span
-                      key={index}
-                      data-testid={index === 0 ? 'binder-slot' : undefined}
-                      data-phase={index === 0 ? 'insert' : undefined}
-                      className={`${styles.miniSlot} ${index === 0 ? styles.targetSlot : ''}`}
-                    >
-                      {index === 0 && (
-                        <motion.span
-                          ref={slotCardRef}
-                          data-testid="binder-slot-card"
-                          data-phase="handoff close"
-                          data-rarity={rarity.key}
-                          className={styles.slotCard}
-                          style={{ opacity: reveal.disabled ? 0 : slotCardOpacity }}
-                        />
-                      )}
-                    </span>
-                  ))}
+                  {Array.from({ length: COLLECTION_PAGE_SIZE }, (_, index) => {
+                    const position = pageStart + index
+                    const isCatalogSlot = position <= progress.total_cards
+                    const isTarget = position === selectedPosition
+                    const item = isCatalogSlot ? inventoryByPosition.get(position) : undefined
+                    const number = isCatalogSlot ? catalogNumber(position) : null
+                    const slotArtwork = item ? (
+                      <SafeCardArtwork
+                        key={
+                          item.card.artwork.portrait_url ??
+                          item.card.artwork.square_url ??
+                          item.card.artwork.backdrop_url ??
+                          `missing-${position}`
+                        }
+                        name={item.card.name}
+                        urls={[
+                          item.card.artwork.portrait_url,
+                          item.card.artwork.square_url,
+                          item.card.artwork.backdrop_url,
+                        ]}
+                        testId={`binder-slot-artwork-${number}`}
+                        className={styles.slotArtwork}
+                        placeholderClassName={styles.slotArtworkPlaceholder}
+                      />
+                    ) : null
+
+                    return (
+                      <span
+                        key={position}
+                        data-testid={isTarget ? 'binder-slot' : undefined}
+                        data-phase={isTarget ? 'insert' : undefined}
+                        data-slot-position={position}
+                        data-catalog-number={number ?? undefined}
+                        className={`${styles.miniSlot} ${
+                          isTarget ? styles.targetSlot : ''
+                        } ${isCatalogSlot ? '' : styles.inactiveSlot}`}
+                      >
+                        {item &&
+                          (isTarget ? (
+                            <motion.span
+                              ref={slotCardRef}
+                              data-testid="binder-slot-card"
+                              data-phase="handoff close"
+                              data-card-face="front"
+                              data-rarity={item.rarity.key}
+                              className={styles.slotCard}
+                              style={{ opacity: reveal.disabled ? 1 : slotCardOpacity }}
+                            >
+                              {slotArtwork}
+                              {item.copy_count > 1 && (
+                                <span
+                                  data-testid={`binder-slot-copy-${number}`}
+                                  className={styles.slotCopyBadge}
+                                >
+                                  ×{item.copy_count}
+                                </span>
+                              )}
+                            </motion.span>
+                          ) : (
+                            <span
+                              data-card-face="front"
+                              data-rarity={item.rarity.key}
+                              className={styles.slotCard}
+                            >
+                              {slotArtwork}
+                              {item.copy_count > 1 && (
+                                <span
+                                  data-testid={`binder-slot-copy-${number}`}
+                                  className={styles.slotCopyBadge}
+                                >
+                                  ×{item.copy_count}
+                                </span>
+                              )}
+                            </span>
+                          ))}
+                      </span>
+                    )
+                  })}
                 </div>
                 <div data-testid="binder-progress" className={styles.progress}>
-                  <span>{collection.set.name}</span>
+                  {pageCount > 1 && (
+                    <span data-testid="binder-page-indicator">
+                      {pageIndex + 1} / {pageCount}
+                    </span>
+                  )}
                   <strong>
                     {progress.unique_cards} / {progress.total_cards}
                   </strong>
-                  <span>本冊共 {progress.owned_copies} 張</span>
                 </div>
               </div>
             </div>
@@ -395,7 +498,7 @@ export function CollectionBinder({
         >
           <motion.div
             className={styles.cardFlipper}
-            style={{ rotateY: reveal.disabled ? 180 : cardFlipRotateY }}
+            style={{ rotateY: reveal.disabled ? 0 : cardFlipRotateY }}
           >
             <div className={`${styles.cardFace} ${styles.cardBack}`} aria-hidden="true">
               <MysticCardBackPattern />

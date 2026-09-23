@@ -1,11 +1,10 @@
 .scene {
   position: relative;
-  width: min(660px, calc(100vw - 40px));
+  width: min(720px, calc(100vw - 40px));
   max-width: 100%;
   box-sizing: border-box;
   color: var(--overlay-text);
   font-family: 'Gen Sen Rounded', system-ui, sans-serif;
-  perspective: 1200px;
   pointer-events: none;
   isolation: isolate;
 }
@@ -13,16 +12,17 @@
 .book {
   position: relative;
   width: 100%;
-  aspect-ratio: 1.65;
+  aspect-ratio: 3 / 2;
   transform-style: preserve-3d;
   filter: drop-shadow(0 26px 30px rgb(0 0 0 / 0.38));
   will-change: transform;
 }
 
 .leafStack {
+  --binder-edge-width: 7px;
+
   position: absolute;
   inset: 3.5% 1.5% 2.5% 50%;
-  transform: rotateX(2deg);
   transform-style: preserve-3d;
 }
 
@@ -32,7 +32,7 @@
   inset: 0;
   overflow: hidden;
   box-sizing: border-box;
-  border: 7px solid color-mix(in srgb, var(--overlay-text) 82%, black);
+  border: var(--binder-edge-width) solid color-mix(in srgb, var(--overlay-text) 82%, black);
   border-radius: min(var(--overlay-radius), 22px);
   background: color-mix(in srgb, var(--overlay-text) 86%, black);
   box-shadow:
@@ -42,12 +42,16 @@
 }
 
 .page {
+  --binder-page-inset: clamp(12px, 1.8vw, 18px);
+  --binder-page-gap: clamp(6px, 1vw, 9px);
+  --binder-page-footer-height: 26px;
+
   position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: clamp(14px, 3.1vw, 28px);
+  padding: var(--binder-page-inset);
   background:
     linear-gradient(90deg, rgb(0 0 0 / 0.1), transparent 15%),
     radial-gradient(
@@ -60,48 +64,28 @@
 
 .leftPage {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(42px, auto);
-  gap: clamp(10px, 2vw, 18px);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--binder-page-gap);
   border-right: 1px solid color-mix(in srgb, var(--overlay-text) 23%, transparent);
   box-shadow: inset -18px 0 24px rgb(0 0 0 / 0.09);
 }
 
 .rightPage {
   display: grid;
-  grid-template-rows: 1fr auto;
-  place-items: center;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--binder-page-gap);
+  align-items: stretch;
   border-radius: max(6px, calc(min(var(--overlay-radius), 22px) - 7px));
   box-shadow: inset 18px 0 24px rgb(0 0 0 / 0.1);
-}
-
-.identity {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.identity strong {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: clamp(17px, 3vw, 27px);
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.identity > span:last-child {
-  font-family: 'Fira Code', monospace;
-  font-size: clamp(11px, 1.8vw, 14px);
-  letter-spacing: 0.08em;
 }
 
 .slotGrid {
   display: grid;
   min-height: 0;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: clamp(6px, 1.5vw, 12px);
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: clamp(5px, 1vw, 9px);
+  place-items: center;
   overflow: hidden;
 }
 
@@ -115,7 +99,7 @@
   min-height: 0;
   box-sizing: border-box;
   aspect-ratio: 2 / 3;
-  place-self: stretch center;
+  place-self: center;
   border: 1px solid color-mix(in srgb, var(--overlay-text) 30%, transparent);
   border-radius: 4px;
   background:
@@ -142,57 +126,85 @@
     0 0 12px color-mix(in srgb, var(--overlay-accent) 24%, transparent);
 }
 
+.inactiveSlot {
+  opacity: 0.3;
+}
+
 .slotCard {
   position: absolute;
   z-index: 1;
   inset: 3px;
-  display: grid;
+  display: block;
+  overflow: hidden;
   box-sizing: border-box;
-  place-items: center;
   border: 1px solid color-mix(in srgb, var(--overlay-accent) 58%, var(--overlay-text));
   border-radius: 3px;
-  background:
-    radial-gradient(
-      circle,
-      color-mix(in srgb, var(--overlay-accent) 30%, transparent),
-      transparent 54%
-    ),
-    color-mix(in srgb, var(--overlay-text) 90%, black);
+  background: color-mix(in srgb, var(--overlay-text) 90%, black);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--overlay-surface) 36%, transparent);
   will-change: opacity;
 }
 
-.slotCard::after {
-  width: 28%;
-  aspect-ratio: 1;
-  border: 1px solid color-mix(in srgb, var(--overlay-accent) 72%, white);
-  content: '';
-  transform: rotate(45deg);
+.slotArtwork,
+.slotArtworkPlaceholder {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  object-fit: cover;
+  object-position: center;
+}
+
+.slotArtworkPlaceholder {
+  color: color-mix(in srgb, var(--overlay-accent) 64%, white);
+  background: color-mix(in srgb, var(--overlay-text) 90%, black);
+}
+
+.slotArtworkPlaceholder .placeholderMark {
+  width: 22%;
+  border-width: 1px;
+  box-shadow: none;
+}
+
+.slotCopyBadge {
+  position: absolute;
+  z-index: 2;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  padding: 1px 3px;
+  border: 1px solid rgb(255 255 255 / 0.52);
+  border-radius: 999px;
+  color: white;
+  background: rgb(15 13 22 / 0.86);
+  font-family: 'Fira Code', monospace;
+  font-size: clamp(7px, 1vw, 9px);
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .progress {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: end;
-  gap: 2px 8px;
-  border-top: 1px solid color-mix(in srgb, var(--overlay-text) 22%, transparent);
-  padding-top: 8px;
+  display: flex;
+  width: 100%;
+  height: var(--binder-page-footer-height);
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   font-size: clamp(11px, 1.7vw, 13px);
 }
 
 .progress strong {
-  grid-row: span 2;
+  margin-inline-start: auto;
   color: var(--overlay-accent);
   font-family: 'Fira Code', monospace;
   font-size: clamp(15px, 2.8vw, 24px);
+  line-height: 1;
 }
 
-.pageRule {
-  position: absolute;
-  inset: 8% 7%;
-  border: 1px solid color-mix(in srgb, var(--overlay-text) 16%, transparent);
-  border-radius: calc(min(var(--overlay-radius), 22px) / 2);
-  pointer-events: none;
+.progress > span {
+  font-family: 'Fira Code', monospace;
+  font-size: 0.78em;
+  opacity: 0.72;
 }
 
 .cardSlot {
@@ -200,8 +212,10 @@
 
   position: relative;
   display: grid;
-  width: min(68%, 206px);
+  width: min(82%, 248px);
+  max-height: 100%;
   aspect-ratio: 2 / 3;
+  place-self: center;
   place-items: center;
   border: 0;
   border-radius: min(var(--overlay-radius), 12px);
@@ -265,14 +279,14 @@
 }
 
 .cardBack {
-  transform: rotateY(0deg);
+  transform: rotateY(180deg);
 }
 
 .cardFront {
   isolation: isolate;
   color: white;
   background: color-mix(in srgb, var(--overlay-text) 88%, black);
-  transform: rotateY(180deg);
+  transform: rotateY(0deg);
 }
 
 .cardFront::after {
@@ -407,10 +421,10 @@
   position: relative;
   z-index: 2;
   display: flex;
-  align-items: baseline;
+  width: 100%;
+  height: var(--binder-page-footer-height);
+  align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding-bottom: 4px;
   font-size: clamp(10px, 1.6vw, 13px);
 }
 
@@ -418,6 +432,7 @@
   color: color-mix(in srgb, var(--overlay-accent) 76%, var(--overlay-text));
   font-family: 'Fira Code', monospace;
   font-size: clamp(14px, 2.8vw, 22px);
+  line-height: 1;
 }
 
 .spine {
@@ -449,7 +464,7 @@
   display: grid;
   overflow: hidden;
   box-sizing: border-box;
-  border: 7px solid color-mix(in srgb, var(--overlay-text) 82%, black);
+  border: var(--binder-edge-width) solid color-mix(in srgb, var(--overlay-text) 82%, black);
   border-radius: min(var(--overlay-radius), 22px);
   background: color-mix(in srgb, var(--overlay-text) 86%, black);
   backface-visibility: hidden;
@@ -476,7 +491,7 @@
 }
 
 .coverInner {
-  transform: rotateY(180deg) translateZ(1px);
+  transform: rotateY(180deg);
 }
 
 .coverOuter::after {
@@ -562,21 +577,17 @@
     width: calc(100vw - 32px);
   }
 
-  .pages {
-    border-width: 4px;
+  .leafStack {
+    --binder-edge-width: 4px;
   }
 
   .page {
-    padding: 12px;
-  }
-
-  .miniSlot:nth-child(n + 4) {
-    display: none;
+    --binder-page-inset: 12px;
   }
 
   .slotGrid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(3, minmax(0, 1fr));
   }
 
   .leftPage {

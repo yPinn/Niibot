@@ -46,6 +46,7 @@ describe('collection binder timeline', () => {
     expect(COLLECTION_BINDER_TIMELINE.cardScale.standard).toEqual([0.72, 0.72, 1.08, 1])
     expect(COLLECTION_BINDER_TIMELINE.cardOpacity.output.at(-1)).toBe(0)
     expect(COLLECTION_BINDER_TIMELINE.slotCardOpacity.output).toEqual([0, 0, 1, 1])
+    expect(COLLECTION_BINDER_TIMELINE.cardFlipRotateY.output).toEqual([0, 0, 720, 720])
     expect(
       (COLLECTION_BINDER_PHASES.closeStart - COLLECTION_BINDER_PHASES.insertEnd) *
         motion.durationSeconds

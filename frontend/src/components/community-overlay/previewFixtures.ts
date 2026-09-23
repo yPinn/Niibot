@@ -3,6 +3,37 @@ import type { CommunityOverlayContentType, CommunityOverlayEvent } from '@/api/c
 import type { CollectionBinderEvent } from './CollectionBinder'
 import type { TarotCardEvent } from './TarotCard'
 
+const SAMPLE_COLLECTION_RARITY = {
+  key: 'common',
+  label: '普通',
+  rank: 1,
+  effect_intensity: 10,
+}
+
+const SAMPLE_OWNED_CARDS = [
+  ['karina-01', 'Karina', 1],
+  ['karina-02', 'Karina', 2],
+  ['karina-03', 'Karina', 2],
+  ['karina-04', 'Karina', 1],
+  ['karina-05', 'Karina', 1],
+  ['winter-01', 'Winter', 1],
+].map(([key, name, copyCount], index) => ({
+  card: {
+    id: index + 1,
+    revision_id: index + 1,
+    key: String(key),
+    number: String(index + 1).padStart(3, '0'),
+    name: String(name),
+    artwork: {
+      portrait_url: `/images/collections/aespa/${key}-r1.webp`,
+      square_url: null,
+      backdrop_url: null,
+    },
+  },
+  rarity: SAMPLE_COLLECTION_RARITY,
+  copy_count: Number(copyCount),
+}))
+
 export const SAMPLE_COLLECTION_BINDER_EVENT: CollectionBinderEvent = {
   actor_display_name: 'NiibotFan',
   payload: {
@@ -25,10 +56,11 @@ export const SAMPLE_COLLECTION_BINDER_EVENT: CollectionBinderEvent = {
         },
       },
       set: { id: 1, key: 'aespa', name: 'aespa' },
-      rarity: { key: 'common', label: '普通', rank: 1, effect_intensity: 10 },
+      rarity: SAMPLE_COLLECTION_RARITY,
       is_new: true,
       copy_count: 1,
-      progress: { owned_copies: 8, unique_cards: 6, total_cards: 48 },
+      progress: { owned_copies: 8, unique_cards: 6, total_cards: 9 },
+      owned_cards: SAMPLE_OWNED_CARDS,
     },
   },
 }

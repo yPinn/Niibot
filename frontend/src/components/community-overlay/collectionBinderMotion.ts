@@ -158,7 +158,7 @@ export const COLLECTION_BINDER_TIMELINE = {
   },
   cardFlipRotateY: {
     input: [0, COLLECTION_BINDER_PHASES.cardStart, COLLECTION_BINDER_PHASES.cardReveal, 1],
-    output: [0, 0, 180, 180],
+    output: [0, 0, 720, 720],
   },
 }
 
