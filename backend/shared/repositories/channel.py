@@ -61,6 +61,15 @@ class ChannelRepository:
 
     # ==================== Token Operations ====================
 
+    @property
+    def token_encryption_key(self) -> str:
+        """Configured key for services that share this repository boundary."""
+        return self._token_encryption_key or ""
+
+    @staticmethod
+    def invalidate_token(user_id: str, token_type: str = "broadcaster") -> None:
+        _token_cache.invalidate(f"token:{user_id}:{token_type}")
+
     @cached(
         cache=_token_cache,
         key_func=lambda self, user_id, token_type="broadcaster": f"token:{user_id}:{token_type}",
@@ -69,7 +78,8 @@ class ChannelRepository:
         """Get a user's OAuth token by type ('broadcaster' or 'bot')."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT user_id, token, refresh, token_type, scopes, encryption_version, "
+                "SELECT user_id, token, refresh, token_type, scopes, credential_revision, "
+                "encryption_version, "
                 "created_at, updated_at "
                 "FROM tokens WHERE user_id = $1 AND token_type = $2",
                 user_id,
@@ -110,6 +120,7 @@ class ChannelRepository:
                     last_validated_at  = NOW(),
                     invalidated_at     = NULL,
                     validation_error_code = NULL,
+                    credential_revision = tokens.credential_revision + 1,
                     updated_at         = NOW()
                 """,
                 user_id,
@@ -121,22 +132,39 @@ class ChannelRepository:
             )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
 
-    async def mark_requires_reauth(self, user_id: str, token_type: str = "broadcaster") -> None:
+    async def mark_requires_reauth(
+        self,
+        user_id: str,
+        token_type: str = "broadcaster",
+        *,
+        expected_revision: int | None = None,
+    ) -> bool:
         """Flag a token for re-auth; /auth/user checks this to force re-login, cleared by upsert_token."""
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE tokens SET requires_reauth = TRUE, reauth_notified_at = NOW() "
-                "WHERE user_id = $1 AND token_type = $2",
-                user_id,
-                token_type,
-            )
+            if expected_revision is None:
+                result = await conn.execute(
+                    "UPDATE tokens SET requires_reauth = TRUE, reauth_notified_at = NOW() "
+                    "WHERE user_id = $1 AND token_type = $2",
+                    user_id,
+                    token_type,
+                )
+            else:
+                result = await conn.execute(
+                    "UPDATE tokens SET requires_reauth = TRUE, reauth_notified_at = NOW() "
+                    "WHERE user_id = $1 AND token_type = $2 AND credential_revision = $3",
+                    user_id,
+                    token_type,
+                    expected_revision,
+                )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
+        return str(result).endswith(" 1")
 
     async def list_tokens(self) -> list[Token]:
         """Return all tokens (both types)."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT user_id, token, refresh, token_type, scopes, encryption_version, "
+                "SELECT user_id, token, refresh, token_type, scopes, credential_revision, "
+                "encryption_version, "
                 "requires_reauth, reauth_notified_at, created_at, updated_at "
                 "FROM tokens"
             )
@@ -179,6 +207,7 @@ class ChannelRepository:
                         last_validated_at = NOW(),
                         invalidated_at = NULL,
                         validation_error_code = NULL,
+                        credential_revision = tokens.credential_revision + 1,
                         updated_at      = NOW()
                     """,
                     user_id,
