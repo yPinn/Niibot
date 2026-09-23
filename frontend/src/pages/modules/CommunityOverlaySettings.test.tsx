@@ -762,7 +762,7 @@ describe('CommunityOverlaySettings', () => {
     expect(within(trigger).getByText(/10 點/)).toBeInTheDocument()
     expect(within(trigger).getByText('由 Twitch 管理獎勵')).toBeInTheDocument()
     expect(within(trigger).getByText('已啟用')).toBeInTheDocument()
-    expect(within(trigger).getByRole('combobox', { name: '抽卡範圍' })).toBeInTheDocument()
+    expect(await within(trigger).findByRole('combobox', { name: '抽卡範圍' })).toBeInTheDocument()
     expect(within(trigger).queryByRole('switch')).not.toBeInTheDocument()
     expect(within(trigger).getByRole('link', { name: '管理簽到入口' })).toHaveAttribute(
       'href',
