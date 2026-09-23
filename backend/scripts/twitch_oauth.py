@@ -145,13 +145,22 @@ async def save_token(
     try:
         await conn.execute(
             """
-            INSERT INTO tokens (user_id, token, refresh, scopes, token_type)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO tokens (
+                user_id, token, refresh, scopes, token_type,
+                last_checked_at, last_validated_at, next_validation_at
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, NOW(), NOW(),
+                NOW() + INTERVAL '55 minutes'
+            )
             ON CONFLICT (user_id, token_type) DO UPDATE SET
                 token           = EXCLUDED.token,
                 refresh         = EXCLUDED.refresh,
                 scopes          = EXCLUDED.scopes,
                 requires_reauth = FALSE,
+                last_checked_at = NOW(),
+                last_validated_at = NOW(),
+                next_validation_at = NOW() + INTERVAL '55 minutes',
                 credential_revision = tokens.credential_revision + 1,
                 updated_at      = NOW()
             """,

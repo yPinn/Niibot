@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-_HELIX = "https://api.twitch.tv/helix"
 _TIER_NAMES = {"1000": "T1", "2000": "T2", "3000": "T3"}
 
 
@@ -82,13 +81,20 @@ class ViewerStatsComponent(BotComponent):
     # Helpers
     # ------------------------------------------------------------------
 
-    async def _helix_get(self, path: str, params: dict, token: str) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            return await client.get(
-                f"{_HELIX}/{path}",
-                headers={"Client-Id": self._client_id, "Authorization": f"Bearer {token}"},
-                params=params,
-            )
+    async def _helix_get(
+        self,
+        path: str,
+        params: dict,
+        token: str,
+        *,
+        token_for: str,
+    ) -> httpx.Response:
+        return await self.bot._coordinated_helix_get(
+            path,
+            token=token,
+            token_for=token_for,
+            params=params,
+        )
 
     async def _broadcaster_token(self, channel_id: str) -> str | None:
         tok = await self.channel_repo.get_token(channel_id)
@@ -154,6 +160,7 @@ class ViewerStatsComponent(BotComponent):
                     "moderator_id": self.bot.sender_for(channel_id),
                 },
                 token,
+                token_for=self.bot.sender_for(channel_id),
             )
         except Exception as e:
             LOGGER.warning("[%s] followage error: %s", ctx.channel.name, e)
@@ -202,6 +209,7 @@ class ViewerStatsComponent(BotComponent):
                 "subscriptions",
                 {"broadcaster_id": channel_id, "user_id": user_id},
                 token,
+                token_for=channel_id,
             )
         except Exception as e:
             LOGGER.warning("[%s] subage error: %s", ctx.channel.name, e)
@@ -248,6 +256,7 @@ class ViewerStatsComponent(BotComponent):
                 "subscriptions",
                 {"broadcaster_id": channel_id, "first": 1},
                 token,
+                token_for=channel_id,
             )
         except Exception as e:
             LOGGER.warning("[%s] subcount error: %s", ctx.channel.name, e)
@@ -289,6 +298,7 @@ class ViewerStatsComponent(BotComponent):
                 "bits/leaderboard",
                 {"user_id": user_id, "period": "all"},
                 token,
+                token_for=channel_id,
             )
         except Exception as e:
             LOGGER.warning("[%s] bits error: %s", ctx.channel.name, e)
@@ -334,7 +344,12 @@ class ViewerStatsComponent(BotComponent):
             return
 
         try:
-            resp = await self._helix_get("users", params, token)
+            resp = await self._helix_get(
+                "users",
+                params,
+                token,
+                token_for=self.bot.sender_for(channel_id),
+            )
         except Exception as e:
             LOGGER.warning("[%s] accountage error: %s", ctx.channel.name, e)
             await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")

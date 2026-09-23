@@ -25,11 +25,14 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 
+from shared.twitch_egress import EgressPriority
+
 if TYPE_CHECKING:
     from core.bot_resolver import BotAccountResolver
     from core.subscription_manager import SubscriptionManager
     from shared.repositories.analytics import AnalyticsRepository
     from shared.repositories.channel import ChannelRepository
+    from shared.twitch_egress import TwitchEgressCoordinator
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ class SessionService:
         bot_id: str,
         client_id: str,
         bots: BotAccountResolver,
+        egress: TwitchEgressCoordinator,
     ) -> None:
         self._analytics = analytics
         self._channels = channels
@@ -86,6 +90,7 @@ class SessionService:
         # custom bot account that is itself a monitored broadcaster must
         # still get its own watch-time tracked. See core/bot_resolver.py.
         self._bots = bots
+        self._egress = egress
 
         self._active: dict[str, int] = {}
         self._creating: set[str] = set()
@@ -424,6 +429,7 @@ class SessionService:
 
         viewers: list[dict] = []
         cursor: str | None = None
+        bucket_key = f"user:{sender_id}"
         async with httpx.AsyncClient(timeout=10.0) as client:
             while True:
                 params: dict = {
@@ -433,14 +439,26 @@ class SessionService:
                 }
                 if cursor:
                     params["after"] = cursor
-                resp = await client.get(
-                    "https://api.twitch.tv/helix/chat/chatters",
-                    headers={
-                        "Client-Id": self._client_id,
-                        "Authorization": f"Bearer {bot_token.token}",
-                    },
-                    params=params,
-                )
+                for attempt in range(2):
+                    await self._egress.acquire_helix(
+                        bucket_key,
+                        priority=EgressPriority.BACKGROUND,
+                    )
+                    resp = await client.get(
+                        "https://api.twitch.tv/helix/chat/chatters",
+                        headers={
+                            "Client-Id": self._client_id,
+                            "Authorization": f"Bearer {bot_token.token}",
+                        },
+                        params=params,
+                    )
+                    self._egress.observe_helix(
+                        bucket_key,
+                        status_code=resp.status_code,
+                        headers=getattr(resp, "headers", {}),
+                    )
+                    if resp.status_code != 429 or attempt == 1:
+                        break
                 if resp.status_code != 200:
                     LOGGER.warning(
                         f"fetch_chatters failed for {self._ch(channel_id)}: "

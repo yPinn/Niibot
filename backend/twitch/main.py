@@ -42,13 +42,9 @@ def main() -> None:
         await health_server.start()
 
         # 2. Heavy imports — after port is open
-        from twitchio import eventsub
-
-        from core import get_channel_subscriptions
         from core.bot import Bot
         from core.config import get_settings
         from shared.database import DatabaseManager, PoolConfig
-        from shared.repositories.channel import ChannelRepository
         from shared.retry_utils import format_duration, parse_retry_after
 
         settings = get_settings()
@@ -69,31 +65,9 @@ def main() -> None:
         pool = db_manager.pool
 
         try:
-            subs: list[eventsub.SubscriptionPayload] = []
-            channel_repo = ChannelRepository(pool)
-
-            # 4. Retry DB query (cross-region timeout)
-            for attempt in range(1, 6):
-                try:
-                    enabled_channels = await channel_repo.list_enabled_channels()
-                    for ch in enabled_channels:
-                        if ch.channel_id == bot_id:
-                            continue
-                        subs.extend(get_channel_subscriptions(ch.channel_id, bot_id))
-                    break
-                except (TimeoutError, OSError) as e:
-                    LOGGER.warning(f"Database connect attempt ({attempt}/5): {type(e).__name__}")
-                    if attempt < 5:
-                        await asyncio.sleep(5)
-
-            if subs:
-                LOGGER.info(f"Starting bot with {len(subs)} initial subscriptions")
-            else:
-                LOGGER.error(
-                    "Starting bot without initial subscriptions — bot is deaf to all channel events until background retry succeeds"
-                )
-
-            # 5. Start bot with auto-retry on rate limit
+            # 4. Start bot with auto-retry on rate limit. EventSub creation is
+            # deferred to Bot._bootstrap_channels so every mutation passes
+            # through SubscriptionManager's shared rate budget.
             retry_count = 0
             max_retries = 5
             base_delay = 60
@@ -107,7 +81,6 @@ def main() -> None:
                 token_database=pool,
                 db_manager=db_manager,
                 database_url=database_url,
-                subs=subs,
             ) as bot:
                 health_server.bot = bot
 

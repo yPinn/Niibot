@@ -11,6 +11,7 @@ import time
 
 import httpx
 
+from shared.twitch_egress import TwitchEgressCoordinator, credential_bucket_key
 from shared.twitch_scopes import BROADCASTER_SCOPES as _BROADCASTER_SCOPES
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -46,10 +47,12 @@ class _TwitchAPIBase:
         self._app_token: str | None = None
         self._app_token_expires_at: float = 0.0
         self._app_token_lock = asyncio.Lock()
+        self._egress = TwitchEgressCoordinator()
 
     async def close(self) -> None:
         """Close the shared HTTP client. Call on app shutdown."""
         await self._http.aclose()
+        await self._egress.close()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -106,15 +109,26 @@ class _TwitchAPIBase:
             token = await self._ensure_app_token()
             if not token:
                 return None
-        try:
-            return await self._http.get(
-                f"{HELIX_BASE}/{path}",
-                params=params,
-                headers=self._app_headers(token),
+        bucket_key = credential_bucket_key(token)
+        for attempt in range(2):
+            await self._egress.acquire_helix(bucket_key)
+            try:
+                response = await self._http.get(
+                    f"{HELIX_BASE}/{path}",
+                    params=params,
+                    headers=self._app_headers(token),
+                )
+            except Exception:
+                LOGGER.exception("Helix GET /%s error", path)
+                return None
+            self._egress.observe_helix(
+                bucket_key,
+                status_code=response.status_code,
+                headers=response.headers,
             )
-        except Exception:
-            LOGGER.exception("Helix GET /%s error", path)
-            return None
+            if response.status_code != 429 or attempt == 1:
+                return response
+        raise AssertionError("unreachable Helix retry state")
 
     async def _fetch_paginated(self, path: str, params: dict, *, token: str) -> list[dict]:
         """Fetch all pages from a cursor-paginated Helix endpoint."""

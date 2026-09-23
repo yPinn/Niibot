@@ -327,6 +327,15 @@ class TwitchAuthorizationService:
                     and row["last_checked_at"] is not None
                     and row["last_checked_at"] > datetime.now(UTC) - timedelta(minutes=55)
                 ):
+                    await conn.execute(
+                        """
+                        UPDATE tokens
+                           SET next_validation_at = last_checked_at + INTERVAL '55 minutes'
+                         WHERE user_id = $1 AND token_type = $2
+                        """,
+                        user_id,
+                        token_type,
+                    )
                     return CredentialHealth(
                         user_id=user_id,
                         token_type=token_type,
@@ -392,12 +401,16 @@ class TwitchAuthorizationService:
                         encrypted_refresh,
                         encryption_version,
                     )
-                    notify_channel = "bot_token_updated" if token_type == "bot" else "token_reauth"
-                    await conn.execute(
-                        "SELECT pg_notify($1, $2)",
-                        notify_channel,
-                        json.dumps({"user_id": user_id}),
-                    )
+                    if token_type == "bot":
+                        # Bot rows are excluded from fn_notify_token_reauth().
+                        # Broadcaster updates are already emitted by that
+                        # revision trigger; sending a second manual NOTIFY here
+                        # caused duplicate hot reloads.
+                        await conn.execute(
+                            "SELECT pg_notify($1, $2)",
+                            "bot_token_updated",
+                            json.dumps({"user_id": user_id}),
+                        )
                     validation = await self.twitch.validate_token_details(access_token)
 
                 if validation.status == "unavailable":
@@ -435,6 +448,7 @@ class TwitchAuthorizationService:
                     """
                     UPDATE tokens
                        SET last_checked_at = NOW(), last_validated_at = NOW(),
+                           next_validation_at = NOW() + INTERVAL '55 minutes',
                            invalidated_at = NULL, validation_error_code = NULL,
                            requires_reauth = FALSE, reauth_notified_at = NULL,
                            scopes = $3
@@ -475,6 +489,7 @@ class TwitchAuthorizationService:
             """
             UPDATE tokens
                SET last_checked_at = NOW(),
+                   next_validation_at = NOW() + INTERVAL '5 minutes',
                    validation_error_code = CASE
                        WHEN $3 THEN validation_error_code
                        ELSE 'provider_unavailable'
@@ -512,6 +527,7 @@ class TwitchAuthorizationService:
             """
             UPDATE tokens
                SET last_checked_at = NOW(), invalidated_at = COALESCE(invalidated_at, NOW()),
+                   next_validation_at = NULL,
                    validation_error_code = $3, requires_reauth = TRUE
              WHERE user_id = $1 AND token_type = $2
             """,
@@ -562,19 +578,23 @@ class TwitchAuthorizationService:
         )
 
     async def list_due_credentials(self, *, limit: int = 25) -> list[tuple[str, TokenType]]:
-        """Return a bounded, stable batch that has not been checked in the last 55 minutes."""
+        """Return a read-only view of the next bounded validation batch."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT user_id, token_type
                   FROM tokens
                  WHERE invalidated_at IS NULL
-                   AND (last_checked_at IS NULL OR last_checked_at < NOW() - INTERVAL '55 minutes')
-                 ORDER BY last_checked_at NULLS FIRST, user_id, token_type
+                   AND (next_validation_at IS NULL OR next_validation_at <= NOW())
+                 ORDER BY next_validation_at NULLS FIRST, user_id, token_type
                  LIMIT $1
                 """,
                 limit,
             )
+        return self._credential_keys(rows)
+
+    @staticmethod
+    def _credential_keys(rows) -> list[tuple[str, TokenType]]:
         result: list[tuple[str, TokenType]] = []
         for row in rows:
             token_type = str(row["token_type"])
@@ -584,9 +604,43 @@ class TwitchAuthorizationService:
                 result.append((str(row["user_id"]), "broadcaster"))
         return result
 
-    async def check_due_credentials(self, *, limit: int = 25) -> int:
+    async def claim_due_credentials(self, *, limit: int = 1) -> list[tuple[str, TokenType]]:
+        """Atomically lease due credentials across API replicas.
+
+        The five-minute future timestamp is a crash lease.  Every terminal
+        validation path replaces it with either the normal 55-minute schedule
+        or a deliberate five-minute transient retry.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                rows = await conn.fetch(
+                    """
+                    WITH due AS (
+                        SELECT user_id, token_type
+                          FROM tokens
+                         WHERE invalidated_at IS NULL
+                           AND (
+                               next_validation_at IS NULL
+                               OR next_validation_at <= NOW()
+                           )
+                         ORDER BY next_validation_at NULLS FIRST, user_id, token_type
+                         FOR UPDATE SKIP LOCKED
+                         LIMIT $1
+                    )
+                    UPDATE tokens AS token
+                       SET next_validation_at = NOW() + INTERVAL '5 minutes'
+                      FROM due
+                     WHERE token.user_id = due.user_id
+                       AND token.token_type = due.token_type
+                    RETURNING token.user_id, token.token_type
+                    """,
+                    limit,
+                )
+        return self._credential_keys(rows)
+
+    async def check_due_credentials(self, *, limit: int = 1) -> int:
         require_twitch_token_encryption_key(self.token_encryption_key)
-        due = await self.list_due_credentials(limit=limit)
+        due = await self.claim_due_credentials(limit=limit)
         for user_id, token_type in due:
             required = set(required_core_scopes(token_type))
             try:
@@ -609,6 +663,7 @@ class TwitchAuthorizationService:
                             """
                             UPDATE tokens
                                SET last_checked_at = NOW(),
+                                   next_validation_at = NOW() + INTERVAL '5 minutes',
                                    validation_error_code = CASE
                                        WHEN invalidated_at IS NULL
                                            THEN 'provider_unavailable'

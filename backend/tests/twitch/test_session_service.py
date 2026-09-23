@@ -46,6 +46,9 @@ def _analytics() -> MagicMock:
 def _make_service(*, analytics=None, channels=None, client=None) -> SessionService:
     subs = MagicMock()
     subs.ch = lambda cid: cid
+    egress = MagicMock()
+    egress.acquire_helix = AsyncMock()
+    egress.observe_helix = MagicMock()
     return SessionService(
         analytics=analytics or _analytics(),
         channels=channels or MagicMock(),
@@ -54,6 +57,7 @@ def _make_service(*, analytics=None, channels=None, client=None) -> SessionServi
         bot_id="bot-001",
         client_id="client-abc",
         bots=BotAccountResolver(MagicMock(), system_bot_id="bot-001"),
+        egress=egress,
     )
 
 
@@ -289,3 +293,32 @@ class TestWatchTimeTokenFlow:
 
         assert snapshot.complete is False
         assert snapshot.viewers == []
+
+    async def test_fetch_chatters_uses_reset_aware_bucket_and_retries_429_once(self):
+        from shared.models.channel import Token
+
+        channels = MagicMock()
+        channels.get_token = AsyncMock(
+            return_value=Token(user_id="bot-001", token="BOT_TOK", refresh="ref")
+        )
+        svc = _make_service(channels=channels)
+        limited = MagicMock(status_code=429, text="limited", headers={"Retry-After": "1"})
+        success = MagicMock(status_code=200, headers={})
+        success.json.return_value = {"data": [], "pagination": {}}
+        client = MagicMock()
+        client.get = AsyncMock(side_effect=[limited, success])
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("core.session_service.httpx.AsyncClient", return_value=ctx):
+            snapshot = await svc._fetch_chatters("ch1")
+
+        assert snapshot.complete is True
+        assert client.get.await_count == 2
+        assert svc._egress.acquire_helix.await_count == 2
+        svc._egress.observe_helix.assert_any_call(
+            "user:bot-001",
+            status_code=429,
+            headers={"Retry-After": "1"},
+        )

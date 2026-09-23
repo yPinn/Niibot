@@ -8,7 +8,6 @@ import logging
 import random
 from typing import TYPE_CHECKING
 
-import httpx
 from twitchio.ext import commands
 
 from core.component import BotComponent
@@ -98,26 +97,22 @@ class GamesComponent(BotComponent):
             return
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    "https://api.twitch.tv/helix/moderation/bans",
-                    headers={
-                        "Client-Id": self.bot._client_id,
-                        "Authorization": f"Bearer {token_obj.token}",
-                        "Content-Type": "application/json",
-                    },
-                    params={
-                        "broadcaster_id": channel_id,
-                        "moderator_id": sender_id,
-                    },
-                    json={
-                        "data": {
-                            "user_id": ctx.chatter.id,
-                            "duration": _ROULETTE_TIMEOUT,
-                            "reason": "天亮了，你昨晚被狼人帶走了",
-                        }
-                    },
-                )
+            resp = await self.bot._coordinated_helix_post(
+                "moderation/bans",
+                token=token_obj.token,
+                token_for=sender_id,
+                params={
+                    "broadcaster_id": channel_id,
+                    "moderator_id": sender_id,
+                },
+                json={
+                    "data": {
+                        "user_id": ctx.chatter.id,
+                        "duration": _ROULETTE_TIMEOUT,
+                        "reason": "天亮了，你昨晚被狼人帶走了",
+                    }
+                },
+            )
             if resp.status_code not in (200, 204):
                 LOGGER.warning(
                     "[%s] Roulette timeout failed: %s %s",
@@ -176,15 +171,16 @@ class GamesComponent(BotComponent):
             return
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    "https://api.twitch.tv/helix/chat/chatters",
-                    headers={
-                        "Client-Id": self.bot._client_id,
-                        "Authorization": f"Bearer {token_obj.token}",
-                    },
-                    params={"broadcaster_id": channel_id, "moderator_id": sender_id, "first": 1000},
-                )
+            resp = await self.bot._coordinated_helix_get(
+                "chat/chatters",
+                token=token_obj.token,
+                token_for=sender_id,
+                params={
+                    "broadcaster_id": channel_id,
+                    "moderator_id": sender_id,
+                    "first": 1000,
+                },
+            )
         except Exception as e:
             LOGGER.warning("[%s] !winner fetch failed: %s", channel_id, e)
             await self._ctx_reply(ctx, "抽選失敗，請稍後再試")

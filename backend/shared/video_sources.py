@@ -24,12 +24,14 @@ bot, channel-points redemptions, and the donation webhook.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, quote, urlunsplit
+from weakref import WeakKeyDictionary
 
 import aiohttp
 
@@ -40,6 +42,7 @@ from shared.safe_urls import (
     find_allowed_http_url,
     parse_allowed_absolute_url,
 )
+from shared.twitch_egress import EgressPriority, TwitchEgressCoordinator, credential_bucket_key
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -410,6 +413,50 @@ def _parse_hms(text: str) -> int:
 # Module-level app token cache keyed by (client_id, client_secret).
 # Twitch app tokens are valid for ~60 days; we refresh 5 min before expiry.
 _app_token_cache: dict[tuple[str, str], tuple[str, float]] = {}  # key → (token, expires_at)
+_app_token_locks: WeakKeyDictionary[
+    asyncio.AbstractEventLoop,
+    dict[tuple[str, str], asyncio.Lock],
+] = WeakKeyDictionary()
+_twitch_media_egress = TwitchEgressCoordinator()
+
+
+def _app_token_lock(cache_key: tuple[str, str]) -> asyncio.Lock:
+    """Return a loop-local lock so concurrent cache misses collapse to one fetch."""
+    loop = asyncio.get_running_loop()
+    locks = _app_token_locks.setdefault(loop, {})
+    return locks.setdefault(cache_key, asyncio.Lock())
+
+
+async def _twitch_helix_json(
+    session: aiohttp.ClientSession,
+    url: str,
+    *,
+    params: dict[str, str],
+    client_id: str,
+    token: str,
+) -> tuple[int, dict]:
+    """Return one Helix JSON response, retrying an idempotent 429 once."""
+    bucket_key = credential_bucket_key(token)
+    for attempt in range(2):
+        await _twitch_media_egress.acquire_helix(
+            bucket_key,
+            priority=EgressPriority.BACKGROUND,
+        )
+        async with session.get(
+            url,
+            params=params,
+            headers={"Authorization": f"Bearer {token}", "Client-Id": client_id},
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            _twitch_media_egress.observe_helix(
+                bucket_key,
+                status_code=resp.status,
+                headers=getattr(resp, "headers", {}),
+            )
+            if resp.status == 429 and attempt == 0:
+                continue
+            return resp.status, await resp.json()
+    raise AssertionError("unreachable Twitch Helix retry state")
 
 
 def extract_twitch_clip_slug(text: str) -> str | None:
@@ -464,27 +511,32 @@ async def _get_twitch_app_token(
     if cached_token and time.monotonic() < expires_at:
         return cached_token
 
-    async with session.post(
-        _TWITCH_OAUTH_URL,
-        data={
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "grant_type": "client_credentials",
-        },
-        timeout=aiohttp.ClientTimeout(total=5),
-    ) as resp:
-        if resp.status != 200:
-            LOGGER.warning("[Twitch API] Failed to get app token: %s", resp.status)
+    async with _app_token_lock(cache_key):
+        cached_token, expires_at = _app_token_cache.get(cache_key, (None, 0.0))
+        if cached_token and time.monotonic() < expires_at:
+            return cached_token
+
+        async with session.post(
+            _TWITCH_OAUTH_URL,
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "client_credentials",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning("[Twitch API] Failed to get app token: %s", resp.status)
+                return None
+            token_data = await resp.json()
+
+        new_token = token_data.get("access_token")
+        if not new_token:
             return None
-        token_data = await resp.json()
 
-    new_token = token_data.get("access_token")
-    if not new_token:
-        return None
-
-    expires_in = token_data.get("expires_in", 3600)
-    _app_token_cache[cache_key] = (new_token, time.monotonic() + expires_in - 300)
-    return new_token
+        expires_in = token_data.get("expires_in", 3600)
+        _app_token_cache[cache_key] = (new_token, time.monotonic() + expires_in - 300)
+        return new_token
 
 
 @dataclass
@@ -531,34 +583,33 @@ async def fetch_twitch_clip_info(
         if not app_token:
             return TwitchMediaInfo()
 
-        # Fetch clip metadata
-        async with _session.get(
+        status, data = await _twitch_helix_json(
+            _session,
             _TWITCH_HELIX_CLIPS_URL,
             params={"id": slug},
-            headers={"Authorization": f"Bearer {app_token}", "Client-Id": client_id},
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status != 200:
-                LOGGER.info("[Twitch API] Unexpected status %s for clip %s", resp.status, slug)
-                return TwitchMediaInfo()
-            data = await resp.json()
-            clips = data.get("data", [])
-            if not clips:
-                return TwitchMediaInfo()  # clip not found or deleted
-            clip = clips[0]
-            title: str | None = clip.get("title")
-            duration_raw = clip.get("duration")
-            duration_seconds = int(round(float(duration_raw))) if duration_raw is not None else None
-            view_count_raw = clip.get("view_count")
-            view_count = int(view_count_raw) if view_count_raw is not None else None
-            return TwitchMediaInfo(
-                title=title,
-                duration_seconds=duration_seconds,
-                view_count=view_count,
-                thumbnail_url=_https(clip.get("thumbnail_url")),
-                creator_id=clip.get("broadcaster_id"),
-                creator_name=clip.get("broadcaster_name"),
-            )
+            client_id=client_id,
+            token=app_token,
+        )
+        if status != 200:
+            LOGGER.info("[Twitch API] Unexpected status %s for clip %s", status, slug)
+            return TwitchMediaInfo()
+        clips = data.get("data", [])
+        if not clips:
+            return TwitchMediaInfo()  # clip not found or deleted
+        clip = clips[0]
+        title: str | None = clip.get("title")
+        duration_raw = clip.get("duration")
+        duration_seconds = int(round(float(duration_raw))) if duration_raw is not None else None
+        view_count_raw = clip.get("view_count")
+        view_count = int(view_count_raw) if view_count_raw is not None else None
+        return TwitchMediaInfo(
+            title=title,
+            duration_seconds=duration_seconds,
+            view_count=view_count,
+            thumbnail_url=_https(clip.get("thumbnail_url")),
+            creator_id=clip.get("broadcaster_id"),
+            creator_name=clip.get("broadcaster_name"),
+        )
     except Exception as exc:
         LOGGER.warning(
             "[Twitch API] fetch_twitch_clip_info failed for %s: %s", slug, type(exc).__name__
@@ -593,41 +644,41 @@ async def fetch_twitch_vod_info(
         if not app_token:
             return TwitchMediaInfo()
 
-        async with _session.get(
+        status, data = await _twitch_helix_json(
+            _session,
             _TWITCH_HELIX_VIDEOS_URL,
             params={"id": video_id},
-            headers={"Authorization": f"Bearer {app_token}", "Client-Id": client_id},
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as resp:
-            if resp.status != 200:
-                LOGGER.info("[Twitch API] Unexpected status %s for VOD %s", resp.status, video_id)
-                return TwitchMediaInfo()
-            data = await resp.json()
-            videos = data.get("data", [])
-            if not videos:
-                return TwitchMediaInfo()
-            vod = videos[0]
-            title: str | None = vod.get("title")
-            raw_duration: str | None = vod.get("duration")  # "3h20m5s"
-            duration_seconds = _parse_hms(raw_duration) if raw_duration else None
-            view_count_raw = vod.get("view_count")
-            view_count = int(view_count_raw) if view_count_raw is not None else None
-            # thumbnail_url has %{width}x%{height} placeholders; empty while the
-            # VOD is still processing.
-            raw_thumb: str = vod.get("thumbnail_url") or ""
-            thumb = (
-                raw_thumb.replace("%{width}", "320").replace("%{height}", "180")
-                if "%{width}" in raw_thumb
-                else (raw_thumb or None)
-            )
-            return TwitchMediaInfo(
-                title=title,
-                duration_seconds=duration_seconds or None,
-                view_count=view_count,
-                thumbnail_url=thumb,
-                creator_id=vod.get("user_id"),
-                creator_name=vod.get("user_name"),
-            )
+            client_id=client_id,
+            token=app_token,
+        )
+        if status != 200:
+            LOGGER.info("[Twitch API] Unexpected status %s for VOD %s", status, video_id)
+            return TwitchMediaInfo()
+        videos = data.get("data", [])
+        if not videos:
+            return TwitchMediaInfo()
+        vod = videos[0]
+        title: str | None = vod.get("title")
+        raw_duration: str | None = vod.get("duration")  # "3h20m5s"
+        duration_seconds = _parse_hms(raw_duration) if raw_duration else None
+        view_count_raw = vod.get("view_count")
+        view_count = int(view_count_raw) if view_count_raw is not None else None
+        # thumbnail_url has %{width}x%{height} placeholders; empty while the
+        # VOD is still processing.
+        raw_thumb: str = vod.get("thumbnail_url") or ""
+        thumb = (
+            raw_thumb.replace("%{width}", "320").replace("%{height}", "180")
+            if "%{width}" in raw_thumb
+            else (raw_thumb or None)
+        )
+        return TwitchMediaInfo(
+            title=title,
+            duration_seconds=duration_seconds or None,
+            view_count=view_count,
+            thumbnail_url=thumb,
+            creator_id=vod.get("user_id"),
+            creator_name=vod.get("user_name"),
+        )
     except Exception as exc:
         LOGGER.warning(
             "[Twitch API] fetch_twitch_vod_info failed for %s: %s", video_id, type(exc).__name__

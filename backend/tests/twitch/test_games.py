@@ -20,7 +20,6 @@ from twitch.components.games import (
 # ---------------------------------------------------------------------------
 
 PATCH_CHECK = "twitch.components.games.check_command"
-PATCH_HTTPX = "twitch.components.games.httpx.AsyncClient"
 
 
 def _make_bot(*, is_mod: bool = True) -> MagicMock:
@@ -31,6 +30,13 @@ def _make_bot(*, is_mod: bool = True) -> MagicMock:
     bot._client_id = "client_abc"
     bot._bot_is_mod = {"ch_test"} if is_mod else set()
     bot.sender_for = MagicMock(return_value="bot123")
+    bot._coordinated_helix_get = AsyncMock()
+    bot._coordinated_helix_post = AsyncMock()
+    bot._coordinated_helix_get.return_value = MagicMock(
+        status_code=200,
+        json=MagicMock(return_value={"data": []}),
+    )
+    bot._coordinated_helix_post.return_value = MagicMock(status_code=200, text="")
     return bot
 
 
@@ -203,6 +209,20 @@ class TestChamberState:
 
 class TestRoulette:
     @pytest.mark.asyncio
+    async def test_timeout_mutation_uses_coordinator_once(self) -> None:
+        comp = _make_roulette_component()
+        response = MagicMock(status_code=200)
+        comp.bot._coordinated_helix_post.return_value = response
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=True)
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _roll(comp, ctx)
+
+        comp.bot._coordinated_helix_post.assert_awaited_once()
+        assert comp.bot._coordinated_helix_post.await_args.args == ("moderation/bans",)
+
+    @pytest.mark.asyncio
     async def test_disabled_command_no_reply(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=None):
             ctx = _make_ctx()
@@ -233,10 +253,7 @@ class TestRoulette:
         comp = _make_roulette_component()
         ctx = _make_ctx()
         old_chamber = _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=_make_http_mock()),
-        ):
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
             assert comp._chambers[ctx.broadcaster.id] is not old_chamber
 
@@ -245,10 +262,7 @@ class TestRoulette:
         comp = _make_roulette_component()
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=_make_http_mock()),
-        ):
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "出局" in text
@@ -275,9 +289,9 @@ class TestRoulette:
         comp = _make_roulette_component(is_mod=False)
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
-            mock_cls.assert_not_called()
+            comp.bot._coordinated_helix_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_hit_no_token_does_not_call_api(self) -> None:
@@ -285,23 +299,19 @@ class TestRoulette:
         comp.channel_repo.get_token = AsyncMock(return_value=None)
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with patch(PATCH_CHECK, return_value=MagicMock()), patch(PATCH_HTTPX) as mock_cls:
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
-            mock_cls.assert_not_called()
+            comp.bot._coordinated_helix_post.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_hit_timeout_success(self) -> None:
         comp = _make_roulette_component()
-        http_mock = _make_http_mock(status_code=200)
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=http_mock),
-        ):
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
-            http_mock.post.assert_awaited_once()
-            data = http_mock.post.call_args.kwargs["json"]["data"]
+            comp.bot._coordinated_helix_post.assert_awaited_once()
+            data = comp.bot._coordinated_helix_post.await_args.kwargs["json"]["data"]
             assert data["duration"] == _ROULETTE_TIMEOUT
             assert data["user_id"] == ctx.chatter.id
 
@@ -310,10 +320,8 @@ class TestRoulette:
         comp = _make_roulette_component()
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=_make_http_mock(status_code=403)),
-        ):
+        comp.bot._coordinated_helix_post.return_value = MagicMock(status_code=403, text="denied")
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "出局" in text
@@ -321,14 +329,10 @@ class TestRoulette:
     @pytest.mark.asyncio
     async def test_hit_timeout_exception_still_announces(self) -> None:
         comp = _make_roulette_component()
-        http_mock = _make_http_mock()
-        http_mock.post = AsyncMock(side_effect=Exception("network error"))
+        comp.bot._coordinated_helix_post.side_effect = Exception("network error")
         ctx = _make_ctx()
         _inject_chamber(comp, ctx.broadcaster.id, hit=True)
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX, return_value=http_mock),
-        ):
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _roll(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "出局" in text
@@ -449,10 +453,23 @@ class TestChoose:
 # !winner
 # ---------------------------------------------------------------------------
 
-PATCH_HTTPX_GAMES = "twitch.components.games.httpx.AsyncClient"
-
 
 class TestWinner:
+    @pytest.mark.asyncio
+    async def test_chatter_read_uses_coordinator(self) -> None:
+        comp = _make_roulette_component()
+        comp.bot._coordinated_helix_get.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value={"data": []}),
+        )
+        ctx = _make_ctx()
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _winner(comp, ctx)
+
+        comp.bot._coordinated_helix_get.assert_awaited_once()
+        assert comp.bot._coordinated_helix_get.await_args.args == ("chat/chatters",)
+
     @pytest.mark.asyncio
     async def test_disabled_command_no_reply(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=None):
@@ -480,10 +497,11 @@ class TestWinner:
                 {"user_id": "u1", "user_name": "阿澤"},
             ]
         }
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(data=data)),
-        ):
+        comp.bot._coordinated_helix_get.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value=data),
+        )
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _winner(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "阿澤" in text
@@ -494,10 +512,11 @@ class TestWinner:
         comp = _make_roulette_component()
         ctx = _make_ctx()
         data = {"data": [{"user_id": "bot123", "user_name": "Niibot"}]}
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(data=data)),
-        ):
+        comp.bot._coordinated_helix_get.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value=data),
+        )
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _winner(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "沒有可以抽選" in text
@@ -506,10 +525,8 @@ class TestWinner:
     async def test_api_failure_shows_generic_failure(self) -> None:
         comp = _make_roulette_component()
         ctx = _make_ctx()
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX_GAMES, return_value=_make_get_http_mock(status_code=401)),
-        ):
+        comp.bot._coordinated_helix_get.return_value = MagicMock(status_code=401)
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _winner(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "抽選失敗" in text
@@ -517,13 +534,9 @@ class TestWinner:
     @pytest.mark.asyncio
     async def test_fetch_exception_shows_generic_failure(self) -> None:
         comp = _make_roulette_component()
-        http_mock = _make_get_http_mock()
-        http_mock.get = AsyncMock(side_effect=Exception("network error"))
+        comp.bot._coordinated_helix_get.side_effect = Exception("network error")
         ctx = _make_ctx()
-        with (
-            patch(PATCH_CHECK, return_value=MagicMock()),
-            patch(PATCH_HTTPX_GAMES, return_value=http_mock),
-        ):
+        with patch(PATCH_CHECK, return_value=MagicMock()):
             await _winner(comp, ctx)
             text: str = comp._ctx_reply.call_args[0][1]
             assert "抽選失敗" in text

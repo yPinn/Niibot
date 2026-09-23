@@ -4,7 +4,6 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import httpx
 from pypinyin import lazy_pinyin
 from twitchio.ext import commands
 
@@ -321,22 +320,18 @@ class AIComponent(BotComponent):
         Calls chat/emotes/user with broadcaster_id so mod-granted access is
         reflected, then updates ai_settings and notifies the bot to reload.
         """
-        settings = get_settings()
         sender_id = self.bot.sender_for(channel_id)
         token_row = await self.bot.channels.get_token(sender_id, "bot")
         if not token_row:
             LOGGER.warning("[%s] emote sync skipped: no bot token", channel_id)
             return
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(
-                    "https://api.twitch.tv/helix/chat/emotes/user",
-                    headers={
-                        "Client-Id": settings.twitch_client_id,
-                        "Authorization": f"Bearer {token_row.token}",
-                    },
-                    params={"user_id": sender_id, "broadcaster_id": channel_id},
-                )
+            r = await self.bot._coordinated_helix_get(
+                "chat/emotes/user",
+                token=token_row.token,
+                token_for=sender_id,
+                params={"user_id": sender_id, "broadcaster_id": channel_id},
+            )
             if r.status_code != 200:
                 LOGGER.warning("[%s] emote sync API error: %s", channel_id, r.status_code)
                 return

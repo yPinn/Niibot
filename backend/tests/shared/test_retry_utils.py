@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from shared.retry_utils import format_duration, parse_retry_after
 
@@ -83,6 +83,14 @@ class TestParseRetryAfter:
         resp.headers = {"Retry-After": "bad"}
         exc = _ExcError(response=resp)
         assert parse_retry_after(exc, fallback=7.0) == 7.0
+
+    def test_rate_limit_reset_header_is_converted_from_epoch(self):
+        resp = MagicMock()
+        resp.headers = {"Ratelimit-Reset": "1700000030"}
+        exc = _ExcError(response=resp)
+
+        with patch("shared.retry_utils.time.time", return_value=1700000000):
+            assert parse_retry_after(exc, fallback=7.0) == 30.0
 
     def test_no_attrs_uses_fallback(self):
         assert parse_retry_after(Exception(), fallback=3.0) == 3.0

@@ -38,3 +38,15 @@ def test_credential_revision_migration_is_additive_and_hot_reloads_broadcasters(
     assert "pg_notify('token_reauth'" in sql
     assert "DELETE FROM" not in sql.upper()
     assert "DROP TABLE" not in sql.upper()
+
+
+def test_validation_schedule_migration_adds_a_claimable_due_time_without_mass_backfill() -> None:
+    sql = (_VERSIONS / "139_add_twitch_validation_schedule.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN IF NOT EXISTS next_validation_at" in sql
+    assert "idx_tokens_validation_schedule_due" in sql
+    assert "next_validation_at NULLS FIRST" in sql
+    assert "WHERE invalidated_at IS NULL" in sql
+    assert "UPDATE tokens" not in sql
+    assert "DELETE FROM" not in sql.upper()
+    assert "DROP TABLE" not in sql.upper()

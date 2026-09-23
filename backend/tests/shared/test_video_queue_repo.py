@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 import pytest
@@ -1631,6 +1632,30 @@ class TestGetTwitchAppToken:
         # Token endpoint must only be called once despite two invocations
         session.post.assert_called_once()
 
+    async def test_concurrent_cache_miss_is_single_flight(self):
+        response = AsyncMock()
+        response.status = 200
+        response.json = AsyncMock(return_value={"access_token": "tok_single", "expires_in": 3600})
+
+        class SlowResponse:
+            async def __aenter__(self):
+                await asyncio.sleep(0)
+                return response
+
+            async def __aexit__(self, *_args):
+                return None
+
+        session = MagicMock()
+        session.post.side_effect = lambda *args, **kwargs: SlowResponse()
+
+        first, second = await asyncio.gather(
+            _get_twitch_app_token("cid", "csec", session),
+            _get_twitch_app_token("cid", "csec", session),
+        )
+
+        assert first == second == "tok_single"
+        session.post.assert_called_once()
+
     async def test_expired_cache_triggers_refetch(self):
         import time
 
@@ -1811,6 +1836,34 @@ class TestFetchTwitchVodInfo:
     async def test_empty_data_returns_none(self):
         session = await self._session([])
         assert await fetch_twitch_vod_info("v1", "cid", "csec", session) == TwitchMediaInfo()
+
+    async def test_retries_helix_429_once_through_coordinator(self):
+        session = await self._session(
+            [
+                {
+                    "title": "Recovered",
+                    "duration": "1m",
+                    "user_id": "9",
+                    "user_name": "Streamer",
+                }
+            ]
+        )
+        limited = MagicMock(status=429, headers={"Ratelimit-Reset": "0"})
+        limited.json = AsyncMock(return_value={})
+        limited_cm = MagicMock()
+        limited_cm.__aenter__ = AsyncMock(return_value=limited)
+        limited_cm.__aexit__ = AsyncMock(return_value=None)
+        success_cm = session.get.return_value
+        session.get.side_effect = [limited_cm, success_cm]
+
+        with patch("shared.video_sources._twitch_media_egress") as egress:
+            egress.acquire_helix = AsyncMock()
+            result = await fetch_twitch_vod_info("v1", "cid", "csec", session)
+
+        assert result.title == "Recovered"
+        assert session.get.call_count == 2
+        assert egress.acquire_helix.await_count == 2
+        assert egress.observe_helix.call_count == 2
 
     async def test_missing_creds_returns_none(self):
         assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == TwitchMediaInfo()

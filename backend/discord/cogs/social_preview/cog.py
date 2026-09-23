@@ -35,6 +35,7 @@ from discord.ext import commands
 
 from core import EmbedFactory, get_settings
 from shared.bilibili_client import bilibili_web_headers, fetch_bilibili_video_data
+from shared.twitch_egress import TwitchEgressCoordinator, credential_bucket_key
 
 from ._embeds import (
     build_bilibili_embed,
@@ -97,7 +98,7 @@ async def _anone_pair() -> tuple[None, None]:
     return None, None
 
 
-class SocialPreviewCog(commands.Cog, name="SocialPreview"):
+class SocialPreviewCog(commands.Cog, name="SocialPreview"):  # type: ignore[call-arg]
     """Auto-embed previews for social media links Discord cannot embed."""
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -107,12 +108,14 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
             timeout=HTTP_TIMEOUT,
             headers={"User-Agent": _UA},
         )
+        self._twitch_egress = TwitchEgressCoordinator()
         self._twitch_token: str | None = None
         self._twitch_token_exp: float = 0.0
         self._twitch_token_lock = asyncio.Lock()
 
     async def cog_unload(self) -> None:
         await self._http.aclose()
+        await self._twitch_egress.close()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -643,16 +646,30 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):
     async def _twitch_helix_get(self, url: str, token: str) -> list[dict]:
         """GET a Twitch Helix endpoint and return the data list, or [] on failure."""
         s = get_settings()
-        try:
-            resp = await self._http.get(
-                url,
-                headers={"Client-ID": s.twitch_client_id, "Authorization": f"Bearer {token}"},
-            )
-            resp.raise_for_status()
-            return resp.json().get("data", [])  # type: ignore[no-any-return]
-        except Exception as exc:
-            LOGGER.debug("Twitch Helix request failed for %s: %s", url, exc)
-            return []
+        bucket_key = credential_bucket_key(token)
+        for attempt in range(2):
+            try:
+                await self._twitch_egress.acquire_helix(bucket_key)
+                resp = await self._http.get(
+                    url,
+                    headers={
+                        "Client-ID": s.twitch_client_id,
+                        "Authorization": f"Bearer {token}",
+                    },
+                )
+                self._twitch_egress.observe_helix(
+                    bucket_key,
+                    status_code=resp.status_code,
+                    headers=resp.headers,
+                )
+                if resp.status_code == 429 and attempt == 0:
+                    continue
+                resp.raise_for_status()
+                return resp.json().get("data", [])  # type: ignore[no-any-return]
+            except Exception as exc:
+                LOGGER.debug("Twitch Helix request failed for %s: %s", url, exc)
+                return []
+        return []
 
     async def _fetch_twitch_user_info(
         self, user_id: str, token: str

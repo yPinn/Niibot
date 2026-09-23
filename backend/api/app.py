@@ -97,7 +97,8 @@ _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
 _CACHE_CLEAR_INTERVAL = 600.0  # 10 min safety net for pg_notify misses (see cache_invalidation.py)
 _GAUGE_LOG_INTERVAL = 300.0  # 5 min, matches the twitch bot's heartbeat cadence
-_TWITCH_AUTHORIZATION_INTERVAL = 900.0
+_TWITCH_AUTHORIZATION_IDLE_INTERVAL = 30.0
+_TWITCH_AUTHORIZATION_ACTIVE_INTERVAL = 1.0
 
 
 async def _db_retry_loop(db_manager) -> None:
@@ -192,7 +193,7 @@ async def _gauge_log_loop(db_manager) -> None:
 
 
 async def _twitch_authorization_loop(db_manager, settings) -> None:
-    """Validate every stored Twitch credential at least hourly in bounded batches."""
+    """Validate credentials continuously without synchronized batch bursts."""
     if not settings.twitch_token_encryption_key:
         LOGGER.warning(
             "Twitch authorization reconciliation disabled: "
@@ -202,7 +203,7 @@ async def _twitch_authorization_loop(db_manager, settings) -> None:
 
     while True:
         try:
-            delay = _TWITCH_AUTHORIZATION_INTERVAL
+            delay = _TWITCH_AUTHORIZATION_IDLE_INTERVAL
             if db_manager.is_connected:
                 service = TwitchAuthorizationService(
                     db_manager.pool,
@@ -210,15 +211,16 @@ async def _twitch_authorization_loop(db_manager, settings) -> None:
                     token_encryption_key=settings.twitch_token_encryption_key,
                     client_id=settings.client_id,
                 )
-                checked = await service.check_due_credentials(limit=25)
+                checked = await service.check_due_credentials(limit=1)
                 if checked:
                     LOGGER.info(
                         "Twitch authorization reconciliation checked %d credential(s)", checked
                     )
-                if checked == 25:
-                    # Drain large installations in bounded bursts without
-                    # waiting another 15 minutes between pages.
-                    delay = 5.0
+                if checked:
+                    # Drain a startup/backlog at one validation per second.
+                    # Once empty, the persisted next_validation_at schedule
+                    # lets the loop return to the low-cost idle cadence.
+                    delay = _TWITCH_AUTHORIZATION_ACTIVE_INTERVAL
             await asyncio.sleep(delay)
         except asyncio.CancelledError:
             break
