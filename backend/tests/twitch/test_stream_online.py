@@ -43,6 +43,7 @@ def _make_bot(*, needs_reauth: set[str] | None = None):
         b = Bot.__new__(Bot)
         b._bot_id = "999"
         b._needs_reauth = needs_reauth if needs_reauth is not None else set()
+        b.sender_for = MagicMock(return_value="999")
         b.sessions = MagicMock()
         b.sessions.on_stream_online = AsyncMock()
         b.sessions.on_stream_offline = AsyncMock()
@@ -50,15 +51,18 @@ def _make_bot(*, needs_reauth: set[str] | None = None):
 
 
 async def test_reauth_notified_on_go_live_when_needs_reauth():
+    """No cooldown gating: this event fires once per real stream, so it
+    always announces if the channel is still flagged when it fires."""
     bot = _make_bot(needs_reauth={"123"})
     payload = _make_payload(channel_id="123")
 
-    with patch("utils.reauth.reauth_notifier") as mock_notifier:
-        mock_notifier.notify = AsyncMock(return_value=True)
+    with patch("core.config.get_settings") as mock_settings:
+        mock_settings.return_value.is_production = True
+        mock_settings.return_value.frontend_url = "https://niibot.tv"
         await bot.event_stream_online(payload)
 
-    mock_notifier.notify.assert_awaited_once()
-    assert mock_notifier.notify.call_args.kwargs["channel_id"] == "123"
+    payload.broadcaster.send_message.assert_awaited_once()
+    assert "streamer" in payload.broadcaster.send_message.call_args.kwargs["message"]
     bot.sessions.on_stream_online.assert_awaited_once_with("123")
 
 
@@ -66,11 +70,9 @@ async def test_no_reauth_notification_when_scopes_ok():
     bot = _make_bot(needs_reauth=set())
     payload = _make_payload(channel_id="123")
 
-    with patch("utils.reauth.reauth_notifier") as mock_notifier:
-        mock_notifier.notify = AsyncMock(return_value=True)
-        await bot.event_stream_online(payload)
+    await bot.event_stream_online(payload)
 
-    mock_notifier.notify.assert_not_called()
+    payload.broadcaster.send_message.assert_not_awaited()
     bot.sessions.on_stream_online.assert_awaited_once_with("123")
 
 

@@ -10,8 +10,10 @@ import logging
 import asyncpg
 
 from shared.repositories.channel import ChannelRepository
+from shared.twitch_scopes import required_core_scopes
 
 from .twitch_api import TwitchAPIClient
+from .twitch_authorization_service import TwitchAuthorizationService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -80,52 +82,30 @@ class ChannelService:
             return None
 
     async def get_token_with_refresh(self, user_id: str, twitch_api: TwitchAPIClient) -> str | None:
-        """
-        Get user's access token, refreshing if expired.
-
-        This method:
-        1. Fetches the stored token
-        2. Validates it with Twitch
-        3. If invalid, attempts refresh using stored refresh_token
-        4. Updates database with new tokens on successful refresh
-
-        Returns:
-            Valid access token or None if unavailable/refresh failed.
-        """
+        """Return a valid broadcaster token through the serialized lifecycle service."""
         try:
-            token_obj = await self.repo.get_token(user_id)
-            if not token_obj:
-                LOGGER.warning(f"No token found for user: {user_id}")
-                return None
-
-            # Validate current token
-            is_valid = await twitch_api.validate_token(token_obj.token)
-            if is_valid:
-                return token_obj.token
-
-            # Token expired, try refresh
-            if not token_obj.refresh:
-                LOGGER.warning(f"Token expired and no refresh token for user: {user_id}")
-                return None
-
-            LOGGER.info(f"Token expired for user {user_id}, attempting refresh...")
-            result = await twitch_api.refresh_access_token(token_obj.refresh)
-
-            if not result.success or not result.access_token:
-                LOGGER.error(f"Token refresh failed for user {user_id}: {result.error}")
-                return None
-
-            # Update database with new tokens
-            await self.repo.upsert_token_only(
-                user_id=user_id,
-                token=result.access_token,
-                refresh=result.refresh_token or token_obj.refresh,
+            authorization = TwitchAuthorizationService(
+                self.pool,
+                twitch_api=twitch_api,
+                token_encryption_key=self.repo.token_encryption_key,
+                client_id=twitch_api.client_id,
             )
-            LOGGER.info(f"Token refreshed successfully for user: {user_id}")
-            return result.access_token
+            health = await authorization.check_credential(
+                user_id=user_id,
+                token_type="broadcaster",
+                required_scopes=set(required_core_scopes("broadcaster")),
+            )
+            if health.status != "valid":
+                return None
+
+            # The lifecycle service may have rotated the pair in its locked
+            # transaction. Drop any pre-existing process cache before reading.
+            self.repo.invalidate_token(user_id, "broadcaster")
+            token_obj = await self.repo.get_token(user_id, "broadcaster")
+            return token_obj.token if token_obj else None
 
         except Exception:
-            LOGGER.exception("Error getting token with refresh for user %s", user_id)
+            LOGGER.exception("Error getting serialized Twitch token for user %s", user_id)
             return None
 
     async def save_token(

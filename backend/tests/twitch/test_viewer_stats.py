@@ -43,6 +43,17 @@ def _resp(status: int, payload: dict | None = None) -> MagicMock:
     return r
 
 
+@pytest.fixture(autouse=True)
+def _reset_command_failure_debounce():
+    """command_failure_notifier is a process-wide singleton; clear its debounce
+    state so one test's failure reply doesn't silence the next test's."""
+    from utils.command_failure import command_failure_notifier
+
+    command_failure_notifier._last_notified.clear()
+    yield
+    command_failure_notifier._last_notified.clear()
+
+
 @pytest.fixture()
 def comp() -> ViewerStatsComponent:
     with patch("twitch.components.viewer_stats.get_settings") as gs:
@@ -136,13 +147,27 @@ async def test_subage_keeps_status_without_a_month_badge(comp):
     assert "0 個月" not in msg
 
 
-async def test_subage_401_triggers_reauth(comp):
+async def test_subage_missing_scope_401_triggers_reauth(comp):
+    """Only a genuine "Missing scope" 401 is treated as reauth — plain invalid-token
+    401s are left for the authoritative hourly credential check to catch."""
     ctx = _make_ctx()
-    comp._helix_get.return_value = _resp(401)
+    comp._helix_get.return_value = _resp(
+        401, {"message": "Missing scope: channel:read:subscriptions"}
+    )
     comp._notify_reauth = AsyncMock()
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("subage", comp, ctx)
     comp._notify_reauth.assert_awaited_once()
+
+
+async def test_subage_plain_401_falls_back_to_generic_failure(comp):
+    ctx = _make_ctx()
+    comp._helix_get.return_value = _resp(401, {"message": "Invalid OAuth token"})
+    comp._notify_reauth = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("subage", comp, ctx)
+    comp._notify_reauth.assert_not_called()
+    assert "查詢失敗" in comp._ctx_reply.await_args[0][1]
 
 
 async def test_subcount_reports_total(comp):

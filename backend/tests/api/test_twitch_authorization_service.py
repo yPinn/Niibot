@@ -17,10 +17,18 @@ from api.services.twitch_authorization_service import (
     BotAccountInUseError,
     SystemBotProtectedError,
     TwitchAuthorizationService,
+    TwitchCredentialInvalidError,
+    TwitchProviderUnavailableError,
+    TwitchScopeRequiredError,
 )
 from cryptography.fernet import Fernet
 
-from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
+from shared.twitch_scopes import (
+    BOT_CORE_SCOPES,
+    BOT_SCOPES,
+    BROADCASTER_CORE_SCOPES,
+    BROADCASTER_SCOPES,
+)
 from shared.twitch_token_crypto import (
     TwitchTokenEncryptionNotConfiguredError,
     decrypt_twitch_token,
@@ -62,6 +70,29 @@ def _credential_row(*, user_id: str = "bot-1", token_type: str = "bot") -> dict:
     }
 
 
+def _capability_row(
+    *,
+    broadcaster_scopes: str | None = " ".join(BROADCASTER_SCOPES),
+    bot_scopes: str | None = " ".join(BOT_SCOPES),
+) -> dict:
+    return {
+        "channel_id": "channel-1",
+        "broadcaster_credential_user_id": "channel-1",
+        "broadcaster_scopes": broadcaster_scopes,
+        "broadcaster_requires_reauth": False,
+        "broadcaster_last_validated_at": _NOW,
+        "broadcaster_invalidated_at": None,
+        "broadcaster_validation_error_code": None,
+        "bot_user_id": "bot-1",
+        "bot_credential_user_id": "bot-1",
+        "bot_scopes": bot_scopes,
+        "bot_requires_reauth": False,
+        "bot_last_validated_at": _NOW,
+        "bot_invalidated_at": None,
+        "bot_validation_error_code": None,
+    }
+
+
 def _service(conn: AsyncMock, twitch: MagicMock) -> TwitchAuthorizationService:
     conn.transaction = MagicMock(return_value=_tx_cm())
     return TwitchAuthorizationService(
@@ -98,6 +129,104 @@ async def test_missing_encryption_key_still_allows_broadcaster_summary_reads():
 
     assert summary.channel_name == "alice"
     assert summary.status == "not_checked"
+
+
+@pytest.mark.asyncio
+async def test_capability_snapshot_locks_only_missing_optional_scope():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _capability_row(
+        broadcaster_scopes="channel:bot channel:manage:vips"
+    )
+
+    snapshot = await _service(conn, MagicMock()).get_capability_snapshot(
+        channel_id="channel-1", system_bot_id="bot-1"
+    )
+    capabilities = {item.key: item for item in snapshot.capabilities}
+
+    assert snapshot.broadcaster_status == "valid"
+    assert capabilities["broadcaster_chat"].available is True
+    assert capabilities["vip_management"].available is True
+    assert capabilities["channel_points"].available is False
+    assert capabilities["channel_points"].missing_scopes == ("channel:read:redemptions",)
+
+
+@pytest.mark.asyncio
+async def test_capability_snapshot_treats_missing_core_as_credential_reauth():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _capability_row(broadcaster_scopes="channel:manage:vips")
+
+    snapshot = await _service(conn, MagicMock()).get_capability_snapshot(
+        channel_id="channel-1", system_bot_id="bot-1"
+    )
+    broadcaster_features = [
+        item for item in snapshot.capabilities if item.credential == "broadcaster"
+    ]
+
+    assert snapshot.broadcaster_status == "requires_reauthorization"
+    assert all(item.available is False for item in broadcaster_features)
+
+
+@pytest.mark.asyncio
+async def test_require_capability_returns_available_feature():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _capability_row()
+
+    health = await _service(conn, MagicMock()).require_capability(
+        channel_id="channel-1",
+        system_bot_id="bot-1",
+        capability_key="moderator_management",
+    )
+
+    assert health.available is True
+
+
+@pytest.mark.asyncio
+async def test_require_capability_classifies_optional_scope_without_global_reauth():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _capability_row(broadcaster_scopes="channel:bot")
+
+    with pytest.raises(TwitchScopeRequiredError) as caught:
+        await _service(conn, MagicMock()).require_capability(
+            channel_id="channel-1",
+            system_bot_id="bot-1",
+            capability_key="moderator_management",
+        )
+
+    assert caught.value.response_headers == {}
+    assert caught.value.fields == {
+        "capability": "moderator_management",
+        "missing_scopes": "channel:manage:moderators",
+    }
+
+
+@pytest.mark.asyncio
+async def test_require_capability_classifies_invalid_credential_for_global_reauth():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _capability_row(broadcaster_scopes="channel:manage:moderators")
+
+    with pytest.raises(TwitchCredentialInvalidError) as caught:
+        await _service(conn, MagicMock()).require_capability(
+            channel_id="channel-1",
+            system_bot_id="bot-1",
+            capability_key="moderator_management",
+        )
+
+    assert caught.value.response_headers == {"X-Reauth-Required": "true"}
+
+
+@pytest.mark.asyncio
+async def test_require_capability_classifies_provider_outage_without_reauth():
+    conn = AsyncMock()
+    row = _capability_row()
+    row["broadcaster_validation_error_code"] = "provider_unavailable"
+    conn.fetchrow.return_value = row
+
+    with pytest.raises(TwitchProviderUnavailableError):
+        await _service(conn, MagicMock()).require_capability(
+            channel_id="channel-1",
+            system_bot_id="bot-1",
+            capability_key="moderator_management",
+        )
 
 
 @pytest.mark.asyncio
@@ -197,6 +326,26 @@ async def test_background_reconciliation_defers_unexpected_failures_to_avoid_sta
 
 
 @pytest.mark.asyncio
+async def test_background_reconciliation_validates_only_runtime_core_scopes():
+    conn = AsyncMock()
+    service = _service(conn, MagicMock())
+    service.list_due_credentials = AsyncMock(  # type: ignore[method-assign]
+        return_value=[("bot-1", "bot"), ("channel-1", "broadcaster")]
+    )
+    service.check_credential = AsyncMock()  # type: ignore[method-assign]
+
+    checked = await service.check_due_credentials(limit=25)
+
+    assert checked == 2
+    assert service.check_credential.await_args_list[0].kwargs["required_scopes"] == set(
+        BOT_CORE_SCOPES
+    )
+    assert service.check_credential.await_args_list[1].kwargs["required_scopes"] == set(
+        BROADCASTER_CORE_SCOPES
+    )
+
+
+@pytest.mark.asyncio
 async def test_transient_refresh_failure_never_marks_reauth_or_disables_channel():
     conn = AsyncMock()
     conn.fetchrow.return_value = _credential_row(user_id="channel-1", token_type="broadcaster")
@@ -255,6 +404,11 @@ async def test_valid_token_requires_matching_identity_client_and_scopes():
         if "FROM bot_accounts" in call.args[0] and "FOR UPDATE" in call.args[0]
     )
     assert account_lock[1] == "bot-1"
+    assert any("pg_advisory_xact_lock" in call.args[0] for call in conn.execute.await_args_list)
+    assert any(
+        "scopes = $3" in call.args[0] and call.args[3] == " ".join(sorted(BOT_SCOPES))
+        for call in conn.execute.await_args_list
+    )
 
 
 @pytest.mark.asyncio
@@ -291,6 +445,7 @@ async def test_invalid_access_token_refreshes_rotates_and_revalidates_atomically
     token_write = next(
         call.args for call in conn.execute.await_args_list if "token = $3" in call.args[0]
     )
+    assert "credential_revision = credential_revision + 1" in token_write[0]
     assert decrypt_twitch_token(token_write[3], version=1, key=_KEY) == "new-access"
     assert decrypt_twitch_token(token_write[4], version=1, key=_KEY) == "new-refresh"
     notify_call = next(

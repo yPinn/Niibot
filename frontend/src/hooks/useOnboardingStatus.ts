@@ -8,6 +8,8 @@ import { getTriggerConfigs } from '@/api/triggers'
 import { useAuth } from '@/contexts/AuthContext'
 import type { OnboardingStatus } from '@/lib/onboarding-status'
 
+import { useTwitchCapabilities } from './useTwitchCapabilities'
+
 const EMPTY_STATUS: OnboardingStatus = {
   modDone: null,
   commandsDone: null,
@@ -17,12 +19,14 @@ const EMPTY_STATUS: OnboardingStatus = {
 
 export function useOnboardingStatus(): { loading: boolean; status: OnboardingStatus } {
   const { user, isInitialized, isAffiliate } = useAuth()
+  const { loading: capabilitiesLoading, isAvailable } = useTwitchCapabilities()
+  const moderatorManagementAvailable = isAvailable('moderator_management')
   const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<OnboardingStatus>(EMPTY_STATUS)
   const loadedForRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!isInitialized || !user) return
+    if (!isInitialized || !user || capabilitiesLoading) return
     if (loadedForRef.current === user.id) return
     loadedForRef.current = user.id
 
@@ -32,7 +36,7 @@ export function useOnboardingStatus(): { loading: boolean; status: OnboardingSta
     async function load() {
       const [modResult, commandsResult, triggersResult, eventsResult, timersResult] =
         await Promise.allSettled([
-          getBotModStatus(),
+          moderatorManagementAvailable ? getBotModStatus() : Promise.resolve(null),
           getCommandConfigs(),
           getTriggerConfigs(),
           isAffiliate ? getEventConfigs() : Promise.resolve(null),
@@ -40,7 +44,7 @@ export function useOnboardingStatus(): { loading: boolean; status: OnboardingSta
         ])
 
       const modDone =
-        modResult.status === 'fulfilled' && modResult.value.ok
+        modResult.status === 'fulfilled' && modResult.value?.ok
           ? modResult.value.data.is_moderator
           : null
 
@@ -70,7 +74,7 @@ export function useOnboardingStatus(): { loading: boolean; status: OnboardingSta
     return () => {
       cancelled = true
     }
-  }, [isInitialized, user, isAffiliate])
+  }, [capabilitiesLoading, isInitialized, user, isAffiliate, moderatorManagementAvailable])
 
   return { loading, status }
 }

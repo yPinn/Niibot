@@ -30,6 +30,13 @@ from twitchio import eventsub
 
 from shared.events import EVENT_CATALOG, EVENT_KEYS
 from shared.repositories.event_config import DEFAULT_ENABLED, DEFAULT_TEMPLATES, EVENT_TYPES
+from shared.twitch_scopes import (
+    BOT_CORE_SCOPES,
+    BOT_SCOPES,
+    BROADCASTER_CORE_SCOPES,
+    BROADCASTER_SCOPES,
+    TWITCH_CAPABILITIES,
+)
 
 _MIGRATIONS = Path(__file__).parents[2] / "shared/migrations/versions"
 _MIGRATION_WATCH_STREAK = _MIGRATIONS / "130_add_watch_streak_event.sql"
@@ -66,6 +73,10 @@ class TestCatalogConsistency:
         assert event.key in DEFAULT_TEMPLATES
         assert event.key in DEFAULT_ENABLED
         assert event.key in EVENT_TYPES
+
+    def test_capability_key_resolves_to_shared_scope_registry(self, event):
+        if event.capability_key is not None:
+            assert event.capability_key in TWITCH_CAPABILITIES
 
 
 def test_no_factory_without_catalog_entry():
@@ -119,8 +130,6 @@ def test_channel_subscription_set():
         eventsub.SharedChatSessionUpdateSubscription(broadcaster_user_id=bc),
         eventsub.SharedChatSessionEndSubscription(broadcaster_user_id=bc),
         eventsub.ChannelSubscriptionEndSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelModeratorAddSubscription(broadcaster_user_id=bc),
-        eventsub.ChannelModeratorRemoveSubscription(broadcaster_user_id=bc),
         eventsub.ChannelVIPAddSubscription(broadcaster_user_id=bc),
         eventsub.ChannelVIPRemoveSubscription(broadcaster_user_id=bc),
         # catalog-derived (subscription_class set)
@@ -134,6 +143,51 @@ def test_channel_subscription_set():
     got = get_channel_subscriptions(bc, bot)
     assert {_key(s) for s in got} == {_key(s) for s in expected}
     assert len(got) == len(expected)
+
+
+def test_moderator_events_require_enabled_capability_and_scope():
+    bc, bot = "bc-1", "bot-1"
+
+    without_scope = get_channel_subscriptions(
+        bc,
+        bot,
+        enabled_capabilities={"moderator_sync_realtime"},
+        broadcaster_scopes=set(BROADCASTER_SCOPES),
+        bot_scopes=set(BOT_SCOPES),
+    )
+    with_scope = get_channel_subscriptions(
+        bc,
+        bot,
+        enabled_capabilities={"moderator_sync_realtime"},
+        broadcaster_scopes={*BROADCASTER_SCOPES, "moderation:read"},
+        bot_scopes=set(BOT_SCOPES),
+    )
+
+    assert all(not sub.type.startswith("channel.moderator") for sub in without_scope)
+    assert {sub.type for sub in with_scope} >= {
+        "channel.moderator.add",
+        "channel.moderator.remove",
+    }
+
+
+def test_subscription_plan_omits_features_whose_scopes_are_missing():
+    subscriptions = get_channel_subscriptions(
+        "bc-1",
+        "bot-1",
+        broadcaster_scopes=set(BROADCASTER_CORE_SCOPES),
+        bot_scopes=set(BOT_CORE_SCOPES),
+    )
+    types = {sub.type for sub in subscriptions}
+
+    assert {"channel.chat.message", "channel.chat.notification"} <= types
+    assert {"stream.online", "stream.offline", "channel.raid"} <= types
+    assert "channel.channel_points_custom_reward_redemption.add" not in types
+    assert "channel.subscribe" not in types
+    assert "channel.subscription.gift" not in types
+    assert "channel.subscription.end" not in types
+    assert "channel.cheer" not in types
+    assert "channel.vip.add" not in types
+    assert "channel.follow" not in types
 
 
 # ---------------------------------------------------------------------------

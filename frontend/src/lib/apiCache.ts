@@ -89,6 +89,8 @@ export const apiCache = new ApiCache()
 export const CACHE_KEYS = {
   CURRENT_USER: 'auth:current-user',
   CHANNELS: 'channels:list',
+  BOT_MOD_STATUS: 'channels:bot-mod-status',
+  TWITCH_CAPABILITIES: (channelId: string) => `twitch:capabilities:${channelId}`,
   TENANTS: 'tenants:list',
   CHANNEL_EMOTES: 'channels:emotes',
   STATS_CHANNEL: (days: number) => `stats:channel:${days}`,

@@ -11,8 +11,19 @@ from typing import Literal
 import asyncpg
 
 from services.twitch_api import TwitchAPIClient
-from shared.errors import ConflictError, NotFoundError
-from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
+from shared.errors import (
+    AccessDeniedError,
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
+from shared.twitch_scopes import (
+    BOT_SCOPES,
+    BROADCASTER_SCOPES,
+    TWITCH_CAPABILITIES,
+    missing_capability_scopes,
+    required_core_scopes,
+)
 from shared.twitch_token_crypto import (
     decrypt_twitch_token,
     encrypt_twitch_token,
@@ -55,6 +66,24 @@ class BroadcasterAuthorizationSummary:
     error_code: str | None
 
 
+@dataclass(frozen=True)
+class CapabilityHealth:
+    key: str
+    label: str
+    credential: TokenType
+    available: bool
+    missing_scopes: tuple[str, ...]
+    core: bool
+
+
+@dataclass(frozen=True)
+class TwitchCapabilitySnapshot:
+    broadcaster_status: AuthorizationStatus
+    bot_status: AuthorizationStatus
+    bot_user_id: str
+    capabilities: tuple[CapabilityHealth, ...]
+
+
 class CredentialNotFoundError(NotFoundError):
     code = "TWITCH_AUTH.NOT_FOUND"
     user_message = "找不到這筆 Twitch 授權"
@@ -68,6 +97,22 @@ class SystemBotProtectedError(ConflictError):
 class BotAccountInUseError(ConflictError):
     code = "BOT_ACCOUNT.IN_USE"
     user_message = "請先改用其他 Bot，再移除這個帳號"
+
+
+class TwitchCredentialInvalidError(AccessDeniedError):
+    code = "TWITCH_AUTH.CREDENTIAL_INVALID"
+    user_message = "Twitch 授權已失效，請重新授權"
+    response_headers = {"X-Reauth-Required": "true"}
+
+
+class TwitchScopeRequiredError(AccessDeniedError):
+    code = "TWITCH_AUTH.SCOPE_REQUIRED"
+    user_message = "此功能需要額外的 Twitch 授權"
+
+
+class TwitchProviderUnavailableError(ServiceUnavailableError):
+    code = "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
+    user_message = "Twitch 暫時沒有回應，請稍後再試"
 
 
 class TwitchAuthorizationService:
@@ -100,6 +145,136 @@ class TwitchAuthorizationService:
         if row["last_validated_at"] is not None:
             return "valid"
         return "not_checked"
+
+    @staticmethod
+    def _snapshot_status(row, prefix: str, *, scopes: set[str]) -> AuthorizationStatus:
+        if row[f"{prefix}_credential_user_id"] is None:
+            return "requires_reauthorization"
+        if row[f"{prefix}_invalidated_at"] is not None or bool(row[f"{prefix}_requires_reauth"]):
+            return "requires_reauthorization"
+        token_type: TokenType = "bot" if prefix == "bot" else "broadcaster"
+        if not required_core_scopes(token_type).issubset(scopes):
+            return "requires_reauthorization"
+        if row[f"{prefix}_validation_error_code"] == "provider_unavailable":
+            return "temporarily_unavailable"
+        if row[f"{prefix}_last_validated_at"] is not None:
+            return "valid"
+        return "not_checked"
+
+    async def get_capability_snapshot(
+        self, *, channel_id: str, system_bot_id: str
+    ) -> TwitchCapabilitySnapshot:
+        """Return scope-derived feature health without exposing credentials."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT channel.channel_id,
+                       broadcaster.user_id AS broadcaster_credential_user_id,
+                       broadcaster.scopes AS broadcaster_scopes,
+                       broadcaster.requires_reauth AS broadcaster_requires_reauth,
+                       broadcaster.last_validated_at AS broadcaster_last_validated_at,
+                       broadcaster.invalidated_at AS broadcaster_invalidated_at,
+                       broadcaster.validation_error_code
+                           AS broadcaster_validation_error_code,
+                       COALESCE(settings.active_bot_user_id, $2) AS bot_user_id,
+                       bot.user_id AS bot_credential_user_id,
+                       bot.scopes AS bot_scopes,
+                       bot.requires_reauth AS bot_requires_reauth,
+                       bot.last_validated_at AS bot_last_validated_at,
+                       bot.invalidated_at AS bot_invalidated_at,
+                       bot.validation_error_code AS bot_validation_error_code
+                  FROM channels channel
+                  LEFT JOIN tokens broadcaster
+                    ON broadcaster.user_id = channel.channel_id
+                   AND broadcaster.token_type = 'broadcaster'
+                  LEFT JOIN channel_bot_settings settings
+                    ON settings.channel_id = channel.channel_id
+                  LEFT JOIN tokens bot
+                    ON bot.user_id = COALESCE(settings.active_bot_user_id, $2)
+                   AND bot.token_type = 'bot'
+                 WHERE channel.channel_id = $1
+                """,
+                channel_id,
+                system_bot_id,
+            )
+        if row is None:
+            raise CredentialNotFoundError()
+
+        def stored_scopes(prefix: str, defaults: list[str]) -> set[str]:
+            if row[f"{prefix}_credential_user_id"] is None:
+                return set()
+            raw = row[f"{prefix}_scopes"]
+            return set(defaults) if raw is None else set(str(raw).split())
+
+        broadcaster_scopes = stored_scopes("broadcaster", BROADCASTER_SCOPES)
+        bot_scopes = stored_scopes("bot", BOT_SCOPES)
+        broadcaster_status = self._snapshot_status(row, "broadcaster", scopes=broadcaster_scopes)
+        bot_status = self._snapshot_status(row, "bot", scopes=bot_scopes)
+        scopes_by_credential = {
+            "broadcaster": broadcaster_scopes,
+            "bot": bot_scopes,
+        }
+        status_by_credential = {
+            "broadcaster": broadcaster_status,
+            "bot": bot_status,
+        }
+        capabilities = tuple(
+            CapabilityHealth(
+                key=definition.key,
+                label=definition.label,
+                credential=definition.credential,
+                available=(
+                    status_by_credential[definition.credential] != "requires_reauthorization"
+                    and not missing_capability_scopes(
+                        definition.key,
+                        scopes_by_credential[definition.credential],
+                    )
+                ),
+                missing_scopes=tuple(
+                    missing_capability_scopes(
+                        definition.key,
+                        scopes_by_credential[definition.credential],
+                    )
+                ),
+                core=definition.core,
+            )
+            for definition in TWITCH_CAPABILITIES.values()
+        )
+        return TwitchCapabilitySnapshot(
+            broadcaster_status=broadcaster_status,
+            bot_status=bot_status,
+            bot_user_id=str(row["bot_user_id"]),
+            capabilities=capabilities,
+        )
+
+    async def require_capability(
+        self,
+        *,
+        channel_id: str,
+        system_bot_id: str,
+        capability_key: str,
+    ) -> CapabilityHealth:
+        """Resolve one feature gate without turning optional grants into global reauth."""
+        snapshot = await self.get_capability_snapshot(
+            channel_id=channel_id,
+            system_bot_id=system_bot_id,
+        )
+        capability = next(item for item in snapshot.capabilities if item.key == capability_key)
+        credential_status = (
+            snapshot.bot_status if capability.credential == "bot" else snapshot.broadcaster_status
+        )
+        if credential_status == "requires_reauthorization":
+            raise TwitchCredentialInvalidError(fields={"credential": capability.credential})
+        if credential_status == "temporarily_unavailable":
+            raise TwitchProviderUnavailableError(context={"credential": capability.credential})
+        if not capability.available:
+            raise TwitchScopeRequiredError(
+                fields={
+                    "capability": capability.key,
+                    "missing_scopes": " ".join(capability.missing_scopes),
+                }
+            )
+        return capability
 
     async def check_credential(
         self,
@@ -207,6 +382,7 @@ class TwitchAuthorizationService:
                         """
                         UPDATE tokens
                            SET token = $3, refresh = $4, encryption_version = $5,
+                               credential_revision = credential_revision + 1,
                                updated_at = NOW()
                          WHERE user_id = $1 AND token_type = $2
                         """,
@@ -260,11 +436,13 @@ class TwitchAuthorizationService:
                     UPDATE tokens
                        SET last_checked_at = NOW(), last_validated_at = NOW(),
                            invalidated_at = NULL, validation_error_code = NULL,
-                           requires_reauth = FALSE, reauth_notified_at = NULL
+                           requires_reauth = FALSE, reauth_notified_at = NULL,
+                           scopes = $3
                      WHERE user_id = $1 AND token_type = $2
                     """,
                     user_id,
                     token_type,
+                    " ".join(sorted(validation.scopes)),
                 )
                 if token_type == "bot":
                     await conn.execute(
@@ -410,7 +588,7 @@ class TwitchAuthorizationService:
         require_twitch_token_encryption_key(self.token_encryption_key)
         due = await self.list_due_credentials(limit=limit)
         for user_id, token_type in due:
-            required = set(BOT_SCOPES if token_type == "bot" else BROADCASTER_SCOPES)
+            required = set(required_core_scopes(token_type))
             try:
                 await self.check_credential(
                     user_id=user_id,
@@ -654,7 +832,15 @@ class TwitchAuthorizationService:
                 )
                 await conn.execute(
                     "SELECT pg_notify('token_reauth', $1)",
-                    json.dumps({"user_id": channel_id, "disconnected": True}),
+                    json.dumps(
+                        {
+                            "user_id": channel_id,
+                            "credential_revision": None,
+                            "scopes_changed": False,
+                            "reauth_cleared": False,
+                            "disconnected": True,
+                        }
+                    ),
                 )
 
         return AuthorizationRemovalResult(

@@ -210,29 +210,27 @@ async def test_message_passes_when_bot_has_mod(bot):
 
 
 @pytest.mark.asyncio
-async def test_reauth_notifier_fires_and_blocks_processing(bot):
-    """When channel needs reauth, only the reauth notifier fires; mod guard and commands are skipped."""
+async def test_reauth_gate_blocks_processing_silently(bot):
+    """When channel needs reauth, the message is gated — no per-message chat
+    reply; the notification already fired once when the channel was flagged."""
     bot._needs_reauth = {"123"}
     payload = _make_payload(source_broadcaster=None, text="!hello")
 
     with (
         patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock,
         patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
-        patch("utils.reauth.reauth_notifier") as mock_reauth,
     ):
-        mock_reauth.notify = AsyncMock(return_value=True)
         mock_mod_guard.notify = AsyncMock(return_value=True)
         await bot.event_message(payload)
 
-    mock_reauth.notify.assert_awaited_once()
     mock_mod_guard.notify.assert_not_called()
     bot._handle_custom_command.assert_not_called()
     super_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_reauth_takes_priority_over_mod_guard(bot):
-    """When channel needs reauth AND bot lacks mod, reauth fires — mod guard stays silent."""
+async def test_reauth_gate_takes_priority_over_mod_guard(bot):
+    """When channel needs reauth AND bot lacks mod, the reauth gate wins — mod guard stays silent."""
     bot._needs_reauth = {"123"}
     bot._bot_is_mod = set()  # bot also not mod
     payload = _make_payload(source_broadcaster=None, text="!hello")
@@ -240,13 +238,10 @@ async def test_reauth_takes_priority_over_mod_guard(bot):
     with (
         patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()),
         patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
-        patch("utils.reauth.reauth_notifier") as mock_reauth,
     ):
-        mock_reauth.notify = AsyncMock(return_value=True)
         mock_mod_guard.notify = AsyncMock(return_value=True)
         await bot.event_message(payload)
 
-    mock_reauth.notify.assert_awaited_once()
     mock_mod_guard.notify.assert_not_called()
 
 
@@ -273,12 +268,13 @@ def _make_bot_for_mod_check():
         b._mod_check_pending = set()
         b.subs = _make_subs()
 
-        async def _mark_reauth_required(user_id):
+        async def _mark_reauth_required(user_id, *, expected_revision=None):
             b._needs_reauth.add(user_id)
 
         b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
         token = MagicMock()
         token.token = "tok"
+        token.credential_revision = 7
         b.channels = MagicMock()
         b.channels.get_token = AsyncMock(return_value=token)
         return b
@@ -317,12 +313,11 @@ async def test_mod_check_200_empty_data_leaves_not_mod():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status_code", [401, 403])
-async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
-    """401 or 403 from Helix → channel added to _needs_reauth, NOT _bot_is_mod."""
+async def test_mod_check_401_marks_needs_reauth():
+    """A rejected access token is a credential failure, not a feature lock."""
     b = _make_bot_for_mod_check()
     resp = MagicMock(spec=httpx.Response)
-    resp.status_code = status_code
+    resp.status_code = 401
     resp.text = "Unauthorized"
 
     with patch("httpx.AsyncClient") as mock_client_cls:
@@ -331,7 +326,24 @@ async def test_mod_check_auth_failure_marks_needs_reauth(status_code):
 
     assert "123" in b._needs_reauth
     assert "123" not in b._bot_is_mod
-    b._mark_reauth_required.assert_awaited_once_with("123")
+    b._mark_reauth_required.assert_awaited_once_with("123", expected_revision=7)
+
+
+@pytest.mark.asyncio
+async def test_mod_check_403_locks_mod_capability_without_global_reauth():
+    """Missing moderator-list permission must not disable unrelated bot features."""
+    b = _make_bot_for_mod_check()
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 403
+    resp.text = "Forbidden"
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client_cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=resp)
+        await b._check_bot_mod_status("123")
+
+    assert "123" not in b._needs_reauth
+    assert "123" not in b._bot_is_mod
+    b._mark_reauth_required.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

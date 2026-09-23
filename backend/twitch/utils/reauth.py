@@ -1,31 +1,20 @@
-"""Reauth notification utility for scope-missing Helix errors.
+"""Reauth message helpers for scope-missing Helix errors.
+
+Notification is state-transition driven, not time-based: Bot._mark_reauth_required
+(see core/_notify_mixin.py) sends the chat message exactly once, the moment a
+channel newly enters _needs_reauth. Callers here only need to detect the error
+and hand the channel off to that single entry point — no cooldown bookkeeping.
 
 Usage in a component:
-    from utils.reauth import is_scope_error, reauth_notifier
+    from utils.reauth import is_scope_error
 
     response = await self.bot._http.post_chat_shoutout(...)
     if is_scope_error(response):
-        await reauth_notifier.notify(
-            broadcaster_login=broadcaster_name,
-            channel_id=channel_id,
-            send_fn=lambda msg: channel.send_message(
-                message=msg,
-                sender=self.bot.sender_for(channel_id),
-            ),
-        )
+        await self.bot._mark_reauth_required(channel_id)
         return
 """
 
-import logging
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
-
 from core.config import get_settings
-
-LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_COOLDOWN = timedelta(hours=1)
-CMD_COOLDOWN = timedelta(minutes=5)
 
 
 def is_scope_error(obj: object) -> bool:
@@ -55,52 +44,6 @@ def is_scope_error(obj: object) -> bool:
     return "Missing scope" in str(obj)
 
 
-class ReauthNotifier:
-    """Rate-limits reauth chat notifications per channel.
-
-    Default cooldown is 1 hour (passive events like stream-online).
-    Pass min_interval=CMD_COOLDOWN (5 min) for command-triggered paths
-    so viewers get timely feedback without 1-hour silence windows.
-    """
-
-    def __init__(self) -> None:
-        self._last_notified: dict[str, datetime] = {}
-
-    def _can_notify(self, channel_id: str, cooldown: timedelta) -> bool:
-        last = self._last_notified.get(channel_id)
-        return last is None or datetime.now(UTC) - last >= cooldown
-
-    def _build_message(self, broadcaster_login: str) -> str:
-        url = get_settings().frontend_url.rstrip("/")
-        return f"@{broadcaster_login} 授權過期了，麻煩重新登入 {url}/login"
-
-    async def notify(
-        self,
-        broadcaster_login: str,
-        channel_id: str,
-        send_fn: Callable[[str], Awaitable[object]],
-        *,
-        min_interval: timedelta | None = None,
-    ) -> bool:
-        """Send a reauth notification if cooldown permits. Returns True if sent.
-
-        min_interval overrides the default 1-hour cooldown. Use CMD_COOLDOWN
-        (5 min) when triggered by a viewer command so the broadcaster gets
-        timely feedback without being spammed every message.
-        """
-        if not get_settings().is_production:
-            LOGGER.debug(f"[{broadcaster_login}] Reauth notification skipped (non-prod)")
-            return False
-        cooldown = min_interval if min_interval is not None else _COOLDOWN
-        if not self._can_notify(channel_id, cooldown):
-            return False
-        self._last_notified[channel_id] = datetime.now(UTC)
-        try:
-            await send_fn(self._build_message(broadcaster_login))
-            LOGGER.info(f"[{broadcaster_login}] Reauth notification sent")
-        except Exception:
-            LOGGER.exception(f"[{broadcaster_login}] Failed to send reauth notification")
-        return True
-
-
-reauth_notifier = ReauthNotifier()
+def build_reauth_message(broadcaster_login: str) -> str:
+    url = get_settings().frontend_url.rstrip("/")
+    return f"@{broadcaster_login} 授權過期了，麻煩重新登入 {url}/login"

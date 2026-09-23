@@ -190,6 +190,7 @@ class TestUpsertTokenOnly:
 
         sql = conn.execute.call_args[0][0]
         assert "reauth_notified_at = NULL" in sql
+        assert "credential_revision = tokens.credential_revision + 1" in sql
 
     async def test_encrypts_token_and_refresh_when_key_is_configured(self):
         pool, conn = _make_pool(execute="INSERT 0 1")
@@ -229,6 +230,17 @@ class TestMarkRequiresReauth:
         from shared.cache import _MISSING
 
         assert _token_cache.get("token:u1:broadcaster") is _MISSING
+
+    async def test_revision_guard_rejects_a_stale_failure(self):
+        pool, conn = _make_pool(execute="UPDATE 0")
+        repo = ChannelRepository(pool)
+
+        updated = await repo.mark_requires_reauth("u1", expected_revision=7)
+
+        assert updated is False
+        sql, user_id, token_type, revision = conn.execute.call_args.args
+        assert "credential_revision = $3" in sql
+        assert (user_id, token_type, revision) == ("u1", "broadcaster", 7)
 
 
 @pytest.mark.asyncio
@@ -285,6 +297,7 @@ class TestUpsertToken:
 
         first_execute_args = conn.execute.call_args_list[0][0]
         assert "channel:bot bits:read" in first_execute_args
+        assert "credential_revision = tokens.credential_revision + 1" in first_execute_args[0]
 
     async def test_channel_insert_does_not_force_enabled(self):
         # Signup must not enable a channel — admission does (migration 084). The

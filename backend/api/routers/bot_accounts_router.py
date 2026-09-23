@@ -39,7 +39,7 @@ from services.twitch_authorization_service import (
     TwitchAuthorizationService,
 )
 from shared.errors import AppError, NotFoundError
-from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
+from shared.twitch_scopes import BOT_SCOPES, required_core_scopes
 
 LOGGER = logging.getLogger(__name__)
 
@@ -122,6 +122,22 @@ class BroadcasterAuthorizationResponse(AuthorizationHealthResponse):
     channel_name: str
     display_name: str | None
     enabled: bool
+
+
+class CapabilityHealthResponse(BaseModel):
+    key: str
+    label: str
+    credential: Literal["bot", "broadcaster"]
+    available: bool
+    missing_scopes: list[str]
+    core: bool
+
+
+class TwitchCapabilitySnapshotResponse(BaseModel):
+    broadcaster_status: AuthorizationStatus
+    bot_status: AuthorizationStatus
+    bot_user_id: str
+    capabilities: list[CapabilityHealthResponse]
 
 
 def _request_ip(request: Request) -> str:
@@ -248,7 +264,7 @@ async def check_bot_authorization(
     health = await authorization.check_credential(
         user_id=bot_user_id,
         token_type="bot",
-        required_scopes=set(BOT_SCOPES),
+        required_scopes=set(required_core_scopes("bot")),
     )
     return _health_response(health)
 
@@ -290,6 +306,30 @@ async def get_broadcaster_authorization(
     return BroadcasterAuthorizationResponse(**summary.__dict__)
 
 
+@router.get(
+    "/api/tenants/{channel_id}/twitch-capabilities",
+    response_model=TwitchCapabilitySnapshotResponse,
+)
+async def get_twitch_capabilities(
+    channel_id: str,
+    _tenant: TenantContext = Depends(require_tenant_access),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
+) -> TwitchCapabilitySnapshotResponse:
+    if not settings.bot_id:
+        raise SystemBotNotConfiguredError()
+    snapshot = await authorization.get_capability_snapshot(
+        channel_id=channel_id,
+        system_bot_id=settings.bot_id,
+    )
+    return TwitchCapabilitySnapshotResponse(
+        broadcaster_status=snapshot.broadcaster_status,
+        bot_status=snapshot.bot_status,
+        bot_user_id=snapshot.bot_user_id,
+        capabilities=[CapabilityHealthResponse(**item.__dict__) for item in snapshot.capabilities],
+    )
+
+
 @router.post(
     "/api/tenants/{channel_id}/broadcaster-authorization/check",
     response_model=AuthorizationHealthResponse,
@@ -307,7 +347,7 @@ async def check_broadcaster_authorization(
     health = await authorization.check_credential(
         user_id=channel_id,
         token_type="broadcaster",
-        required_scopes=set(BROADCASTER_SCOPES),
+        required_scopes=set(required_core_scopes("broadcaster")),
     )
     return _health_response(health)
 

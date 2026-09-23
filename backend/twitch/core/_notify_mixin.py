@@ -80,10 +80,13 @@ class _NotifyMixin:
                     if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
                         token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
                         if token_obj and token_obj.scopes:
-                            from shared.twitch_scopes import missing_broadcaster_scopes
+                            from shared.twitch_scopes import missing_broadcaster_core_scopes
 
-                            if missing_broadcaster_scopes(token_obj.scopes.split()):
-                                await self._mark_reauth_required(channel_id)
+                            if missing_broadcaster_core_scopes(token_obj.scopes.split()):
+                                await self._mark_reauth_required(
+                                    channel_id,
+                                    expected_revision=token_obj.credential_revision,
+                                )
                                 LOGGER.warning(
                                     f"[NOTIFY] {self._ch(channel_id)} missing broadcaster scopes"  # type: ignore[attr-defined]
                                     " after channel toggle — marking for reauth"
@@ -122,13 +125,52 @@ class _NotifyMixin:
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
 
-    async def _mark_reauth_required(self, user_id: str) -> None:
-        """Add to in-memory set AND persist the flag to DB so the API forces re-login."""
-        self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
+    async def _mark_reauth_required(
+        self, user_id: str, *, expected_revision: int | None = None
+    ) -> None:
+        """Add to in-memory set AND persist the flag to DB so the API forces re-login.
+
+        Announces the problem in chat exactly once, at the moment the channel
+        newly enters this state — not on a timer. Every other call site that
+        keeps hitting the same scope error while already flagged is a no-op
+        here; the channel just stays gated (see the message-gate short-circuit
+        in Bot._handle_broadcaster_message) until reauth resolves.
+        """
         try:
-            await self.channels.mark_requires_reauth(user_id)  # type: ignore[attr-defined]
+            updated = await self.channels.mark_requires_reauth(  # type: ignore[attr-defined]
+                user_id,
+                expected_revision=expected_revision,
+            )
+            if not updated:
+                LOGGER.info(
+                    "[NOTIFY] Ignoring stale reauth failure for %s at credential revision %s",
+                    self._ch(user_id),
+                    expected_revision,
+                )
+                return
+            already_flagged = user_id in self._needs_reauth  # type: ignore[attr-defined]
+            self._needs_reauth.add(user_id)  # type: ignore[attr-defined]
+            if already_flagged:
+                return
         except Exception:
             LOGGER.warning(f"[NOTIFY] Failed to persist requires_reauth for {self._ch(user_id)}")  # type: ignore[attr-defined]
+            return
+
+        if not get_settings().is_production:
+            return
+        try:
+            from utils.reauth import build_reauth_message
+
+            users = await self.fetch_users(ids=[user_id])  # type: ignore[attr-defined]
+            if not users:
+                return
+            await users[0].send_message(
+                message=build_reauth_message(users[0].name or self._ch(user_id)),  # type: ignore[attr-defined]
+                sender=self.sender_for(user_id),  # type: ignore[attr-defined]
+            )
+            LOGGER.info(f"[NOTIFY] Reauth notification sent to {self._ch(user_id)}")  # type: ignore[attr-defined]
+        except Exception:
+            LOGGER.exception(f"[NOTIFY] Failed to send reauth notification for {self._ch(user_id)}")  # type: ignore[attr-defined]
 
     async def _send_welcome_message(self, channel_id: str) -> None:
         """Send a one-line welcome message when the bot is enabled for a channel."""
@@ -189,12 +231,15 @@ class _NotifyMixin:
                 user_info = await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
                 LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
-                from shared.twitch_scopes import missing_broadcaster_scopes
+                from shared.twitch_scopes import missing_broadcaster_core_scopes
 
-                missing = missing_broadcaster_scopes(user_info.scopes)
+                missing = missing_broadcaster_core_scopes(user_info.scopes)
                 if missing:
                     LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
-                    await self._mark_reauth_required(user_id)
+                    await self._mark_reauth_required(
+                        user_id,
+                        expected_revision=token_obj.credential_revision,
+                    )
                 else:
                     was_reauth = user_id in self._needs_reauth  # type: ignore[attr-defined]
                     self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
@@ -235,7 +280,10 @@ class _NotifyMixin:
 
             except twitchio.exceptions.InvalidTokenException as e:
                 LOGGER.warning(f"[NOTIFY] Invalid token for new user {user_id}: {e}")
-                await self._mark_reauth_required(user_id)
+                await self._mark_reauth_required(
+                    user_id,
+                    expected_revision=token_obj.credential_revision,
+                )
 
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
@@ -251,6 +299,20 @@ class _NotifyMixin:
             from shared.repositories.channel import _token_cache
 
             _token_cache.invalidate(f"token:{user_id}:broadcaster")
+
+            if data.get("disconnected"):
+                # Credential row is gone — the same transaction's
+                # channels.enabled = FALSE already fires channel_toggle,
+                # which owns unsubscribe and per-channel state cleanup.
+                LOGGER.info(
+                    f"[NOTIFY] token_reauth for {self._ch(user_id)} — disconnected, cache busted only"  # type: ignore[attr-defined]
+                )
+                return
+
+            if (
+                data.get("scopes_changed") or data.get("reauth_cleared")
+            ) and self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
+                await self.subs.unsubscribe(user_id)  # type: ignore[attr-defined]
             LOGGER.info(
                 f"[NOTIFY] token_reauth for {self._ch(user_id)} — cache busted, re-checking"  # type: ignore[attr-defined]
             )

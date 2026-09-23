@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getTwitchOAuthUrl } from './twitchOAuth'
+import { getTwitchOAuthUrl, openTwitchOAuth } from './twitchOAuth'
 
 describe('getTwitchOAuthUrl', () => {
   afterEach(() => {
@@ -50,5 +50,17 @@ describe('getTwitchOAuthUrl', () => {
 
     window.removeEventListener('auth:unauthorized', listener)
     expect(listener).not.toHaveBeenCalled()
+  })
+
+  it('coalesces concurrent OAuth starts into one request', async () => {
+    const oauthUrl = 'https://id.twitch.tv/oauth2/authorize?client_id=test'
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ oauth_url: oauthUrl }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('location', { href: 'http://localhost/settings' })
+
+    await Promise.all([openTwitchOAuth(), openTwitchOAuth(), openTwitchOAuth()])
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(window.location.href).toBe(oauthUrl)
   })
 })

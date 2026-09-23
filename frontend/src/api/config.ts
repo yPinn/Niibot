@@ -81,6 +81,8 @@ export const API_ENDPOINTS = {
       join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization`),
     broadcasterAuthorizationCheck: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization/check`),
+    twitchCapabilities: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/twitch-capabilities`),
   },
   publicBotInvites: {
     get: (publicToken: string, nonce: string) =>

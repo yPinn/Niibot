@@ -1,3 +1,4 @@
+import type { TwitchCapabilityKey } from './botAccounts'
 import { API_ENDPOINTS, apiFetch } from './config'
 import { apiJson } from './errors'
 
@@ -40,6 +41,7 @@ export interface EventDefinition {
   category_label: string
   accent: string
   requires_affiliate: boolean
+  capability_key?: TwitchCapabilityKey | null
   default_template: string
   default_enabled: boolean
   variables: EventVariable[]

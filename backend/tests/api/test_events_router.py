@@ -19,7 +19,12 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from core.config import get_settings
-from core.dependencies import get_current_channel_id, get_db_pool, get_twitch_api
+from core.dependencies import (
+    get_current_channel_id,
+    get_db_pool,
+    get_twitch_api,
+    get_twitch_authorization_service,
+)
 from core.error_handlers import register_exception_handlers
 from routers.events_router import router as _events_router
 from shared.events import EVENT_KEYS
@@ -76,14 +81,21 @@ def _reset_settings():
     get_settings.cache_clear()
 
 
-def _make_client(mock_twitch_api: MagicMock | None = None) -> TestClient:
+def _make_client(
+    mock_twitch_api: MagicMock | None = None,
+    authorization: MagicMock | None = None,
+) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     register_exception_handlers(app)
     app.include_router(_events_router)
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_db_pool] = lambda: AsyncMock()
     mock_api = mock_twitch_api or MagicMock()
+    mock_authorization = authorization if authorization is not None else MagicMock()
+    if authorization is None:
+        mock_authorization.require_capability = AsyncMock()
     app.dependency_overrides[get_twitch_api] = lambda: mock_api
+    app.dependency_overrides[get_twitch_authorization_service] = lambda: mock_authorization
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -130,6 +142,21 @@ class TestGetEventCatalog:
             assert event["variables"], f"{event['key']}: no variables"
             for v in event["variables"]:
                 assert v["sample"], f"{event['key']}.{v['name']}: empty sample"
+
+    def test_exposes_capability_dependency_without_frontend_scope_mirroring(self):
+        r = _make_client().get("/api/events/catalog")
+        capabilities = {event["key"]: event["capability_key"] for event in r.json()}
+
+        assert capabilities == {
+            "follow": "followers",
+            "subscribe": "subscriptions",
+            "resub": "subscriptions",
+            "gift_sub": "subscriptions",
+            "gift_recipient": "subscriptions",
+            "watch_streak": None,
+            "bits": "cheers",
+            "raid": None,
+        }
 
     def test_raid_exposes_auto_shoutout_option_only(self):
         r = _make_client().get("/api/events/catalog")
@@ -242,6 +269,36 @@ class TestToggleEventConfig:
         r = _make_client().patch("/api/events/configs/bad_type/toggle", json={"enabled": True})
         assert r.status_code == 400
 
+    def test_missing_optional_scope_blocks_enable_but_not_global_reauth(self):
+        from services.twitch_authorization_service import TwitchScopeRequiredError
+
+        authorization = MagicMock()
+        authorization.require_capability = AsyncMock(
+            side_effect=TwitchScopeRequiredError(fields={"capability": "followers"})
+        )
+
+        r = _make_client(authorization=authorization).patch(
+            "/api/events/configs/follow/toggle", json={"enabled": True}
+        )
+
+        assert r.status_code == 403
+        assert r.headers.get("x-reauth-required") is None
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
+
+    def test_disable_remains_available_when_optional_scope_is_missing(self):
+        import services.event_config_service as m
+
+        authorization = MagicMock()
+        authorization.require_capability = AsyncMock(side_effect=AssertionError)
+        toggled = {**_EVENT_CONFIG, "enabled": False}
+        with patch.object(m.EventConfigService, "toggle_config", AsyncMock(return_value=toggled)):
+            r = _make_client(authorization=authorization).patch(
+                "/api/events/configs/follow/toggle", json={"enabled": False}
+            )
+
+        assert r.status_code == 200
+        authorization.require_capability.assert_not_awaited()
+
     def test_not_found_returns_404(self):
         import services.event_config_service as m
 
@@ -305,7 +362,7 @@ class TestGetTwitchRewards:
         r = _make_client(mock_twitch_api=mock_api).get("/api/events/twitch-rewards")
         assert r.status_code == 403
 
-    def test_no_token_returns_401(self):
+    def test_no_token_returns_structured_twitch_reauth_without_session_401(self):
         import services.channel_service as cs
 
         mock_api = MagicMock()
@@ -315,13 +372,49 @@ class TestGetTwitchRewards:
             cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value=None)
         ):
             r = _make_client(mock_twitch_api=mock_api).get("/api/events/twitch-rewards")
-        assert r.status_code == 401
+        assert r.status_code == 403
+        assert r.headers["x-reauth-required"] == "true"
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.CREDENTIAL_INVALID"
 
-    def test_exception_returns_500(self):
+    def test_missing_channel_points_scope_is_local_feature_lock(self):
+        from services.twitch_authorization_service import TwitchScopeRequiredError
+
+        authorization = MagicMock()
+        authorization.require_capability = AsyncMock(
+            side_effect=TwitchScopeRequiredError(fields={"capability": "channel_points"})
+        )
+        mock_api = MagicMock()
+        mock_api.get_user_info = AsyncMock()
+
+        r = _make_client(mock_api, authorization).get("/api/events/twitch-rewards")
+
+        assert r.status_code == 403
+        assert r.headers.get("x-reauth-required") is None
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
+        mock_api.get_user_info.assert_not_awaited()
+
+    def test_provider_exception_returns_structured_unavailable(self):
         mock_api = MagicMock()
         mock_api.get_user_info = AsyncMock(side_effect=RuntimeError("network"))
         r = _make_client(mock_twitch_api=mock_api).get("/api/events/twitch-rewards")
-        assert r.status_code == 500
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
+
+    def test_reward_provider_exception_returns_structured_unavailable(self):
+        import services.channel_service as cs
+
+        mock_api = MagicMock()
+        mock_api.get_user_info = AsyncMock(return_value={"broadcaster_type": "partner"})
+        mock_api.get_custom_rewards = AsyncMock(side_effect=RuntimeError("upstream details"))
+
+        with patch.object(
+            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="tok")
+        ):
+            r = _make_client(mock_twitch_api=mock_api).get("/api/events/twitch-rewards")
+
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
+        assert "upstream details" not in r.text
 
 
 # ── GET /api/events/redemptions ──

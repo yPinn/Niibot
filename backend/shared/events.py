@@ -95,6 +95,9 @@ class EventDef:
     category_label: str  # dashboard type badge, e.g. "訂閱"
     accent: AccentToken  # type badge colour
     requires_affiliate: bool = False
+    # Optional OAuth capability required to subscribe/enable this event.
+    # Core chat-delivered events and raids do not need a feature grant here.
+    capability_key: str | None = None
     # ``stream_events`` bucket the dashboard's trigger count reads. ``None`` when
     # the event writes no stream_events row (count shown as "—", not a fake 0).
     count_source: CountSource | None = None
@@ -130,6 +133,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         display_name="追隨",
         category_label="追隨",
         accent="info",
+        capability_key="followers",
         count_source="follow",
     ),
     EventDef(
@@ -145,6 +149,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         category_label="訂閱",
         accent="special",
         requires_affiliate=True,
+        capability_key="subscriptions",
         count_source="subscribe",
     ),
     EventDef(
@@ -165,6 +170,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         category_label="訂閱",
         accent="special",
         requires_affiliate=True,
+        capability_key="subscriptions",
     ),
     EventDef(
         key="gift_sub",
@@ -183,6 +189,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         category_label="訂閱",
         accent="special",
         requires_affiliate=True,
+        capability_key="subscriptions",
     ),
     EventDef(
         key="gift_recipient",
@@ -198,6 +205,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         category_label="訂閱",
         accent="special",
         requires_affiliate=True,
+        capability_key="subscriptions",
         options_schema=(
             EventOption(
                 key="skip_bombs",
@@ -237,6 +245,7 @@ EVENT_CATALOG: tuple[EventDef, ...] = (
         category_label="Cheer",
         accent="loading",
         requires_affiliate=True,
+        capability_key="cheers",
         count_source="cheer",
     ),
     EventDef(

@@ -24,6 +24,7 @@ from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
     get_twitch_api,
+    get_twitch_authorization_service,
     require_activated,
     require_tenant_access,
 )
@@ -50,6 +51,7 @@ def _reset_settings_cache():
 def _make_client(
     *,
     twitch_api: MagicMock | None = None,
+    authorization: MagicMock | None = None,
 ) -> TestClient:
     """Build a TestClient with all heavyweight dependencies stubbed out."""
     app = FastAPI(lifespan=_no_lifespan)
@@ -57,10 +59,14 @@ def _make_client(
     app.include_router(_channels_router)
 
     mock_api = twitch_api or MagicMock()
+    mock_authorization = authorization if authorization is not None else MagicMock()
+    if authorization is None:
+        mock_authorization.require_capability = AsyncMock()
     mock_pool = AsyncMock()
 
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_twitch_api] = lambda: mock_api
+    app.dependency_overrides[get_twitch_authorization_service] = lambda: mock_authorization
     app.dependency_overrides[get_db_pool] = lambda: mock_pool
     app.dependency_overrides[require_activated] = lambda: None
 
@@ -94,7 +100,7 @@ def _make_tenant_client(
 class TestGetBotModStatus:
     def test_returns_is_moderator_true(self):
         mock_api = MagicMock()
-        mock_api.check_bot_is_moderator = AsyncMock(return_value=True)
+        mock_api.get_bot_mod_status = AsyncMock(return_value="mod")
         client = _make_client(twitch_api=mock_api)
 
         with patch.object(
@@ -107,7 +113,7 @@ class TestGetBotModStatus:
 
     def test_returns_is_moderator_false(self):
         mock_api = MagicMock()
-        mock_api.check_bot_is_moderator = AsyncMock(return_value=False)
+        mock_api.get_bot_mod_status = AsyncMock(return_value="no_mod")
         client = _make_client(twitch_api=mock_api)
 
         with patch.object(
@@ -128,10 +134,25 @@ class TestGetBotModStatus:
 
         assert r.status_code == 403
         assert r.headers.get("x-reauth-required") == "true"
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.CREDENTIAL_INVALID"
+
+    def test_missing_optional_scope_is_local_feature_lock(self):
+        authorization = MagicMock()
+        from services.twitch_authorization_service import TwitchScopeRequiredError
+
+        authorization.require_capability = AsyncMock(
+            side_effect=TwitchScopeRequiredError(fields={"capability": "moderator_management"})
+        )
+
+        r = _make_client(authorization=authorization).get("/api/channels/twitch/mod-status")
+
+        assert r.status_code == 403
+        assert r.headers.get("x-reauth-required") is None
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
 
     def test_passes_bot_id_from_settings_to_api(self):
         mock_api = MagicMock()
-        mock_api.check_bot_is_moderator = AsyncMock(return_value=False)
+        mock_api.get_bot_mod_status = AsyncMock(return_value="no_mod")
         client = _make_client(twitch_api=mock_api)
 
         with patch.object(
@@ -140,7 +161,7 @@ class TestGetBotModStatus:
             client.get("/api/channels/twitch/mod-status")
 
         expected_bot_id = get_settings().bot_id
-        mock_api.check_bot_is_moderator.assert_awaited_once_with(
+        mock_api.get_bot_mod_status.assert_awaited_once_with(
             CHANNEL_ID, expected_bot_id, "valid-token"
         )
 
@@ -195,8 +216,9 @@ class TestGrantBotMod:
 
         assert r.status_code == 403
         assert r.headers.get("x-reauth-required") == "true"
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.CREDENTIAL_INVALID"
 
-    def test_403_from_helix_returns_403_with_reauth_header(self):
+    def test_403_from_helix_is_scope_lock_without_reauth_header(self):
         mock_api = MagicMock()
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(403))
         client = _make_client(twitch_api=mock_api)
@@ -207,7 +229,8 @@ class TestGrantBotMod:
             r = client.post("/api/channels/twitch/grant-mod")
 
         assert r.status_code == 403
-        assert r.headers.get("x-reauth-required") == "true"
+        assert r.headers.get("x-reauth-required") is None
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
 
     def test_missing_token_returns_403_with_reauth_header(self):
         client = _make_client()
@@ -219,8 +242,9 @@ class TestGrantBotMod:
 
         assert r.status_code == 403
         assert r.headers.get("x-reauth-required") == "true"
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.CREDENTIAL_INVALID"
 
-    def test_add_moderator_exception_returns_500(self):
+    def test_add_moderator_exception_returns_provider_unavailable(self):
         mock_api = MagicMock()
         mock_api.add_moderator = AsyncMock(side_effect=Exception("network failure"))
         client = _make_client(twitch_api=mock_api)
@@ -230,7 +254,8 @@ class TestGrantBotMod:
         ):
             r = client.post("/api/channels/twitch/grant-mod")
 
-        assert r.status_code == 500
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
 
     def test_unexpected_helix_status_returns_502(self):
         mock_api = MagicMock()
@@ -242,7 +267,8 @@ class TestGrantBotMod:
         ):
             r = client.post("/api/channels/twitch/grant-mod")
 
-        assert r.status_code == 502
+        assert r.status_code == 503
+        assert r.json()["error"]["code"] == "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
 
     def test_passes_bot_id_and_channel_id_to_api(self):
         mock_api = MagicMock()

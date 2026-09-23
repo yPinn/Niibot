@@ -9,10 +9,12 @@ import {
 } from '@/api/events'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
+import { TwitchCapabilityAlert } from '@/components/TwitchCapabilityAlert'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 import { applyDir } from '@/lib/sort'
 
 import { EventSheet } from './EventSheet'
@@ -22,6 +24,7 @@ import type { EventSortKey } from './types'
 export default function Events() {
   useDocumentTitle('Events')
   const { isAffiliate } = useAuth()
+  const { capability, isAvailable } = useTwitchCapabilities()
   const [events, setEvents] = useState<EventConfig[]>([])
   const [catalog, setCatalog] = useState<EventDefinition[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,6 +63,12 @@ export default function Events() {
   )
 
   const { sortKey: eventSortKey, sortDir: eventSortDir } = eventSort
+  const requiredCapabilities = useMemo(() => {
+    const keys = new Set(
+      catalog.flatMap(item => (item.capability_key ? [item.capability_key] : []))
+    )
+    return [...keys].map(key => capability(key)).filter(item => item !== null)
+  }, [capability, catalog])
   const sortedEvents = useMemo(() => {
     return [...events].sort((a, b) => {
       let cmp = 0
@@ -94,6 +103,8 @@ export default function Events() {
     <PageMain>
       <PageHeader title="Events" description="管理 Twitch EventSub 事件與自動回應模板。" />
 
+      <TwitchCapabilityAlert capabilities={requiredCapabilities} />
+
       <div className="grid grid-cols-1 items-start gap-section">
         <EventsTable
           events={sortedEvents}
@@ -102,6 +113,7 @@ export default function Events() {
           error={error}
           sort={eventSort}
           isAffiliate={isAffiliate}
+          isCapabilityAvailable={isAvailable}
           onToggle={handleToggle}
           onEdit={setEditingEvent}
         />

@@ -41,7 +41,7 @@ from shared.video_sources import (
 )
 from utils.event_render import mention_vars, render_template
 from utils.mod_guard import mod_guard_notifier
-from utils.reauth import is_scope_error, reauth_notifier
+from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -139,14 +139,9 @@ class ChannelPointsComponent(commands.Component):
         if user_input:
             LOGGER.debug("[%s] User input: %s", channel_name, user_input)
 
+        # Gate only — the chat notification already fired once when this
+        # channel was first flagged (see Bot._mark_reauth_required).
         if channel_id in self.bot._needs_reauth:  # type: ignore[attr-defined]
-            from utils.reauth import reauth_notifier
-
-            await reauth_notifier.notify(
-                broadcaster_login=channel_name or "",
-                channel_id=channel_id,
-                send_fn=lambda msg: self._reply(payload.broadcaster, msg),
-            )
             return
 
         if channel_id not in self.bot._bot_is_mod:  # type: ignore[attr-defined]
@@ -261,11 +256,7 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             if is_scope_error(e):
-                await reauth_notifier.notify(
-                    broadcaster_login=channel_name or "",
-                    channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: self._reply(broadcaster, msg),
-                )
+                await self.bot._mark_reauth_required(str(broadcaster.id))  # type: ignore[attr-defined]
                 return
 
             status = getattr(e, "status", None) or getattr(e, "status_code", None)
@@ -625,11 +616,7 @@ class ChannelPointsComponent(commands.Component):
                     )
                     return
                 if is_scope_error(exc):
-                    await reauth_notifier.notify(
-                        broadcaster_login=broadcaster.name or "",
-                        channel_id=channel_id,
-                        send_fn=lambda msg: self._reply(broadcaster, msg),
-                    )
+                    await self.bot._mark_reauth_required(str(channel_id))  # type: ignore[attr-defined]
                     return
                 status_code = getattr(exc, "status", None) or getattr(exc, "status_code", None)
                 if status_code == 409:
@@ -719,7 +706,10 @@ class ChannelPointsComponent(commands.Component):
         except Exception as e:
             LOGGER.error("[%s] Niibot auth: failed to record activation grant: %s", channel_name, e)
             try:
-                await self._reply(broadcaster, f"@{user_name} 兌換失敗，請稍後再試！")
+                await self._reply(
+                    broadcaster,
+                    f"@{user_name} 兌換失敗，請聯繫主播或 Mod 協助退款！",
+                )
             except Exception:
                 pass
             return
@@ -742,20 +732,7 @@ class ChannelPointsComponent(commands.Component):
         except Exception as e:
             LOGGER.error("[%s] Niibot auth: failed to send whisper: %s", channel_name, e)
             if is_scope_error(e):
-                await reauth_notifier.notify(
-                    broadcaster_login=channel_name or "",
-                    channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: self._reply(broadcaster, msg),
-                )
-            try:
-                await self._reply(
-                    broadcaster,
-                    f"@{user_name} 私訊發送失敗，請聯繫 @llazypilot 協助啟用！",
-                )
-            except Exception as fallback_error:
-                LOGGER.error(
-                    "[%s] Niibot auth: fallback also failed: %s", channel_name, fallback_error
-                )
+                await self.bot._mark_reauth_required(str(broadcaster.id))  # type: ignore[attr-defined]
 
     async def _handle_game_queue_redemption(
         self,
@@ -796,11 +773,7 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             if is_scope_error(e):
-                await reauth_notifier.notify(
-                    broadcaster_login=broadcaster.name or "",
-                    channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: self._reply(broadcaster, msg),
-                )
+                await self.bot._mark_reauth_required(str(broadcaster.id))  # type: ignore[attr-defined]
                 return
             LOGGER.error("[%s] GameQueue error: %s", broadcaster.name, e)
 
@@ -908,11 +881,7 @@ class ChannelPointsComponent(commands.Component):
 
         except Exception as e:
             if is_scope_error(e):
-                await reauth_notifier.notify(
-                    broadcaster_login=broadcaster.name or "",
-                    channel_id=str(broadcaster.id),
-                    send_fn=lambda msg: self._reply(broadcaster, msg),
-                )
+                await self.bot._mark_reauth_required(str(broadcaster.id))  # type: ignore[attr-defined]
                 return
             LOGGER.error("[%s] VideoQueue error: %s", broadcaster.name, e)
 

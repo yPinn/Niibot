@@ -2,6 +2,11 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const capabilityMocks = vi.hoisted(() => ({
+  isAvailable: vi.fn(() => true),
+  capability: vi.fn(() => null),
+}))
+
 vi.mock('@/api/events', () => ({
   getEventCatalog: vi.fn(),
   getEventConfigs: vi.fn(),
@@ -36,6 +41,15 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({ isAffiliate: true }),
 }))
 vi.mock('@/hooks/useDocumentTitle', () => ({ useDocumentTitle: vi.fn() }))
+vi.mock('@/hooks/useTwitchCapabilities', () => ({
+  useTwitchCapabilities: () => ({
+    loading: false,
+    error: false,
+    snapshot: null,
+    refresh: vi.fn(),
+    ...capabilityMocks,
+  }),
+}))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
@@ -177,6 +191,8 @@ const VIP_STATE = {
 describe('Channel Points page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    capabilityMocks.isAvailable.mockReturnValue(true)
+    capabilityMocks.capability.mockReturnValue(null)
     vi.mocked(getRedemptionConfigs).mockResolvedValue([CHECKIN, GAME_QUEUE])
     vi.mocked(getTwitchRewards).mockResolvedValue(REWARDS)
     vi.mocked(updateRedemptionConfig).mockImplementation(async (actionType, update) => ({
@@ -213,6 +229,31 @@ describe('Channel Points page', () => {
       last_reward_rule_id: 1,
       last_synced_at: '2026-08-31T00:00:00Z',
     }))
+  })
+
+  it('does not call Twitch reward APIs when Channel Points scope is locked', async () => {
+    capabilityMocks.isAvailable.mockImplementation(key => key !== 'channel_points')
+    capabilityMocks.capability.mockImplementation(key =>
+      key === 'channel_points'
+        ? {
+            key: 'channel_points',
+            label: 'Channel Points',
+            credential: 'broadcaster',
+            available: false,
+            missing_scopes: ['channel:read:redemptions'],
+            core: false,
+          }
+        : null
+    )
+
+    render(<ChannelPoints />)
+
+    expect(
+      await screen.findByText('Channel Points目前保持鎖定，其他已授權功能不受影響。')
+    ).toBeInTheDocument()
+    expect(getTwitchRewards).not.toHaveBeenCalled()
+    expect(getVipState).not.toHaveBeenCalled()
+    expect(screen.getByText('需要 Twitch 功能授權')).toBeInTheDocument()
   })
 
   it('owns reward-to-action mappings and includes daily check-in', async () => {

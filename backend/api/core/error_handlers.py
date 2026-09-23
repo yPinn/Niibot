@@ -61,7 +61,11 @@ async def _handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         level=exc.log_level,
         context=exc.context,
     )
-    return JSONResponse(status_code=exc.http_status, content=exc.to_envelope(_rid(request)))
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=exc.to_envelope(_rid(request)),
+        headers=exc.response_headers,
+    )
 
 
 async def _handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:

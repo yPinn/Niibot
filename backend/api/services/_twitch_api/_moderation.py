@@ -127,7 +127,7 @@ class _ModerationMixin(_TwitchAPIBase):
             return False
 
     async def get_bot_mod_status(self, broadcaster_id: str, bot_id: str, access_token: str) -> str:
-        """Detailed mod check: returns 'mod', 'no_mod', 'scope_error', or 'token_error'.
+        """Return mod relation or a credential, scope, or provider failure class.
 
         scope_error means the token is valid but lacks moderation:read — the channel
         owner must re-authorize to grant the scope added after their initial auth.
@@ -139,17 +139,19 @@ class _ModerationMixin(_TwitchAPIBase):
                 token=access_token,
             )
             if response is None:
-                return "token_error"
+                return "provider_unavailable"
             if response.status_code == 401:
+                return "token_error"
+            if response.status_code == 403:
                 return "scope_error"
             if response.status_code != 200:
-                return "token_error"
+                return "provider_unavailable"
             return "mod" if len(response.json().get("data", [])) > 0 else "no_mod"
         except Exception:
             LOGGER.exception(
                 "Error checking detailed mod status for broadcaster %s", broadcaster_id
             )
-            return "token_error"
+            return "provider_unavailable"
 
     async def add_moderator(
         self, broadcaster_id: str, moderator_user_id: str, access_token: str

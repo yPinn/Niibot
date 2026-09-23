@@ -141,6 +141,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             multi_subscribe=self.multi_subscribe,
             delete_subscription=self.delete_eventsub_subscription,
             needs_reauth=self._needs_reauth,
+            scope_resolver=self._eventsub_scope_context,
         )
         # Per-channel sender resolution (Phase 3 bot accounts) — every
         # channel resolves to the system default until a switch actually
@@ -165,6 +166,35 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     def _ch(self, channel_id: str) -> str:
         """Return 'login(id)' when the name is known, otherwise just 'id'."""
         return self.subs.ch(channel_id)
+
+    async def _eventsub_scope_context(self, channel_id: str) -> tuple[set[str], set[str], set[str]]:
+        """Resolve grants before building one channel's EventSub plan.
+
+        A missing credential yields no grants.  Legacy rows whose scope column
+        is NULL predate scope persistence; keep their existing production
+        behavior until the scheduled validation writes a definitive state.
+        Twitch MOD sync has no runtime setting yet, so its optional real-time
+        acceleration remains disabled.
+        """
+        from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
+
+        broadcaster = await self.channels.get_token(channel_id, "broadcaster")
+        bot = await self.channels.get_token(self._bot_id, "bot")
+        broadcaster_scopes = (
+            set(BROADCASTER_SCOPES)
+            if broadcaster is not None and broadcaster.scopes is None
+            else set((broadcaster.scopes or "").split())
+            if broadcaster is not None
+            else set()
+        )
+        bot_scopes = (
+            set(BOT_SCOPES)
+            if bot is not None and bot.scopes is None
+            else set((bot.scopes or "").split())
+            if bot is not None
+            else set()
+        )
+        return broadcaster_scopes, bot_scopes, set()
 
     def sender_for(self, channel_id: str) -> str:
         """The Twitch user id that should speak in this channel right now."""
@@ -283,17 +313,26 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         channel_id = payload.broadcaster.id
         LOGGER.info("[%s] Stream online", payload.broadcaster.name)
 
-        # Proactively surface a reauth problem on go-live — don't wait for a chat message.
-        if channel_id in self._needs_reauth:
-            from utils.reauth import reauth_notifier
+        # Proactively surface a reauth problem on go-live — don't wait for a chat
+        # message. This event fires once per real stream session, so it's a
+        # natural once-per-stream reminder with no cooldown bookkeeping needed:
+        # the broadcaster may well have missed the original chat notification
+        # (they weren't live when it fired), and going live is exactly the
+        # moment they're actually watching chat again.
+        from core.config import get_settings
 
-            await reauth_notifier.notify(
-                broadcaster_login=payload.broadcaster.name,
-                channel_id=channel_id,
-                send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg, sender=self.sender_for(channel_id)
-                ),
-            )
+        if channel_id in self._needs_reauth and get_settings().is_production:
+            from utils.reauth import build_reauth_message
+
+            try:
+                await payload.broadcaster.send_message(
+                    message=build_reauth_message(payload.broadcaster.name),
+                    sender=self.sender_for(channel_id),
+                )
+            except Exception:
+                LOGGER.exception(
+                    "[%s] Failed to send reauth notification on stream online", self._ch(channel_id)
+                )
 
         await self.sessions.on_stream_online(channel_id)
 
@@ -322,7 +361,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
 
         if reason == "authorization_revoked" and channel_id and channel_id != self._bot_id:
             self.subs.mark_revoked(channel_id)
-            await self._mark_reauth_required(channel_id)
+            token_obj = await self.channels.get_token(channel_id)
+            await self._mark_reauth_required(
+                channel_id,
+                expected_revision=(token_obj.credential_revision if token_obj else None),
+            )
 
     async def event_oauth_authorized(
         self, payload: twitchio.authentication.UserTokenPayload
@@ -456,19 +499,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         if self.bots.is_bot_identity(chatter_id):
             return
 
+        # Gate stays; the chat notification itself already fired once, at the
+        # moment _mark_reauth_required first flagged this channel (and again
+        # on the next stream online) — no per-message reminder here.
         if channel_id in self._needs_reauth:
-            from utils.reauth import CMD_COOLDOWN, reauth_notifier
-
-            is_command = bool(payload.text and payload.text.startswith("!"))
-            await reauth_notifier.notify(
-                broadcaster_login=payload.broadcaster.name,
-                channel_id=channel_id,
-                send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg,
-                    sender=self.sender_for(channel_id),
-                ),
-                min_interval=CMD_COOLDOWN if is_command else None,
-            )
             return
 
         self.sessions.record_line(
@@ -797,22 +831,26 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                     )
                 continue  # bot accounts do not need a channels row
 
-            from shared.twitch_scopes import missing_broadcaster_scopes
+            from shared.twitch_scopes import missing_broadcaster_core_scopes
 
-            missing = missing_broadcaster_scopes(user_info.scopes)
+            missing = missing_broadcaster_core_scopes(user_info.scopes)
             if missing:
-                self._needs_reauth.add(tok.user_id)
                 cooled_down = (
                     tok.reauth_notified_at is None
                     or datetime.now(UTC) - tok.reauth_notified_at > _REAUTH_NOTIFY_COOLDOWN
                 )
-                if cooled_down:
+                if tok.requires_reauth and not cooled_down:
+                    self._needs_reauth.add(tok.user_id)
+                elif cooled_down:
                     LOGGER.warning(
                         "Channel %s missing scopes %s — will notify on next stream online.",
                         user_info.login or tok.user_id,
                         missing,
                     )
-                    await self._mark_reauth_required(tok.user_id)
+                    await self._mark_reauth_required(
+                        tok.user_id,
+                        expected_revision=tok.credential_revision,
+                    )
 
             try:
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
@@ -864,13 +902,22 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",
                         self._ch(channel_id),
                     )
-            elif resp.status_code in (401, 403):
-                # Token expired or missing scope — broadcaster needs to re-auth, not grant /mod.
-                await self._mark_reauth_required(channel_id)
+            elif resp.status_code == 401:
+                # A rejected access token is credential-wide. Missing the
+                # moderator-list capability is a local feature lock instead.
+                await self._mark_reauth_required(
+                    channel_id,
+                    expected_revision=token_obj.credential_revision,
+                )
                 LOGGER.warning(
                     "[%s] Marking for reauth (mod check %s)",
                     self._ch(channel_id),
                     resp.status_code,
+                )
+            elif resp.status_code == 403:
+                LOGGER.info(
+                    "[%s] MOD status unavailable — moderator-management capability is locked",
+                    self._ch(channel_id),
                 )
             else:
                 LOGGER.warning(

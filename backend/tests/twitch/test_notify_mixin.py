@@ -73,6 +73,7 @@ class _StubMixin(_NotifyMixin):
         token.scopes = None  # no missing scopes by default
         self.channels = MagicMock()
         self.channels.get_token = AsyncMock(return_value=token)
+        self.channels.mark_requires_reauth = AsyncMock(return_value=True)
         # Default: an admitted (enabled) channel so the admission gate in
         # _handle_new_token passes through. Tests that exercise the gate
         # override get_channel with a disabled channel.
@@ -87,6 +88,26 @@ class _StubMixin(_NotifyMixin):
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
     return json.dumps({"channel_id": channel_id, "enabled": enabled})
+
+
+class TestMarkReauthRequired:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_persists_current_revision_before_locking_memory(self) -> None:
+        mixin = _StubMixin()
+
+        await mixin._mark_reauth_required("ch1", expected_revision=7)
+
+        mixin.channels.mark_requires_reauth.assert_awaited_once_with("ch1", expected_revision=7)
+        assert "ch1" in mixin._needs_reauth
+
+    async def test_stale_revision_does_not_lock_fresh_credential(self) -> None:
+        mixin = _StubMixin()
+        mixin.channels.mark_requires_reauth.return_value = False
+
+        await mixin._mark_reauth_required("ch1", expected_revision=7)
+
+        assert "ch1" not in mixin._needs_reauth
 
 
 class TestConfigChangeMemoryInvalidation:
@@ -327,8 +348,8 @@ class TestHandleChannelToggleEnable:
         mixin.subs.subscribe.assert_not_awaited()
         mixin._check_bot_mod_status.assert_not_awaited()
 
-    async def test_enable_sets_needs_reauth_when_scopes_missing(self):
-        """Valid token with missing scopes → _needs_reauth set after toggle enable."""
+    async def test_enable_sets_needs_reauth_when_core_scope_is_missing(self):
+        """A broadcaster token missing channel:bot cannot support core chat."""
         mixin = _StubMixin()
         token = MagicMock()
         # Provide a minimal scope string that is missing required broadcaster scopes
@@ -340,6 +361,19 @@ class TestHandleChannelToggleEnable:
         )
 
         assert "ch3" in mixin._needs_reauth
+
+    async def test_enable_does_not_reauth_for_missing_optional_scopes(self):
+        """A valid core token keeps the channel active while features stay locked."""
+        mixin = _StubMixin()
+        token = MagicMock()
+        token.scopes = "channel:bot"
+        mixin.channels.get_token = AsyncMock(return_value=token)
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch3", enabled=True)
+        )
+
+        assert "ch3" not in mixin._needs_reauth
 
     async def test_enable_skips_scope_check_when_already_needs_reauth(self):
         """If _check_bot_mod_status already set _needs_reauth (401/403), skip DB scope check."""
@@ -561,6 +595,43 @@ class TestHandleTokenReauth:
         assert "u1" not in mixin._needs_reauth
         mixin._send_reauth_restored_message.assert_awaited_once_with("u1", "alice")
 
+    async def test_scope_change_reconciles_subscriptions_before_hot_reload(self):
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"u1"}
+        mixin._handle_new_token = AsyncMock()
+        payload = json.dumps(
+            {
+                "user_id": "u1",
+                "credential_revision": 8,
+                "scopes_changed": True,
+                "reauth_cleared": False,
+            }
+        )
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_token_reauth(None, None, "token_reauth", payload)
+
+        mixin.subs.unsubscribe.assert_awaited_once_with("u1")
+        mixin._handle_new_token.assert_awaited_once_with(None, None, "token_reauth", payload)
+
+    async def test_same_scope_refresh_does_not_recreate_subscriptions(self):
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"u1"}
+        mixin._handle_new_token = AsyncMock()
+        payload = json.dumps(
+            {
+                "user_id": "u1",
+                "credential_revision": 8,
+                "scopes_changed": False,
+                "reauth_cleared": False,
+            }
+        )
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_token_reauth(None, None, "token_reauth", payload)
+
+        mixin.subs.unsubscribe.assert_not_awaited()
+
 
 class TestHandleBotTokenUpdated:
     pytestmark = pytest.mark.asyncio
@@ -646,7 +717,7 @@ def mod_bot():
         )
         b.channels = MagicMock()
 
-        async def _mark_reauth_required(user_id):
+        async def _mark_reauth_required(user_id, *, expected_revision=None):
             b._needs_reauth.add(user_id)
 
         b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
@@ -676,19 +747,30 @@ class TestCheckBotModStatus:
 
         assert "ch1" not in mod_bot._bot_is_mod
 
-    @pytest.mark.parametrize("status_code", [401, 403])
-    async def test_auth_failure_sets_needs_reauth(self, mod_bot, status_code):
-        """401 or 403 from Helix → _needs_reauth set, _bot_is_mod not set."""
-        token_obj = MagicMock(token="tok")
+    async def test_unauthorized_token_sets_needs_reauth(self, mod_bot):
+        """401 from Helix is credential-wide; MOD capability 403 is not."""
+        token_obj = MagicMock(token="tok", credential_revision=7)
         mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
-        ctx = _make_httpx_ctx(status_code, text="Unauthorized")
+        ctx = _make_httpx_ctx(401, text="Unauthorized")
 
         with patch("twitch.core.bot.httpx.AsyncClient", return_value=ctx):
             await mod_bot._check_bot_mod_status("ch1")
 
         assert "ch1" not in mod_bot._bot_is_mod
         assert "ch1" in mod_bot._needs_reauth
-        mod_bot._mark_reauth_required.assert_awaited_once_with("ch1")
+        mod_bot._mark_reauth_required.assert_awaited_once_with("ch1", expected_revision=7)
+
+    async def test_forbidden_mod_check_does_not_set_global_reauth(self, mod_bot):
+        token_obj = MagicMock(token="tok")
+        mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
+        ctx = _make_httpx_ctx(403, text="Forbidden")
+
+        with patch("twitch.core.bot.httpx.AsyncClient", return_value=ctx):
+            await mod_bot._check_bot_mod_status("ch1")
+
+        assert "ch1" not in mod_bot._bot_is_mod
+        assert "ch1" not in mod_bot._needs_reauth
+        mod_bot._mark_reauth_required.assert_not_awaited()
 
     async def test_no_token_returns_early_without_error(self, mod_bot):
         mod_bot.channels.get_token = AsyncMock(return_value=None)

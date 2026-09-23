@@ -7,10 +7,9 @@ Owns the per-channel subscription state that used to live loose on ``Bot``:
 - ``_names``         — channel id → login name, for log enrichment (``ch()``)
 
 Constructed with callables (``multi_subscribe`` / ``delete_subscription``) rather
-than the ``Bot`` itself so it can be unit-tested standalone. ``needs_reauth`` is
-the set **owned by Bot** — this manager only flags into it when a broadcaster is
-missing ``channel:manage:moderators`` (in-memory only, matching prior behaviour;
-persisting that flag stays a Bot concern).
+than the ``Bot`` itself so it can be unit-tested standalone. EventSub failures
+are capability diagnostics; credential validity belongs to the authorization
+service and is never inferred from one subscription response.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _MultiSubscribe = Callable[[list[eventsub.SubscriptionPayload]], Awaitable[Any]]
 _DeleteSubscription = Callable[[str], Awaitable[Any]]
+_ScopeResolver = Callable[[str], Awaitable[tuple[set[str], set[str], set[str]]]]
 
 
 class _NamedChannel(Protocol):
@@ -51,11 +51,13 @@ class SubscriptionManager:
         multi_subscribe: _MultiSubscribe,
         delete_subscription: _DeleteSubscription,
         needs_reauth: set[str],
+        scope_resolver: _ScopeResolver | None = None,
     ) -> None:
         self._bot_id = bot_id
         self._multi_subscribe = multi_subscribe
         self._delete_subscription = delete_subscription
         self._needs_reauth = needs_reauth
+        self._scope_resolver = scope_resolver
 
         self._subscribed: set[str] = set()
         self._sub_ids: dict[str, list[str]] = {}
@@ -116,12 +118,23 @@ class SubscriptionManager:
             return
 
         try:
-            subs = get_channel_subscriptions(channel_id, self._bot_id)
+            if self._scope_resolver is None:
+                subs = get_channel_subscriptions(channel_id, self._bot_id)
+            else:
+                broadcaster_scopes, bot_scopes, enabled_capabilities = await self._scope_resolver(
+                    channel_id
+                )
+                subs = get_channel_subscriptions(
+                    channel_id,
+                    self._bot_id,
+                    broadcaster_scopes=broadcaster_scopes,
+                    bot_scopes=bot_scopes,
+                    enabled_capabilities=enabled_capabilities,
+                )
             resp = await self._multi_subscribe(subs)
 
             real_errors: list = []
             follow_pending = False
-            moderator_reauth = False
             for err in resp.errors:
                 status = err.error.status
                 sub_type = err.subscription.type
@@ -132,8 +145,6 @@ class SubscriptionManager:
                     # bot is not a mod yet. resubscribe_follow() retries once mod
                     # is granted — NOT a broadcaster reauth condition.
                     follow_pending = True
-                elif status == 403 and sub_type.startswith("channel.moderator"):
-                    moderator_reauth = True
                 else:
                     real_errors.append(err)
 
@@ -144,19 +155,12 @@ class SubscriptionManager:
                     f"[{self.ch(channel_id)}] channel.follow deferred"
                     " — bot not mod yet; will subscribe on mod grant"
                 )
-            if moderator_reauth:
-                LOGGER.warning(
-                    f"[{self.ch(channel_id)}] channel.moderator subscription"
-                    " failed — broadcaster needs to reauth (channel:manage:moderators)"
-                )
-                self._needs_reauth.add(channel_id)
-
             sub_ids = [sid for s in resp.success if (sid := _sub_id(s)) is not None]
             if sub_ids:
                 self._sub_ids[channel_id] = sub_ids
 
             # Mark subscribed unless there are real (non-409, non-follow-403) errors
-            # with no successes. follow_pending / moderator_reauth don't block the
+            # with no successes. follow_pending doesn't block the
             # channel — the other subscriptions still exist on the Conduit.
             if sub_ids or not real_errors:
                 self._subscribed.add(channel_id)

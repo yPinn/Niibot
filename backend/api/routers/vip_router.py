@@ -9,14 +9,20 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.config import Settings, get_settings
 from core.dependencies import (
     get_channel_service,
     get_twitch_api,
+    get_twitch_authorization_service,
     get_vip_service,
     require_self_tenant_access,
 )
 from services import ChannelService, TwitchAPIClient
 from services.tenant_service import TenantContext
+from services.twitch_authorization_service import (
+    TwitchAuthorizationService,
+    TwitchCredentialInvalidError,
+)
 from shared.errors import AppError, InvalidInputError, NotFoundError
 from shared.models.vip import VipSnapshotMember
 from shared.services.vip import VipService
@@ -30,12 +36,6 @@ class VipTwitchUnavailableError(AppError):
     code = "VIP.TWITCH_UNAVAILABLE"
     http_status = 503
     user_message = "目前無法完成 Twitch 貴賓名單清點，請稍後再試"
-
-
-class VipNoTokenError(AppError):
-    code = "VIP.NO_TWITCH_TOKEN"
-    http_status = 401
-    user_message = "Twitch 授權已失效，請重新登入"
 
 
 class VipRewardNotFoundError(NotFoundError):
@@ -160,8 +160,22 @@ async def _token(
 ) -> str:
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
-        raise VipNoTokenError()
+        raise TwitchCredentialInvalidError()
     return token
+
+
+async def _require_capabilities(
+    channel_id: str,
+    authorization: TwitchAuthorizationService,
+    settings: Settings,
+    *capability_keys: str,
+) -> None:
+    for capability_key in capability_keys:
+        await authorization.require_capability(
+            channel_id=channel_id,
+            system_bot_id=settings.bot_id,
+            capability_key=capability_key,
+        )
 
 
 @router.get("/state", response_model=VipStateResponse)
@@ -203,7 +217,10 @@ async def initialize_vip_tracking(
     service: VipService = Depends(get_vip_service),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> VipSettingsResponse:
+    await _require_capabilities(tenant.channel_id, authorization, settings, "vip_management")
     token = await _token(tenant.channel_id, channel_service, twitch_api)
     try:
         rows = await twitch_api.get_vips(tenant.channel_id, token)
@@ -236,7 +253,10 @@ async def sync_vip_state(
     service: VipService = Depends(get_vip_service),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> None:
+    await _require_capabilities(tenant.channel_id, authorization, settings, "vip_management")
     token = await _token(tenant.channel_id, channel_service, twitch_api)
     try:
         rows = await twitch_api.get_vips(tenant.channel_id, token)
@@ -271,9 +291,22 @@ async def upsert_vip_rule(
     service: VipService = Depends(get_vip_service),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> VipRuleResponse:
+    await _require_capabilities(
+        tenant.channel_id,
+        authorization,
+        settings,
+        "channel_points",
+        "vip_management",
+    )
     token = await _token(tenant.channel_id, channel_service, twitch_api)
-    rewards = await twitch_api.get_custom_rewards(tenant.channel_id, token)
+    try:
+        rewards = await twitch_api.get_custom_rewards(tenant.channel_id, token)
+    except Exception:
+        LOGGER.warning("vip_reward_snapshot_failed", extra={"reward_id": reward_id})
+        raise VipTwitchUnavailableError() from None
     reward = next((item for item in rewards if str(item.get("id")) == reward_id), None)
     if reward is None:
         raise VipRewardNotFoundError()
@@ -295,7 +328,17 @@ async def set_vip_rules_enabled(
     _action: Literal["vip-management"] = Header(alias="X-Niibot-Action"),
     tenant: TenantContext = Depends(require_self_tenant_access),
     service: VipService = Depends(get_vip_service),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> list[VipRuleResponse]:
+    if body.enabled:
+        await _require_capabilities(
+            tenant.channel_id,
+            authorization,
+            settings,
+            "channel_points",
+            "vip_management",
+        )
     rules = await service.set_rules_enabled(channel_id=tenant.channel_id, enabled=body.enabled)
     LOGGER.info("vip_reward_rules_toggled", extra={"enabled": body.enabled})
     return [VipRuleResponse.model_validate(rule) for rule in rules]
@@ -375,7 +418,10 @@ async def remove_vip_entitlement(
     service: VipService = Depends(get_vip_service),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> None:
+    await _require_capabilities(tenant.channel_id, authorization, settings, "vip_management")
     try:
         await service.require_active_entitlement(
             channel_id=tenant.channel_id,

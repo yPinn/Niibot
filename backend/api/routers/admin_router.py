@@ -109,7 +109,7 @@ class AdminChannelInfo(BaseModel):
     offline_image_url: str
     is_live: bool
     is_enabled: bool
-    mod_status: str  # 'mod' | 'no_mod' | 'token_error' | 'scope_error'
+    mod_status: str  # 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'provider_unavailable'
     is_bot: bool
     granted_scopes: list[str]
     missing_scopes: list[str]

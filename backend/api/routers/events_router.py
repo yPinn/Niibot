@@ -7,15 +7,22 @@ from typing import Literal
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from core.config import Settings, get_settings
 from core.dependencies import (
     get_channel_service,
     get_command_config_service,
     get_current_channel_id,
     get_event_config_service,
     get_twitch_api,
+    get_twitch_authorization_service,
 )
 from services import ChannelService, CommandConfigService, EventConfigService, TwitchAPIClient
-from shared.errors import AccessDeniedError, AppError, InvalidInputError, NotFoundError
+from services.twitch_authorization_service import (
+    TwitchAuthorizationService,
+    TwitchCredentialInvalidError,
+    TwitchProviderUnavailableError,
+)
+from shared.errors import AccessDeniedError, InvalidInputError, NotFoundError
 from shared.events import EVENT_CATALOG, EventDef
 from shared.repositories.event_config import EVENT_TYPES as VALID_EVENT_TYPES
 
@@ -37,12 +44,6 @@ class EventInvalidError(InvalidInputError):
 class NotAffiliateError(AccessDeniedError):
     code = "EVENT.NOT_AFFILIATE"
     user_message = "頻道還不是 Twitch 會員或合作夥伴"
-
-
-class NoTwitchTokenError(AppError):
-    code = "AUTH.NO_TOKEN"
-    http_status = 401
-    user_message = "Twitch 授權已失效，請重新登入"
 
 
 class EventConfigResponse(BaseModel):
@@ -79,6 +80,7 @@ class EventDefinitionResponse(BaseModel):
     category_label: str
     accent: str
     requires_affiliate: bool
+    capability_key: str | None
     default_template: str
     default_enabled: bool
     variables: list[EventVariableResponse]
@@ -109,6 +111,7 @@ _CATALOG_PAYLOAD: list[EventDefinitionResponse] = [
         category_label=e.category_label,
         accent=e.accent,
         requires_affiliate=e.requires_affiliate,
+        capability_key=e.capability_key,
         default_template=e.default_template,
         default_enabled=e.default_enabled,
         variables=_variables(e),
@@ -125,6 +128,25 @@ _CATALOG_PAYLOAD: list[EventDefinitionResponse] = [
     )
     for e in EVENT_CATALOG
 ]
+_EVENT_CAPABILITIES: dict[str, str | None] = {
+    event.key: event.capability_key for event in EVENT_CATALOG
+}
+
+
+async def _require_event_capability(
+    event_type: str,
+    *,
+    channel_id: str,
+    authorization: TwitchAuthorizationService,
+    settings: Settings,
+) -> None:
+    capability_key = _EVENT_CAPABILITIES.get(event_type)
+    if capability_key:
+        await authorization.require_capability(
+            channel_id=channel_id,
+            system_bot_id=settings.bot_id,
+            capability_key=capability_key,
+        )
 
 
 class EventConfigUpdate(BaseModel):
@@ -200,10 +222,19 @@ async def update_event_config(
     body: EventConfigUpdate,
     channel_id: str = Depends(get_current_channel_id),
     service: EventConfigService = Depends(get_event_config_service),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> EventConfigResponse:
     """Update an event config's message template and enabled state."""
     if event_type not in VALID_EVENT_TYPES:
         raise EventInvalidError(context={"event_type": event_type})
+    if body.enabled:
+        await _require_event_capability(
+            event_type,
+            channel_id=channel_id,
+            authorization=authorization,
+            settings=settings,
+        )
     cfg = await service.update_config(
         channel_id, event_type, body.message_template, body.enabled, body.options
     )
@@ -219,10 +250,19 @@ async def toggle_event_config(
     body: EventConfigToggle,
     channel_id: str = Depends(get_current_channel_id),
     service: EventConfigService = Depends(get_event_config_service),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> EventConfigResponse:
     """Toggle an event config's enabled state."""
     if event_type not in VALID_EVENT_TYPES:
         raise EventInvalidError(context={"event_type": event_type})
+    if body.enabled:
+        await _require_event_capability(
+            event_type,
+            channel_id=channel_id,
+            authorization=authorization,
+            settings=settings,
+        )
     cfg = await service.toggle_config(channel_id, event_type, body.enabled)
     if cfg is None:
         raise EventConfigNotFoundError(context={"event_type": event_type})
@@ -235,17 +275,30 @@ async def get_twitch_rewards(
     channel_id: str = Depends(get_current_channel_id),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> list[TwitchRewardResponse]:
     """Fetch custom channel point rewards from Twitch API."""
-    user_info = await twitch_api.get_user_info(channel_id)
+    await authorization.require_capability(
+        channel_id=channel_id,
+        system_bot_id=settings.bot_id,
+        capability_key="channel_points",
+    )
+    try:
+        user_info = await twitch_api.get_user_info(channel_id)
+    except Exception:
+        raise TwitchProviderUnavailableError() from None
     if not user_info or user_info.get("broadcaster_type") not in ("affiliate", "partner"):
         raise NotAffiliateError()
 
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
-        raise NoTwitchTokenError()
+        raise TwitchCredentialInvalidError()
 
-    rewards = await twitch_api.get_custom_rewards(channel_id, token)
+    try:
+        rewards = await twitch_api.get_custom_rewards(channel_id, token)
+    except Exception:
+        raise TwitchProviderUnavailableError() from None
     return [TwitchRewardResponse(**r) for r in rewards]
 
 
@@ -268,11 +321,19 @@ async def update_redemption_config(
     body: RedemptionConfigUpdate,
     channel_id: str = Depends(get_current_channel_id),
     service: CommandConfigService = Depends(get_command_config_service),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    settings: Settings = Depends(get_settings),
 ) -> RedemptionConfigResponse:
     """Update a redemption config's reward name and enabled state."""
     if action_type not in VALID_ACTION_TYPES:
         raise EventInvalidError(
             user_message="兑換動作類型不正確", context={"action_type": action_type}
+        )
+    if body.enabled or body.reward_id is not None:
+        await authorization.require_capability(
+            channel_id=channel_id,
+            system_bot_id=settings.bot_id,
+            capability_key="channel_points",
         )
     cfg = await service.update_redemption(
         channel_id,

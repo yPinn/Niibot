@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from core.dependencies import (
     get_channel_service,
     get_twitch_api,
+    get_twitch_authorization_service,
     get_vip_service,
     require_self_tenant_access,
 )
@@ -84,6 +85,7 @@ def _client(
     *,
     twitch: MagicMock | None = None,
     channels: MagicMock | None = None,
+    authorization: MagicMock | None = None,
 ) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     register_exception_handlers(app)
@@ -96,7 +98,27 @@ def _client(
     app.dependency_overrides[get_vip_service] = lambda: service
     app.dependency_overrides[get_twitch_api] = lambda: twitch or MagicMock()
     app.dependency_overrides[get_channel_service] = lambda: channels or MagicMock()
+    mock_authorization = authorization if authorization is not None else MagicMock()
+    if authorization is None:
+        mock_authorization.require_capability = AsyncMock()
+    app.dependency_overrides[get_twitch_authorization_service] = lambda: mock_authorization
     return TestClient(app, raise_server_exceptions=False)
+
+
+def test_missing_vip_scope_is_local_feature_lock() -> None:
+    from services.twitch_authorization_service import TwitchScopeRequiredError
+
+    service = _service()
+    authorization = MagicMock()
+    authorization.require_capability = AsyncMock(
+        side_effect=TwitchScopeRequiredError(fields={"capability": "vip_management"})
+    )
+
+    response = _client(service, authorization=authorization).post("/api/vip/sync", headers=_ACTION)
+
+    assert response.status_code == 403
+    assert response.headers.get("x-reauth-required") is None
+    assert response.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
 
 
 def test_get_state_uses_authenticated_tenant() -> None:
@@ -243,6 +265,25 @@ def test_rule_binding_must_match_a_real_twitch_reward() -> None:
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "VIP.REWARD_NOT_FOUND"
+    service.upsert_rule.assert_not_awaited()
+
+
+def test_rule_binding_does_not_write_when_twitch_rewards_fail() -> None:
+    service = _service()
+    twitch = MagicMock()
+    twitch.get_custom_rewards = AsyncMock(side_effect=RuntimeError("upstream details"))
+    channels = MagicMock()
+    channels.get_token_with_refresh = AsyncMock(return_value="token")
+
+    response = _client(service, twitch=twitch, channels=channels).put(
+        "/api/vip/rules/reward-1",
+        json={"duration_months": 3, "is_permanent": False, "enabled": True},
+        headers=_ACTION,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "VIP.TWITCH_UNAVAILABLE"
+    assert "upstream details" not in response.text
     service.upsert_rule.assert_not_awaited()
 
 

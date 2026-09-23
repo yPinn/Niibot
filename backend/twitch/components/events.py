@@ -7,7 +7,7 @@ from twitchio.ext import commands
 
 from shared.events import tier_label
 from utils.event_render import clean_message_var, compose_note, mention_vars, render_template
-from utils.reauth import is_scope_error, reauth_notifier
+from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -493,14 +493,7 @@ class EventsComponent(commands.Component):
                 LOGGER.info(f"[{broadcaster_name}] Raid shoutout sent: {raider_name}")
             except Exception as shoutout_err:
                 if is_scope_error(shoutout_err):
-                    await reauth_notifier.notify(
-                        broadcaster_login=broadcaster_name or "",
-                        channel_id=broadcaster_id,
-                        send_fn=lambda msg: payload.to_broadcaster.send_message(
-                            message=msg,
-                            sender=self.bot.sender_for(broadcaster_id),
-                        ),
-                    )
+                    await self.bot._mark_reauth_required(broadcaster_id)  # type: ignore[attr-defined]
                 else:
                     LOGGER.error(f"[{broadcaster_name}] Shoutout failed: {shoutout_err}")
 
