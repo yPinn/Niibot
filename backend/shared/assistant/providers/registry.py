@@ -11,6 +11,10 @@ from shared.assistant.contracts import MessageRole
 
 class ProviderKind(StrEnum):
     GROQ = "groq"
+    # Second Groq model on the same account/API key. Groq tracks rate limits
+    # per (account, model) pair, so a distinct model here gets its own
+    # independent RPM/TPM/RPD bucket instead of sharing GROQ's.
+    GROQ_SECONDARY = "groq_secondary"
     GEMINI = "gemini"
     OPENROUTER = "openrouter"
 
@@ -82,13 +86,16 @@ class ProviderRegistry:
 
 _BASE_URLS: dict[ProviderKind, str] = {
     ProviderKind.GROQ: "https://api.groq.com/openai/v1",
+    ProviderKind.GROQ_SECONDARY: "https://api.groq.com/openai/v1",
     ProviderKind.GEMINI: "https://generativelanguage.googleapis.com/v1beta/openai/",
     ProviderKind.OPENROUTER: "https://openrouter.ai/api/v1",
 }
 
 
 def _options_for(kind: ProviderKind, model: str) -> ProviderOptions:
-    if kind is ProviderKind.GROQ and model.startswith("openai/gpt-oss-"):
+    if kind in (ProviderKind.GROQ, ProviderKind.GROQ_SECONDARY) and model.startswith(
+        "openai/gpt-oss-"
+    ):
         return ProviderOptions(reasoning_effort="low", reasoning_format="hidden")
     if kind is ProviderKind.GEMINI and model.startswith("gemini-3"):
         return ProviderOptions(reasoning_effort="minimal")

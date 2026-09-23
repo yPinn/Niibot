@@ -11,7 +11,6 @@ from typing import Any
 import asyncpg
 import httpx
 import twitchio
-from twitchio import eventsub
 from twitchio.ext import commands
 from twitchio.ext.commands import CommandNotFound
 from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
@@ -21,7 +20,7 @@ from core._notify_mixin import _NotifyMixin
 from core.bot_resolver import BotAccountResolver
 from core.config import COMPONENTS_DIR
 from core.session_service import SessionService
-from core.subscription_manager import SubscriptionManager
+from core.subscription_manager import SubscriptionManager, SubscriptionReconcileResult
 from shared.assistant import ASSISTANT_SCOPE_CHANGED_CHANNEL
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
@@ -36,6 +35,9 @@ from shared.repositories.event_config import EventConfigRepository
 from shared.repositories.message_trigger import MessageTriggerRepository
 from shared.repositories.timer import TimerConfigRepository
 from shared.repositories.video_queue import VideoQueueRepository
+from shared.retry_utils import parse_retry_after
+from shared.twitch_egress import EgressPriority, TwitchEgressCoordinator
+from shared.twitch_scopes import TwitchCredential, required_core_scopes
 from utils.mod_guard import mod_guard_notifier
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -44,6 +46,9 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # cooldown, an unresolved missing-scope condition re-logs (and re-notifies)
 # on every deploy instead of once per this window.
 _REAUTH_NOTIFY_COOLDOWN = timedelta(hours=12)
+_SUBSCRIPTION_RECONCILE_INTERVAL = 15 * 60
+_TOKEN_VALIDATION_MIN_INTERVAL = 1.0
+_TOKEN_VALIDATION_MAX_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         token_database: asyncpg.Pool,
         db_manager: DatabaseManager,
         database_url: str,
-        subs: list[eventsub.SubscriptionPayload],
     ) -> None:
         self.token_database = token_database
         self._client_id = client_id
@@ -104,6 +108,15 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         # Debounced batching for periodic token-refresh logs (single line per burst).
         self._token_refresh_buffer: list[str] = []
         self._token_refresh_flush_task: asyncio.Task | None = None
+        # TwitchIO 3.3.x starts its own 55-minute validation sweep and treats
+        # HTTP 429 like an invalid credential.  The API reconciler is the sole
+        # periodic owner; runtime validation is only startup/hot-reload and is
+        # paced through this process-wide gate.
+        self._token_validation_gate = asyncio.Lock()
+        self._next_token_validation_at = 0.0
+        self._runtime_credential_revisions: dict[str, int] = {}
+        self._pending_refresh_revisions: dict[tuple[str, str], int] = {}
+        self.egress = TwitchEgressCoordinator()
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status
@@ -125,20 +138,24 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             bot_id=bot_id,
             owner_id=owner_id,
             prefix="!",
-            subscriptions=subs,
-            force_subscribe=True,
+            # Conduit subscriptions outlive this process. All create mutations
+            # must go through SubscriptionManager's bounded startup flow.
+            subscriptions=[],
             case_insensitive=True,
         )
         if conduit_id:
             init_kwargs["conduit_id"] = conduit_id
 
         super().__init__(**init_kwargs)
+        self._install_twitchio_refresh_revision_capture()
+        self._install_twitchio_egress_coordination()
 
         # EventSub subscription ownership (was loose _subscribed_channels /
         # _subscription_ids / _channel_names on this class).
         self.subs = SubscriptionManager(
             bot_id=bot_id,
             multi_subscribe=self.multi_subscribe,
+            list_subscriptions=self._list_conduit_subscriptions,
             delete_subscription=self.delete_eventsub_subscription,
             needs_reauth=self._needs_reauth,
             scope_resolver=self._eventsub_scope_context,
@@ -157,6 +174,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             bot_id=bot_id,
             client_id=client_id,
             bots=self.bots,
+            egress=self.egress,
         )
 
     # ------------------------------------------------------------------
@@ -166,6 +184,13 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     def _ch(self, channel_id: str) -> str:
         """Return 'login(id)' when the name is known, otherwise just 'id'."""
         return self.subs.ch(channel_id)
+
+    async def _list_conduit_subscriptions(self) -> list[Any]:
+        conduit_id = self.conduit_info.id
+        if not conduit_id:
+            raise RuntimeError("EventSub conduit is not ready")
+        response = await self.fetch_eventsub_subscriptions(conduit_id=conduit_id)
+        return [subscription async for subscription in response.subscriptions]
 
     async def _eventsub_scope_context(self, channel_id: str) -> tuple[set[str], set[str], set[str]]:
         """Resolve grants before building one channel's EventSub plan.
@@ -209,6 +234,17 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self.subs.remember(channel_id, channel_name)
         LOGGER.info(f"Added channel {channel_name} (ID: {channel_id}) to database")
 
+    async def _reconcile_enabled_subscriptions(
+        self,
+    ) -> tuple[list[Any], dict[str, SubscriptionReconcileResult]]:
+        enabled_channels = await self.channels.list_enabled_channels()
+        self.subs.remember_many(enabled_channels)
+        channel_ids = [
+            channel.channel_id for channel in enabled_channels if channel.channel_id != self._bot_id
+        ]
+        results = await self.subs.reconcile_all(channel_ids)
+        return enabled_channels, results
+
     async def _bootstrap_channels(self) -> None:
         """Subscribe to EventSub for all enabled channels on startup, then seed
         per-channel config defaults and warm the caches.
@@ -216,9 +252,8 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         try:
             await asyncio.sleep(2)
 
-            enabled_channels = await self.channels.list_enabled_channels()
+            enabled_channels, results = await self._reconcile_enabled_subscriptions()
             LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
-            self.subs.remember_many(enabled_channels)
 
             warmed_channels = self.channels.warm_channel_cache(enabled_channels)
             LOGGER.info(f"Warmed channel cache: {warmed_channels} channels")
@@ -229,16 +264,13 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             # haven't run their first line yet when the event loop yields, so a
             # message arriving in that window would fire a spurious mod-guard
             # notification.
-            subscribed_ids: list[str] = []
+            subscribed_ids = [
+                channel_id for channel_id, result in results.items() if result.converged
+            ]
             for ch in non_bot:
-                self._mod_check_pending.add(ch.channel_id)
-                try:
-                    await self.subs.subscribe(ch.channel_id)
-                    subscribed_ids.append(ch.channel_id)
-                except Exception as e:
-                    LOGGER.error(
-                        f"Failed to subscribe channel {ch.channel_name or ch.channel_id}: {e}"
-                    )
+                if ch.channel_id in subscribed_ids:
+                    self._mod_check_pending.add(ch.channel_id)
+                else:
                     self._mod_check_pending.discard(ch.channel_id)
 
             await asyncio.gather(
@@ -255,6 +287,26 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             )
         except Exception as e:
             LOGGER.exception(f"Error subscribing to initial channels: {e}")
+
+    async def _periodic_subscription_reconcile(self) -> None:
+        """Repair EventSub drift without recreating the catalog on every pass."""
+        await asyncio.sleep(_SUBSCRIPTION_RECONCILE_INTERVAL)
+        while True:
+            try:
+                _, results = await self._reconcile_enabled_subscriptions()
+                incomplete = [
+                    channel_id for channel_id, result in results.items() if not result.converged
+                ]
+                if incomplete:
+                    LOGGER.warning(
+                        "Periodic EventSub reconciliation incomplete for %d channel(s)",
+                        len(incomplete),
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                LOGGER.warning("Periodic EventSub reconciliation failed: %s", exc)
+            await asyncio.sleep(_SUBSCRIPTION_RECONCILE_INTERVAL)
 
     # ------------------------------------------------------------------
     # Setup
@@ -294,6 +346,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             ),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
+            self._periodic_subscription_reconcile(),
         ):
             task = asyncio.create_task(coro)
             self._background_tasks.add(task)
@@ -411,15 +464,41 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     async def event_token_refreshed(self, payload: _TokenRefreshedPayload) -> None:
         if not payload.user_id:
             return
+        expected_revision = self._pending_refresh_revisions.pop(
+            (payload.user_id, payload.token), None
+        )
+        if expected_revision is None:
+            LOGGER.warning(
+                "[%s] Ignoring token refresh without a captured credential revision",
+                self._ch(payload.user_id),
+            )
+            return
         scopes_str = " ".join(list(payload.scopes)) if payload.scopes else None
         token_type = "bot" if payload.user_id in self.bots.relevant_bot_ids() else "broadcaster"
-        await self.channels.upsert_token_only(
+        updated = await self.channels.rotate_token_if_revision(
             payload.user_id,
             payload.token,
             payload.refresh_token,
             scopes=scopes_str,
             token_type=token_type,
+            expected_revision=expected_revision,
         )
+        if not updated:
+            current = self.tokens.get(payload.user_id)
+            if (
+                self._runtime_credential_revisions.get(payload.user_id) == expected_revision
+                and current
+                and current["token"] == payload.token
+            ):
+                await self.remove_token(payload.user_id)
+                self._runtime_credential_revisions.pop(payload.user_id, None)
+            LOGGER.warning(
+                "[%s] Ignoring stale token refresh from credential revision %d",
+                self._ch(payload.user_id),
+                expected_revision,
+            )
+            return
+        self._runtime_credential_revisions[payload.user_id] = expected_revision + 1
         LOGGER.debug("[%s] Token refreshed and persisted", self._ch(payload.user_id))
         self._buffer_token_refresh_log(payload.user_id)
         if (
@@ -747,12 +826,221 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     # Token management
     # ------------------------------------------------------------------
 
-    async def add_token(
+    def _install_twitchio_refresh_revision_capture(self) -> None:
+        """Bind each TwitchIO refresh event to the token generation it replaced."""
+        http = getattr(self, "_http", None)
+        if http is None:
+            return
+        dispatch = getattr(http, "_dispatch_event", None)
+        if dispatch is None:
+            return
+
+        def capture(user_id: str, payload: Any) -> None:
+            access_token = getattr(payload, "access_token", None)
+            revision = self._runtime_credential_revisions.get(user_id)
+            if access_token and revision is not None:
+                self._pending_refresh_revisions[(user_id, access_token)] = revision
+            dispatch(user_id, payload)
+
+        http._dispatch_event = capture
+
+    def _install_twitchio_egress_coordination(self) -> None:
+        """Route every TwitchIO Helix call through the shared local buckets."""
+        http = getattr(self, "_http", None)
+        if http is None:
+            return
+        request = getattr(http, "request", None)
+        if request is None:
+            return
+
+        async def coordinated(route: Any) -> Any:
+            if getattr(route, "use_id", False):
+                return await request(route)
+
+            token_for = str(getattr(route, "token_for", "") or "")
+            bucket_key = f"user:{token_for}" if token_for else "app"
+            path = str(getattr(route, "path", ""))
+            chat_bucket: tuple[str, str] | None = None
+            if path.strip("/") == "chat/messages":
+                body = getattr(route, "json", {}) or {}
+                sender_id = str(body.get("sender_id") or token_for or "app")
+                channel_id = str(body.get("broadcaster_id") or "unknown")
+                chat_bucket = (sender_id, channel_id)
+                await self.egress.acquire_chat(
+                    sender_id,
+                    channel_id,
+                    priority=EgressPriority.INTERACTIVE,
+                )
+
+            await self.egress.acquire_helix(bucket_key)
+            try:
+                result = await request(route)
+            except twitchio.exceptions.HTTPException as error:
+                if error.status == 429:
+                    delay = self.egress.observe_helix(
+                        bucket_key,
+                        status_code=429,
+                        headers={},
+                    )
+                    if chat_bucket is not None:
+                        self.egress.defer_chat(*chat_bucket, delay or 5.0)
+                raise
+            if chat_bucket is not None and isinstance(result, dict):
+                rows = result.get("data") or []
+                drop_reason = rows[0].get("drop_reason") if rows else None
+                if drop_reason and "rate" in str(drop_reason).lower():
+                    self.egress.defer_chat(*chat_bucket, 5.0)
+            return result
+
+        http.request = coordinated
+
+    async def _wait_for_token_validation_slot(self) -> None:
+        gate = getattr(self, "_token_validation_gate", None)
+        if gate is None:
+            gate = asyncio.Lock()
+            self._token_validation_gate = gate
+            self._next_token_validation_at = 0.0
+        async with gate:
+            loop = asyncio.get_running_loop()
+            delay = max(0.0, self._next_token_validation_at - loop.time())
+            if delay:
+                await asyncio.sleep(delay)
+            self._next_token_validation_at = loop.time() + _TOKEN_VALIDATION_MIN_INTERVAL
+
+    def _disable_twitchio_periodic_token_validation(self) -> None:
+        """Cancel TwitchIO's unsafe periodic sweep but keep its reactive 401 refresh."""
+        http = getattr(self, "_http", None)
+        task = getattr(http, "_validate_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+
+    @staticmethod
+    def _is_transient_token_error(error: twitchio.exceptions.InvalidTokenException) -> bool:
+        return error.status in {408, 425, 429} or error.status >= 500
+
+    async def _validate_runtime_token(
         self, token: str, refresh: str
     ) -> twitchio.authentication.ValidateTokenPayload:
-        resp: twitchio.authentication.ValidateTokenPayload = await super().add_token(token, refresh)
+        for attempt in range(1, _TOKEN_VALIDATION_MAX_ATTEMPTS + 1):
+            await self._wait_for_token_validation_slot()
+            try:
+                return await super().add_token(token, refresh)
+            except twitchio.exceptions.InvalidTokenException as error:
+                if (
+                    not self._is_transient_token_error(error)
+                    or attempt == _TOKEN_VALIDATION_MAX_ATTEMPTS
+                ):
+                    raise
+                fallback = 5.0 * (2 ** (attempt - 1))
+                delay = min(parse_retry_after(error, fallback=fallback), 20.0)
+                LOGGER.warning(
+                    "Twitch token validation temporarily unavailable (HTTP %s); "
+                    "retrying in %.1fs (%d/%d)",
+                    error.status,
+                    delay,
+                    attempt,
+                    _TOKEN_VALIDATION_MAX_ATTEMPTS,
+                )
+                await asyncio.sleep(delay)
+            finally:
+                # A cancelled Task remains truthy, so TwitchIO will not restart
+                # the loop on the next add_token call; close() can still cancel
+                # and clear it normally.
+                self._disable_twitchio_periodic_token_validation()
+        raise AssertionError("unreachable token validation retry state")
 
-        if resp.user_id:
+    async def _discard_runtime_token(self, *user_ids: str | None) -> None:
+        for user_id in user_ids:
+            if user_id:
+                await self.remove_token(user_id)
+
+    @staticmethod
+    def _runtime_credential_error(
+        token: str, refresh: str, reason: str
+    ) -> twitchio.exceptions.InvalidTokenException:
+        original = twitchio.exceptions.HTTPException(
+            status=401,
+            extra=reason,
+        )
+        return twitchio.exceptions.InvalidTokenException(
+            "Stored Twitch credential failed runtime identity validation.",
+            token=token,
+            refresh=refresh,
+            type_="token",
+            original=original,
+        )
+
+    async def add_token(
+        self,
+        token: str,
+        refresh: str,
+        *,
+        persist: bool = True,
+        expected_user_id: str | None = None,
+        expected_token_type: TwitchCredential | None = None,
+        expected_revision: int | None = None,
+    ) -> twitchio.authentication.ValidateTokenPayload:
+        """Load a Twitch credential and optionally persist an external update.
+
+        Database-originated startup and NOTIFY reloads pass ``persist=False``
+        so the consumer cannot write the same credential back into its source.
+        """
+        stored_reload = (
+            expected_user_id is not None
+            and expected_token_type is not None
+            and expected_revision is not None
+        )
+        if not stored_reload:
+            resp = await self._validate_runtime_token(token, refresh)
+        else:
+            assert expected_user_id is not None
+            assert expected_token_type is not None
+            assert expected_revision is not None
+            async with self.channels.token_validation_lock(
+                expected_user_id, expected_token_type
+            ) as validation_conn:
+                reserved = await self.channels.defer_token_validation(
+                    expected_user_id,
+                    expected_token_type,
+                    expected_revision=expected_revision,
+                    connection=validation_conn,
+                )
+                if not reserved:
+                    raise RuntimeError(f"stale Twitch credential revision for {expected_user_id}")
+                # Set before TwitchIO validation: add_token may proactively
+                # refresh a near-expiry token and dispatch the refresh event
+                # before this coroutine regains control.
+                self._runtime_credential_revisions[expected_user_id] = expected_revision
+                resp = await self._validate_runtime_token(token, refresh)
+
+                required = set(required_core_scopes(expected_token_type))
+                identity_matches = resp.user_id == expected_user_id
+                client_matches = resp.client_id == self._client_id
+                scopes_match = required.issubset(set(resp.scopes))
+                if not identity_matches or not client_matches:
+                    await self._discard_runtime_token(expected_user_id, resp.user_id)
+                    self._runtime_credential_revisions.pop(expected_user_id, None)
+                    reason = "identity_mismatch" if not identity_matches else "client_mismatch"
+                    raise self._runtime_credential_error(token, refresh, reason)
+                if scopes_match:
+                    recorded = await self.channels.record_token_validation(
+                        expected_user_id,
+                        expected_token_type,
+                        expected_revision=expected_revision,
+                        connection=validation_conn,
+                    )
+                    if not recorded:
+                        refreshed_revision = self._runtime_credential_revisions.get(
+                            expected_user_id
+                        )
+                        if refreshed_revision != expected_revision + 1:
+                            await self._discard_runtime_token(expected_user_id)
+                            self._runtime_credential_revisions.pop(expected_user_id, None)
+                            raise RuntimeError(
+                                f"stale Twitch credential revision for {expected_user_id}"
+                            )
+
+        if resp.user_id and persist:
             token_type = "bot" if resp.user_id in self.bots.relevant_bot_ids() else "broadcaster"
             # super().add_token() may have internally refreshed the token (twitchio
             # auto-refreshes anything expiring within 1h) and fired a fire-and-forget
@@ -783,7 +1071,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                         LOGGER.error("save_token failed after 3 attempts: %s", e)
 
         login = resp.login or "unknown"
-        LOGGER.info("[%s] Token added to database (%s)", login, resp.user_id)
+        if persist:
+            LOGGER.info("[%s] Token added to database (%s)", login, resp.user_id)
+        else:
+            LOGGER.debug("[%s] Token loaded into runtime (%s)", login, resp.user_id)
         return resp
 
     async def load_tokens(self, path: str | None = None) -> None:
@@ -800,18 +1091,38 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             # only their 'broadcaster' token. A custom bot account that is not
             # (yet) active or desired anywhere is deliberately left unloaded —
             # see BotAccountResolver.relevant_bot_ids().
-            expected_type = "bot" if tok.user_id in relevant_bot_ids else "broadcaster"
+            expected_type: TwitchCredential = (
+                "bot" if tok.user_id in relevant_bot_ids else "broadcaster"
+            )
             if tok.token_type != expected_type:
                 continue
 
             try:
-                user_info = await self.add_token(tok.token, tok.refresh)
-            except twitchio.exceptions.InvalidTokenException as e:
-                LOGGER.warning(
-                    "Invalid token for user_id %s, skipping. User needs to re-authenticate: %s",
-                    tok.user_id,
-                    e,
+                user_info = await self.add_token(
+                    tok.token,
+                    tok.refresh,
+                    persist=False,
+                    expected_user_id=tok.user_id,
+                    expected_token_type=expected_type,
+                    expected_revision=tok.credential_revision,
                 )
+            except twitchio.exceptions.InvalidTokenException as e:
+                if self._is_transient_token_error(e):
+                    LOGGER.warning(
+                        "Token validation temporarily unavailable for user_id %s "
+                        "(HTTP %s); keeping credential for the API retry schedule",
+                        tok.user_id,
+                        e.status,
+                    )
+                else:
+                    LOGGER.warning(
+                        "Invalid token for user_id %s, skipping. User needs to re-authenticate: %s",
+                        tok.user_id,
+                        e,
+                    )
+                continue
+            except RuntimeError as e:
+                LOGGER.info("Skipped stale runtime token load for %s: %s", tok.user_id, e)
                 continue
 
             if self.bots.is_bot_identity(tok.user_id):
@@ -861,6 +1172,68 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     # Utility
     # ------------------------------------------------------------------
 
+    async def _coordinated_helix_get(
+        self,
+        path: str,
+        *,
+        token: str,
+        token_for: str,
+        params: dict[str, Any],
+        priority: EgressPriority = EgressPriority.NORMAL,
+    ) -> httpx.Response:
+        """Issue one reset-aware idempotent Helix GET through the shared bucket."""
+        bucket_key = f"user:{token_for}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for attempt in range(2):
+                await self.egress.acquire_helix(bucket_key, priority=priority)
+                response = await client.get(
+                    f"https://api.twitch.tv/helix/{path.lstrip('/')}",
+                    headers={
+                        "Client-Id": self._client_id,
+                        "Authorization": f"Bearer {token}",
+                    },
+                    params=params,
+                )
+                self.egress.observe_helix(
+                    bucket_key,
+                    status_code=response.status_code,
+                    headers=getattr(response, "headers", {}),
+                )
+                if response.status_code != 429 or attempt == 1:
+                    return response
+        raise AssertionError("unreachable Helix retry state")
+
+    async def _coordinated_helix_post(
+        self,
+        path: str,
+        *,
+        token: str,
+        token_for: str,
+        params: dict[str, Any],
+        json: dict[str, Any],
+        priority: EgressPriority = EgressPriority.INTERACTIVE,
+    ) -> httpx.Response:
+        """Issue one Helix mutation through the shared bucket without retrying it."""
+        bucket_key = f"user:{token_for}"
+        await self.egress.acquire_helix(bucket_key, priority=priority)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                f"https://api.twitch.tv/helix/{path.lstrip('/')}",
+                headers={
+                    "Client-Id": self._client_id,
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+                params=params,
+                json=json,
+            )
+        self.egress.observe_helix(
+            bucket_key,
+            status_code=response.status_code,
+            headers=getattr(response, "headers", {}),
+        )
+        return response
+
     async def _check_bot_mod_status(self, channel_id: str) -> None:
         """Check via Helix API if the bot is a moderator in the channel.
 
@@ -877,15 +1250,12 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 LOGGER.debug("[%s] No token, cannot verify mod status", self._ch(channel_id))
                 return
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    "https://api.twitch.tv/helix/moderation/moderators",
-                    headers={
-                        "Client-Id": self._client_id,
-                        "Authorization": f"Bearer {token_obj.token}",
-                    },
-                    params={"broadcaster_id": channel_id, "user_id": self.sender_for(channel_id)},
-                )
+            resp = await self._coordinated_helix_get(
+                "moderation/moderators",
+                token=token_obj.token,
+                token_for=channel_id,
+                params={"broadcaster_id": channel_id, "user_id": self.sender_for(channel_id)},
+            )
 
             if resp.status_code == 200:
                 data = resp.json().get("data", [])

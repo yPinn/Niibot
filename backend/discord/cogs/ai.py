@@ -68,7 +68,7 @@ class AICog(commands.Cog):
                 total_timeout_seconds=40.0,
                 per_attempt_timeout_seconds=15.0,
                 max_attempts=3,
-                failure_threshold=2,
+                failure_threshold=3,
                 cooldown_seconds=60.0,
             ),
             prompt_budget=PromptBudget(
@@ -164,7 +164,7 @@ class AICog(commands.Cog):
             LOGGER.info(
                 "AI request completed: request_id=%s outcome=%s provider=%s model=%s "
                 "attempts=%d fallbacks=%d latency_ms=%d input_tokens=%s "
-                "output_tokens=%s total_tokens=%s",
+                "output_tokens=%s total_tokens=%s cached_tokens=%s",
                 request_id,
                 response.output.outcome.value,
                 generation.provider,
@@ -175,6 +175,7 @@ class AICog(commands.Cog):
                 usage.input_tokens if usage else None,
                 usage.output_tokens if usage else None,
                 usage.total_tokens if usage else None,
+                usage.cached_tokens if usage else None,
             )
 
             if response.output.outcome is AssistantOutcome.OK:

@@ -4,7 +4,6 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import httpx
 from pypinyin import lazy_pinyin
 from twitchio.ext import commands
 
@@ -59,6 +58,11 @@ class _AssistantRuntimeUnavailableError(RuntimeError):
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _CHAT_FILTER_PATH = DATA_DIR / "chat_filter.json"
+
+# Groq tracks rate limits per (account, model), not per account, so this second
+# free model gets its own independent RPM/TPM/RPD bucket on the same API key
+# instead of competing with the primary model configured via GROQ_MODEL.
+_GROQ_SECONDARY_MODEL = "openai/gpt-oss-20b"
 
 _FALLBACK_SUBSTRINGS: list[str] = ["尼哥", "黑鬼"]
 _FALLBACK_PINYIN: list[str] = ["nige", "heigui"]
@@ -136,24 +140,36 @@ class AIComponent(BotComponent):
         )
 
         settings = get_settings()
+        # Guard against GROQ_MODEL being set to the same model as the secondary
+        # bucket, which would make both kinds hit one real Groq quota.
+        groq_secondary_config = (
+            ProviderConfig(settings.groq_api_key, _GROQ_SECONDARY_MODEL)
+            if settings.groq_model != _GROQ_SECONDARY_MODEL
+            else ProviderConfig()
+        )
         self.harness = build_assistant_harness(
             configs={
                 ProviderKind.GROQ: ProviderConfig(
                     settings.groq_api_key,
                     settings.groq_model,
                 ),
+                ProviderKind.GROQ_SECONDARY: groq_secondary_config,
                 ProviderKind.OPENROUTER: ProviderConfig(
                     settings.openrouter_api_key,
                     settings.openrouter_model,
                 ),
             },
-            provider_order=(ProviderKind.GROQ, ProviderKind.OPENROUTER),
+            provider_order=(
+                ProviderKind.GROQ,
+                ProviderKind.GROQ_SECONDARY,
+                ProviderKind.OPENROUTER,
+            ),
             provider_timeout_seconds=4.0,
             router_policy=RouterPolicy(
                 total_timeout_seconds=8.0,
                 per_attempt_timeout_seconds=4.0,
-                max_attempts=2,
-                failure_threshold=2,
+                max_attempts=3,
+                failure_threshold=3,
                 cooldown_seconds=60.0,
             ),
             prompt_budget=PromptBudget(
@@ -304,22 +320,18 @@ class AIComponent(BotComponent):
         Calls chat/emotes/user with broadcaster_id so mod-granted access is
         reflected, then updates ai_settings and notifies the bot to reload.
         """
-        settings = get_settings()
         sender_id = self.bot.sender_for(channel_id)
         token_row = await self.bot.channels.get_token(sender_id, "bot")
         if not token_row:
             LOGGER.warning("[%s] emote sync skipped: no bot token", channel_id)
             return
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.get(
-                    "https://api.twitch.tv/helix/chat/emotes/user",
-                    headers={
-                        "Client-Id": settings.twitch_client_id,
-                        "Authorization": f"Bearer {token_row.token}",
-                    },
-                    params={"user_id": sender_id, "broadcaster_id": channel_id},
-                )
+            r = await self.bot._coordinated_helix_get(
+                "chat/emotes/user",
+                token=token_row.token,
+                token_for=sender_id,
+                params={"user_id": sender_id, "broadcaster_id": channel_id},
+            )
             if r.status_code != 200:
                 LOGGER.warning("[%s] emote sync API error: %s", channel_id, r.status_code)
                 return
@@ -449,7 +461,7 @@ class AIComponent(BotComponent):
             LOGGER.info(
                 "AI request completed: request_id=%s outcome=%s provider=%s model=%s "
                 "attempts=%d fallbacks=%d latency_ms=%d input_tokens=%s "
-                "output_tokens=%s total_tokens=%s",
+                "output_tokens=%s total_tokens=%s cached_tokens=%s",
                 request_id,
                 response.output.outcome.value,
                 generation.provider,
@@ -460,6 +472,7 @@ class AIComponent(BotComponent):
                 usage.input_tokens if usage else None,
                 usage.output_tokens if usage else None,
                 usage.total_tokens if usage else None,
+                usage.cached_tokens if usage else None,
             )
 
             if response.output.outcome is AssistantOutcome.OK:

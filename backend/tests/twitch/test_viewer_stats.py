@@ -24,6 +24,7 @@ def _make_bot() -> MagicMock:
     bot.channels.get_token = AsyncMock(return_value=MagicMock(token="TOK"))
     bot.bot_id = "bot-1"
     bot.sender_for = MagicMock(return_value="bot-1")
+    bot._coordinated_helix_get = AsyncMock()
     return bot
 
 
@@ -72,6 +73,30 @@ async def _call(name: str, comp: ViewerStatsComponent, ctx: MagicMock, **kwargs)
 # --------------------------------------------------------------------------- #
 # _humanise_since
 # --------------------------------------------------------------------------- #
+
+
+async def test_helix_get_delegates_to_shared_coordinator():
+    bot = _make_bot()
+    expected = _resp(200, {"data": []})
+    bot._coordinated_helix_get.return_value = expected
+    with patch("twitch.components.viewer_stats.get_settings") as gs:
+        gs.return_value.twitch_client_id = "cid"
+        component = ViewerStatsComponent(bot)
+
+    response = await component._helix_get(
+        "users",
+        {"id": "viewer-9"},
+        "TOK",
+        token_for="bot-1",
+    )
+
+    assert response is expected
+    bot._coordinated_helix_get.assert_awaited_once_with(
+        "users",
+        token="TOK",
+        token_for="bot-1",
+        params={"id": "viewer-9"},
+    )
 
 
 async def test_humanise_since_days_only():

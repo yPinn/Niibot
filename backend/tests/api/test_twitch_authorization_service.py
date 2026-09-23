@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from api.app import _twitch_authorization_loop
@@ -261,6 +262,27 @@ async def test_missing_encryption_key_disables_background_reconciliation(caplog)
 
 
 @pytest.mark.asyncio
+async def test_background_loop_drains_one_credential_per_second_without_batches():
+    db_manager = MagicMock(is_connected=True)
+    settings = SimpleNamespace(twitch_token_encryption_key=_KEY, client_id="client-1")
+    service = MagicMock()
+    service.check_due_credentials = AsyncMock(return_value=1)
+
+    with (
+        patch(
+            "api.app.TwitchAuthorizationService",
+            return_value=service,
+        ),
+        patch("api.app.get_twitch_api", return_value=MagicMock()),
+        patch("api.app.asyncio.sleep", new=AsyncMock(side_effect=asyncio.CancelledError)) as sleep,
+    ):
+        await _twitch_authorization_loop(db_manager, settings)
+
+    service.check_due_credentials.assert_awaited_once_with(limit=1)
+    sleep.assert_awaited_once_with(1.0)
+
+
+@pytest.mark.asyncio
 async def test_transient_validation_failure_never_marks_reauth_or_disables_channel():
     conn = AsyncMock()
     conn.fetchrow.return_value = _credential_row(user_id="channel-1", token_type="broadcaster")
@@ -311,16 +333,14 @@ async def test_provider_outage_does_not_hide_an_existing_reauthorization_require
 async def test_background_reconciliation_defers_unexpected_failures_to_avoid_starvation():
     conn = AsyncMock()
     service = _service(conn, MagicMock())
-    service.list_due_credentials = AsyncMock(return_value=[("bot-1", "bot")])  # type: ignore[method-assign]
+    service.claim_due_credentials = AsyncMock(return_value=[("bot-1", "bot")])  # type: ignore[attr-defined,method-assign]
     service.check_credential = AsyncMock(side_effect=RuntimeError("bad ciphertext"))  # type: ignore[method-assign]
 
     checked = await service.check_due_credentials(limit=25)
 
     assert checked == 1
     deferred = next(
-        call.args
-        for call in conn.execute.await_args_list
-        if "last_checked_at = NOW()" in call.args[0]
+        call.args for call in conn.execute.await_args_list if "next_validation_at" in call.args[0]
     )
     assert deferred[1:] == ("bot-1", "bot")
 
@@ -329,7 +349,7 @@ async def test_background_reconciliation_defers_unexpected_failures_to_avoid_sta
 async def test_background_reconciliation_validates_only_runtime_core_scopes():
     conn = AsyncMock()
     service = _service(conn, MagicMock())
-    service.list_due_credentials = AsyncMock(  # type: ignore[method-assign]
+    service.claim_due_credentials = AsyncMock(  # type: ignore[attr-defined,method-assign]
         return_value=[("bot-1", "bot"), ("channel-1", "broadcaster")]
     )
     service.check_credential = AsyncMock()  # type: ignore[method-assign]
@@ -343,6 +363,77 @@ async def test_background_reconciliation_validates_only_runtime_core_scopes():
     assert service.check_credential.await_args_list[1].kwargs["required_scopes"] == set(
         BROADCASTER_CORE_SCOPES
     )
+
+
+@pytest.mark.asyncio
+async def test_due_credentials_are_atomically_claimed_across_replicas():
+    conn = AsyncMock()
+    conn.fetch.return_value = [
+        {"user_id": "bot-1", "token_type": "bot"},
+        {"user_id": "channel-1", "token_type": "broadcaster"},
+    ]
+    service = _service(conn, MagicMock())
+
+    claimed = await service.claim_due_credentials(limit=2)
+
+    assert claimed == [("bot-1", "bot"), ("channel-1", "broadcaster")]
+    sql, limit = conn.fetch.await_args.args
+    assert limit == 2
+    assert "FOR UPDATE SKIP LOCKED" in sql
+    assert "next_validation_at IS NULL" in sql
+    assert "next_validation_at <= NOW()" in sql
+    assert "UPDATE tokens" in sql
+    assert "INTERVAL '5 minutes'" in sql
+
+
+@pytest.mark.asyncio
+async def test_successful_validation_schedules_the_next_hourly_check():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _credential_row()
+    twitch = MagicMock()
+    twitch.validate_token_details = AsyncMock(
+        return_value=TokenValidationResult(
+            status="valid",
+            client_id="client-1",
+            login="bot_one",
+            user_id="bot-1",
+            scopes=frozenset(BOT_SCOPES),
+            expires_in=3600,
+        )
+    )
+
+    await _service(conn, twitch).check_credential(
+        user_id="bot-1", token_type="bot", required_scopes=set(BOT_SCOPES)
+    )
+
+    health_sql = next(
+        call.args[0] for call in conn.execute.await_args_list if "last_validated_at" in call.args[0]
+    )
+    assert "next_validation_at = NOW() + INTERVAL '55 minutes'" in health_sql
+
+
+@pytest.mark.asyncio
+async def test_provider_outage_retries_soon_without_refresh_or_reauth():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _credential_row(user_id="channel-1", token_type="broadcaster")
+    twitch = MagicMock()
+    twitch.validate_token_details = AsyncMock(
+        return_value=TokenValidationResult(status="unavailable", error_code="provider_unavailable")
+    )
+
+    await _service(conn, twitch).check_credential(
+        user_id="channel-1",
+        token_type="broadcaster",
+        required_scopes=set(BROADCASTER_SCOPES),
+    )
+
+    transient_sql = next(
+        call.args[0]
+        for call in conn.execute.await_args_list
+        if "provider_unavailable" in call.args[0]
+    )
+    assert "next_validation_at = NOW() + INTERVAL '5 minutes'" in transient_sql
+    twitch.refresh_access_token.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -453,6 +544,42 @@ async def test_invalid_access_token_refreshes_rotates_and_revalidates_atomically
     )
     assert notify_call[1] == "bot_token_updated"
     assert '"user_id": "bot-1"' in notify_call[2]
+
+
+@pytest.mark.asyncio
+async def test_broadcaster_refresh_relies_on_revision_trigger_without_duplicate_notify():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = _credential_row(user_id="channel-1", token_type="broadcaster")
+    twitch = MagicMock()
+    twitch.validate_token_details = AsyncMock(
+        side_effect=[
+            TokenValidationResult(status="invalid", error_code="invalid_token"),
+            TokenValidationResult(
+                status="valid",
+                client_id="client-1",
+                login="alice",
+                user_id="channel-1",
+                scopes=frozenset(BROADCASTER_SCOPES),
+                expires_in=3600,
+            ),
+        ]
+    )
+    twitch.refresh_access_token = AsyncMock(
+        return_value=TokenRefreshResult(
+            success=True,
+            access_token="new-access",
+            refresh_token="new-refresh",
+        )
+    )
+
+    result = await _service(conn, twitch).check_credential(
+        user_id="channel-1",
+        token_type="broadcaster",
+        required_scopes=set(BROADCASTER_SCOPES),
+    )
+
+    assert result.status == "valid"
+    assert all("pg_notify($1, $2)" not in call.args[0] for call in conn.execute.await_args_list)
 
 
 @pytest.mark.asyncio

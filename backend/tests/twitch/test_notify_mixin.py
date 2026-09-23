@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("TWITCH_CLIENT_ID", "test-client-id")
 os.environ.setdefault("TWITCH_CLIENT_SECRET", "test-client-secret")
@@ -31,7 +32,7 @@ class _FakeSubs:
     def __init__(self) -> None:
         self._subscribed: set[str] = set()
         self._names: set[str] = set()
-        self.subscribe = AsyncMock()
+        self.subscribe = AsyncMock(return_value=SimpleNamespace(converged=True, errors=()))
         self.unsubscribe = AsyncMock()
 
     def is_subscribed(self, cid: str) -> bool:
@@ -338,6 +339,20 @@ class TestHandleChannelToggleEnable:
         mixin.subs.subscribe.assert_not_awaited()
         mixin._check_bot_mod_status.assert_not_awaited()
 
+    async def test_enable_failed_reconcile_does_not_announce_success(self):
+        mixin = _StubMixin()
+        mixin.subs.subscribe.return_value = SimpleNamespace(
+            converged=False, errors=("stream.online:HTTP 429",)
+        )
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch2", enabled=True)
+        )
+
+        mixin._check_bot_mod_status.assert_not_awaited()
+        mixin.event_configs.ensure_defaults.assert_not_awaited()
+        mixin._send_welcome_message.assert_not_awaited()
+
     async def test_enable_ignores_bot_own_channel(self):
         mixin = _StubMixin()
 
@@ -540,11 +555,57 @@ class TestHandleNewTokenAdmissionGate:
         mixin.subs._subscribed = set()
         mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
         mixin.add_channel_to_db = AsyncMock()
+        token = MagicMock(token="tok", refresh="ref", scopes=" ".join(BROADCASTER_SCOPES))
+        mixin.channels.get_token = AsyncMock(return_value=token)
         # get_channel defaults to an enabled channel via _StubMixin.
 
         await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
 
+        mixin.add_token.assert_awaited_once_with(
+            "tok",
+            "ref",
+            persist=False,
+            expected_user_id="u1",
+            expected_token_type="broadcaster",
+            expected_revision=token.credential_revision,
+        )
         mixin.subs.subscribe.assert_awaited_once_with("u1")
+
+    async def test_rate_limited_runtime_reload_does_not_mark_credential_invalid(self):
+        from twitchio.exceptions import HTTPException, InvalidTokenException
+
+        limited = InvalidTokenException(
+            "limited",
+            token="tok",
+            refresh="ref",
+            type_="token",
+            original=HTTPException(status=429, extra="rate limited"),
+        )
+        mixin = _StubMixin()
+        mixin.add_token = AsyncMock(side_effect=limited)
+        mixin._mark_reauth_required = AsyncMock()
+        mixin.add_channel_to_db = AsyncMock()
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._mark_reauth_required.assert_not_awaited()
+        mixin.add_channel_to_db.assert_not_awaited()
+
+    async def test_failed_reconcile_does_not_start_channel_runtime(self):
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+        mixin.subs.subscribe.return_value = SimpleNamespace(
+            converged=False, errors=("channel.chat.message:HTTP 429",)
+        )
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._check_bot_mod_status.assert_not_awaited()
+        mixin.event_configs.ensure_defaults.assert_not_awaited()
+        mixin.sessions.ensure_session.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +693,24 @@ class TestHandleTokenReauth:
 
         mixin.subs.unsubscribe.assert_not_awaited()
 
+    async def test_same_revision_runtime_refresh_notification_is_deduplicated(self):
+        mixin = _StubMixin()
+        mixin._runtime_credential_revisions = {"u1": 8}
+        mixin._handle_new_token = AsyncMock()
+        payload = json.dumps(
+            {
+                "user_id": "u1",
+                "credential_revision": 8,
+                "scopes_changed": False,
+                "reauth_cleared": False,
+            }
+        )
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_token_reauth(None, None, "token_reauth", payload)
+
+        mixin._handle_new_token.assert_not_awaited()
+
 
 class TestHandleBotTokenUpdated:
     pytestmark = pytest.mark.asyncio
@@ -652,7 +731,14 @@ class TestHandleBotTokenUpdated:
 
         mock_cache.invalidate.assert_called_once_with("token:bot-001:bot")
         mixin.channels.get_token.assert_awaited_once_with("bot-001", "bot")
-        mixin.add_token.assert_awaited_once_with("encrypted-access", "encrypted-refresh")
+        mixin.add_token.assert_awaited_once_with(
+            "encrypted-access",
+            "encrypted-refresh",
+            persist=False,
+            expected_user_id="bot-001",
+            expected_token_type="bot",
+            expected_revision=token.credential_revision,
+        )
 
     async def test_missing_updated_credential_fails_closed(self):
         mixin = _StubMixin()
@@ -716,6 +802,9 @@ def mod_bot():
             needs_reauth=b._needs_reauth,
         )
         b.channels = MagicMock()
+        b.egress = MagicMock()
+        b.egress.acquire_helix = AsyncMock()
+        b.egress.observe_helix = MagicMock()
 
         async def _mark_reauth_required(user_id, *, expected_revision=None):
             b._needs_reauth.add(user_id)
@@ -771,6 +860,29 @@ class TestCheckBotModStatus:
         assert "ch1" not in mod_bot._bot_is_mod
         assert "ch1" not in mod_bot._needs_reauth
         mod_bot._mark_reauth_required.assert_not_awaited()
+
+    async def test_rate_limited_mod_check_uses_reset_bucket_and_retries_once(self, mod_bot):
+        token_obj = MagicMock(token="tok")
+        mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
+        limited = MagicMock(status_code=429, text="limited", headers={"Retry-After": "1"})
+        success = MagicMock(status_code=200, headers={})
+        success.json.return_value = {"data": []}
+        client = AsyncMock()
+        client.get = AsyncMock(side_effect=[limited, success])
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=client)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("twitch.core.bot.httpx.AsyncClient", return_value=ctx):
+            await mod_bot._check_bot_mod_status("ch1")
+
+        assert client.get.await_count == 2
+        assert mod_bot.egress.acquire_helix.await_count == 2
+        mod_bot.egress.observe_helix.assert_any_call(
+            "user:ch1",
+            status_code=429,
+            headers={"Retry-After": "1"},
+        )
 
     async def test_no_token_returns_early_without_error(self, mod_bot):
         mod_bot.channels.get_token = AsyncMock(return_value=None)

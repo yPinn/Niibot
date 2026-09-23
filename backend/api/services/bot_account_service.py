@@ -386,8 +386,12 @@ class BotAccountService:
                     INSERT INTO tokens
                         (user_id, token, refresh, token_type, scopes, identity_id,
                          requires_reauth, encryption_version, last_checked_at,
-                         last_validated_at, invalidated_at, validation_error_code)
-                    VALUES ($1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6, $7, $7, NULL, NULL)
+                         last_validated_at, next_validation_at, invalidated_at,
+                         validation_error_code)
+                    VALUES (
+                        $1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6, $7, $7,
+                        $7 + INTERVAL '55 minutes', NULL, NULL
+                    )
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token = EXCLUDED.token,
                         refresh = EXCLUDED.refresh,
@@ -397,6 +401,7 @@ class BotAccountService:
                         encryption_version = EXCLUDED.encryption_version,
                         last_checked_at = EXCLUDED.last_checked_at,
                         last_validated_at = EXCLUDED.last_validated_at,
+                        next_validation_at = EXCLUDED.next_validation_at,
                         invalidated_at = NULL,
                         validation_error_code = NULL,
                         credential_revision = tokens.credential_revision + 1,

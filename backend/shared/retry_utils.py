@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 
 def format_duration(seconds: float) -> str:
     """Format seconds into a compact human-readable string (e.g. 2h30m, 5m10s, 45s)."""
@@ -22,7 +24,8 @@ def parse_retry_after(exc: Exception, fallback: float = 5.0) -> float:
     Priority:
       1. ``exc.retry_after`` attribute (parsed by discord.py / twitchio)
       2. ``Retry-After`` / ``retry-after`` / ``retry_after`` response header
-      3. ``fallback`` value
+      3. ``Ratelimit-Reset`` absolute epoch response header
+      4. ``fallback`` value
     """
     retry_after: float | None = None
 
@@ -47,5 +50,16 @@ def parse_retry_after(exc: Exception, fallback: float = 5.0) -> float:
                     except (ValueError, TypeError):
                         pass
                     break
+
+            if retry_after is None:
+                for key in ("Ratelimit-Reset", "ratelimit-reset", "ratelimit_reset"):
+                    if key in headers:
+                        try:
+                            val = float(headers[key]) - time.time()
+                            if val > 0:
+                                retry_after = val
+                        except (ValueError, TypeError):
+                            pass
+                        break
 
     return retry_after if retry_after is not None else fallback

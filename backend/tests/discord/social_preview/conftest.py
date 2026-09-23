@@ -31,6 +31,10 @@ def cog(embed_factory: EmbedFactory) -> SocialPreviewCog:
     stream_cm.__aenter__ = AsyncMock(return_value=stream_cm)
     stream_cm.__aexit__ = AsyncMock(return_value=False)
     c._http.stream = MagicMock(return_value=stream_cm)
+    c._twitch_egress = MagicMock()
+    c._twitch_egress.acquire_helix = AsyncMock()
+    c._twitch_egress.observe_helix = MagicMock()
+    c._twitch_egress.close = AsyncMock()
     c._twitch_token = None
     c._twitch_token_exp = 0.0
     return c

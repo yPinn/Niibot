@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import asyncpg
 
@@ -106,9 +108,12 @@ class ChannelRepository:
                 """
                 INSERT INTO tokens (
                     user_id, token, refresh, scopes, token_type, encryption_version,
-                    last_checked_at, last_validated_at
+                    last_checked_at, last_validated_at, next_validation_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                VALUES (
+                    $1, $2, $3, $4, $5, $6, NOW(), NOW(),
+                    NOW() + INTERVAL '55 minutes'
+                )
                 ON CONFLICT (user_id, token_type) DO UPDATE SET
                     token              = EXCLUDED.token,
                     refresh            = EXCLUDED.refresh,
@@ -118,6 +123,7 @@ class ChannelRepository:
                     reauth_notified_at = NULL,
                     last_checked_at    = NOW(),
                     last_validated_at  = NOW(),
+                    next_validation_at = NOW() + INTERVAL '55 minutes',
                     invalidated_at     = NULL,
                     validation_error_code = NULL,
                     credential_revision = tokens.credential_revision + 1,
@@ -131,6 +137,120 @@ class ChannelRepository:
                 encryption_version,
             )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
+
+    @asynccontextmanager
+    async def token_validation_lock(
+        self, user_id: str, token_type: str
+    ) -> AsyncIterator[asyncpg.Connection]:
+        """Serialize runtime validation with the API credential reconciler.
+
+        The API uses the same ``twitch-auth:{type}:{id}`` key through
+        ``pg_advisory_xact_lock``.  A session lock is required here because the
+        Twitch network request happens outside a database transaction.
+        """
+        lock_key = f"twitch-auth:{token_type}:{user_id}"
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "SELECT pg_advisory_lock(hashtextextended($1, 0))",
+                lock_key,
+            )
+            try:
+                yield conn
+            finally:
+                await conn.execute(
+                    "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+                    lock_key,
+                )
+
+    async def defer_token_validation(
+        self,
+        user_id: str,
+        token_type: str,
+        *,
+        expected_revision: int,
+        connection: asyncpg.Connection | None = None,
+    ) -> bool:
+        """Reserve a short retry window before validating a stored credential."""
+        sql = """
+            UPDATE tokens
+               SET next_validation_at = NOW() + INTERVAL '5 minutes'
+             WHERE user_id = $1 AND token_type = $2
+               AND credential_revision = $3
+        """
+        if connection is not None:
+            result = await connection.execute(sql, user_id, token_type, expected_revision)
+        else:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(sql, user_id, token_type, expected_revision)
+        return str(result).endswith(" 1")
+
+    async def record_token_validation(
+        self,
+        user_id: str,
+        token_type: str,
+        *,
+        expected_revision: int,
+        connection: asyncpg.Connection | None = None,
+    ) -> bool:
+        """Record a successful runtime validation without rotating the token."""
+        sql = """
+            UPDATE tokens
+               SET last_checked_at = NOW(), last_validated_at = NOW(),
+                   next_validation_at = NOW() + INTERVAL '55 minutes'
+             WHERE user_id = $1 AND token_type = $2
+               AND credential_revision = $3
+        """
+        if connection is not None:
+            result = await connection.execute(sql, user_id, token_type, expected_revision)
+        else:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(sql, user_id, token_type, expected_revision)
+        return str(result).endswith(" 1")
+
+    async def rotate_token_if_revision(
+        self,
+        user_id: str,
+        token: str,
+        refresh: str,
+        *,
+        scopes: str | None,
+        token_type: str,
+        expected_revision: int,
+    ) -> bool:
+        """Persist a runtime refresh only if it came from the current generation."""
+        encrypted_token, encrypted_refresh, encryption_version = self._encode_token_pair(
+            token, refresh
+        )
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE tokens
+                   SET token = $2,
+                       refresh = $3,
+                       scopes = COALESCE($4, scopes),
+                       encryption_version = $6,
+                       last_checked_at = NOW(),
+                       last_validated_at = NOW(),
+                       next_validation_at = NOW() + INTERVAL '55 minutes',
+                       credential_revision = credential_revision + 1,
+                       updated_at = NOW()
+                 WHERE user_id = $1 AND token_type = $5
+                   AND credential_revision = $7
+                   AND invalidated_at IS NULL
+                   AND requires_reauth = FALSE
+                """,
+                user_id,
+                encrypted_token,
+                encrypted_refresh,
+                scopes,
+                token_type,
+                encryption_version,
+                expected_revision,
+            )
+        updated = str(result).endswith(" 1")
+        if updated:
+            _token_cache.invalidate(f"token:{user_id}:{token_type}")
+        return updated
 
     async def mark_requires_reauth(
         self,
@@ -193,9 +313,12 @@ class ChannelRepository:
                     """
                     INSERT INTO tokens (
                         user_id, token, refresh, scopes, token_type, encryption_version,
-                        last_checked_at, last_validated_at
+                        last_checked_at, last_validated_at, next_validation_at
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+                    VALUES (
+                        $1, $2, $3, $4, $5, $6, NOW(), NOW(),
+                        NOW() + INTERVAL '55 minutes'
+                    )
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token           = EXCLUDED.token,
                         refresh         = EXCLUDED.refresh,
@@ -205,6 +328,7 @@ class ChannelRepository:
                         reauth_notified_at = NULL,
                         last_checked_at = NOW(),
                         last_validated_at = NOW(),
+                        next_validation_at = NOW() + INTERVAL '55 minutes',
                         invalidated_at = NULL,
                         validation_error_code = NULL,
                         credential_revision = tokens.credential_revision + 1,

@@ -191,6 +191,8 @@ class TestUpsertTokenOnly:
         sql = conn.execute.call_args[0][0]
         assert "reauth_notified_at = NULL" in sql
         assert "credential_revision = tokens.credential_revision + 1" in sql
+        assert "next_validation_at" in sql
+        assert "INTERVAL '55 minutes'" in sql
 
     async def test_encrypts_token_and_refresh_when_key_is_configured(self):
         pool, conn = _make_pool(execute="INSERT 0 1")
@@ -241,6 +243,76 @@ class TestMarkRequiresReauth:
         sql, user_id, token_type, revision = conn.execute.call_args.args
         assert "credential_revision = $3" in sql
         assert (user_id, token_type, revision) == ("u1", "broadcaster", 7)
+
+
+@pytest.mark.asyncio
+class TestRuntimeTokenValidation:
+    async def test_uses_the_same_advisory_lock_key_as_api_reconciliation(self):
+        pool, conn = _make_pool(execute="SELECT 1")
+        repo = ChannelRepository(pool)
+
+        async with repo.token_validation_lock("u1", "broadcaster") as connection:
+            assert connection is conn
+
+        lock_sql, lock_key = conn.execute.await_args_list[0].args
+        unlock_sql, unlock_key = conn.execute.await_args_list[-1].args
+        assert "pg_advisory_lock" in lock_sql
+        assert "pg_advisory_unlock" in unlock_sql
+        assert lock_key == unlock_key == "twitch-auth:broadcaster:u1"
+
+    async def test_defers_api_scheduler_with_revision_compare_and_set(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = ChannelRepository(pool)
+
+        updated = await repo.defer_token_validation("u1", "broadcaster", expected_revision=7)
+
+        assert updated is True
+        sql, user_id, token_type, revision = conn.execute.await_args.args
+        assert "next_validation_at = NOW() + INTERVAL '5 minutes'" in sql
+        assert "credential_revision = $3" in sql
+        assert (user_id, token_type, revision) == ("u1", "broadcaster", 7)
+
+    async def test_records_success_without_incrementing_credential_revision(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = ChannelRepository(pool)
+
+        updated = await repo.record_token_validation("u1", "broadcaster", expected_revision=7)
+
+        assert updated is True
+        sql = conn.execute.await_args.args[0]
+        assert "last_checked_at = NOW()" in sql
+        assert "last_validated_at = NOW()" in sql
+        assert "next_validation_at = NOW() + INTERVAL '55 minutes'" in sql
+        assert "credential_revision = credential_revision + 1" not in sql
+
+    async def test_refresh_rotation_is_compare_and_set_by_runtime_revision(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        updated = await repo.rotate_token_if_revision(
+            "u1",
+            "new-token",
+            "new-refresh",
+            scopes="channel:bot",
+            token_type="broadcaster",
+            expected_revision=7,
+        )
+
+        assert updated is True
+        sql, user_id, encrypted_token, encrypted_refresh, scopes, token_type, version, revision = (
+            conn.execute.await_args.args
+        )
+        assert "credential_revision = credential_revision + 1" in sql
+        assert "credential_revision = $7" in sql
+        assert (user_id, scopes, token_type, version, revision) == (
+            "u1",
+            "channel:bot",
+            "broadcaster",
+            1,
+            7,
+        )
+        assert encrypted_token != "new-token"
+        assert encrypted_refresh != "new-refresh"
 
 
 @pytest.mark.asyncio

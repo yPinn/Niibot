@@ -345,6 +345,20 @@ class TestHelixGet:
         resp = await api._helix_get("users", token="t")
         assert resp is not None and resp.status_code == 403
 
+    async def test_429_waits_for_retry_after_and_retries_idempotent_get_once(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/users",
+            httpx.Response(429, headers={"Retry-After": "0.01"}, json={"message": "slow"}),
+            httpx.Response(200, json={"data": []}),
+        )
+        api = mock.client()
+
+        resp = await api._helix_get("users", token="t")
+
+        assert resp is not None and resp.status_code == 200
+        assert mock.paths("GET") == ["/helix/users", "/helix/users"]
+
 
 # ---------------------------------------------------------------------------
 # exchange_code_for_token

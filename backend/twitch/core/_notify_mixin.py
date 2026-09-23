@@ -71,7 +71,14 @@ class _NotifyMixin:
 
             if enabled:
                 if not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
-                    await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
+                    result = await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
+                    if not result.converged:
+                        LOGGER.warning(
+                            "[NOTIFY] EventSub reconcile incomplete for %s: %s",
+                            self._ch(channel_id),
+                            result.errors,
+                        )
+                        return
                     await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
 
                     # Scope check: mod check catches expired tokens (401/403) but a valid
@@ -228,7 +235,14 @@ class _NotifyMixin:
                 return
 
             try:
-                user_info = await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
+                user_info = await self.add_token(  # type: ignore[attr-defined]
+                    token_obj.token,
+                    token_obj.refresh,
+                    persist=False,
+                    expected_user_id=user_id,
+                    expected_token_type="broadcaster",
+                    expected_revision=token_obj.credential_revision,
+                )
                 LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
                 from shared.twitch_scopes import missing_broadcaster_core_scopes
@@ -265,7 +279,14 @@ class _NotifyMixin:
                     return
 
                 if not self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
-                    await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
+                    result = await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
+                    if not result.converged:
+                        LOGGER.warning(
+                            "[NOTIFY] EventSub reconcile incomplete for %s: %s",
+                            self._ch(user_id),
+                            result.errors,
+                        )
+                        return
                     await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
 
                     count = await self._seed_and_warm_channel(user_id)
@@ -279,6 +300,14 @@ class _NotifyMixin:
                     LOGGER.info(f"[NOTIFY] Instantly subscribed to new channel: {user_id}")
 
             except twitchio.exceptions.InvalidTokenException as e:
+                if e.status in {408, 425, 429} or e.status >= 500:
+                    LOGGER.warning(
+                        "[NOTIFY] Token reload temporarily unavailable for %s (HTTP %s); "
+                        "API reconciliation will retry",
+                        user_id,
+                        e.status,
+                    )
+                    return
                 LOGGER.warning(f"[NOTIFY] Invalid token for new user {user_id}: {e}")
                 await self._mark_reauth_required(
                     user_id,
@@ -306,6 +335,21 @@ class _NotifyMixin:
                 # which owns unsubscribe and per-channel state cleanup.
                 LOGGER.info(
                     f"[NOTIFY] token_reauth for {self._ch(user_id)} — disconnected, cache busted only"  # type: ignore[attr-defined]
+                )
+                return
+
+            notified_revision = data.get("credential_revision")
+            runtime_revision = getattr(self, "_runtime_credential_revisions", {}).get(user_id)
+            if (
+                notified_revision is not None
+                and runtime_revision == notified_revision
+                and not data.get("scopes_changed")
+                and not data.get("reauth_cleared")
+            ):
+                LOGGER.debug(
+                    "[NOTIFY] token_reauth for %s revision %s already active; skipping reload",
+                    self._ch(user_id),
+                    notified_revision,
                 )
                 return
 
@@ -344,7 +388,14 @@ class _NotifyMixin:
                 LOGGER.error("[NOTIFY] Updated Bot credential is unavailable: %s", user_id)
                 return
 
-            await self.add_token(token_obj.token, token_obj.refresh)  # type: ignore[attr-defined]
+            await self.add_token(  # type: ignore[attr-defined]
+                token_obj.token,
+                token_obj.refresh,
+                persist=False,
+                expected_user_id=user_id,
+                expected_token_type="bot",
+                expected_revision=token_obj.credential_revision,
+            )
             LOGGER.info("[NOTIFY] Bot credential hot reload completed for %s", user_id)
         except Exception:
             LOGGER.exception("[NOTIFY] Bot credential hot reload failed")

@@ -173,6 +173,25 @@ class TestCogTwitchClip:
         msg.channel.send.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_helix_get_retries_429_once_through_coordinator(
+        self, cog: SocialPreviewCog
+    ) -> None:
+        limited = self._make_clips_resp([])
+        limited.status_code = 429
+        limited.headers = {"Ratelimit-Reset": "0"}
+        success = self._make_clips_resp([self._clip_data()])
+        success.status_code = 200
+        success.headers = {}
+        cog._http.get = AsyncMock(side_effect=[limited, success])
+
+        data = await cog._twitch_helix_get("https://api.twitch.tv/helix/clips?id=x", "tok")
+
+        assert data == [self._clip_data()]
+        assert cog._http.get.await_count == 2
+        assert cog._twitch_egress.acquire_helix.await_count == 2
+        assert cog._twitch_egress.observe_helix.call_count == 2
+
+    @pytest.mark.asyncio
     async def test_no_send_without_credentials(self, cog: SocialPreviewCog) -> None:
         """If no Twitch credentials are configured, handler silently does nothing."""
         cog._get_twitch_token = AsyncMock(return_value=None)

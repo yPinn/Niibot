@@ -122,6 +122,30 @@ def _make_component(
     return comp
 
 
+@pytest.mark.asyncio
+async def test_sync_emotes_uses_shared_helix_coordinator() -> None:
+    comp = _make_component(ai_settings={"enabled_emotes": ["Kappa"]})
+    comp.bot.sender_for = MagicMock(return_value="bot-1")
+    comp.bot.channels = MagicMock()
+    comp.bot.channels.get_token = AsyncMock(return_value=MagicMock(token="TOK"))
+    response = MagicMock(status_code=200)
+    response.json.return_value = {
+        "data": [{"name": "Kappa", "emote_type": "globals"}],
+    }
+    comp.bot._coordinated_helix_get = AsyncMock(return_value=response)
+
+    with patch("twitch.components.ai.get_settings") as settings:
+        settings.return_value.twitch_client_id = "cid"
+        await comp.sync_emotes("channel-1")
+
+    comp.bot._coordinated_helix_get.assert_awaited_once_with(
+        "chat/emotes/user",
+        token="TOK",
+        token_for="bot-1",
+        params={"user_id": "bot-1", "broadcaster_id": "channel-1"},
+    )
+
+
 def test_scope_change_preserves_only_sessions_for_the_announced_scope() -> None:
     comp = _make_component()
 

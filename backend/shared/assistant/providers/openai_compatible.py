@@ -157,8 +157,10 @@ class OpenAICompatibleProvider:
     def _normalize_usage(usage: Any | None) -> TokenUsage | None:
         if usage is None:
             return None
+        details = getattr(usage, "prompt_tokens_details", None)
         return TokenUsage(
             input_tokens=getattr(usage, "prompt_tokens", None),
             output_tokens=getattr(usage, "completion_tokens", None),
             total_tokens=getattr(usage, "total_tokens", None),
+            cached_tokens=getattr(details, "cached_tokens", None) if details else None,
         )

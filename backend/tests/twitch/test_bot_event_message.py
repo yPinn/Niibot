@@ -267,6 +267,9 @@ def _make_bot_for_mod_check():
         b._bot_is_mod = set()
         b._mod_check_pending = set()
         b.subs = _make_subs()
+        b.egress = MagicMock()
+        b.egress.acquire_helix = AsyncMock()
+        b.egress.observe_helix = MagicMock()
 
         async def _mark_reauth_required(user_id, *, expected_revision=None):
             b._needs_reauth.add(user_id)
@@ -369,8 +372,12 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
         b._token_refresh_buffer = []
         b._token_refresh_flush_task = None
         b._background_tasks = set()
+        b._runtime_credential_revisions = {}
+        b._pending_refresh_revisions = {
+            (user_id, "new-tok"): 1 for user_id in ("123", "u1", "u2", "u3")
+        }
         b.channels = MagicMock()
-        b.channels.upsert_token_only = AsyncMock()
+        b.channels.rotate_token_if_revision = AsyncMock(return_value=True)
         b._check_bot_mod_status = AsyncMock()
         return b
 
