@@ -35,6 +35,17 @@ def _make_ctx(*, is_moderator: bool = False) -> MagicMock:
     return ctx
 
 
+@pytest.fixture(autouse=True)
+def _reset_command_failure_debounce():
+    """command_failure_notifier is a process-wide singleton; clear its debounce
+    state so one test's failure reply doesn't silence the next test's."""
+    from utils.command_failure import command_failure_notifier
+
+    command_failure_notifier._last_notified.clear()
+    yield
+    command_failure_notifier._last_notified.clear()
+
+
 @pytest.fixture()
 def comp() -> ChannelInfoComponent:
     c = ChannelInfoComponent(_make_bot())

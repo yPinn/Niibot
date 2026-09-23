@@ -21,7 +21,8 @@ from twitchio.ext import commands
 from core.component import BotComponent
 from core.guards import check_command, has_role
 from shared.repositories.command_config import CommandConfigRepository
-from utils.reauth import CMD_COOLDOWN, is_scope_error, reauth_notifier
+from utils.command_failure import command_failure_notifier
+from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -51,11 +52,14 @@ class ChannelInfoComponent(BotComponent):
             LOGGER.debug("usage count failed for %s: %s", command_name, e)
 
     async def _notify_reauth(self, ctx: commands.Context) -> None:
-        await reauth_notifier.notify(
-            broadcaster_login=ctx.channel.name or "",
+        await self.bot._mark_reauth_required(ctx.channel.id)  # type: ignore[attr-defined]
+
+    async def _notify_failure(self, ctx: commands.Context, command: str, message: str) -> None:
+        await command_failure_notifier.notify(
             channel_id=ctx.channel.id,
+            command=command,
+            message=message,
             send_fn=lambda msg: self._ctx_reply(ctx, msg),
-            min_interval=CMD_COOLDOWN,
         )
 
     # ------------------------------------------------------------------
@@ -82,7 +86,7 @@ class ChannelInfoComponent(BotComponent):
                     await self._notify_reauth(ctx)
                     return
                 LOGGER.warning("[%s] !title modify failed: %s", ctx.channel.name, e)
-                await self._ctx_reply(ctx, "修改標題失敗，請稍後再試")
+                await self._notify_failure(ctx, "title", "修改標題失敗，請稍後再試")
                 return
             await self._ctx_reply(ctx, f"標題已更新為：{new_title}")
             await self._record_command(ctx, "title")
@@ -92,7 +96,7 @@ class ChannelInfoComponent(BotComponent):
             info = await ctx.broadcaster.fetch_channel_info()
         except Exception as e:
             LOGGER.warning("[%s] !title fetch failed: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "title", "查詢失敗，請稍後再試")
             return
         await self._ctx_reply(ctx, f"目前標題：{info.title}")
         await self._record_command(ctx, "title")
@@ -118,7 +122,7 @@ class ChannelInfoComponent(BotComponent):
                 games = await self.bot.fetch_games(names=[new_game])
             except Exception as e:
                 LOGGER.warning("[%s] !game lookup failed: %s", ctx.channel.name, e)
-                await self._ctx_reply(ctx, "查詢分類失敗，請稍後再試")
+                await self._notify_failure(ctx, "game", "查詢分類失敗，請稍後再試")
                 return
             if not games:
                 await self._ctx_reply(ctx, f"找不到分類：{new_game}")
@@ -130,7 +134,7 @@ class ChannelInfoComponent(BotComponent):
                     await self._notify_reauth(ctx)
                     return
                 LOGGER.warning("[%s] !game modify failed: %s", ctx.channel.name, e)
-                await self._ctx_reply(ctx, "修改分類失敗，請稍後再試")
+                await self._notify_failure(ctx, "game", "修改分類失敗，請稍後再試")
                 return
             await self._ctx_reply(ctx, f"分類已更新為：{games[0].name}")
             await self._record_command(ctx, "game")
@@ -140,7 +144,7 @@ class ChannelInfoComponent(BotComponent):
             info = await ctx.broadcaster.fetch_channel_info()
         except Exception as e:
             LOGGER.warning("[%s] !game fetch failed: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "game", "查詢失敗，請稍後再試")
             return
         await self._ctx_reply(ctx, f"目前分類：{info.game_name or '尚未設定'}")
         await self._record_command(ctx, "game")
@@ -180,7 +184,7 @@ class ChannelInfoComponent(BotComponent):
                     await self._notify_reauth(ctx)
                     return
                 LOGGER.warning("[%s] !tags modify failed: %s", ctx.channel.name, e)
-                await self._ctx_reply(ctx, "修改標籤失敗，請稍後再試")
+                await self._notify_failure(ctx, "tags", "修改標籤失敗，請稍後再試")
                 return
             await self._ctx_reply(
                 ctx, f"標籤已更新：{'、'.join(parsed) if parsed else '（已清空）'}"
@@ -192,7 +196,7 @@ class ChannelInfoComponent(BotComponent):
             info = await ctx.broadcaster.fetch_channel_info()
         except Exception as e:
             LOGGER.warning("[%s] !tags fetch failed: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "tags", "查詢失敗，請稍後再試")
             return
         shown = "、".join(info.tags) if info.tags else "（尚未設定）"
         await self._ctx_reply(ctx, f"目前標籤：{shown}")
@@ -224,7 +228,9 @@ class ChannelInfoComponent(BotComponent):
                 await self._notify_reauth(ctx)
                 return
             LOGGER.warning("[%s] !marker failed: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "建立標記失敗，請確認目前正在直播且已啟用 VOD")
+            await self._notify_failure(
+                ctx, "marker", "建立標記失敗，請確認目前正在直播且已啟用 VOD"
+            )
             return
 
         minutes, seconds = divmod(result.position, 60)

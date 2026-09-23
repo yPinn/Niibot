@@ -4,9 +4,10 @@ All Twitch reads follow the master-slave rule:
   - followers, account age → bot token (public/moderator-readable data)
   - subs/bits  → broadcaster token (no moderator-token equivalent on Twitch)
 
-Missing-scope / expired broadcaster tokens surface a reauth chat prompt
-(rate-limited via CMD_COOLDOWN). Bot-token failures degrade to a generic
-"查詢失敗" line since they are not the broadcaster's problem to fix.
+Missing-scope broadcaster tokens surface a reauth chat prompt exactly once per
+episode (see utils/reauth.py). A 401 that isn't scope-related, and all other
+Twitch/lookup failures, degrade to a generic "查詢失敗" line throttled per
+(channel, command) via utils/command_failure.py.
 """
 
 from __future__ import annotations
@@ -22,7 +23,8 @@ from core.component import BotComponent
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
-from utils.reauth import CMD_COOLDOWN, reauth_notifier
+from utils.command_failure import command_failure_notifier
+from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -97,11 +99,14 @@ class ViewerStatsComponent(BotComponent):
         return tok.token if tok else None
 
     async def _notify_reauth(self, ctx: commands.Context) -> None:
-        await reauth_notifier.notify(
-            broadcaster_login=ctx.channel.name or "",
+        await self.bot._mark_reauth_required(ctx.channel.id)  # type: ignore[attr-defined]
+
+    async def _notify_failure(self, ctx: commands.Context, command: str, message: str) -> None:
+        await command_failure_notifier.notify(
             channel_id=ctx.channel.id,
+            command=command,
+            message=message,
             send_fn=lambda msg: self._ctx_reply(ctx, msg),
-            min_interval=CMD_COOLDOWN,
         )
 
     async def _guard(self, ctx: commands.Context, name: str) -> bool:
@@ -137,7 +142,7 @@ class ViewerStatsComponent(BotComponent):
 
         token = await self._bot_token(channel_id)
         if not token:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
             return
 
         try:
@@ -152,12 +157,12 @@ class ViewerStatsComponent(BotComponent):
             )
         except Exception as e:
             LOGGER.warning("[%s] followage error: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
             return
 
         if resp.status_code != 200:
             LOGGER.warning("[%s] followage %s", ctx.channel.name, resp.status_code)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
             return
 
         data = resp.json().get("data", [])
@@ -189,7 +194,7 @@ class ViewerStatsComponent(BotComponent):
 
         token = await self._broadcaster_token(channel_id)
         if not token:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subage", "查詢失敗，請稍後再試")
             return
 
         try:
@@ -200,14 +205,14 @@ class ViewerStatsComponent(BotComponent):
             )
         except Exception as e:
             LOGGER.warning("[%s] subage error: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subage", "查詢失敗，請稍後再試")
             return
 
-        if resp.status_code == 401:
+        if is_scope_error(resp):
             await self._notify_reauth(ctx)
             return
         if resp.status_code != 200:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subage", "查詢失敗，請稍後再試")
             return
 
         data = resp.json().get("data", [])
@@ -235,7 +240,7 @@ class ViewerStatsComponent(BotComponent):
         channel_id = ctx.channel.id
         token = await self._broadcaster_token(channel_id)
         if not token:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subcount", "查詢失敗，請稍後再試")
             return
 
         try:
@@ -246,14 +251,14 @@ class ViewerStatsComponent(BotComponent):
             )
         except Exception as e:
             LOGGER.warning("[%s] subcount error: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subcount", "查詢失敗，請稍後再試")
             return
 
-        if resp.status_code == 401:
+        if is_scope_error(resp):
             await self._notify_reauth(ctx)
             return
         if resp.status_code != 200:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "subcount", "查詢失敗，請稍後再試")
             return
 
         total = resp.json().get("total", 0)
@@ -276,7 +281,7 @@ class ViewerStatsComponent(BotComponent):
 
         token = await self._broadcaster_token(channel_id)
         if not token:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "bits", "查詢失敗，請稍後再試")
             return
 
         try:
@@ -287,14 +292,14 @@ class ViewerStatsComponent(BotComponent):
             )
         except Exception as e:
             LOGGER.warning("[%s] bits error: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "bits", "查詢失敗，請稍後再試")
             return
 
-        if resp.status_code == 401:
+        if is_scope_error(resp):
             await self._notify_reauth(ctx)
             return
         if resp.status_code != 200:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "bits", "查詢失敗，請稍後再試")
             return
 
         data = resp.json().get("data", [])
@@ -325,26 +330,27 @@ class ViewerStatsComponent(BotComponent):
 
         token = await self._bot_token(channel_id)
         if not token:
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")
             return
 
         try:
             resp = await self._helix_get("users", params, token)
         except Exception as e:
             LOGGER.warning("[%s] accountage error: %s", ctx.channel.name, e)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")
             return
 
         if resp.status_code != 200:
             LOGGER.warning("[%s] accountage %s", ctx.channel.name, resp.status_code)
-            await self._ctx_reply(ctx, "查詢失敗，請稍後再試")
+            await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")
             return
 
         data = resp.json().get("data", [])
         if not data:
-            await self._ctx_reply(
-                ctx, f"找不到使用者：{target}" if target else "查詢失敗，請稍後再試"
-            )
+            if target:
+                await self._ctx_reply(ctx, f"找不到使用者：{target}")
+            else:
+                await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")
             return
 
         user = data[0]
