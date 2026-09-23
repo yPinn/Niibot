@@ -38,9 +38,11 @@ from services.tenant_service import TenantContext
 from services.twitch_authorization_service import (
     AuthorizationRemovalResult,
     BroadcasterAuthorizationSummary,
+    CapabilityHealth,
     CredentialHealth,
+    TwitchCapabilitySnapshot,
 )
-from shared.twitch_scopes import BOT_SCOPES
+from shared.twitch_scopes import BOT_CORE_SCOPES, BOT_SCOPES, BROADCASTER_CORE_SCOPES
 
 _NOW = datetime.now(UTC)
 _USER_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
@@ -358,7 +360,69 @@ def test_owner_can_recheck_one_tenant_bot_authorization():
     assert response.status_code == 200
     assert response.json()["status"] == "valid"
     authorization.check_credential.assert_awaited_once_with(
-        user_id="bot-b", token_type="bot", required_scopes=set(BOT_SCOPES)
+        user_id="bot-b", token_type="bot", required_scopes=set(BOT_CORE_SCOPES)
+    )
+
+
+def test_tenant_can_read_scope_safe_capability_snapshot():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.get_capability_snapshot = AsyncMock(
+        return_value=TwitchCapabilitySnapshot(
+            broadcaster_status="valid",
+            bot_status="valid",
+            bot_user_id="bot-test",
+            capabilities=(
+                CapabilityHealth(
+                    key="broadcaster_chat",
+                    label="頻道聊天",
+                    credential="broadcaster",
+                    available=True,
+                    missing_scopes=(),
+                    core=True,
+                ),
+                CapabilityHealth(
+                    key="moderator_sync_realtime",
+                    label="Twitch MOD 即時同步",
+                    credential="broadcaster",
+                    available=False,
+                    missing_scopes=("moderation:read",),
+                    core=False,
+                ),
+            ),
+        )
+    )
+
+    response = _client(service, authorization=authorization).get(
+        "/api/tenants/channel-a/twitch-capabilities"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "broadcaster_status": "valid",
+        "bot_status": "valid",
+        "bot_user_id": "bot-test",
+        "capabilities": [
+            {
+                "key": "broadcaster_chat",
+                "label": "頻道聊天",
+                "credential": "broadcaster",
+                "available": True,
+                "missing_scopes": [],
+                "core": True,
+            },
+            {
+                "key": "moderator_sync_realtime",
+                "label": "Twitch MOD 即時同步",
+                "credential": "broadcaster",
+                "available": False,
+                "missing_scopes": ["moderation:read"],
+                "core": False,
+            },
+        ],
+    }
+    authorization.get_capability_snapshot.assert_awaited_once_with(
+        channel_id="channel-a", system_bot_id="bot-test"
     )
 
 
@@ -410,6 +474,32 @@ def test_tenant_can_read_broadcaster_authorization_summary():
     assert response.status_code == 200
     assert response.json()["status"] == "valid"
     assert response.json()["channel_name"] == "alice"
+
+
+def test_owner_rechecks_broadcaster_against_runtime_core_only():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.check_credential = AsyncMock(
+        return_value=CredentialHealth(
+            user_id="channel-a",
+            token_type="broadcaster",
+            status="valid",
+            last_checked_at=_NOW,
+            last_validated_at=_NOW,
+        )
+    )
+
+    response = _client(service, authorization=authorization).post(
+        "/api/tenants/channel-a/broadcaster-authorization/check",
+        headers={"X-Niibot-Action": "twitch-authorization-management"},
+    )
+
+    assert response.status_code == 200
+    authorization.check_credential.assert_awaited_once_with(
+        user_id="channel-a",
+        token_type="broadcaster",
+        required_scopes=set(BROADCASTER_CORE_SCOPES),
+    )
 
 
 def test_owner_disconnects_broadcaster_and_current_cookie_is_cleared():

@@ -748,17 +748,24 @@ class TestGetBotModStatus:
         api = mock.client()
         assert await api.get_bot_mod_status("b", "bot", "tok") == "no_mod"
 
-    async def test_scope_error_on_401(self):
+    async def test_token_error_on_401(self):
         mock = _MockAPI().route(
             "GET", "/helix/moderation/moderators", httpx.Response(401, json={"message": "scope"})
         )
         api = mock.client()
+        assert await api.get_bot_mod_status("b", "bot", "tok") == "token_error"
+
+    async def test_scope_error_on_403(self):
+        mock = _MockAPI().route(
+            "GET", "/helix/moderation/moderators", httpx.Response(403, json={"message": "scope"})
+        )
+        api = mock.client()
         assert await api.get_bot_mod_status("b", "bot", "tok") == "scope_error"
 
-    async def test_token_error_on_other_non_200(self):
+    async def test_provider_unavailable_on_other_non_200(self):
         mock = _MockAPI().route("GET", "/helix/moderation/moderators", httpx.Response(500, json={}))
         api = mock.client()
-        assert await api.get_bot_mod_status("b", "bot", "tok") == "token_error"
+        assert await api.get_bot_mod_status("b", "bot", "tok") == "provider_unavailable"
 
 
 # ---------------------------------------------------------------------------

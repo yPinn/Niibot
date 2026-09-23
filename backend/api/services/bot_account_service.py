@@ -399,6 +399,7 @@ class BotAccountService:
                         last_validated_at = EXCLUDED.last_validated_at,
                         invalidated_at = NULL,
                         validation_error_code = NULL,
+                        credential_revision = tokens.credential_revision + 1,
                         updated_at = NOW()
                     """,
                     platform_user_id,

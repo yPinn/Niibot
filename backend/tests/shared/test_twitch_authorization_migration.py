@@ -25,3 +25,16 @@ def test_authorization_lifecycle_migration_indexes_due_checks() -> None:
 
     assert "idx_tokens_authorization_check_due" in sql
     assert "last_checked_at" in sql
+
+
+def test_credential_revision_migration_is_additive_and_hot_reloads_broadcasters() -> None:
+    sql = (_VERSIONS / "138_add_twitch_credential_revision.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN IF NOT EXISTS credential_revision" in sql
+    assert "DEFAULT 1" in sql
+    assert "NEW.credential_revision IS DISTINCT FROM OLD.credential_revision" in sql
+    assert "'scopes_changed', NEW.scopes IS DISTINCT FROM OLD.scopes" in sql
+    assert "'reauth_cleared', OLD.requires_reauth AND NOT NEW.requires_reauth" in sql
+    assert "pg_notify('token_reauth'" in sql
+    assert "DELETE FROM" not in sql.upper()
+    assert "DROP TABLE" not in sql.upper()

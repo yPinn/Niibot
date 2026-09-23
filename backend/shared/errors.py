@@ -75,6 +75,7 @@ class AppError(Exception):
     http_status: ClassVar[int] = 500
     #: Log level the API exception handler uses for this error.
     log_level: ClassVar[int] = logging.ERROR
+    response_headers: ClassVar[Mapping[str, str]] = {}
     #: Class default; may be overridden per-instance via the constructor.
     user_message: str = "系統暫時出了點狀況，請稍後再試"
 

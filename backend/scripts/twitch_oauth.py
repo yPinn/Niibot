@@ -152,6 +152,7 @@ async def save_token(
                 refresh         = EXCLUDED.refresh,
                 scopes          = EXCLUDED.scopes,
                 requires_reauth = FALSE,
+                credential_revision = tokens.credential_revision + 1,
                 updated_at      = NOW()
             """,
             user_id,

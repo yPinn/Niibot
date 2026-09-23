@@ -5,7 +5,6 @@ import logging
 
 from asyncpg import Pool
 from fastapi import APIRouter, BackgroundTasks, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
@@ -14,6 +13,7 @@ from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
     get_twitch_api,
+    get_twitch_authorization_service,
     require_activated,
     require_self_tenant_access,
     require_tenant_access,
@@ -29,7 +29,13 @@ from services.emote_sync import (
     sync_enabled_emotes_background,
     to_emote_items,
 )
-from shared.errors import AccessDeniedError, AppError, ChannelNotFoundError, UpstreamError
+from services.twitch_authorization_service import (
+    TwitchAuthorizationService,
+    TwitchCredentialInvalidError,
+    TwitchProviderUnavailableError,
+    TwitchScopeRequiredError,
+)
+from shared.errors import AccessDeniedError, AppError, ChannelNotFoundError
 from shared.repositories.channel import ChannelRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -53,11 +59,6 @@ class BotNotConfiguredError(AppError):
     code = "CHANNEL.BOT_NOT_CONFIGURED"
     http_status = 503
     user_message = "機器人尚未設定完成，請稍後再試"
-
-
-class TwitchUnavailableError(UpstreamError):
-    code = "CHANNEL.TWITCH_UNAVAILABLE"
-    user_message = "Twitch 暫時沒有回應，請稍後再試"
 
 
 class ChannelToggleRequest(BaseModel):
@@ -212,21 +213,29 @@ async def get_bot_mod_status(
     channel_id: str = Depends(get_current_channel_id),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
     settings: Settings = Depends(get_settings),
 ) -> ModStatusResponse:
     """Check whether the bot currently holds moderator status in the caller's channel."""
-    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-    if not token:
-        return JSONResponse(  # type: ignore[return-value]
-            status_code=403,
-            headers={"X-Reauth-Required": "true"},
-            content={"detail": "Token unavailable or missing required scope"},
-        )
     bot_id = settings.bot_id
     if not bot_id:
         raise BotNotConfiguredError()
-    is_mod = await twitch_api.check_bot_is_moderator(channel_id, bot_id, token)
-    return ModStatusResponse(is_moderator=is_mod)
+    await authorization.require_capability(
+        channel_id=channel_id,
+        system_bot_id=bot_id,
+        capability_key="moderator_management",
+    )
+    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+    if not token:
+        raise TwitchCredentialInvalidError()
+    status = await twitch_api.get_bot_mod_status(channel_id, bot_id, token)
+    if status == "token_error":
+        raise TwitchCredentialInvalidError()
+    if status == "scope_error":
+        raise TwitchScopeRequiredError(fields={"capability": "moderator_management"})
+    if status == "provider_unavailable":
+        raise TwitchProviderUnavailableError()
+    return ModStatusResponse(is_moderator=status == "mod")
 
 
 @router.post("/twitch/grant-mod", response_model=GrantModResponse)
@@ -234,21 +243,25 @@ async def grant_bot_mod(
     channel_id: str = Depends(get_current_channel_id),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
     settings: Settings = Depends(get_settings),
 ) -> GrantModResponse:
     """Grant the bot moderator status in the caller's channel."""
-    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
-    if not token:
-        return JSONResponse(  # type: ignore[return-value]
-            status_code=403,
-            headers={"X-Reauth-Required": "true"},
-            content={"detail": "Token unavailable or missing required scope"},
-        )
-
     bot_id = settings.bot_id
     if not bot_id:
         raise BotNotConfiguredError()
-    resp = await twitch_api.add_moderator(channel_id, bot_id, token)
+    await authorization.require_capability(
+        channel_id=channel_id,
+        system_bot_id=bot_id,
+        capability_key="moderator_management",
+    )
+    token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
+    if not token:
+        raise TwitchCredentialInvalidError()
+    try:
+        resp = await twitch_api.add_moderator(channel_id, bot_id, token)
+    except Exception:
+        raise TwitchProviderUnavailableError() from None
 
     if resp.status_code == 204:
         LOGGER.info("bot_mod_granted")
@@ -257,14 +270,13 @@ async def grant_bot_mod(
     if resp.status_code == 422:
         return GrantModResponse(granted=False, already_mod=True)
 
-    if resp.status_code in (401, 403):
-        return JSONResponse(  # type: ignore[return-value]
-            status_code=403,
-            headers={"X-Reauth-Required": "true"},
-            content={"detail": "Missing required Twitch scope"},
-        )
+    if resp.status_code == 401:
+        raise TwitchCredentialInvalidError()
 
-    raise TwitchUnavailableError(
+    if resp.status_code == 403:
+        raise TwitchScopeRequiredError(fields={"capability": "moderator_management"})
+
+    raise TwitchProviderUnavailableError(
         context={"helix_status": resp.status_code, "helix_body": resp.text}
     )
 
