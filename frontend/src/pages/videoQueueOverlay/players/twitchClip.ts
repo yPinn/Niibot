@@ -17,7 +17,7 @@ import type { MountContext, PlayerStrategy } from './types'
 // (unofficial) source resolve fails. See docs/architecture/video-queue-platforms.md.
 
 function mountIframe(ctx: MountContext): void {
-  const { current, muted, containerRef } = ctx
+  const { current, muted, containerRef, notifyPlaybackStarted } = ctx
   if (!containerRef.current) return
   containerRef.current.innerHTML = ''
 
@@ -32,6 +32,7 @@ function mountIframe(ctx: MountContext): void {
   iframe.style.cssText = 'width:100%;height:100%;border:none'
   iframe.allow = 'autoplay; fullscreen'
   iframe.scrolling = 'no'
+  iframe.addEventListener('load', () => notifyPlaybackStarted('best_effort'), { once: true })
   containerRef.current.appendChild(iframe)
 
   startElapsedTracking(ctx)
@@ -43,11 +44,15 @@ function mountVideo(ctx: MountContext, url: string): void {
     current,
     currentId,
     joinElapsed,
+    isPreview,
+    overlayKey,
     muted,
+    volumePercent,
     username,
     containerRef,
     progressRef,
     setElapsed,
+    notifyPlaybackStarted,
     handleVideoEnd,
   } = ctx
   if (!containerRef.current) return
@@ -56,13 +61,16 @@ function mountVideo(ctx: MountContext, url: string): void {
   const video = document.createElement('video')
   video.src = url
   video.autoplay = true
-  video.muted = muted
+  video.volume = volumePercent / 100
+  video.muted = muted || volumePercent === 0
   video.playsInline = true
   video.style.cssText = 'width:100%;height:100%;object-fit:contain;background:#000'
 
   video.addEventListener('loadedmetadata', () => {
-    if (video.duration && !current.duration_seconds && username) {
-      reportVideoMetadata(username, currentId, Math.round(video.duration)).catch(() => {})
+    if (video.duration && !current.duration_seconds && username && overlayKey && !isPreview) {
+      reportVideoMetadata(username, currentId, Math.round(video.duration), overlayKey).catch(
+        () => {}
+      )
     }
     if (joinElapsed > 1 && joinElapsed < video.duration) {
       video.currentTime = joinElapsed
@@ -70,6 +78,7 @@ function mountVideo(ctx: MountContext, url: string): void {
     void video.play().catch(() => {})
   })
   video.addEventListener('ended', () => handleVideoEnd(currentId))
+  video.addEventListener('playing', () => notifyPlaybackStarted('confirmed'), { once: true })
   // A media error after the source resolved (expired token, CDN 403, a
   // media-src the CSP doesn't cover) — drop back to the embed iframe, whose own
   // timer ceiling still advances the queue.

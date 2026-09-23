@@ -6,7 +6,7 @@ Public (all users):
     !np / !影片      Now playing: title, link, requester
 
 Moderator+ only:
-    !vq <URL>       Add a video to the queue (YouTube or Twitch Clip)
+    !vq <URL>       Add a video (YouTube, Twitch Clip/VOD, Instagram Reel, Bilibili)
     !vq skip        Skip the current video
     !vq clear       Clear entire queue (current + all queued)
 """
@@ -14,7 +14,6 @@ Moderator+ only:
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import aiohttp
@@ -23,15 +22,18 @@ from twitchio.ext import commands
 from core.component import BotComponent
 from core.config import get_settings
 from shared.repositories.video_queue import (
-    SOURCE_PRIORITY,
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
     format_now_playing,
 )
+from shared.services.video_queue_admission import (
+    AdmissionReason,
+    AdmissionRejected,
+    VideoQueueAdmissionService,
+)
 from shared.video_sources import (
     fetch_video_metadata,
-    metadata_gate_unverifiable,
     resolve_video_url,
     unplayable_message,
 )
@@ -74,17 +76,14 @@ class VideoQueueComponent(BotComponent):
         try:
             await self._handle_add_inner(ctx, url_str)
         except Exception:
-            LOGGER.exception(f"VideoQueue add failed for {url_str}")
+            # Do not copy a submitted URL into logs: query strings may contain
+            # short-lived tokens or other user-provided data.
+            LOGGER.exception("VideoQueue add failed", extra={"channel_id": ctx.channel.id})
             await self._ctx_reply(ctx, "目前暫時無法點播，請稍後再試 BloodTrail")
 
     async def _handle_add_inner(self, ctx: commands.Context[Bot], url_str: str) -> None:
         """Inner implementation — separated so exceptions surface as a reply."""
         channel_id = ctx.channel.id
-        settings = await self.vq_settings_repo.get_or_create(channel_id)
-
-        if not settings.enabled:
-            await self._ctx_reply(ctx, "目前暫停開放影片點播")
-            return
 
         # CLI add is restricted to moderators and broadcaster
         if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
@@ -92,140 +91,70 @@ class VideoQueueComponent(BotComponent):
 
         user_name = ctx.chatter.display_name or ctx.chatter.name or ""
         user_id: str | None = ctx.chatter.id or None
-
-        resolved = await resolve_video_url(url_str, session=self._session)
-        if resolved is None:
-            await self._ctx_reply(
-                ctx, "這個連結無法使用，目前支援 YouTube / Twitch Clip / Bilibili"
+        admission = VideoQueueAdmissionService(
+            self.vq_repo, self.vq_settings_repo, self.vq_blocklist_repo
+        )
+        try:
+            result = await admission.admit(
+                channel_id=channel_id,
+                url=url_str,
+                requested_by=user_name,
+                requested_by_id=user_id,
+                source="chat",
+                resolve=lambda url: resolve_video_url(url, session=self._session),
+                fetch_metadata=lambda resolved: fetch_video_metadata(
+                    resolved,
+                    youtube_api_key=self._settings.youtube_api_key,
+                    twitch_client_id=self._settings.twitch_client_id,
+                    twitch_client_secret=self._settings.twitch_client_secret,
+                    instafix_host=self._settings.instafix_host,
+                    session=self._session,
+                ),
             )
-            return
-
-        # Duplicate check
-        if await self.vq_repo.video_is_active(channel_id, resolved.video_id):
-            await self._ctx_reply(ctx, "這部影片已在待播中 KappaPride")
-            return
-
-        # Queue size check
-        queue_size = await self.vq_repo.get_queue_size(channel_id)
-        if queue_size >= settings.max_queue_size:
-            await self._ctx_reply(
-                ctx,
-                f"目前待播已滿（{queue_size}/{settings.max_queue_size}），請稍後再試 ResidentSleeper",
-            )
-            return
-
-        # Per-user active limit
-        if settings.max_per_user > 0:
-            active = await self.vq_repo.count_active_by_user(channel_id, user_name, user_id)
-            if active >= settings.max_per_user:
-                await self._ctx_reply(
-                    ctx, f"你目前已達點播上限（{settings.max_per_user} 首） KappaPride"
+        except AdmissionRejected as error:
+            reason = error.reason
+            details = error.details
+            if reason is AdmissionReason.DISABLED:
+                message = "目前暫停開放影片點播"
+            elif reason is AdmissionReason.INVALID_URL:
+                message = (
+                    "這個連結無法使用，目前支援 YouTube、Twitch Clip/VOD、Bilibili、Instagram Reel"
                 )
-                return
-
-        # User cooldown
-        if settings.user_cooldown_seconds > 0:
-            last = await self.vq_repo.find_last_entry_by_user(channel_id, user_name, user_id)
-            if last and last.created_at:
-                elapsed = (datetime.now(UTC) - last.created_at).total_seconds()
-                if elapsed < settings.user_cooldown_seconds:
-                    remaining = int(settings.user_cooldown_seconds - elapsed)
-                    m, s = divmod(remaining, 60)
-                    time_str = f"{m}:{s:02d}" if m > 0 else f"{s} 秒"
-                    await self._ctx_reply(ctx, f"請於 {time_str} 後再點播 ResidentSleeper")
-                    return
-
-        metadata = await fetch_video_metadata(
-            resolved,
-            youtube_api_key=self._settings.youtube_api_key,
-            twitch_client_id=self._settings.twitch_client_id,
-            twitch_client_secret=self._settings.twitch_client_secret,
-            instafix_host=self._settings.instafix_host,
-            session=self._session,
-        )
-        title, duration_seconds, view_count = (
-            metadata.title,
-            metadata.duration_seconds,
-            metadata.view_count,
-        )
-
-        # Playability — an un-embeddable / age-restricted video only stalls the
-        # overlay on its timer ceiling, so reject it up front.
-        if not metadata.playable:
-            await self._ctx_reply(ctx, unplayable_message(metadata.unplayable_reason))
-            return
-
-        # Minimum view count filter. A missing view_count from an authoritative
-        # source is a transient failure (retry); a best-effort platform (Bilibili)
-        # can never supply it, so the gate skips rather than blocking every add.
-        if settings.min_view_count > 0:
-            if metadata_gate_unverifiable(view_count, best_effort=metadata.metadata_best_effort):
-                await self._ctx_reply(ctx, "目前無法確認影片資訊，請稍後再試 BloodTrail")
-                return
-            if view_count is not None and view_count < settings.min_view_count:
-                await self._ctx_reply(
-                    ctx, f"這部影片未達觀看數條件（需 {settings.min_view_count:,} 次以上）"
+            elif reason is AdmissionReason.DUPLICATE:
+                message = "這部影片已在待播中 KappaPride"
+            elif reason is AdmissionReason.QUEUE_FULL:
+                message = (
+                    f"目前待播已滿（{details['queue_size']}/{details['max_queue_size']}），"
+                    "請稍後再試 ResidentSleeper"
                 )
-                return
-
-        # Global length cap — same best-effort handling as view count.
-        if settings.max_duration_seconds:
-            if metadata_gate_unverifiable(
-                duration_seconds, best_effort=metadata.metadata_best_effort
-            ):
-                await self._ctx_reply(ctx, "目前無法確認影片資訊，請稍後再試 BloodTrail")
-                return
-            if duration_seconds is not None and duration_seconds > settings.max_duration_seconds:
-                await self._ctx_reply(
-                    ctx,
-                    f"這部影片超過可點播的長度（上限 {settings.max_duration_seconds // 60} 分鐘）",
+            elif reason is AdmissionReason.USER_LIMIT:
+                message = f"你目前已達點播上限（{details['max_per_user']} 首） KappaPride"
+            elif reason is AdmissionReason.USER_COOLDOWN:
+                remaining = int(details["remaining_seconds"])
+                minutes, seconds = divmod(remaining, 60)
+                time_text = f"{minutes}:{seconds:02d}" if minutes else f"{seconds} 秒"
+                message = f"請於 {time_text} 後再點播 ResidentSleeper"
+            elif reason is AdmissionReason.NOT_PLAYABLE:
+                message = unplayable_message(str(details.get("unplayable_reason") or ""))
+            elif reason is AdmissionReason.METADATA_UNVERIFIABLE:
+                message = "目前無法確認影片資訊，請稍後再試 BloodTrail"
+            elif reason is AdmissionReason.MIN_VIEWS:
+                message = f"這部影片未達觀看數條件（需 {details['min_view_count']:,} 次以上）"
+            elif reason is AdmissionReason.TOO_LONG:
+                message = (
+                    f"這部影片超過可點播的長度（上限 {int(details['limit_seconds']) // 60} 分鐘）"
                 )
-                return
-
-        # Replay cooldown — reject a video played again too soon
-        if settings.replay_cooldown_hours and await self.vq_repo.played_within(
-            channel_id, resolved.video_id, settings.replay_cooldown_hours
-        ):
-            await self._ctx_reply(
-                ctx, f"這部影片在 {settings.replay_cooldown_hours} 小時內播過，請更換其他影片"
-            )
+            elif reason is AdmissionReason.REPLAY_COOLDOWN:
+                message = f"這部影片在 {details['hours']} 小時內播過，請更換其他影片"
+            elif reason is AdmissionReason.BLOCKED:
+                message = "這部影片已被封鎖，無法點播 KappaPride"
+            else:
+                message = "點播失敗，請重新嘗試 BloodTrail"
+            await self._ctx_reply(ctx, message)
             return
 
-        # Blocklist — video / creator / title keyword / requester
-        blocked = await self.vq_blocklist_repo.check(
-            channel_id,
-            video_id=resolved.video_id,
-            title=title,
-            requested_by=user_name,
-            requested_by_id=user_id,
-            creator_id=metadata.creator_id,
-        )
-        if blocked is not None:
-            await self._ctx_reply(ctx, "這部影片已被封鎖，無法點播 KappaPride")
-            return
-
-        entry = await self.vq_repo.add_if_within_limits(
-            channel_id=channel_id,
-            video_id=resolved.video_id,
-            requested_by=user_name,
-            source="chat",
-            max_queue_size=settings.max_queue_size,
-            max_per_user=settings.max_per_user,
-            requested_by_id=user_id,
-            title=title,
-            duration_seconds=duration_seconds,
-            is_vertical=metadata.is_vertical,
-            thumbnail_url=metadata.thumbnail_url,
-            video_type=resolved.video_type,
-            priority=SOURCE_PRIORITY["chat"],
-            start_seconds=resolved.start_seconds,
-            creator_id=metadata.creator_id,
-            creator_name=metadata.creator_name,
-        )
-        if entry is None:
-            await self._ctx_reply(ctx, "點播失敗，請重新嘗試 BloodTrail")
-            return
-        position = await self.vq_repo.get_queue_size(channel_id)
+        title = result.metadata.title
+        duration_seconds = result.metadata.duration_seconds
         title_part = f"「{title}」" if title else ""
         dur_part = (
             f"({duration_seconds // 60}:{duration_seconds % 60:02d})" if duration_seconds else ""
@@ -233,7 +162,7 @@ class VideoQueueComponent(BotComponent):
         info = f"{title_part}{dur_part}"
         await self._ctx_reply(
             ctx,
-            f"{info + ' ' if info else ''}已加入待播（{position}/{settings.max_queue_size}） SeemsGood",
+            f"{info + ' ' if info else ''}已加入待播（{result.position}/{result.settings.max_queue_size}） SeemsGood",
         )
 
     # ------------------------------------------------------------------

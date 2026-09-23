@@ -13,10 +13,23 @@ names callers import from here.
 from services._twitch_api._base import HELIX_BASE, OAUTH_BASE, _TwitchAPIBase
 from services._twitch_api._channel import _ChannelMixin
 from services._twitch_api._moderation import _ModerationMixin
-from services._twitch_api._oauth import TokenRefreshResult, _OAuthMixin
-from services._twitch_api._users import _UsersMixin
+from services._twitch_api._oauth import (
+    TokenRefreshResult,
+    TokenRevocationResult,
+    TokenValidationResult,
+    _OAuthMixin,
+)
+from services._twitch_api._users import TwitchUsersLookupError, _UsersMixin
 
-__all__ = ["HELIX_BASE", "OAUTH_BASE", "TokenRefreshResult", "TwitchAPIClient"]
+__all__ = [
+    "HELIX_BASE",
+    "OAUTH_BASE",
+    "TokenRefreshResult",
+    "TokenRevocationResult",
+    "TokenValidationResult",
+    "TwitchAPIClient",
+    "TwitchUsersLookupError",
+]
 
 
 class TwitchAPIClient(_OAuthMixin, _UsersMixin, _ModerationMixin, _ChannelMixin, _TwitchAPIBase):

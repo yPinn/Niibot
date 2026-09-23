@@ -46,6 +46,7 @@ describe('collection binder timeline', () => {
     expect(COLLECTION_BINDER_TIMELINE.cardScale.standard).toEqual([0.72, 0.72, 1.08, 1])
     expect(COLLECTION_BINDER_TIMELINE.cardOpacity.output.at(-1)).toBe(0)
     expect(COLLECTION_BINDER_TIMELINE.slotCardOpacity.output).toEqual([0, 0, 1, 1])
+    expect(COLLECTION_BINDER_TIMELINE.cardFlipRotateY.output).toEqual([0, 0, 720, 720])
     expect(
       (COLLECTION_BINDER_PHASES.closeStart - COLLECTION_BINDER_PHASES.insertEnd) *
         motion.durationSeconds
@@ -79,6 +80,39 @@ describe('collection binder timeline', () => {
       expect(origin.height * flight.scale).toBeLessThanOrEqual(target.height)
     }
   )
+
+  it('normalizes measured geometry inside a scaled dashboard preview', () => {
+    const flight = calculateCardFlightGeometry(
+      { left: 74, top: 960, width: 396, height: 240 },
+      { left: 312, top: 990, width: 108, height: 162 },
+      { left: 101, top: 1018, width: 40, height: 60 },
+      0.6
+    )
+
+    expect(flight).toMatchObject({
+      left: (312 - 74) / 0.6,
+      top: (990 - 960) / 0.6,
+      width: 180,
+      height: 270,
+      x: (121 - 366) / 0.6,
+      y: (1048 - 1071) / 0.6,
+    })
+    expect(flight.scale).toBeCloseTo(40 / 108)
+  })
+
+  it('guards degenerate geometry and applies the binder playback floor only to binders', () => {
+    const flight = calculateCardFlightGeometry(
+      { left: 10, top: 20, width: 0, height: 0 },
+      { left: 10, top: 20, width: 0, height: 0 },
+      { left: 30, top: 40, width: 20, height: 30 },
+      0
+    )
+
+    expect(flight.scale).toBe(1)
+    expect(Number.isFinite(flight.left)).toBe(true)
+    expect(getOverlayPlaybackLifetimeMs('collection-binder', 2_000)).toBe(5_100)
+    expect(getOverlayPlaybackLifetimeMs('tarot-card', 2_000)).toBe(2_000)
+  })
 
   it('protects the complete five-second ritual and leaves a paint buffer before unmount', () => {
     const shortTheme = { ...DEFAULT_COMMUNITY_OVERLAY_THEME, display_ms: 2_000 }

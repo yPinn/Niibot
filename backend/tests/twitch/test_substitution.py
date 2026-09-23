@@ -76,6 +76,20 @@ class TestQueryAndChannelVariables:
         result = substitute_variables("$(channel)", chatter, "", "")
         assert result == ""
 
+    @pytest.mark.parametrize(
+        "variable,expected",
+        [
+            ("queryescape", "hello+world%2Fa%3Fb%26c%3Ad%3De"),
+            ("pathescape", "hello%20world%2Fa%3Fb&c:d=e"),
+        ],
+    )
+    def test_url_safe_query_variables_use_contextual_encoding(self, variable: str, expected: str):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables(
+            f"https://example.com/$({variable})", chatter, "ch", "hello world/a?b&c:d=e"
+        )
+        assert result == f"https://example.com/{expected}"
+
 
 # ---------------------------------------------------------------------------
 # $(sender), $(touser) and positional arguments
@@ -143,6 +157,46 @@ class TestPositionalArguments:
         chatter = make_chatter(display_name="Nii")
         result = substitute_variables("$(0)", chatter, "ch", "a b")
         assert result == "$(0)"
+
+    def test_open_range_returns_all_arguments_from_position(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(2:)]", chatter, "ch", "one two three four")
+        assert result == "[two three four]"
+
+    def test_closed_range_is_inclusive(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(2:3)]", chatter, "ch", "one two three four")
+        assert result == "[two three]"
+
+    def test_out_of_range_slice_becomes_empty(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(4:6)]", chatter, "ch", "one two")
+        assert result == "[]"
+
+    def test_reversed_slice_becomes_empty(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(3:2)]", chatter, "ch", "one two three")
+        assert result == "[]"
+
+    def test_position_uses_value_instead_of_fallback_when_present(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(2|nobody)", chatter, "ch", "one two")
+        assert result == "two"
+
+    def test_position_uses_fallback_when_argument_is_missing(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(2|nobody)", chatter, "ch", "one")
+        assert result == "nobody"
+
+    def test_position_supports_an_empty_fallback(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("[$(2|)]", chatter, "ch", "one")
+        assert result == "[]"
+
+    def test_positions_are_not_limited_to_single_digits(self):
+        chatter = make_chatter(display_name="Nii")
+        result = substitute_variables("$(10)", chatter, "ch", "1 2 3 4 5 6 7 8 9 ten")
+        assert result == "ten"
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +308,17 @@ class TestCombined:
 
     @pytest.mark.parametrize(
         "injected",
-        ["$(count)", "$(channel)", "$(pick a,b,c)", "$(random 1,100)", "$(1)", "$(user)"],
+        [
+            "$(count)",
+            "$(channel)",
+            "$(pick a,b,c)",
+            "$(random 1,100)",
+            "$(1)",
+            "$(1:)",
+            "$(1|fallback)",
+            "$(queryescape)",
+            "$(user)",
+        ],
     )
     def test_chatter_input_is_not_rescanned_for_variables(self, injected: str):
         # A viewer typing a variable into a command that echoes $(query) must

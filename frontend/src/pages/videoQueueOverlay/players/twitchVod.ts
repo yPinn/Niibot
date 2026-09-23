@@ -48,7 +48,17 @@ export function loadTwitchEmbedAPI(): Promise<void> {
 }
 
 function mount(ctx: MountContext): (() => void) | void {
-  const { current, currentId, joinElapsed, muted, containerRef, progressRef, setElapsed } = ctx
+  const {
+    current,
+    currentId,
+    joinElapsed,
+    muted,
+    volumePercent,
+    containerRef,
+    progressRef,
+    setElapsed,
+    notifyPlaybackStarted,
+  } = ctx
   const handleVideoEnd = ctx.handleVideoEnd
 
   const Player = window.Twitch?.Player
@@ -74,7 +84,16 @@ function mount(ctx: MountContext): (() => void) | void {
   })
 
   const finish = () => handleVideoEnd(currentId)
+  const blocked = () => handleVideoEnd(currentId, 'autoplay_blocked')
+  const applyPlaybackSettings = () => {
+    player.setVolume(volumePercent / 100)
+    player.setMuted(muted || volumePercent === 0)
+  }
+  applyPlaybackSettings()
+  if (Player.READY) player.addEventListener(Player.READY, applyPlaybackSettings)
   player.addEventListener(Player.ENDED, finish)
+  player.addEventListener(Player.PLAYING, () => notifyPlaybackStarted('confirmed'))
+  if (Player.PLAYBACK_BLOCKED) player.addEventListener(Player.PLAYBACK_BLOCKED, blocked)
   // Belt-and-braces autoplay nudge (harmless if already playing).
   const playTimer = setTimeout(() => {
     try {

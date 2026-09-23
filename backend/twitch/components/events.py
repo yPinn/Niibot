@@ -276,13 +276,14 @@ class EventsComponent(commands.Component):
         self,
         payload: twitchio.ChatNotification,
     ) -> None:
-        """sub / resub / sub_gift greetings, plus the Prime flag.
+        """Configurable chat notices plus the subscription Prime flag.
 
         This is the only source carrying ``is_prime``, gifted-resub, and
         per-recipient gift data. The Prime flag is persisted to
         ``viewer_channel_status`` for the Plus Program estimate — everything
         else about a sub's analytics stays owned by ``channel.subscription.*``.
-        Every other ``notice_type`` is ignored.
+        Watch Streak shares are also delivered here. Every other
+        ``notice_type`` is ignored.
         """
         nt = payload.notice_type
         if nt == "sub" and payload.sub is not None:
@@ -294,6 +295,8 @@ class EventsComponent(commands.Component):
             await self._greet_resub(payload, payload.resub)
         elif nt == "sub_gift" and payload.sub_gift is not None:
             await self._greet_gift_recipient(payload, payload.sub_gift)
+        elif nt == "watch_streak" and payload.watch_streak is not None:
+            await self._greet_watch_streak(payload, payload.watch_streak)
         elif nt == "prime_paid_upgrade" and payload.prime_paid_upgrade is not None:
             await self._record_sub_prime(payload, is_prime=False)
 
@@ -372,6 +375,24 @@ class EventsComponent(commands.Component):
                 "note": compose_note(tier=gift.tier, months=gift.months),
             },
             label=f"[{payload.broadcaster.name}] GiftRecipient: {recipient} <- {gifter}",
+        )
+
+    async def _greet_watch_streak(
+        self, payload: twitchio.ChatNotification, watch_streak: twitchio.WatchStreak
+    ) -> None:
+        name = payload.chatter.display_name or payload.chatter.name or "匿名用戶"
+        await self._notify(
+            payload.broadcaster.id,
+            "watch_streak",
+            {
+                **mention_vars("user", name, anonymous=payload.anonymous),
+                "streak": str(watch_streak.streak),
+                "points": str(watch_streak.points),
+            },
+            label=(
+                f"[{payload.broadcaster.name}] WatchStreak: {name} "
+                f"x{watch_streak.streak} (+{watch_streak.points})"
+            ),
         )
 
     @commands.Component.listener()

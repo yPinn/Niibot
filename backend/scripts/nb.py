@@ -4,7 +4,7 @@
     npm run nb -- <group> <command> [options]        # from repo root
     uv run --directory backend python scripts/nb.py <group> <command>
 
-Groups: db · twitch · discord · models · env · staging · badges
+Groups: db · twitch · discord · models · assets · env · staging · badges
 (`nb --help` / `nb <group> --help` for the full surface). The individual scripts
 still run standalone; nb lazy-imports one per invocation so the api/twitch/discord
 `core` packages never collide.
@@ -195,6 +195,26 @@ def build_parser() -> argparse.ArgumentParser:
     p = md.add_parser("update", help="refresh data/free_models.json")
     p.add_argument("--with-uptime", action="store_true")
     p.set_defaults(_handler=_run_py("models_update"))
+
+    # assets -------------------------------------------------------------------
+    assets = groups.add_parser("assets", help="static asset build tools").add_subparsers(
+        dest="cmd", required=True, metavar="<command>"
+    )
+    p = assets.add_parser(
+        "collections", help="preview or build catalog-driven collection WebP derivatives"
+    )
+    p.add_argument("action", choices=("preview", "build"))
+    p.add_argument("--catalog")
+    p.add_argument("--source-root")
+    p.add_argument("--output-dir")
+    p.add_argument("--output-width", type=int)
+    p.add_argument("--output-height", type=int)
+    p.add_argument("--quality", type=int, default=85)
+    p.add_argument("--method", type=int, default=6)
+    p.add_argument("--max-megapixels", type=float, default=50.0)
+    p.add_argument("--crop-warning-percent", type=float, default=18.0)
+    p.add_argument("--upscale-warning-factor", type=float, default=1.15)
+    p.set_defaults(_handler=_run_py("build_collection_assets"))
 
     # env / staging / badges (passthrough) -----------------------------------
     _add_passthrough_group(groups, "env", "env file management", _ENV_CMDS, _run_env)

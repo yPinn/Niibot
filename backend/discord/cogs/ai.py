@@ -18,6 +18,7 @@ from shared.assistant import (
     PromptBudget,
     RouterPolicy,
     build_assistant_harness,
+    discord_free_tier_budgets,
 )
 from shared.assistant.providers.registry import ProviderConfig, ProviderKind
 
@@ -78,6 +79,7 @@ class AICog(commands.Cog):
                 max_user_chars=4_000,
             ),
             output_policy=OutputPolicy(max_chars=1_020, single_line=False),
+            provider_budgets=discord_free_tier_budgets(),
         )
         self._embed = EmbedFactory.default()
 
@@ -109,6 +111,20 @@ class AICog(commands.Cog):
                 }
                 for circuit in self.harness.provider_health()
             ],
+            "capacity": [
+                {
+                    "provider": capacity.provider,
+                    "model": capacity.model,
+                    "minute_requests": capacity.minute_requests,
+                    "minute_tokens": capacity.minute_tokens,
+                    "daily_requests": capacity.daily_requests,
+                    "queued_requests": capacity.queued_requests,
+                    "requests_per_minute": capacity.requests_per_minute,
+                    "tokens_per_minute": capacity.tokens_per_minute,
+                    "requests_per_day": capacity.requests_per_day,
+                }
+                for capacity in self.harness.provider_capacity()
+            ],
         }
 
     @app_commands.command(name="ai", description="AI 問答")
@@ -136,6 +152,11 @@ class AICog(commands.Cog):
                 ),
                 max_output_tokens=800,
                 request_id=request_id,
+                scheduling_scope=(
+                    f"discord:{interaction.guild_id}"
+                    if interaction.guild_id is not None
+                    else "discord:direct-messages"
+                ),
             )
             response = await self.harness.respond(request)
             generation = response.generation

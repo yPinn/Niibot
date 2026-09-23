@@ -27,9 +27,15 @@ import logging
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, urlunsplit
 
 import aiohttp
+
+from shared.safe_urls import (
+    allowed_redirect_target,
+    find_allowed_http_url,
+    parse_allowed_absolute_url,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -42,16 +48,19 @@ _UA = (
 _BOT_UA = "Discordbot/2.0"
 _TIMEOUT = aiohttp.ClientTimeout(total=6)
 
-_INSTAGRAM_REEL_RE = re.compile(
-    r"(?:https?://)?(?:www\.|m\.)?instagram\.com/reels?/([A-Za-z0-9_-]+)", re.IGNORECASE
-)
-_INSTAGRAM_SHARE_RE = re.compile(r"(?:https?://)?(?:www\.)?instagram\.com/share/", re.IGNORECASE)
+_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"})
+_INSTAGRAM_SHORTCODE_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def extract_instagram_shortcode(text: str) -> str | None:
     """Extract a Reel shortcode from a direct `instagram.com/reel(s)/{code}` URL."""
-    m = _INSTAGRAM_REEL_RE.search(text)
-    return m.group(1) if m else None
+    parsed = find_allowed_http_url(text, _INSTAGRAM_HOSTS)
+    if parsed is None:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) < 2 or segments[0].lower() not in {"reel", "reels"}:
+        return None
+    return segments[1] if _INSTAGRAM_SHORTCODE_RE.fullmatch(segments[1]) else None
 
 
 async def resolve_instagram_url(
@@ -69,22 +78,43 @@ async def resolve_instagram_url(
     if shortcode:
         return shortcode
 
-    if not _INSTAGRAM_SHARE_RE.search(url):
+    share_url = find_allowed_http_url(url, _INSTAGRAM_HOSTS)
+    if share_url is None:
         return None
 
-    full_url = url if url.startswith("http") else f"https://{url}"
+    share_segments = [segment for segment in share_url.path.split("/") if segment]
+    if len(share_segments) < 2 or share_segments[0].lower() != "share":
+        return None
+
+    full_url = urlunsplit(("https", "www.instagram.com", share_url.path, share_url.query, ""))
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
-        async with _session.get(
-            full_url,
-            allow_redirects=True,
-            timeout=_TIMEOUT,
-            headers={"User-Agent": _UA},
-        ) as resp:
-            return extract_instagram_shortcode(str(resp.url))
+        current_url = full_url
+        for _ in range(4):
+            async with _session.get(
+                current_url,
+                allow_redirects=False,
+                timeout=_TIMEOUT,
+                headers={"User-Agent": _UA},
+            ) as resp:
+                response_url = str(resp.url or current_url)
+                if parse_allowed_absolute_url(response_url, _INSTAGRAM_HOSTS) is None:
+                    return None
+                if shortcode := extract_instagram_shortcode(response_url):
+                    return shortcode
+                location = resp.headers.get("Location") if 300 <= resp.status < 400 else None
+                if not location:
+                    return None
+                next_url = allowed_redirect_target(current_url, location, _INSTAGRAM_HOSTS)
+                if next_url is None:
+                    return None
+                if shortcode := extract_instagram_shortcode(next_url):
+                    return shortcode
+                current_url = next_url
+        return None
     except Exception as exc:
-        LOGGER.warning("[InstaFix] Failed to resolve share link %s: %s", url, type(exc).__name__)
+        LOGGER.warning("[InstaFix] Failed to resolve share link: %s", type(exc).__name__)
         return None
     finally:
         if _own_session:

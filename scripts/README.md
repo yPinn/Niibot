@@ -27,25 +27,26 @@ live (secret-filled) files under `data/`.
 
 ## Commands
 
-| `nb` command                                                       | does                                                            | standalone                                                        |
-| ------------------------------------------------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `db migrate [--dry] [--env staging]`                               | run pending migrations                                          | `uv run --directory backend python scripts/db_migrate.py`         |
-| `db check [--env staging]`                                         | verify NOTIFY triggers / schema / migrations                    | `… scripts/db_check.py`                                           |
-| `db seed [channel_id] [n]`                                         | **[dev]** generate fake session/viewer data                     | `… scripts/dev/db_seed.py`                                        |
-| `db clear [-y]`                                                    | **[dev]** wipe analytics/session tables (confirms first)        | `… scripts/dev/db_clear.py`                                       |
-| `db backup`                                                        | `pg_dump` via docker                                            | `bash backend/scripts/db_backup.sh`                               |
-| `twitch oauth [--role bot\|broadcaster] [--env staging]`           | generate a bot/broadcaster token (interactive if flags omitted) | `… scripts/twitch_oauth.py`                                       |
-| `twitch tokens [--env staging]`                                    | list stored tokens, validate, show scopes                       | `… scripts/twitch_diag.py tokens`                                 |
-| `twitch emotes [--env staging]`                                    | bot emote access per channel                                    | `… scripts/twitch_diag.py emotes`                                 |
-| `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/twitch_backfill_sessions.py`                           |
-| `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/twitch_backfill_matcher.py`                            |
-| `discord ls\|diff\|sync\|rm [--prod] [--guild ID] [--global] [-y]` | manage Discord slash commands                                   | `… scripts/discord_cmds.py <cmd>`                                 |
-| `models update [--with-uptime]`                                    | refresh `backend/data/free_models.json` from OpenRouter         | `… scripts/models_update.py`                                      |
-| `env init [-f]`                                                    | copy every `*.env.example` → `*.env`                            | `bash scripts/env.sh init`                                        |
-| `env gen \| check \| print KEY`                                    | (re)generate env templates from `env.registry.toml`             | `python scripts/gen_env.py`                                       |
-| `env snapshot \| backup \| restore \| diff \| list \| clean`       | snapshot / restore live env files                               | `bash scripts/env.sh <cmd>`                                       |
-| `staging up\|down\|reset\|build\|logs\|ps\|restart\|migrate\|exec` | staging docker-compose wrapper                                  | `bash scripts/staging.sh <cmd>`                                   |
-| `badges`                                                           | download Twitch role-badge images to `frontend/public/`         | `python scripts/badges.py`                                        |
+| `nb` command                                                       | does                                                            | standalone                                                |
+| ------------------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------- |
+| `db migrate [--dry] [--env staging]`                               | run pending migrations                                          | `uv run --directory backend python scripts/db_migrate.py` |
+| `db check [--env staging]`                                         | verify NOTIFY triggers / schema / migrations                    | `… scripts/db_check.py`                                   |
+| `db seed [channel_id] [n]`                                         | **[dev]** generate fake session/viewer data                     | `… scripts/dev/db_seed.py`                                |
+| `db clear [-y]`                                                    | **[dev]** wipe analytics/session tables (confirms first)        | `… scripts/dev/db_clear.py`                               |
+| `db backup`                                                        | `pg_dump` via docker                                            | `bash backend/scripts/db_backup.sh`                       |
+| `twitch oauth [--role bot\|broadcaster] [--env staging]`           | generate a bot/broadcaster token (interactive if flags omitted) | `… scripts/twitch_oauth.py`                               |
+| `twitch tokens [--env staging]`                                    | list stored tokens, validate, show scopes                       | `… scripts/twitch_diag.py tokens`                         |
+| `twitch emotes [--env staging]`                                    | bot emote access per channel                                    | `… scripts/twitch_diag.py emotes`                         |
+| `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/twitch_backfill_sessions.py`                   |
+| `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/twitch_backfill_matcher.py`                    |
+| `discord ls\|diff\|sync\|rm [--prod] [--guild ID] [--global] [-y]` | manage Discord slash commands                                   | `… scripts/discord_cmds.py <cmd>`                         |
+| `models update [--with-uptime]`                                    | refresh `backend/data/free_models.json` from OpenRouter         | `… scripts/models_update.py`                              |
+| `assets collections preview\|build`                                | preview focal crops or publish immutable WebP card revisions    | `… scripts/build_collection_assets.py preview\|build`     |
+| `env init [-f]`                                                    | copy every `*.env.example` → `*.env`                            | `bash scripts/env.sh init`                                |
+| `env gen \| check \| print KEY`                                    | (re)generate env templates from `env.registry.toml`             | `python scripts/gen_env.py`                               |
+| `env snapshot \| backup \| restore \| diff \| list \| clean`       | snapshot / restore live env files                               | `bash scripts/env.sh <cmd>`                               |
+| `staging up\|down\|reset\|build\|logs\|ps\|restart\|migrate\|exec` | staging docker-compose wrapper                                  | `bash scripts/staging.sh <cmd>`                           |
+| `badges`                                                           | download Twitch role-badge images to `frontend/public/`         | `python scripts/badges.py`                                |
 
 ## Not wrapped by `nb` (CI / one-off only)
 

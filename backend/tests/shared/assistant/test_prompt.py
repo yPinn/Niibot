@@ -32,6 +32,7 @@ def _request(*sections: InputSection) -> AssistantRequest:
         sections=sections,
         max_output_tokens=128,
         request_id="req-test",
+        scheduling_scope="channel-test",
     )
 
 
@@ -58,6 +59,9 @@ def test_compiler_preserves_authority_and_source_order() -> None:
     assert "CURRENT_USER_INPUT" in compiled.messages[2].content
     assert compiled.max_output_tokens == 128
     assert compiled.request_id == "req-test"
+    assert compiled.scheduling_scope == "channel-test"
+    assert "according to PRODUCT_CONTRACT" in compiled.messages[0].content
+    assert "optional style" not in compiled.messages[0].content
 
 
 def test_untrusted_content_is_json_encoded_and_cannot_close_its_envelope() -> None:

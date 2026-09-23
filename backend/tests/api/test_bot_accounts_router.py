@@ -19,6 +19,7 @@ from core.dependencies import (
     get_bot_account_service,
     get_current_user_id,
     get_twitch_api,
+    get_twitch_authorization_service,
     require_owner,
     require_tenant_access,
     require_tenant_owner,
@@ -34,6 +35,11 @@ from services.bot_account_service import (
 )
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from services.tenant_service import TenantContext
+from services.twitch_authorization_service import (
+    AuthorizationRemovalResult,
+    BroadcasterAuthorizationSummary,
+    CredentialHealth,
+)
 from shared.twitch_scopes import BOT_SCOPES
 
 _NOW = datetime.now(UTC)
@@ -41,12 +47,19 @@ _USER_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _STATE_NONCE = "state-nonce-123456"
 
 
-def _client(service: MagicMock, twitch: MagicMock | None = None) -> TestClient:
+def _client(
+    service: MagicMock,
+    twitch: MagicMock | None = None,
+    authorization: MagicMock | None = None,
+) -> TestClient:
     app = FastAPI()
     register_exception_handlers(app)
     app.include_router(router)
     app.dependency_overrides[get_bot_account_service] = lambda: service
     app.dependency_overrides[get_twitch_api] = lambda: twitch or MagicMock()
+    app.dependency_overrides[get_twitch_authorization_service] = lambda: (
+        authorization or MagicMock()
+    )
     app.dependency_overrides[require_tenant_owner] = lambda: TenantContext(
         channel_id="channel-a", user_id=_USER_ID, role="owner"
     )
@@ -321,3 +334,102 @@ def test_bot_callback_rejects_tampered_state_before_token_exchange():
     assert response.status_code in {302, 303, 307}
     assert "status=error" in response.headers["location"]
     twitch.exchange_code_for_token.assert_not_awaited()
+
+
+def test_owner_can_recheck_one_tenant_bot_authorization():
+    service = MagicMock()
+    service.assert_available_to_tenant = AsyncMock()
+    authorization = MagicMock()
+    authorization.check_credential = AsyncMock(
+        return_value=CredentialHealth(
+            user_id="bot-b",
+            token_type="bot",
+            status="valid",
+            last_checked_at=_NOW,
+            last_validated_at=_NOW,
+        )
+    )
+
+    response = _client(service, authorization=authorization).post(
+        "/api/tenants/channel-a/bot-accounts/bot-b/authorization-check",
+        headers={"X-Niibot-Action": "twitch-authorization-management"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "valid"
+    authorization.check_credential.assert_awaited_once_with(
+        user_id="bot-b", token_type="bot", required_scopes=set(BOT_SCOPES)
+    )
+
+
+def test_owner_can_unlink_only_this_tenants_bot_mapping():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.unlink_bot_from_tenant = AsyncMock(
+        return_value=AuthorizationRemovalResult(
+            credential_retained=True,
+            upstream_revoke_confirmed=False,
+        )
+    )
+
+    response = _client(service, authorization=authorization).delete(
+        "/api/tenants/channel-a/bot-accounts/bot-b",
+        headers={"X-Niibot-Action": "twitch-authorization-management"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "credential_retained": True,
+        "upstream_revoke_confirmed": False,
+    }
+    authorization.unlink_bot_from_tenant.assert_awaited_once_with(
+        channel_id="channel-a", bot_user_id="bot-b", actor_user_id=_USER_ID
+    )
+
+
+def test_tenant_can_read_broadcaster_authorization_summary():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.get_broadcaster_summary = AsyncMock(
+        return_value=BroadcasterAuthorizationSummary(
+            channel_id="channel-a",
+            channel_name="alice",
+            display_name="Alice",
+            enabled=True,
+            status="valid",
+            last_checked_at=_NOW,
+            last_validated_at=_NOW,
+            error_code=None,
+        )
+    )
+
+    response = _client(service, authorization=authorization).get(
+        "/api/tenants/channel-a/broadcaster-authorization"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "valid"
+    assert response.json()["channel_name"] == "alice"
+
+
+def test_owner_disconnects_broadcaster_and_current_cookie_is_cleared():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.disconnect_broadcaster = AsyncMock(
+        return_value=AuthorizationRemovalResult(
+            credential_retained=False,
+            upstream_revoke_confirmed=True,
+        )
+    )
+
+    response = _client(service, authorization=authorization).delete(
+        "/api/tenants/channel-a/broadcaster-authorization",
+        headers={"X-Niibot-Action": "twitch-authorization-management"},
+    )
+
+    assert response.status_code == 200
+    assert "auth_token=" in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
+    authorization.disconnect_broadcaster.assert_awaited_once_with(
+        channel_id="channel-a", owner_user_id=_USER_ID
+    )

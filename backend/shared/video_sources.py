@@ -29,12 +29,17 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlunsplit
 
 import aiohttp
 
 from shared.bilibili_client import fetch_bilibili_video_data
 from shared.instafix_client import fetch_instagram_reel_info, resolve_instagram_url
+from shared.safe_urls import (
+    allowed_redirect_target,
+    find_allowed_http_url,
+    parse_allowed_absolute_url,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -42,15 +47,8 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # YouTube utilities
 # ---------------------------------------------------------------------------
 
-_YT_SHORTS_RE = re.compile(r"(?:https?://)?(?:www\.)?youtube\.com/shorts/([A-Za-z0-9_-]{11})")
-
-_YT_RE = re.compile(
-    r"(?:https?://)?(?:www\.)?(?:"
-    r"youtube\.com/watch\?(?:.*&)?v=|"
-    r"youtu\.be/|"
-    r"youtube\.com/shorts/"
-    r")([A-Za-z0-9_-]{11})"
-)
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"})
+_VIDEO_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 
 _ISO8601_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
 
@@ -63,12 +61,14 @@ UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
 UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
 UNPLAYABLE_PRIVATE = "private"
 UNPLAYABLE_REMOVED = "removed"
+UNPLAYABLE_INVALID_TIMESTAMP = "invalid_timestamp"
 
 _UNPLAYABLE_MESSAGES: dict[str, str] = {
     UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不開放外部播放",
     UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法播放",
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
     UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
+    UNPLAYABLE_INVALID_TIMESTAMP: "影片時間點已超出可播放範圍",
 }
 
 
@@ -100,8 +100,7 @@ class YouTubeInfo:
 
 def extract_youtube_id(text: str) -> str | None:
     """Extract 11-char YouTube video ID from a URL string. Returns None if not found."""
-    m = _YT_RE.search(text)
-    return m.group(1) if m else None
+    return extract_youtube_info(text)[0]
 
 
 def extract_youtube_info(text: str) -> tuple[str | None, bool]:
@@ -110,11 +109,25 @@ def extract_youtube_info(text: str) -> tuple[str | None, bool]:
     Returns:
         (video_id, is_vertical) — video_id is None if no match found.
     """
-    if _YT_SHORTS_RE.search(text):
-        m = _YT_RE.search(text)
-        return (m.group(1) if m else None, True)
-    m = _YT_RE.search(text)
-    return (m.group(1) if m else None, False)
+    parsed = find_allowed_http_url(text, _YOUTUBE_HOSTS)
+    if parsed is None or parsed.hostname is None:
+        return None, False
+
+    host = parsed.hostname.lower()
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if host == "youtu.be":
+        video_id = segments[0] if segments else ""
+        return (video_id, False) if _VIDEO_ID_RE.fullmatch(video_id) else (None, False)
+
+    if len(segments) >= 2 and segments[0] == "shorts":
+        video_id = segments[1]
+        return (video_id, True) if _VIDEO_ID_RE.fullmatch(video_id) else (None, False)
+
+    if parsed.path.rstrip("/") == "/watch":
+        video_id = parse_qs(parsed.query).get("v", [""])[0]
+        return (video_id, False) if _VIDEO_ID_RE.fullmatch(video_id) else (None, False)
+
+    return None, False
 
 
 def _https(url: str | None) -> str | None:
@@ -232,14 +245,21 @@ async def fetch_yt_info(
 # Bilibili utilities
 # ---------------------------------------------------------------------------
 
-_BILIBILI_BV_RE = re.compile(r"(?:https?://)?(?:www\.)?bilibili\.com/video/(BV[A-Za-z0-9]{10})")
-_BILIBILI_SHORT_RE = re.compile(r"(?:https?://)?b23\.tv/[A-Za-z0-9]+")
+_BILIBILI_HOSTS = frozenset({"bilibili.com", "www.bilibili.com", "m.bilibili.com"})
+_BILIBILI_REDIRECT_HOSTS = _BILIBILI_HOSTS | frozenset({"b23.tv"})
+_BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]{10}")
+_BILIBILI_SHORT_CODE_RE = re.compile(r"[A-Za-z0-9]+")
 
 
 def extract_bilibili_bvid(text: str) -> str | None:
     """Extract Bilibili BV ID from full bilibili.com URL. Returns None if not found."""
-    m = _BILIBILI_BV_RE.search(text)
-    return m.group(1) if m else None
+    parsed = find_allowed_http_url(text, _BILIBILI_HOSTS)
+    if parsed is None:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) < 2 or segments[0] != "video":
+        return None
+    return segments[1] if _BILIBILI_BV_RE.fullmatch(segments[1]) else None
 
 
 async def resolve_bilibili_url(
@@ -254,22 +274,45 @@ async def resolve_bilibili_url(
     if bvid:
         return bvid
 
-    if not _BILIBILI_SHORT_RE.search(url):
+    short_url = find_allowed_http_url(url, frozenset({"b23.tv"}))
+    if short_url is None:
         return None
 
-    full_url = url if url.startswith("http") else f"https://{url}"
+    short_segments = [segment for segment in short_url.path.split("/") if segment]
+    if not short_segments or not _BILIBILI_SHORT_CODE_RE.fullmatch(short_segments[0]):
+        return None
+
+    full_url = urlunsplit(("https", "b23.tv", f"/{short_segments[0]}", short_url.query, ""))
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
-        async with _session.get(
-            full_url,
-            allow_redirects=True,
-            timeout=aiohttp.ClientTimeout(total=5),
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-        ) as resp:
-            return extract_bilibili_bvid(str(resp.url))
+        current_url = full_url
+        for _ in range(4):
+            async with _session.get(
+                current_url,
+                allow_redirects=False,
+                timeout=aiohttp.ClientTimeout(total=5),
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            ) as resp:
+                response_url = str(resp.url or current_url)
+                if parse_allowed_absolute_url(response_url, _BILIBILI_REDIRECT_HOSTS) is None:
+                    return None
+                if resolved := extract_bilibili_bvid(response_url):
+                    return resolved
+                location = resp.headers.get("Location") if 300 <= resp.status < 400 else None
+                if not location:
+                    return None
+                next_url = allowed_redirect_target(current_url, location, _BILIBILI_REDIRECT_HOSTS)
+                if next_url is None:
+                    return None
+                if resolved := extract_bilibili_bvid(next_url):
+                    return resolved
+                current_url = next_url
+        return None
     except Exception as exc:
-        LOGGER.warning("[Bilibili] Failed to resolve short URL %s: %s", url, type(exc).__name__)
+        LOGGER.warning("[Bilibili] Failed to resolve short URL: %s", type(exc).__name__)
         return None
     finally:
         if _own_session:
@@ -336,16 +379,15 @@ async def fetch_bilibili_info(
 # ---------------------------------------------------------------------------
 
 
-_TWITCH_CLIP_RE = re.compile(
-    r"(?:https?://)?(?:clips\.twitch\.tv/|www\.twitch\.tv/\w+/clip/)([A-Za-z0-9_-]+)"
-)
+_TWITCH_CLIP_HOSTS = frozenset({"clips.twitch.tv", "twitch.tv", "www.twitch.tv"})
+_TWITCH_VOD_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv"})
+_TWITCH_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
 
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
 _TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
 
 # twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
-_TWITCH_VOD_RE = re.compile(r"(?:https?://)?(?:www\.|m\.)?twitch\.tv/videos/(\d+)")
 _HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
 
 # A VOD is hours long; Video Queue treats it as a "long clip" — play a window of
@@ -377,8 +419,18 @@ def extract_twitch_clip_slug(text: str) -> str | None:
       - https://clips.twitch.tv/{slug}
       - https://www.twitch.tv/{channel}/clip/{slug}
     """
-    m = _TWITCH_CLIP_RE.search(text)
-    return m.group(1) if m else None
+    parsed = find_allowed_http_url(text, _TWITCH_CLIP_HOSTS)
+    if parsed is None or parsed.hostname is None:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    host = parsed.hostname.lower()
+    if host == "clips.twitch.tv":
+        slug = segments[0] if segments else ""
+    elif len(segments) >= 3 and segments[1] == "clip":
+        slug = segments[2]
+    else:
+        return None
+    return slug if _TWITCH_SLUG_RE.fullmatch(slug) else None
 
 
 def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
@@ -387,11 +439,14 @@ def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
     Returns (video_id, start_seconds); video_id is None if the URL isn't a
     twitch.tv/videos/{id} link. start_seconds defaults to 0.
     """
-    m = _TWITCH_VOD_RE.search(text)
-    if not m:
+    parsed = find_allowed_http_url(text, _TWITCH_VOD_HOSTS)
+    if parsed is None:
         return None, 0
-    t_match = re.search(r"[?&]t=([0-9hms]+)", text, re.IGNORECASE)
-    return m.group(1), _parse_hms(t_match.group(1)) if t_match else 0
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) != 2 or segments[0] != "videos" or not segments[1].isdigit():
+        return None, 0
+    timestamp = parse_qs(parsed.query).get("t", [""])[0]
+    return segments[1], _parse_hms(timestamp) if timestamp else 0
 
 
 async def _get_twitch_app_token(
@@ -814,6 +869,18 @@ async def fetch_video_metadata(
         vod = await fetch_twitch_vod_info(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
+        if vod.duration_seconds and resolved.start_seconds >= vod.duration_seconds:
+            return VideoMetadata(
+                vod.title,
+                0,
+                vod.view_count,
+                is_vertical=False,
+                playable=False,
+                unplayable_reason=UNPLAYABLE_INVALID_TIMESTAMP,
+                thumbnail_url=vod.thumbnail_url,
+                creator_id=vod.creator_id,
+                creator_name=vod.creator_name,
+            )
         # Play a bounded window from the `?t=` offset — a VOD is hours long.
         remaining = (
             max(0, vod.duration_seconds - resolved.start_seconds)
@@ -889,9 +956,12 @@ async def fetch_video_metadata(
     )
 
 
-def build_watch_url(video_type: str, video_id: str) -> str:
+def build_watch_url(video_type: str, video_id: str, start_seconds: int = 0) -> str:
     """Build the canonical watch URL for a queued entry, given its stored video_type."""
     template = _WATCH_URL_BUILDERS.get(video_type)
     if template is None:
         raise ValueError(f"Unknown video_type: {video_type!r}")
-    return template.format(video_id=video_id)
+    url = template.format(video_id=video_id)
+    if video_type == "twitch_vod" and start_seconds > 0:
+        return f"{url}?t={start_seconds}s"
+    return url

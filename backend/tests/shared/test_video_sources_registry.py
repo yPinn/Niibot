@@ -240,6 +240,22 @@ class TestFetchVideoMetadata:
             )
         assert metadata.duration_seconds == 100
 
+    async def test_twitch_vod_rejects_timestamp_at_or_past_the_end(self):
+        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7200)
+        with patch(
+            "shared.video_sources.fetch_twitch_vod_info",
+            new=AsyncMock(
+                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
+            ),
+        ):
+            metadata = await fetch_video_metadata(
+                resolved, twitch_client_id="c", twitch_client_secret="s"
+            )
+
+        assert metadata.playable is False
+        assert metadata.unplayable_reason == "invalid_timestamp"
+        assert metadata.duration_seconds == 0
+
     async def test_twitch_vod_unknown_duration_falls_back_to_the_window(self):
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
         with patch(

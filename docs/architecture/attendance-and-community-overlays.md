@@ -38,12 +38,12 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 
 `!checkin`／`!簽到` 以不可變 ledger 記錄成功日期，唯一鍵為
 `(channel_id, user_id, checkin_date)`，由資料庫保證同一頻道每日只成功一次。
-累積 `count` 定義為該頻道的成功簽到天數；current／best daily streak 是可重算 projection。
+累積 `count` 定義為該頻道的成功簽到天數加上已確認的外部 carry-over；`current_streak` 是可重算 projection。
 
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
 
-`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
+`checkin_settings.reply_delay_seconds`（預設 5，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
 聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
 這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在 `recorded` 的「送出訊息」
 動作；check-in ledger、抽卡與 Overlay event 維持立即原子提交。同日 `duplicate` 沒有動畫，因此立即回覆。
@@ -62,6 +62,42 @@ in-process async delay；bot 若在等待期間重啟，可能漏送聊天回覆
 每筆 `recorded` check-in 恰好建立一筆 `viewer_card_draws`，並與 `viewer_checkins`、`community_overlay_events`
 在同一個資料庫 transaction 寫入。抽卡失敗時整筆 transaction 回滾，不留下「簽到成功但沒有卡」的半成品；
 duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發布、不可變的官方 fallback pool。
+
+### 舊 Bot 彙總資料轉移
+
+後台可從 CSV、TSV、XLSX 或可匿名讀取的 Google Sheets 匯入每位觀眾的 aggregate summary。
+所有格式先正規化為同一組欄位：`Username` 或 `Twitch User ID`、`Count`、`LastDate`，以及可選的
+`DisplayName`、`Streak`、`TodayOrder`。系統先以 exact alias 建議對應，不使用模糊推測；使用者可在欄位
+檢查步驟以來源 column index 手動 map canonical field，處理其他 Bot 的大小寫或自訂命名。Twitch login
+會批次解析成 stable user id，找不到或與既有 Niibot ledger／carry-over 衝突的列不可套用。
+
+外部 `Count` 寫入 `viewer_checkin_carryovers`，不展開成虛構 `viewer_checkins`，因此不補歷史卡片或
+Overlay event。`$(count)` 與排行榜使用 carry-over + 真實 ledger；來源 streak 只作下一次簽到的 continuity
+seed，隔日接續、日期 gap 歸 1。`$(today_order)` 在匯入截止日 duplicate 使用來源 `TodayOrder`；後續真實
+簽到則以頻道 + 本地日期 advisory lock 序列化，再依 immutable ledger id 計算穩定的當日順序。來源沒有
+`TodayOrder` 時，截止日 duplicate 明確代入 `0`，不虛構排序。
+
+Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 分鐘記憶體 cache 中保存。Apply 僅限 owner、
+要求 `X-Niibot-Action: checkin-import` 與「舊 Bot 已停用」確認，並以 channel advisory lock 與整批 transaction
+阻止匯入 cutover 和即時簽到互相競爭。Google Sheets 只接受 HTTPS `docs.google.com/spreadsheets` 文件 URL，
+由 server 重建固定 CSV export URL；只允許一次 HTTPS `doc-*-sheets.googleusercontent.com` 官方 export
+redirect，其他 host、第二次 redirect、私人試算表 OAuth 與任意 URL 都不支援。
+
+### 可攜匯出與資料清除
+
+owner 可把 carry-over 與真實 ledger 合併匯出為 importer-compatible CSV。`Count` 是兩者加總，`LastDate`
+取較新的來源日期，`TodayOrder` 必須跟該日期來自同一側；匯出不虛構逐日 ledger，也不包含收藏卡或 Overlay
+event。因此 CSV 適合跨 Bot 移轉與重建 count/streak continuity，不是完整事件備份。
+
+後台只提供一個「清除簽到資料」入口，確認對話框內有兩個 closed scope：`imported` 只移除 carry-over 與
+import batch，保留 Niibot 後續 ledger/draw/event，再從 ledger 重建 streak；`all` 清除兩側簽到資料、
+`checkin.recorded` event 與對應 `viewer_card_draws`。timezone、訊息模板、reward mapping、收藏 catalog/pool
+都不在 reset 邊界。兩種操作都要求 owner、專用 action header、server-side impact summary、頻道名稱 typed
+confirmation、rate limit、audit log，以及與 import/live check-in 相同的 exclusive advisory lock。
+
+`viewer_card_draws` 平時仍為 immutable。完整清除利用 deferred check-in FK，先在同一交易刪除對應
+`viewer_checkins`；migration 131 的 trigger 只在來源 check-in 已不存在時允許刪除該 draw。若任一步驟失敗，
+deferred constraint 使整個清除交易回滾，不會留下半套資料。
 
 頻道點數採平台管理、Niibot 唯讀的權限模型：實況主在 Twitch 建立獎勵並設定成本、每人每場上限、
 全頻道單場上限與是否略過請求佇列；Niibot 只以 `channel:read:redemptions` 讀取並監聽，不要求
@@ -124,15 +160,15 @@ recorded check-in 對應一張 copy。冊別的 `total_cards` 隨已發布 set r
 表達，不讓既有冊別完成度倒退。既有歷史 check-in 必須另行執行 deterministic backfill；工具已提供，但不會
 隨 migration 或服務啟動自動修改正式資料。
 
-官方 starter pool 為原創「初途秘典」九張卡，rarity 採 common／rare／legendary，權重固定 70／25／5；
-抽選演算法先依 rarity 權重選 bucket，再在該 bucket 內等機率選卡。catalog、rarity、set、card revision、
-已發布 pool 與 draw audit 均由資料庫約束不可原地修改。Starter artwork 目前為空，renderer 使用內建原創符號
-placeholder；租戶上傳、媒體處理、pool 管理 API 與動態素材仍是後續工作。
+第一個有圖 catalog 包含 7 個 set、48 張 2:3 WebP 卡片；第一版全部使用 common rarity 並等機率抽選。
+`official-all` 是包含全部卡片的 fallback，另有每個 set 專屬的 immutable pool。頻道可在全部卡組與單一 set
+之間切換；API 只接受 set key，不暴露 pool revision id。catalog、rarity、set、card revision、已發布 pool 與
+draw audit 均由資料庫約束不可原地修改，後續評級或機率調整需發布新 revision。
 
 ### 歷史簽到補卡
 
 `backend/scripts/backfill_checkin_collections.py` 只補缺少 `viewer_card_draws` 的既有成功簽到，固定使用已發布的
-`official-starter` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
+`official-all` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
 版本化 seed 加上 channel、viewer、簽到日期與 check-in id 產生 deterministic entropy；重跑不會換卡，也不建立
 歷史 `community_overlay_events`。
 
@@ -140,7 +176,7 @@ CLI 預設為 report-only dry-run；寫入必須明確加上 `--apply`，且任�
 `DATABASE_URL` 與 `--env` 標籤不同時繞過保護。作業依
 channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位、可調 batch 大小分段 transaction。單一 batch
 失敗會完整 rollback 並保留給下次續跑，最後回報 scanned、inserted、skipped、remaining 與 failures。正式 rollout
-應先套用 migrations 112／113 並部署可讀 optional collection snapshot 的 frontend，再執行 dry-run、apply 與
+應先套用 migrations 至 136 並部署可讀 optional collection snapshot 的 frontend，再執行 dry-run、apply 與
 `successful check-ins = draws = inventory copies` 對帳；此 repository 只交付工具，不代表已對正式環境執行。
 
 ### Viewer-isolated FIFO 播放
@@ -199,7 +235,7 @@ channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位�
 - Dashboard 將三種責任分開：`/events` 只編輯 EventSub 回覆模板；`/channel-points` 是 reward → action
   映射的唯一寫入位置，並以獨立 `Check-in settings` sheet 編輯共用 timezone、成功與重複模板；
   `Live Display` 只呈現顯示內容、各 block 外觀、測試與 OBS 連結；簽到入口細節仍導向 `/channel-points`。
-- 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
+- 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。
 - OBS route 為 `/live-display#key=<uuid>`；capability 留在 URL fragment，不進入瀏覽器／CDN request log，
   前端以 `X-Overlay-Key` header 對 `GET /api/live-display/public/stream` 開一條可重連 SSE 長連線。

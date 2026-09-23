@@ -11,8 +11,13 @@ vi.mock('@/api/events', () => ({
   updateFirstRedemptionSettings: vi.fn(),
 }))
 vi.mock('@/api/checkin', () => ({
+  applyCheckinImport: vi.fn(),
+  clearCheckinData: vi.fn(),
+  exportCheckinData: vi.fn(),
+  getCheckinDataSummary: vi.fn(),
   getCheckinLeaderboard: vi.fn(),
   getCheckinSettings: vi.fn(),
+  previewCheckinImport: vi.fn(),
   updateCheckinSettings: vi.fn(),
 }))
 vi.mock('@/api/vip', () => ({
@@ -288,13 +293,18 @@ describe('Channel Points page', () => {
 
     expect(await screen.findByRole('heading', { name: 'Check-in settings' })).toBeInTheDocument()
     expect(screen.getByText(/聊天指令與 Twitch 點數簽到共用/)).toBeInTheDocument()
+    expect(screen.getByText('補償畫面比聊天室晚顯示的秒數；預設 5 秒。')).toBeInTheDocument()
     expect(getCheckinSettings).toHaveBeenCalledOnce()
     expect(getCheckinLeaderboard).toHaveBeenCalledOnce()
+    const todayOrderVariable = screen.getByRole('button', { name: '$(today_order)' })
+    expect(todayOrderVariable).toBeInTheDocument()
+    await user.hover(todayOrderVariable)
+    expect(screen.getByText('今天第幾位完成簽到')).toBeInTheDocument()
 
     const leaderboard = screen.getByRole('region', { name: '簽到排行榜' })
     const [firstPlace] = within(leaderboard).getAllByRole('listitem')
     expect(firstPlace).toHaveTextContent('Alice')
-    expect(firstPlace).toHaveTextContent('@alice')
+    expect(firstPlace).not.toHaveTextContent('@alice')
     expect(firstPlace).toHaveTextContent('12 天')
     expect(within(leaderboard).getByText('bob')).toBeInTheDocument()
 

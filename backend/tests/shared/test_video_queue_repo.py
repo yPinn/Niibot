@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 
@@ -54,6 +55,10 @@ _ENTRY_ROW = {
     "priority": 0,
     "created_at": _NOW,
     "started_at": None,
+    "playback_started_at": None,
+    "playback_signal": None,
+    "end_reason": None,
+    "played_seconds": None,
 }
 
 _SETTINGS_ROW = {
@@ -65,6 +70,8 @@ _SETTINGS_ROW = {
     "min_view_count": 0,
     "user_cooldown_seconds": 0,
     "max_per_user": 0,
+    "volume_percent": 100,
+    "overlay_key": UUID("11111111-1111-4111-8111-111111111111"),
     "created_at": _NOW,
     "updated_at": _NOW,
 }
@@ -111,6 +118,7 @@ _BLOCKLIST_ROW = {
     "id": 1,
     "channel_id": "ch1",
     "kind": "video",
+    "video_type": "youtube",
     "value": "dQw4w9WgXcQ",
     "label": "Never Gonna Give You Up",
     "created_by": "ch1",
@@ -186,6 +194,17 @@ class TestExtractYoutubeId:
             == "dQw4w9WgXcQ"
         )
 
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://evil.example/youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com@evil.example/watch?v=dQw4w9WgXcQ",
+            "javascript://youtube.com/watch?v=dQw4w9WgXcQ",
+        ],
+    )
+    def test_rejects_host_spoofing_and_unsafe_schemes(self, url):
+        assert extract_youtube_id(url) is None
+
 
 class TestExtractYoutubeInfo:
     def test_regular_url_not_vertical(self):
@@ -238,6 +257,12 @@ class TestExtractBilibilibvid:
 
     def test_returns_none_for_plain_text(self):
         assert extract_bilibili_bvid("no url here") is None
+
+    def test_rejects_host_spoofing(self):
+        assert (
+            extract_bilibili_bvid("https://evil.example/www.bilibili.com/video/BV1GJ411x7h7")
+            is None
+        )
 
 
 @pytest.mark.asyncio
@@ -300,6 +325,35 @@ class TestResolveBilibiliUrl:
 
         assert result is None
 
+    async def test_spoofed_short_host_is_never_requested(self):
+        mock_session = MagicMock()
+        mock_session.close = AsyncMock(return_value=None)
+
+        result = await resolve_bilibili_url(
+            "https://evil.example/b23.tv/Ab1Cd2E", session=mock_session
+        )
+
+        assert result is None
+        mock_session.get.assert_not_called()
+
+    async def test_short_url_refuses_redirect_to_private_host(self):
+        mock_resp = MagicMock()
+        mock_resp.status = 302
+        mock_resp.headers = {"Location": "http://127.0.0.1/admin"}
+        mock_resp.url = "https://b23.tv/Ab1Cd2E"
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+        mock_session.close = AsyncMock(return_value=None)
+
+        result = await resolve_bilibili_url("https://b23.tv/Ab1Cd2E", session=mock_session)
+
+        assert result is None
+        mock_session.get.assert_called_once()
+        assert mock_session.get.call_args.kwargs["allow_redirects"] is False
+
 
 class TestExtractTwitchClipSlug:
     def test_clips_domain(self):
@@ -336,6 +390,9 @@ class TestExtractTwitchClipSlug:
 
     def test_returns_none_for_plain_text(self):
         assert extract_twitch_clip_slug("no url here") is None
+
+    def test_rejects_host_spoofing(self):
+        assert extract_twitch_clip_slug("https://evil.example/clips.twitch.tv/SomeClipSlug") is None
 
 
 class TestParseIso8601Duration:
@@ -445,6 +502,25 @@ class TestAddIfWithinLimits:
 
         # One fetchrow for the combined counts query, one for the INSERT.
         assert conn.fetchrow.call_count == 2
+
+    async def test_atomic_duplicate_check_is_scoped_to_provider(self):
+        pool, conn = _make_pool()
+        conn.fetchrow.side_effect = [_counts(queue=0), {**_ENTRY_ROW, "video_type": "twitch_vod"}]
+        repo = VideoQueueRepository(pool)
+
+        await repo.add_if_within_limits(
+            "ch1",
+            "12345",
+            "user1",
+            "chat",
+            max_queue_size=20,
+            max_per_user=0,
+            video_type="twitch_vod",
+        )
+
+        sql, *params = conn.fetchrow.call_args_list[0].args
+        assert "video_type = $5" in sql
+        assert params[-1] == "twitch_vod"
 
     async def test_returns_none_when_video_already_active(self):
         pool, conn = _make_pool()
@@ -589,18 +665,34 @@ class TestPlayedWithin:
         repo = VideoQueueRepository(pool)
         assert await repo.played_within("ch1", "vid", 12) is True
         sql, *params = conn.fetchval.call_args.args
-        assert "status = 'done'" in sql and "make_interval(hours => $3)" in sql
-        assert params == ["ch1", "vid", 12]
+        assert "playback_started_at IS NOT NULL" in sql
+        assert "make_interval(hours => $3)" in sql
+        assert params == ["ch1", "vid", 12, "youtube"]
 
     async def test_false_when_none(self):
         pool, _ = _make_pool(fetchval=None)
         repo = VideoQueueRepository(pool)
         assert await repo.played_within("ch1", "vid", 12) is False
 
+    async def test_scopes_replay_cooldown_by_provider(self):
+        pool, conn = _make_pool(fetchval=1)
+        repo = VideoQueueRepository(pool)
+
+        await repo.played_within("ch1", "same-id", 12, "bilibili")
+
+        sql, *params = conn.fetchval.call_args.args
+        assert "video_type = $4" in sql
+        assert params == ["ch1", "same-id", 12, "bilibili"]
+
 
 def _block(kind: str, value: str, **kw) -> VideoQueueBlocklistEntry:
     return VideoQueueBlocklistEntry(
-        id=kw.get("id", 1), channel_id="ch1", kind=kind, value=value, label=kw.get("label")
+        id=kw.get("id", 1),
+        channel_id="ch1",
+        kind=kind,
+        value=value,
+        video_type=kw.get("video_type"),
+        label=kw.get("label"),
     )
 
 
@@ -617,6 +709,51 @@ class TestBlocklistMatch:
                 creator_id=None,
             )
             is entries[0]
+        )
+
+    def test_provider_scoped_video_rule_does_not_match_another_provider(self):
+        entry = _block("video", "same-id", video_type="youtube")
+        assert (
+            _blocklist_match(
+                [entry],
+                video_type="bilibili",
+                video_id="same-id",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
+            )
+            is None
+        )
+
+    def test_legacy_providerless_video_rule_remains_a_wildcard(self):
+        entry = _block("video", "same-id")
+        assert (
+            _blocklist_match(
+                [entry],
+                video_type="twitch_clip",
+                video_id="same-id",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id=None,
+            )
+            is entry
+        )
+
+    def test_provider_scoped_creator_rule_does_not_match_another_provider(self):
+        entry = _block("creator", "creator-1", video_type="youtube")
+        assert (
+            _blocklist_match(
+                [entry],
+                video_type="instagram_reel",
+                video_id="video",
+                title=None,
+                requested_by=None,
+                requested_by_id=None,
+                creator_id="creator-1",
+            )
+            is None
         )
 
     def test_creator_kind_matches_creator_id_not_video_id(self):
@@ -753,11 +890,12 @@ class TestBlocklistRepository:
         repo = VideoQueueBlocklistRepository(pool)
         await repo.list_entries("ch1")  # warm cache
 
-        entry = await repo.add("ch1", "video", "dQw4w9WgXcQ", label="RR")
+        entry = await repo.add("ch1", "video", "dQw4w9WgXcQ", video_type="youtube", label="RR")
 
         assert entry.kind == "video"
         sql = conn.fetchrow.call_args.args[0]
-        assert "ON CONFLICT (channel_id, kind, lower(value))" in sql
+        assert "COALESCE(video_type, '*')" in sql
+        assert conn.fetchrow.call_args.args[4] == "youtube"
         assert "ch1" not in _blocklist_cache
 
     async def test_remove_reports_deletion_and_invalidates(self):
@@ -777,6 +915,77 @@ class TestBlocklistRepository:
 
         miss = await repo.check("ch1", video_id="other", title="whatever")
         assert miss is None
+
+
+@pytest.mark.asyncio
+class TestPlaybackFacts:
+    async def test_marks_playback_started_once_and_can_upgrade_signal(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.mark_playback_started(7, "ch1", "confirmed") is True
+
+        sql, *params = conn.execute.call_args.args
+        assert "playback_started_at = COALESCE(playback_started_at, NOW())" in sql
+        assert "playback_signal" in sql
+        assert "status = 'playing'" in sql
+        assert params == [7, "ch1", "confirmed"]
+
+    async def test_advance_records_allowlisted_end_reason_and_played_seconds(self):
+        pool, conn = _make_pool()
+        repo = VideoQueueRepository(pool)
+
+        await repo.advance_queue("ch1", 7, end_reason="provider_error")
+
+        first_sql, *params = conn.execute.await_args_list[0].args
+        assert "end_reason = $3" in first_sql
+        assert "played_seconds" in first_sql
+        assert params == [7, "ch1", "provider_error"]
+
+
+@pytest.mark.asyncio
+class TestRankings:
+    async def test_global_rankings_order_by_channels_then_plays(self):
+        row = {
+            "rank": 1,
+            "video_type": "youtube",
+            "video_id": "vid",
+            "start_seconds": 0,
+            "title": "Popular",
+            "thumbnail_url": "https://i.ytimg.com/vi/vid/hqdefault.jpg",
+            "creator_id": "creator",
+            "creator_name": "Creator",
+            "play_count": 8,
+            "channel_count": 3,
+            "last_played_at": _NOW,
+            "active_status": None,
+            "blocked_kind": None,
+        }
+        pool, conn = _make_pool(fetch=[row])
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.get_rankings("ch1", scope="global", days=7, limit=25)
+
+        assert result[0].channel_count == 3
+        sql, *params = conn.fetch.call_args.args
+        assert "COUNT(DISTINCT channel_id)" in sql
+        assert "playback_started_at" in sql
+        assert "ROW_NUMBER() OVER" in sql
+        assert "active_status" in sql
+        assert "blocked_kind" in sql
+        assert "STRPOS" in sql  # keyword rules are literal substrings, not SQL wildcards
+        assert params == ["ch1", 7, None, "global", 25]
+
+    async def test_channel_rankings_are_scoped_without_dynamic_sql(self):
+        pool, conn = _make_pool(fetch=[])
+        repo = VideoQueueRepository(pool)
+
+        await repo.get_rankings("ch1", scope="channel", days=30, video_type="bilibili")
+
+        sql, *params = conn.fetch.call_args.args
+        assert "$4::text = 'global' OR channel_id = $1" in sql
+        assert "$3::text IS NULL OR video_type = $3" in sql
+        assert params == ["ch1", 30, "bilibili", "channel", 50]
 
 
 @pytest.mark.asyncio
@@ -875,6 +1084,16 @@ class TestVideoIsActive:
 
         assert result is False
 
+    async def test_scopes_identity_by_provider(self):
+        pool, conn = _make_pool(fetchval=1)
+        repo = VideoQueueRepository(pool)
+
+        await repo.video_is_active("ch1", "same-id", "twitch_vod")
+
+        sql, *params = conn.fetchval.call_args.args
+        assert "video_type = $3" in sql
+        assert params == ["ch1", "same-id", "twitch_vod"]
+
 
 @pytest.mark.asyncio
 class TestCountActiveByUser:
@@ -927,6 +1146,7 @@ class TestStatusTransitions:
 
         conn.execute.assert_called_once()
         assert "skipped" in conn.execute.call_args[0][0]
+        assert "end_reason = 'removed'" in conn.execute.call_args[0][0]
 
     async def test_update_duration_executes_update(self):
         pool, conn = _make_pool(execute="UPDATE 1")
@@ -940,12 +1160,13 @@ class TestStatusTransitions:
 @pytest.mark.asyncio
 class TestClearQueued:
     async def test_returns_affected_count(self):
-        pool, _ = _make_pool(execute="UPDATE 5")
+        pool, conn = _make_pool(execute="UPDATE 5")
         repo = VideoQueueRepository(pool)
 
         count = await repo.clear_queued("ch1")
 
         assert count == 5
+        assert "end_reason = 'cleared'" in conn.execute.call_args.args[0]
 
     async def test_returns_zero_when_nothing_queued(self):
         pool, _ = _make_pool(execute="UPDATE 0")
@@ -1033,6 +1254,33 @@ class TestUpdateSettings:
 
         await repo.update_settings("ch1", enabled=False)
 
+        from shared.cache import _MISSING
+
+        assert _settings_cache.get("vq_settings:ch1") is _MISSING
+
+
+@pytest.mark.asyncio
+class TestOverlayCapability:
+    async def test_matches_overlay_key_in_database(self):
+        pool, conn = _make_pool(fetchval=True)
+        repo = VideoQueueSettingsRepository(pool)
+        key = UUID("11111111-1111-4111-8111-111111111111")
+
+        assert await repo.overlay_key_matches("ch1", key) is True
+        conn.fetchval.assert_awaited_once()
+
+    async def test_rotates_overlay_key_and_invalidates_cache(self):
+        _settings_cache.set("vq_settings:ch1", _SETTINGS_ROW)
+        rotated = {
+            **_SETTINGS_ROW,
+            "overlay_key": UUID("22222222-2222-4222-8222-222222222222"),
+        }
+        pool, _ = _make_pool(fetchrow=rotated)
+        repo = VideoQueueSettingsRepository(pool)
+
+        result = await repo.rotate_overlay_key("ch1")
+
+        assert result.overlay_key == rotated["overlay_key"]
         from shared.cache import _MISSING
 
         assert _settings_cache.get("vq_settings:ch1") is _MISSING
@@ -1133,6 +1381,7 @@ class TestSkipCurrentAtomic:
         first_call_sql: str = conn.execute.call_args_list[0][0][0]
         assert "skipped" in first_call_sql
         assert "playing" in first_call_sql
+        assert "end_reason = 'dashboard_skip'" in first_call_sql
 
     async def test_second_update_promotes_queued(self):
         pool, conn = _make_pool(execute="UPDATE 1")
@@ -1507,6 +1756,12 @@ class TestExtractTwitchVodInfo:
     def test_not_a_vod(self):
         assert extract_twitch_vod_info("https://www.twitch.tv/somechannel") == (None, 0)
         assert extract_twitch_vod_info("https://clips.twitch.tv/Slug") == (None, 0)
+
+    def test_rejects_host_spoofing(self):
+        assert extract_twitch_vod_info("https://evil.example/www.twitch.tv/videos/123") == (
+            None,
+            0,
+        )
 
 
 @pytest.mark.asyncio

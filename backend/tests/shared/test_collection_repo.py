@@ -19,8 +19,8 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
         "pool_revision_id": pool_revision_id,
         "algorithm_version": ALGORITHM_VERSION,
         "set_id": 11,
-        "set_key": "first-path",
-        "set_display_name": "初途秘典",
+        "set_key": "aespa",
+        "set_display_name": "aespa",
         "total_cards": 9,
         "portrait_url": None,
         "square_url": None,
@@ -38,7 +38,7 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
             "weight": 70,
             "card_revision_id": 41,
             "card_id": 31,
-            "card_key": "astral-compass",
+            "card_key": "karina-01",
             "card_number": 1,
             "card_display_name": "星羅羅盤",
             "entry_order": 1,
@@ -68,7 +68,7 @@ def _pool_rows(pool_revision_id: int = 51) -> list[dict[str, object]]:
             "weight": 5,
             "card_revision_id": 43,
             "card_id": 33,
-            "card_key": "first-path-crown",
+            "card_key": "winter-01",
             "card_number": 9,
             "card_display_name": "初途王冠",
             "entry_order": 9,
@@ -88,7 +88,7 @@ def _draw_row(*, draw_id: int = 61, pool_revision_id: int = 51) -> dict[str, obj
         "card_bucket_size": 2,
         "card_revision_id": 41,
         "card_id": 31,
-        "card_key": "astral-compass",
+        "card_key": "karina-01",
         "card_number": 1,
         "card_display_name": "星羅羅盤",
         "description": "",
@@ -96,8 +96,8 @@ def _draw_row(*, draw_id: int = 61, pool_revision_id: int = 51) -> dict[str, obj
         "square_url": None,
         "backdrop_url": None,
         "set_id": 11,
-        "set_key": "first-path",
-        "set_display_name": "初途秘典",
+        "set_key": "aespa",
+        "set_display_name": "aespa",
         "total_cards": 9,
         "rarity_revision_id": 21,
         "rarity_key": "common",
@@ -110,6 +110,67 @@ def _draw_row(*, draw_id: int = 61, pool_revision_id: int = 51) -> dict[str, obj
     }
 
 
+def _owned_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "card_revision_id": 41,
+            "card_id": 31,
+            "card_key": "karina-01",
+            "card_number": 1,
+            "card_display_name": "星羅羅盤",
+            "description": "",
+            "portrait_url": None,
+            "square_url": None,
+            "backdrop_url": None,
+            "set_id": 11,
+            "set_key": "aespa",
+            "set_display_name": "aespa",
+            "total_cards": 9,
+            "rarity_revision_id": 21,
+            "rarity_key": "common",
+            "rarity_display_name": "普通",
+            "sort_rank": 10,
+            "effect_intensity": 20,
+            "copy_count": 1,
+        }
+    ]
+
+
+def _owned_history_rows() -> list[dict[str, object]]:
+    rows = _owned_rows()
+    rows[0]["copy_count"] = 2
+    rows.append(
+        {
+            **rows[0],
+            "card_revision_id": 42,
+            "card_id": 32,
+            "card_key": "echo-stone",
+            "card_number": 2,
+            "card_display_name": "回聲礦石",
+            "portrait_url": "/images/collections/aespa/echo-stone-portrait.webp",
+            "copy_count": 1,
+        }
+    )
+    rows.append(
+        {
+            **rows[0],
+            "card_revision_id": 43,
+            "card_id": 33,
+            "card_key": "winter-01",
+            "card_number": 9,
+            "card_display_name": "初途王冠",
+            "rarity_revision_id": 23,
+            "rarity_key": "legendary",
+            "rarity_display_name": "傳說",
+            "sort_rank": 30,
+            "effect_intensity": 100,
+            "portrait_url": "/images/collections/aespa/winter-01-portrait.webp",
+            "copy_count": 1,
+        }
+    )
+    return rows
+
+
 @pytest.mark.asyncio
 async def test_draw_uses_caller_connection_and_persists_entropy_and_audit_values() -> None:
     conn = AsyncMock()
@@ -118,7 +179,7 @@ async def test_draw_uses_caller_connection_and_persists_entropy_and_audit_values
         {"id": 61},
         _draw_row(),
     ]
-    conn.fetch.return_value = _pool_rows()
+    conn.fetch.side_effect = [_pool_rows(), _owned_rows()]
     requested_sizes: list[int] = []
 
     def entropy_source(size: int) -> bytes:
@@ -137,7 +198,7 @@ async def test_draw_uses_caller_connection_and_persists_entropy_and_audit_values
 
     assert requested_sizes == [16]
     assert draw.id == 61
-    assert draw.selection.card.key == "astral-compass"
+    assert draw.selection.card.key == "karina-01"
     assert draw.selection.card.number == "001"
     assert draw.is_new is True
     assert draw.to_event_snapshot()["progress"] == {
@@ -145,6 +206,29 @@ async def test_draw_uses_caller_connection_and_persists_entropy_and_audit_values
         "unique_cards": 1,
         "total_cards": 9,
     }
+    assert draw.to_event_snapshot()["owned_cards"] == [
+        {
+            "card": {
+                "id": 31,
+                "revision_id": 41,
+                "key": "karina-01",
+                "number": "001",
+                "name": "星羅羅盤",
+                "artwork": {
+                    "portrait_url": None,
+                    "square_url": None,
+                    "backdrop_url": None,
+                },
+            },
+            "rarity": {
+                "key": "common",
+                "label": "普通",
+                "rank": 10,
+                "effect_intensity": 20,
+            },
+            "copy_count": 1,
+        }
+    ]
 
     insert_call = conn.fetchrow.await_args_list[1]
     assert "INSERT INTO viewer_card_draws" in insert_call.args[0]
@@ -173,7 +257,7 @@ async def test_unavailable_tenant_pool_falls_back_to_the_official_pool(caplog) -
         {"id": 61},
         _draw_row(),
     ]
-    conn.fetch.side_effect = [[], _pool_rows()]
+    conn.fetch.side_effect = [[], _pool_rows(), _owned_rows()]
     repository = CollectionRepository(entropy_source=lambda _: _ENTROPY)
 
     draw = await repository.draw_for_checkin(
@@ -185,7 +269,7 @@ async def test_unavailable_tenant_pool_falls_back_to_the_official_pool(caplog) -
     )
 
     assert draw.selection.pool_revision_id == 51
-    assert [call.args[1] for call in conn.fetch.await_args_list] == [999, 51]
+    assert [call.args[1] for call in conn.fetch.await_args_list[:2]] == [999, 51]
     warning = next(
         record for record in caplog.records if record.message == "collection_active_pool_fallback"
     )
@@ -204,7 +288,7 @@ async def test_malformed_tenant_pool_falls_back_instead_of_failing_checkin() -> 
         {"id": 61},
         _draw_row(),
     ]
-    conn.fetch.side_effect = [malformed, _pool_rows()]
+    conn.fetch.side_effect = [malformed, _pool_rows(), _owned_rows()]
     repository = CollectionRepository(entropy_source=lambda _: _ENTROPY)
 
     draw = await repository.draw_for_checkin(
@@ -223,13 +307,15 @@ async def test_existing_checkin_draw_is_loaded_when_insert_conflicts() -> None:
     conn = AsyncMock()
     existing = _draw_row(draw_id=88)
     existing["copy_count"] = 2
-    existing["owned_copies"] = 5
+    existing["owned_copies"] = 2
     conn.fetchrow.side_effect = [
         {"active_pool_revision_id": 51, "fallback_pool_revision_id": 51},
         None,
         existing,
     ]
-    conn.fetch.return_value = _pool_rows()
+    owned_rows = _owned_rows()
+    owned_rows[0]["copy_count"] = 2
+    conn.fetch.side_effect = [_pool_rows(), owned_rows]
     repository = CollectionRepository(entropy_source=lambda _: _ENTROPY)
 
     draw = await repository.draw_for_checkin(
@@ -243,6 +329,66 @@ async def test_existing_checkin_draw_is_loaded_when_insert_conflicts() -> None:
     assert draw.id == 88
     assert draw.is_new is False
     assert draw.copy_count == 2
+
+
+@pytest.mark.asyncio
+async def test_draw_snapshot_contains_complete_current_set_inventory_in_catalog_order() -> None:
+    conn = AsyncMock()
+    row = _draw_row()
+    row["copy_count"] = 2
+    row["owned_copies"] = 4
+    row["unique_cards"] = 3
+    conn.fetchrow.side_effect = [
+        {"active_pool_revision_id": 51, "fallback_pool_revision_id": 51},
+        {"id": 61},
+        row,
+    ]
+    conn.fetch.side_effect = [_pool_rows(), _owned_history_rows()]
+    repository = CollectionRepository(entropy_source=lambda _: _ENTROPY)
+
+    draw = await repository.draw_for_checkin(
+        conn,
+        channel_id="ch1",
+        user_id="u1",
+        checkin_id=7,
+        drawn_at=_NOW,
+    )
+
+    assert [item.card.number for item in draw.owned_cards] == ["001", "002", "009"]
+    assert [item.copy_count for item in draw.owned_cards] == [2, 1, 1]
+    inventory_call = conn.fetch.await_args_list[-1]
+    assert inventory_call.args[1:] == ("ch1", "u1", 11)
+    assert "DISTINCT ON (owned_card.id)" in inventory_call.args[0]
+    assert "ORDER BY inventory.card_number" in inventory_call.args[0]
+
+
+@pytest.mark.asyncio
+async def test_selected_inventory_item_keeps_the_current_draw_revision_during_backfill() -> None:
+    conn = AsyncMock()
+    conn.fetchrow.side_effect = [
+        {"active_pool_revision_id": 51, "fallback_pool_revision_id": 51},
+        {"id": 61},
+        _draw_row(),
+    ]
+    inventory = _owned_rows()
+    inventory[0]["card_revision_id"] = 99
+    inventory[0]["card_display_name"] = "較新的同卡版本"
+    inventory[0]["portrait_url"] = "/images/collections/aespa/karina-01-r2.webp"
+    conn.fetch.side_effect = [_pool_rows(), inventory]
+    repository = CollectionRepository(entropy_source=lambda _: _ENTROPY)
+
+    draw = await repository.draw_for_checkin(
+        conn,
+        channel_id="ch1",
+        user_id="u1",
+        checkin_id=7,
+        drawn_at=_NOW,
+    )
+
+    selected_item = draw.owned_cards[0]
+    assert selected_item.card == draw.selection.card
+    assert selected_item.card.revision_id == 41
+    assert selected_item.card.name == "星羅羅盤"
 
 
 @pytest.mark.asyncio

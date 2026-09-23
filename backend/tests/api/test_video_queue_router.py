@@ -14,6 +14,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
@@ -35,6 +36,8 @@ from shared.models.video_queue import VideoQueueBlocklistEntry, VideoQueueEntry
 from shared.video_sources import ResolvedVideo, VideoMetadata
 
 CHANNEL_ID = "ch-vq"
+OVERLAY_KEY = "11111111-1111-4111-8111-111111111111"
+OVERLAY_HEADERS = {"X-Overlay-Key": OVERLAY_KEY}
 
 
 @asynccontextmanager
@@ -61,6 +64,8 @@ def _make_settings(**kw) -> MagicMock:
     s.max_per_user = kw.get("max_per_user", 5)
     s.max_duration_seconds = kw.get("max_duration_seconds", 0)
     s.replay_cooldown_hours = kw.get("replay_cooldown_hours", 0)
+    s.volume_percent = kw.get("volume_percent", 100)
+    s.overlay_key = UUID(kw.get("overlay_key", OVERLAY_KEY))
     return s
 
 
@@ -130,6 +135,7 @@ class TestGetPublicState:
         assert data["queue"] == []
         assert data["queue_size"] == 0
         assert data["enabled"] is True
+        assert data["volume_percent"] == 100
 
     def test_with_current_and_queued(self):
         with (
@@ -201,12 +207,25 @@ class TestAdvanceQueue:
             vqr.return_value.advance_queue = AsyncMock()
             vqr.return_value.get_current = AsyncMock(return_value=None)
             vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
             sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
             r = _make_public_client(_twitch_api_found()).post(
-                "/api/video-queue/public/testuser/advance", json={"done_id": 5}
+                "/api/video-queue/public/testuser/advance",
+                json={"done_id": 5, "reason": "provider_error"},
+                headers=OVERLAY_HEADERS,
             )
         assert r.status_code == 200
-        vqr.return_value.advance_queue.assert_called_once_with(CHANNEL_ID, 5)
+        vqr.return_value.advance_queue.assert_called_once_with(
+            CHANNEL_ID, 5, end_reason="provider_error"
+        )
+
+    def test_rejects_unknown_end_reason(self):
+        r = _make_public_client(_twitch_api_found()).post(
+            "/api/video-queue/public/testuser/advance",
+            json={"done_id": 5, "reason": "made-up"},
+            headers=OVERLAY_HEADERS,
+        )
+        assert r.status_code == 422
 
     def test_advance_without_done_id_kickstarts(self):
         with (
@@ -216,26 +235,69 @@ class TestAdvanceQueue:
             vqr.return_value.kickstart_if_idle = AsyncMock()
             vqr.return_value.get_current = AsyncMock(return_value=None)
             vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
             sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
             r = _make_public_client(_twitch_api_found()).post(
-                "/api/video-queue/public/testuser/advance", json={}
+                "/api/video-queue/public/testuser/advance", json={}, headers=OVERLAY_HEADERS
             )
         assert r.status_code == 200
         vqr.return_value.kickstart_if_idle.assert_called_once_with(CHANNEL_ID)
 
     def test_channel_not_found_returns_404(self):
         r = _make_public_client(_twitch_api_not_found()).post(
-            "/api/video-queue/public/unknown/advance", json={}
+            "/api/video-queue/public/unknown/advance", json={}, headers=OVERLAY_HEADERS
         )
         assert r.status_code == 404
 
-    def test_exception_returns_500(self):
+    def test_missing_overlay_key_returns_404_without_mutating(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.kickstart_if_idle = AsyncMock(side_effect=RuntimeError)
             r = _make_public_client(_twitch_api_found()).post(
                 "/api/video-queue/public/testuser/advance", json={}
             )
+
+        assert r.status_code == 404
+        vqr.return_value.kickstart_if_idle.assert_not_called()
+
+    def test_wrong_overlay_key_returns_404_without_mutating(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=False)
+            r = _make_public_client(_twitch_api_found()).post(
+                "/api/video-queue/public/testuser/advance", json={}, headers=OVERLAY_HEADERS
+            )
+
+        assert r.status_code == 404
+        vqr.return_value.kickstart_if_idle.assert_not_called()
+
+    def test_exception_returns_500(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
+            vqr.return_value.kickstart_if_idle = AsyncMock(side_effect=RuntimeError)
+            r = _make_public_client(_twitch_api_found()).post(
+                "/api/video-queue/public/testuser/advance", json={}, headers=OVERLAY_HEADERS
+            )
         assert r.status_code == 500
+
+
+class TestAuthenticatedAdvanceQueue:
+    def test_dashboard_can_kickstart_without_public_capability(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.kickstart_if_idle = AsyncMock()
+            vqr.return_value.get_current = AsyncMock(return_value=None)
+            vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+            r = _make_auth_client().post("/api/video-queue/advance", json={})
+
+        assert r.status_code == 200
+        vqr.return_value.kickstart_if_idle.assert_awaited_once_with(CHANNEL_ID)
 
 
 # ── PATCH /api/video-queue/public/{username}/entries/{entry_id}/metadata ──────
@@ -243,18 +305,34 @@ class TestAdvanceQueue:
 
 class TestUpdateEntryMetadata:
     def test_success_returns_204(self):
-        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
             vqr.return_value.update_duration = AsyncMock()
             r = _make_public_client(_twitch_api_found()).patch(
                 "/api/video-queue/public/testuser/entries/1/metadata",
                 json={"duration_seconds": 120},
+                headers=OVERLAY_HEADERS,
             )
         assert r.status_code == 204
+
+    def test_missing_overlay_key_returns_404_without_mutating(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            r = _make_public_client(_twitch_api_found()).patch(
+                "/api/video-queue/public/testuser/entries/1/metadata",
+                json={"duration_seconds": 120},
+            )
+
+        assert r.status_code == 404
+        vqr.return_value.update_duration.assert_not_called()
 
     def test_channel_not_found_returns_404(self):
         r = _make_public_client(_twitch_api_not_found()).patch(
             "/api/video-queue/public/unknown/entries/1/metadata",
             json={"duration_seconds": 120},
+            headers=OVERLAY_HEADERS,
         )
         assert r.status_code == 404
 
@@ -262,17 +340,70 @@ class TestUpdateEntryMetadata:
         r = _make_public_client(_twitch_api_found()).patch(
             "/api/video-queue/public/testuser/entries/1/metadata",
             json={"duration_seconds": 0},
+            headers=OVERLAY_HEADERS,
         )
         assert r.status_code == 422
 
     def test_exception_returns_500(self):
-        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
             vqr.return_value.update_duration = AsyncMock(side_effect=RuntimeError)
             r = _make_public_client(_twitch_api_found()).patch(
                 "/api/video-queue/public/testuser/entries/1/metadata",
                 json={"duration_seconds": 120},
+                headers=OVERLAY_HEADERS,
             )
         assert r.status_code == 500
+
+
+# ── POST /api/video-queue/public/{username}/entries/{id}/playback-started ────
+
+
+class TestPlaybackStarted:
+    _URL = "/api/video-queue/public/testuser/entries/7/playback-started"
+
+    def test_records_confirmed_start_with_overlay_capability(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
+            vqr.return_value.mark_playback_started = AsyncMock(return_value=True)
+            r = _make_public_client(_twitch_api_found()).post(
+                self._URL, json={"signal": "confirmed"}, headers=OVERLAY_HEADERS
+            )
+
+        assert r.status_code == 204
+        vqr.return_value.mark_playback_started.assert_awaited_once_with(7, CHANNEL_ID, "confirmed")
+
+    def test_accepts_best_effort_iframe_signal(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
+            vqr.return_value.mark_playback_started = AsyncMock(return_value=True)
+            r = _make_public_client(_twitch_api_found()).post(
+                self._URL, json={"signal": "best_effort"}, headers=OVERLAY_HEADERS
+            )
+        assert r.status_code == 204
+
+    def test_missing_capability_is_generic_404(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            r = _make_public_client(_twitch_api_found()).post(
+                self._URL, json={"signal": "confirmed"}
+            )
+        assert r.status_code == 404
+        vqr.return_value.mark_playback_started.assert_not_called()
+
+    def test_rejects_unknown_signal(self):
+        r = _make_public_client(_twitch_api_found()).post(
+            self._URL, json={"signal": "guessed"}, headers=OVERLAY_HEADERS
+        )
+        assert r.status_code == 422
 
 
 # ── GET /api/video-queue/public/{username}/entries/{id}/clip-source ───────────
@@ -448,6 +579,10 @@ class TestGetVideoQueueSettings:
         assert data["enabled"] is True
         assert data["max_queue_size"] == 10
         assert data["channel_id"] == CHANNEL_ID
+        assert data["overlay_key"] == OVERLAY_KEY
+        assert data["volume_percent"] == 100
+        assert r.headers["cache-control"] == "private, no-store"
+        assert r.headers["referrer-policy"] == "no-referrer"
 
     def test_exception_returns_500(self):
         with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
@@ -503,11 +638,45 @@ class TestUpdateVideoQueueSettings:
         )
         assert r.status_code == 422
 
+    def test_updates_overlay_volume(self):
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.update_settings = AsyncMock(
+                return_value=_make_settings(volume_percent=35)
+            )
+            r = _make_auth_client().put("/api/video-queue/settings", json={"volume_percent": 35})
+
+        assert r.status_code == 200
+        assert r.json()["volume_percent"] == 35
+        assert sr.return_value.update_settings.await_args.kwargs["volume_percent"] == 35
+
+    def test_volume_above_max_returns_422(self):
+        r = _make_auth_client().put("/api/video-queue/settings", json={"volume_percent": 101})
+        assert r.status_code == 422
+
     def test_exception_returns_500(self):
         with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
             sr.return_value.update_settings = AsyncMock(side_effect=RuntimeError)
             r = _make_auth_client().put("/api/video-queue/settings", json={"enabled": True})
         assert r.status_code == 500
+
+
+class TestRotateVideoQueueOverlayKey:
+    def test_rotates_key_and_protects_response(self):
+        rotated = "22222222-2222-4222-8222-222222222222"
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.rotate_overlay_key = AsyncMock(
+                return_value=_make_settings(overlay_key=rotated)
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/settings/rotate-key",
+                headers={"X-Niibot-Action": "video-queue"},
+            )
+
+        assert r.status_code == 200
+        assert r.json()["overlay_key"] == rotated
+        assert r.headers["cache-control"] == "private, no-store"
+        assert r.headers["referrer-policy"] == "no-referrer"
+        sr.return_value.rotate_overlay_key.assert_awaited_once_with(CHANNEL_ID)
 
 
 # ── GET /api/video-queue/state ───────────────────────────────────────────────
@@ -562,12 +731,13 @@ class TestGetHistory:
     def test_returns_entries_and_no_cursor_when_page_not_full(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
             vqr.return_value.get_history = AsyncMock(
-                return_value=[_history_entry(id=2, status="skipped")]
+                return_value=[_history_entry(id=2, status="skipped", start_seconds=90)]
             )
             r = _make_auth_client().get("/api/video-queue/history?limit=50")
         assert r.status_code == 200
         body = r.json()
         assert body["entries"][0]["status"] == "skipped"
+        assert body["entries"][0]["start_seconds"] == 90
         assert body["next_cursor"] is None
 
     def test_full_page_yields_cursor_from_last_ended_at(self):
@@ -594,11 +764,82 @@ class TestGetHistory:
 # ── /api/video-queue/blocklist ──────────────────────────────────────────────
 
 
+def _ranking_entry(**kw) -> MagicMock:
+    entry = MagicMock()
+    entry.rank = kw.get("rank", 1)
+    entry.video_type = kw.get("video_type", "youtube")
+    entry.video_id = kw.get("video_id", "vid123")
+    entry.start_seconds = kw.get("start_seconds", 0)
+    entry.title = kw.get("title", "Popular video")
+    entry.thumbnail_url = kw.get("thumbnail_url", "https://i.ytimg.com/vi/vid123/hqdefault.jpg")
+    entry.creator_id = kw.get("creator_id", "creator-1")
+    entry.creator_name = kw.get("creator_name", "Creator")
+    entry.play_count = kw.get("play_count", 12)
+    entry.channel_count = kw.get("channel_count", 4)
+    entry.last_played_at = kw.get("last_played_at", datetime(2026, 1, 1, tzinfo=UTC))
+    entry.active_status = kw.get("active_status", None)
+    entry.blocked_kind = kw.get("blocked_kind", None)
+    return entry
+
+
+class TestRankingsEndpoint:
+    def test_returns_anonymous_global_aggregates(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_rankings = AsyncMock(return_value=[_ranking_entry()])
+            r = _make_auth_client().get(
+                "/api/video-queue/rankings?scope=global&days=7&video_type=youtube"
+            )
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body[0]["rank"] == 1
+        assert body[0]["play_count"] == 12
+        assert body[0]["channel_count"] == 4
+        assert "channel_ids" not in body[0]
+        assert "requested_by" not in body[0]
+        vqr.return_value.get_rankings.assert_awaited_once_with(
+            CHANNEL_ID,
+            scope="global",
+            days=7,
+            video_type="youtube",
+            limit=50,
+        )
+
+    @pytest.mark.parametrize(
+        "query",
+        [
+            "scope=public&days=7",
+            "scope=channel&days=14",
+            "scope=channel&days=7&video_type=vimeo",
+            "scope=channel&days=7&limit=101",
+        ],
+    )
+    def test_validates_closed_filters(self, query: str):
+        r = _make_auth_client().get(f"/api/video-queue/rankings?{query}")
+        assert r.status_code == 422
+
+    def test_requires_authentication(self):
+        r = _make_public_client(_twitch_api_found()).get(
+            "/api/video-queue/rankings?scope=global&days=7"
+        )
+        assert r.status_code in {401, 403}
+
+    def test_response_is_private(self):
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.get_rankings = AsyncMock(return_value=[])
+            r = _make_auth_client().get("/api/video-queue/rankings?scope=channel&days=30")
+        assert r.headers["cache-control"] == "private, no-store"
+
+
+# ── /api/video-queue/blocklist ──────────────────────────────────────────────
+
+
 def _blocklist_entry(**kw) -> VideoQueueBlocklistEntry:
     return VideoQueueBlocklistEntry(
         id=kw.get("id", 1),
         channel_id=CHANNEL_ID,
         kind=kw.get("kind", "video"),
+        video_type=kw.get("video_type"),
         value=kw.get("value", "vid123"),
         label=kw.get("label", "A video"),
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
@@ -616,6 +857,7 @@ class TestBlocklistEndpoints:
         assert r.json()[0] == {
             "id": 1,
             "kind": "keyword",
+            "video_type": None,
             "value": "lofi",
             "label": "A video",
             "created_at": "2026-01-01T00:00:00Z",
@@ -636,6 +878,12 @@ class TestBlocklistEndpoints:
         )
         assert r.status_code == 422
 
+    def test_add_rejects_blank_value(self):
+        r = _make_auth_client().post(
+            "/api/video-queue/blocklist", json={"kind": "video", "value": "   "}
+        )
+        assert r.status_code == 422
+
     def test_add_creates_creator_entry(self):
         with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
             bl.return_value.add = AsyncMock(
@@ -646,6 +894,26 @@ class TestBlocklistEndpoints:
             )
         assert r.status_code == 201
         assert bl.return_value.add.await_args.args == (CHANNEL_ID, "creator", "UC123")
+
+    def test_add_provider_scoped_video_block(self):
+        with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
+            bl.return_value.add = AsyncMock(
+                return_value=_blocklist_entry(kind="video", value="same-id", video_type="youtube")
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist",
+                json={"kind": "video", "value": "same-id", "video_type": "youtube"},
+            )
+
+        assert r.status_code == 201
+        assert bl.return_value.add.await_args.kwargs["video_type"] == "youtube"
+
+    def test_rejects_provider_on_keyword_block(self):
+        r = _make_auth_client().post(
+            "/api/video-queue/blocklist",
+            json={"kind": "keyword", "value": "lofi", "video_type": "youtube"},
+        )
+        assert r.status_code == 422
 
     def test_delete_missing_returns_404(self):
         with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:

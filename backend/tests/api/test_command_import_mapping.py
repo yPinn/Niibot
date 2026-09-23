@@ -138,17 +138,24 @@ class TestStreamElementsVariables:
     @pytest.mark.parametrize(
         "source,expected",
         [
-            ("${user} 你好", "$(user) 你好"),
-            ("$(user) 你好", "$(user) 你好"),
+            ("${user} 你好", "$(touser) 你好"),
+            ("$(user) 你好", "$(touser) 你好"),
             ("${sender} hi", "$(user) hi"),
             ("${sender.name} hi", "$(user) hi"),
-            ("${user.name} hi", "$(user) hi"),
+            ("${user.name} hi", "$(touser) hi"),
             ("${touser} hi", "$(touser) hi"),
             ("$(touser ) hi", "$(touser) hi"),
             ("${channel} 開台了", "$(channel) 開台了"),
             ("${count}", "$(count)"),
             ("${1} vs ${2}", "$(1) vs $(2)"),
-            ("$(1:)", "$(1)"),
+            ("$(1:)", "$(1:)"),
+            ("${2:4}", "$(2:4)"),
+            ("$(2|nobody)", "$(2|nobody)"),
+            ("${2|nobody}", "$(2|nobody)"),
+            ("$(queryescape $(1:))", "$(queryescape)"),
+            ("${queryencode ${1:}}", "$(queryescape)"),
+            ("$(pathescape $(1:))", "$(pathescape)"),
+            ("${pathencode $(1:)}", "$(pathescape)"),
             ("${random.pick a,b,c}", "$(pick a,b,c)"),
             ("${random.1-100}", "$(random 1,100)"),
         ],
@@ -158,22 +165,28 @@ class TestStreamElementsVariables:
         assert translated == expected
         assert blockers == []
 
-    def test_first_argument_with_sender_fallback_is_exactly_touser(self):
+    @pytest.mark.parametrize("source", ["$(1|$(sender))", "${1|${sender}}"])
+    def test_first_argument_with_sender_fallback_is_exactly_touser(self, source: str):
         # "$(1|$(sender))" is the single most common StreamElements idiom and
         # means precisely what our $(touser) means.
-        translated, _, blockers = translate_variables("@$(1|$(sender)) ->", SE)
+        translated, _, blockers = translate_variables(f"@{source} ->", SE)
         assert translated == "@$(touser) ->"
         assert blockers == []
 
-    def test_dropped_default_is_reported(self):
+    def test_argument_default_is_preserved_without_approximation_note(self):
         translated, notes, blockers = translate_variables("$(2|nobody)", SE)
-        assert translated == "$(2)"
+        assert translated == "$(2|nobody)"
         assert blockers == []
-        assert any("預設值" in n for n in notes)
+        assert not any("預設值" in n for n in notes)
 
     def test_empty_default_is_not_reported(self):
         _, notes, _ = translate_variables("$(1:)", SE)
         assert not any("預設值" in n for n in notes)
+
+    @pytest.mark.parametrize("source", ["$(1 username)", "$(:3)"])
+    def test_argument_forms_without_a_runtime_equivalent_are_blocked(self, source: str):
+        _, _, blockers = translate_variables(source, SE)
+        assert blockers
 
     @pytest.mark.parametrize(
         "source",
@@ -214,10 +227,13 @@ class TestNightbotVariables:
         assert translated == text
         assert blockers == []
 
-    @pytest.mark.parametrize("source", ["$(querystring)", "$(arguments)"])
-    def test_query_spellings_normalise(self, source: str):
+    @pytest.mark.parametrize(
+        "source,expected",
+        [("$(querystring)", "$(queryescape)"), ("$(arguments)", "$(query)")],
+    )
+    def test_query_spellings_normalise(self, source: str, expected: str):
         translated, _, blockers = translate_variables(source, NB)
-        assert translated == "$(query)"
+        assert translated == expected
         assert blockers == []
 
     @pytest.mark.parametrize(
@@ -306,11 +322,11 @@ class TestStreamElementsMapping:
         (item,) = StreamElementsSource._map_custom(se_command(type="mention", reply="歡迎"), set())
         assert item.response == "$(user) 歡迎"
 
-    def test_mention_type_does_not_double_prefix(self):
+    def test_mention_type_keeps_caller_and_target_distinct(self):
         (item,) = StreamElementsSource._map_custom(
             se_command(type="mention", reply="${user} 歡迎"), set()
         )
-        assert item.response == "$(user) 歡迎"
+        assert item.response == "$(user) $(touser) 歡迎"
 
     def test_whisper_type_is_unsupported(self):
         (item,) = StreamElementsSource._map_custom(se_command(type="whisper"), set())

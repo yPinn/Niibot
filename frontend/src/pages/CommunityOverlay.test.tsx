@@ -177,7 +177,7 @@ describe('CommunityOverlay stream renderer', () => {
   it('plays the development check-in sample through the binder without opening a stream', () => {
     renderOverlay(`#key=${KEY}&preview=1&block=checkin&sample=checkin`)
 
-    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).toBeInTheDocument()
+    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
     expect(screen.getByTestId('collection-binder')).toHaveAttribute(
       'data-animation-sequence',
       'closed open card insert close'

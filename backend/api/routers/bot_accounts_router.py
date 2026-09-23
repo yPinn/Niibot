@@ -9,7 +9,7 @@ from typing import Literal
 from urllib.parse import quote, urlencode
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -18,6 +18,7 @@ from core.dependencies import (
     get_bot_account_service,
     get_current_user_id,
     get_twitch_api,
+    get_twitch_authorization_service,
     require_owner,
     require_tenant_access,
     require_tenant_owner,
@@ -31,8 +32,14 @@ from services.bot_account_service import (
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from services.tenant_service import TenantContext
 from services.twitch_api import TwitchAPIClient
+from services.twitch_authorization_service import (
+    AuthorizationRemovalResult,
+    AuthorizationStatus,
+    CredentialHealth,
+    TwitchAuthorizationService,
+)
 from shared.errors import AppError, NotFoundError
-from shared.twitch_scopes import BOT_SCOPES
+from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
 
 LOGGER = logging.getLogger(__name__)
 
@@ -40,6 +47,8 @@ router = APIRouter(tags=["bot accounts"])
 _invite_create_limiter = RateLimiter(max_calls=10, period=60.0)
 _public_invite_limiter = RateLimiter(max_calls=60, period=60.0)
 _callback_limiter = RateLimiter(max_calls=30, period=60.0)
+_authorization_check_limiter = RateLimiter(max_calls=10, period=60.0)
+_authorization_remove_limiter = RateLimiter(max_calls=5, period=60.0)
 _BOT_CALLBACK_PATH = "/api/auth/twitch/bot/callback"
 
 
@@ -77,6 +86,11 @@ class BotAccountResponse(BaseModel):
     requires_reauth: bool
     last_validated_at: datetime | None
     revoked_at: datetime | None
+    authorization_status: str
+    last_checked_at: datetime | None
+    linked_at: datetime | None
+    is_active: bool
+    is_desired: bool
 
 
 class BotAccountListResponse(BaseModel):
@@ -89,6 +103,25 @@ class BotInviteStatusResponse(BaseModel):
     expires_at: datetime
     consumed_at: datetime | None
     account: BotAccountResponse | None
+
+
+class AuthorizationHealthResponse(BaseModel):
+    status: AuthorizationStatus
+    last_checked_at: datetime | None
+    last_validated_at: datetime | None
+    error_code: str | None
+
+
+class AuthorizationRemovalResponse(BaseModel):
+    credential_retained: bool
+    upstream_revoke_confirmed: bool
+
+
+class BroadcasterAuthorizationResponse(AuthorizationHealthResponse):
+    channel_id: str
+    channel_name: str
+    display_name: str | None
+    enabled: bool
 
 
 def _request_ip(request: Request) -> str:
@@ -106,7 +139,21 @@ def _result_redirect(settings: Settings, *, status_value: str, reason: str | Non
     return f"{settings.frontend_url}/bot-auth/result?{urlencode(query)}"
 
 
-def _account_response(account: BotAccountSummary, *, is_system_default: bool) -> BotAccountResponse:
+def _account_response(
+    account: BotAccountSummary,
+    *,
+    is_system_default: bool,
+    system_is_active: bool = False,
+    system_is_desired: bool = False,
+) -> BotAccountResponse:
+    if account.requires_reauth or account.revoked_at is not None:
+        authorization_status = "requires_reauthorization"
+    elif account.validation_error_code == "provider_unavailable":
+        authorization_status = "temporarily_unavailable"
+    elif account.last_validated_at is not None:
+        authorization_status = "valid"
+    else:
+        authorization_status = "not_checked"
     return BotAccountResponse(
         platform_user_id=account.platform_user_id,
         login=account.login,
@@ -116,6 +163,11 @@ def _account_response(account: BotAccountSummary, *, is_system_default: bool) ->
         requires_reauth=account.requires_reauth,
         last_validated_at=account.last_validated_at,
         revoked_at=account.revoked_at,
+        authorization_status=authorization_status,
+        last_checked_at=account.last_checked_at,
+        linked_at=account.linked_at,
+        is_active=system_is_active if is_system_default else account.is_active,
+        is_desired=system_is_desired if is_system_default else account.is_desired,
     )
 
 
@@ -145,11 +197,147 @@ async def list_tenant_bot_accounts(
     custom_accounts = await service.list_for_tenant(channel_id)
     accounts = []
     if system_default is not None:
-        accounts.append(_account_response(system_default, is_system_default=True))
+        accounts.append(
+            _account_response(
+                system_default,
+                is_system_default=True,
+                system_is_active=not any(account.is_active for account in custom_accounts),
+                system_is_desired=not any(account.is_desired for account in custom_accounts),
+            )
+        )
     accounts.extend(
         _account_response(account, is_system_default=False) for account in custom_accounts
     )
     return BotAccountListResponse(accounts=accounts)
+
+
+def _health_response(health: CredentialHealth) -> AuthorizationHealthResponse:
+    return AuthorizationHealthResponse(
+        status=health.status,
+        last_checked_at=health.last_checked_at,
+        last_validated_at=health.last_validated_at,
+        error_code=health.error_code,
+    )
+
+
+def _removal_response(result: AuthorizationRemovalResult) -> AuthorizationRemovalResponse:
+    return AuthorizationRemovalResponse(
+        credential_retained=result.credential_retained,
+        upstream_revoke_confirmed=result.upstream_revoke_confirmed,
+    )
+
+
+@router.post(
+    "/api/tenants/{channel_id}/bot-accounts/{bot_user_id}/authorization-check",
+    response_model=AuthorizationHealthResponse,
+)
+async def check_bot_authorization(
+    channel_id: str,
+    bot_user_id: str,
+    request: Request,
+    _action: Literal["twitch-authorization-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_owner),
+    bot_accounts: BotAccountService = Depends(get_bot_account_service),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> AuthorizationHealthResponse:
+    """Manually recheck a bot credential visible to this tenant."""
+    _authorization_check_limiter.require(
+        f"bot-check:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+    )
+    await bot_accounts.assert_available_to_tenant(channel_id=channel_id, bot_user_id=bot_user_id)
+    health = await authorization.check_credential(
+        user_id=bot_user_id,
+        token_type="bot",
+        required_scopes=set(BOT_SCOPES),
+    )
+    return _health_response(health)
+
+
+@router.delete(
+    "/api/tenants/{channel_id}/bot-accounts/{bot_user_id}",
+    response_model=AuthorizationRemovalResponse,
+)
+async def unlink_bot_account(
+    channel_id: str,
+    bot_user_id: str,
+    request: Request,
+    _action: Literal["twitch-authorization-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_owner),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> AuthorizationRemovalResponse:
+    """Remove only this tenant mapping; revoke the token only after its last mapping."""
+    _authorization_remove_limiter.require(
+        f"bot-unlink:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+    )
+    result = await authorization.unlink_bot_from_tenant(
+        channel_id=channel_id,
+        bot_user_id=bot_user_id,
+        actor_user_id=tenant.user_id,
+    )
+    return _removal_response(result)
+
+
+@router.get(
+    "/api/tenants/{channel_id}/broadcaster-authorization",
+    response_model=BroadcasterAuthorizationResponse,
+)
+async def get_broadcaster_authorization(
+    channel_id: str,
+    _tenant: TenantContext = Depends(require_tenant_access),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> BroadcasterAuthorizationResponse:
+    summary = await authorization.get_broadcaster_summary(channel_id=channel_id)
+    return BroadcasterAuthorizationResponse(**summary.__dict__)
+
+
+@router.post(
+    "/api/tenants/{channel_id}/broadcaster-authorization/check",
+    response_model=AuthorizationHealthResponse,
+)
+async def check_broadcaster_authorization(
+    channel_id: str,
+    request: Request,
+    _action: Literal["twitch-authorization-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_owner),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> AuthorizationHealthResponse:
+    _authorization_check_limiter.require(
+        f"broadcaster-check:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+    )
+    health = await authorization.check_credential(
+        user_id=channel_id,
+        token_type="broadcaster",
+        required_scopes=set(BROADCASTER_SCOPES),
+    )
+    return _health_response(health)
+
+
+@router.delete(
+    "/api/tenants/{channel_id}/broadcaster-authorization",
+    response_model=AuthorizationRemovalResponse,
+)
+async def disconnect_broadcaster_authorization(
+    channel_id: str,
+    request: Request,
+    response: Response,
+    _action: Literal["twitch-authorization-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_owner),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> AuthorizationRemovalResponse:
+    _authorization_remove_limiter.require(
+        f"broadcaster-disconnect:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+    )
+    result = await authorization.disconnect_broadcaster(
+        channel_id=channel_id, owner_user_id=tenant.user_id
+    )
+    response.delete_cookie(
+        key="auth_token",
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return _removal_response(result)
 
 
 @router.post(

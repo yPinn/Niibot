@@ -6,19 +6,19 @@ from typing import Literal
 from urllib.parse import quote as _url_quote
 
 from asyncpg import Pool
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.database import get_database_manager
 from core.dependencies import (
+    get_active_session_payload,
     get_admission_service,
     get_auth_service,
     get_channel_service,
     get_current_user_id,
     get_db_pool,
-    get_token_payload,
     get_twitch_api,
 )
 from core.rate_limit import RateLimiter
@@ -191,6 +191,9 @@ async def twitch_collaborator_oauth_callback(
         tenants = await TenantService(pool).list_user_tenants(user_id)
         if not tenants:
             return RedirectResponse(url=f"{error_redirect}?error=no_tenant_access")
+        session_version = await pool.fetchval(
+            "SELECT session_version FROM users WHERE id = $1::uuid", user_id
+        )
     except Exception as exc:
         LOGGER.error(
             "DB error during collaborator OAuth for %s: %s",
@@ -203,6 +206,7 @@ async def twitch_collaborator_oauth_callback(
         user_id=user_id,
         platform="twitch",
         platform_user_id=platform_user_id,
+        session_version=int(session_version or 1),
     )
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard/{tenants[0].channel_id}")
     response.set_cookie(
@@ -325,6 +329,9 @@ async def twitch_oauth_callback(
             channel_name=username,
             display_name=user_info.get("display_name"),
         )
+        session_version = await pool.fetchval(
+            "SELECT session_version FROM users WHERE id = $1::uuid", user_id
+        )
     except Exception as e:
         LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")
@@ -333,6 +340,7 @@ async def twitch_oauth_callback(
         user_id=user_id,
         platform="twitch",
         platform_user_id=platform_user_id,
+        session_version=int(session_version or 1),
     )
 
     response = RedirectResponse(url=f"{settings.frontend_url}/dashboard")
@@ -351,13 +359,12 @@ async def twitch_oauth_callback(
 
 @router.get("/auth/user", response_model=UserInfoResponse)
 async def get_current_user(
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_active_session_payload),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     pool: Pool = Depends(get_db_pool),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> UserInfoResponse:
     """Get current authenticated user information."""
-    payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform_user_id = str(payload["platform_user_id"])
 
@@ -395,11 +402,10 @@ async def get_current_user(
 @router.post("/auth/logout", response_model=LogoutResponse)
 async def logout(
     response: Response,
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_active_session_payload),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> LogoutResponse:
     """Logout current user by clearing auth cookie"""
-    payload = get_token_payload(auth_token)
     platform_user_id = str(payload["platform_user_id"])
 
     user_info = await twitch_api.get_user_info(platform_user_id)
@@ -418,11 +424,10 @@ async def logout(
 
 @router.get("/auth/pending-code")
 async def get_pending_code(
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_active_session_payload),
     pool: Pool = Depends(get_db_pool),
 ) -> dict:
     """Return the pending activation code for the current user, if one exists."""
-    payload = get_token_payload(auth_token)
     platform = str(payload["platform"])
     platform_user_id = str(payload["platform_user_id"])
 
@@ -434,7 +439,7 @@ async def get_pending_code(
 @router.post("/auth/activate")
 async def activate_account(
     body: ActivateRequest,
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_active_session_payload),
     pool: Pool = Depends(get_db_pool),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
@@ -445,7 +450,6 @@ async def activate_account(
     Code consumption and the membership transition run in one transaction,
     so a failure at either step leaves the code unused.
     """
-    payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
     platform = str(payload["platform"])
     platform_user_id = str(payload["platform_user_id"])
@@ -487,11 +491,10 @@ async def activate_account(
 
 @router.get("/auth/activation-request")
 async def get_activation_request_status(
-    auth_token: str | None = Cookie(None),
+    payload: dict = Depends(get_active_session_payload),
     admission: AdmissionService = Depends(get_admission_service),
 ) -> dict:
     """Return the most recent membership status + last decision timestamp."""
-    payload = get_token_payload(auth_token)
     user_id = str(payload["sub"])
 
     membership = await admission.get(user_id)

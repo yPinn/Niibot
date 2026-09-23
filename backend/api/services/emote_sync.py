@@ -53,10 +53,20 @@ class OtherChannelEmotes(BaseModel):
 
 
 async def notify_config_change(
-    pool: asyncpg.Pool, channel_id: str, table: str = "ai_settings"
+    pool: asyncpg.Pool,
+    channel_id: str,
+    table: str = "ai_settings",
+    *,
+    clear_assistant_memory: bool = False,
 ) -> None:
     """Emit a pg_notify so the bot process invalidates its cached config."""
-    payload = json.dumps({"channel_id": channel_id, "table": table})
+    payload = json.dumps(
+        {
+            "channel_id": channel_id,
+            "table": table,
+            "clear_assistant_memory": clear_assistant_memory,
+        }
+    )
     async with pool.acquire() as conn:
         await conn.execute("SELECT pg_notify('config_change', $1)", payload)
 

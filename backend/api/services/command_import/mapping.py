@@ -205,31 +205,61 @@ def find_conflict(name: str, existing: set[str]) -> str | None:
 
 # StreamElements writes both ${foo} and $(foo); the rules below accept either.
 _SE_RULES: list[tuple[re.Pattern[str], str]] = [
+    # Collapse whole-query URL wrappers onto Niibot's canonical variables.
+    # These must run before argument ranges are normalised.
+    (
+        re.compile(
+            r"\$[({]\s*(?:queryescape|queryencode)\s+"
+            r"\$[({]\s*1\s*:\s*[)}]\s*[)}]"
+        ),
+        "$(queryescape)",
+    ),
+    (
+        re.compile(
+            r"\$[({]\s*(?:pathescape|pathencode)\s+"
+            r"\$[({]\s*1\s*:\s*[)}]\s*[)}]"
+        ),
+        "$(pathescape)",
+    ),
+    # First argument with caller fallback is exactly Niibot's $(touser).
+    (
+        re.compile(
+            r"\$[({]\s*1\s*\|\s*"
+            r"\$[({]\s*(?:user|sender|source)(?:\.name)?\s*[)}]\s*[)}]"
+        ),
+        "$(touser)",
+    ),
     # ${random.pick a,b,c} → $(pick a,b,c)
     (re.compile(r"\$[({]\s*random\.pick\s+([^)}]+)[)}]"), r"$(pick \1)"),
     # ${random.1-100} → $(random 1,100)
     (re.compile(r"\$[({]\s*random\.(\d+)-(\d+)\s*[)}]"), r"$(random \1,\2)"),
-    # ${user}, ${sender}, ${user.name}, ${sender.name} → $(user)
-    (re.compile(r"\$[({]\s*(?:user|sender)(?:\.name)?\s*[)}]"), "$(user)"),
+    # StreamElements' sender/source is always the caller. Its bare user defaults
+    # to the first argument, which is closest to Niibot's $(touser).
+    (re.compile(r"\$[({]\s*user(?:\.name)?\s*[)}]"), "$(touser)"),
+    # Run caller aliases after user so the canonical $(user) output is not
+    # interpreted again as a StreamElements user token.
+    (re.compile(r"\$[({]\s*(?:sender|source)(?:\.name)?\s*[)}]"), "$(user)"),
     (re.compile(r"\$[({]\s*touser\s*[)}]"), "$(touser)"),
     (re.compile(r"\$[({]\s*channel\s*[)}]"), "$(channel)"),
     (re.compile(r"\$[({]\s*count\s*[)}]"), "$(count)"),
-    # $(1|$(user)) is exactly our $(touser) — first argument, else the caller.
-    # Runs after the user rule above so $(1|$(sender)) is already normalised.
-    (re.compile(r"\$\(\s*1\s*\|\s*\$\(user\)\s*\)"), "$(touser)"),
-    # $(2|fallback) and ${2:fallback} → $(2); the fallback has nowhere to go.
-    (re.compile(r"\$[({]\s*([1-9])\s*[|:][^(){}]*[)}]"), r"$(\1)"),
-    (re.compile(r"\$[({]\s*([1-9])\s*[)}]"), r"$(\1)"),
+    # Preserve argument ranges and defaults in the canonical spelling.
+    (
+        re.compile(r"\$[({]\s*([1-9]\d*)\s*:\s*([1-9]\d*)\s*[)}]"),
+        r"$(\1:\2)",
+    ),
+    (re.compile(r"\$[({]\s*([1-9]\d*)\s*:\s*[)}]"), r"$(\1:)"),
+    (
+        re.compile(r"\$[({]\s*([1-9]\d*)\s*\|\s*([^(){}]*)[)}]"),
+        r"$(\1|\2)",
+    ),
+    (re.compile(r"\$[({]\s*([1-9]\d*)\s*[)}]"), r"$(\1)"),
 ]
 
 # Nightbot's syntax is already $(...), so only the outliers need rewriting.
 _NIGHTBOT_RULES: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\$\(\s*querystring\s*\)"), "$(query)"),
+    (re.compile(r"\$\(\s*querystring\s*\)"), "$(queryescape)"),
     (re.compile(r"\$\(\s*arguments\s*\)"), "$(query)"),
 ]
-
-# Only a *non-empty* default is worth warning about; "$(1:)" just spells "$(1)".
-_DROPPED_DEFAULT = re.compile(r"\$[({]\s*[1-9]\s*[|:]\s*[^\s(){}][^(){}]*[)}]")
 
 # Explanations for the variables users hit most often, so the preview says why
 # rather than just refusing.
@@ -260,6 +290,10 @@ _UNSUPPORTED_REASONS: dict[str, str] = {
 
 
 def _explain(head: str) -> str:
+    if head == ":":
+        return "用到包含指令名稱的參數範圍 $(:N)，Niibot 的參數只從使用者輸入開始"
+    if head.isdigit():
+        return "用到 Niibot 不支援的參數條件或格式"
     if head in _UNSUPPORTED_REASONS:
         return _UNSUPPORTED_REASONS[head]
     root = head.split(".", 1)[0]
@@ -281,8 +315,6 @@ def translate_variables(text: str, source: str) -> tuple[str, list[str], list[st
         translated = pattern.sub(replacement, translated)
 
     notes: list[str] = []
-    if _DROPPED_DEFAULT.search(text or ""):
-        notes.append("參數的預設值無法轉換，沒帶參數時會留空")
     if translated != (text or ""):
         notes.append("變數語法已改寫為 Niibot 格式")
 

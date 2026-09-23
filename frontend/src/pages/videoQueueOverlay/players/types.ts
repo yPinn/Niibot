@@ -9,7 +9,9 @@ export interface YTPlayer {
   getCurrentTime(): number
   getDuration(): number
   seekTo(seconds: number, allowSeekAhead?: boolean): void
-  setPlaybackQuality(quality: string): void
+  setVolume(volume: number): void
+  mute(): void
+  unMute(): void
 }
 
 export interface YTPlayerOptions {
@@ -20,16 +22,14 @@ export interface YTPlayerOptions {
     autoplay?: 0 | 1
     controls?: 0 | 1
     rel?: 0 | 1
-    modestbranding?: 0 | 1
     mute?: 0 | 1
     iv_load_policy?: 1 | 3
-    cc_load_policy?: 1 | 3
-    vq?: string
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void
     onStateChange?: (event: { target: YTPlayer; data: number }) => void
     onError?: (event: { target: YTPlayer }) => void
+    onAutoplayBlocked?: (event: { target: YTPlayer }) => void
   }
 }
 
@@ -48,6 +48,7 @@ export interface TwitchPlayerInstance {
   pause(): void
   seek(seconds: number): void
   setMuted(muted: boolean): void
+  setVolume(volume: number): void
   getCurrentTime(): number
   getDuration(): number
   getEnded(): boolean
@@ -73,6 +74,8 @@ interface TwitchPlayerCtor {
   PLAYING: string
   ENDED: string
   PAUSE: string
+  READY?: string
+  PLAYBACK_BLOCKED?: string
 }
 
 declare global {
@@ -88,13 +91,17 @@ export interface MountContext {
   /** Seconds already elapsed since started_at — nonzero for a late-joining overlay. */
   joinElapsed: number
   isPreview: boolean
+  /** Capability read from the URL fragment; absent URLs remain read-only. */
+  overlayKey: string | null
   /**
    * Start playback muted. Currently `= isPreview`: the OBS overlay plays with
    * sound (OBS mixer owns audio), the dashboard preview must not blast audio at
    * the streamer — and browsers block unmuted autoplay outside OBS anyway.
    */
   muted: boolean
-  /** Only used by the YouTube strategy, to report duration back when the API key is missing/quota-exhausted. */
+  /** Normalized output gain from settings, inclusive 0..100. */
+  volumePercent: number
+  /** Used by players to report missing duration metadata when a capability is available. */
   username: string | undefined
   containerRef: RefObject<HTMLDivElement | null>
   leftContainerRef: RefObject<HTMLDivElement | null>
@@ -104,9 +111,15 @@ export interface MountContext {
   rightPlayerRef: RefObject<YTPlayer | null>
   progressRef: RefObject<ReturnType<typeof setInterval> | null>
   clipTimerRef: RefObject<ReturnType<typeof setTimeout> | null>
+  playbackStartTimerRef: RefObject<ReturnType<typeof setTimeout> | null>
   currentIdRef: RefObject<number | null>
   setElapsed: (updater: number | ((prev: number) => number)) => void
-  handleVideoEnd: (doneId: number) => void
+  /** Clear the watchdog and report a qualified start. Iframe load is explicitly best-effort. */
+  notifyPlaybackStarted: (signal?: 'confirmed' | 'best_effort') => void
+  handleVideoEnd: (
+    doneId: number,
+    reason?: 'completed' | 'provider_error' | 'autoplay_blocked' | 'startup_timeout'
+  ) => void
 }
 
 /**

@@ -38,9 +38,64 @@ class CommunityOverlayBlockDefinition:
     build_preview_payload: Callable[[datetime], dict[str, object]]
 
 
+_CHECKIN_PREVIEW_CARDS = (
+    ("karina-01", "Karina", "/images/collections/aespa/karina-01-r1.webp"),
+    ("karina-02", "Karina", "/images/collections/aespa/karina-02-r1.webp"),
+    ("karina-03", "Karina", "/images/collections/aespa/karina-03-r1.webp"),
+    ("karina-04", "Karina", "/images/collections/aespa/karina-04-r1.webp"),
+    ("karina-05", "Karina", "/images/collections/aespa/karina-05-r1.webp"),
+    ("winter-01", "Winter", "/images/collections/aespa/winter-01-r1.webp"),
+    ("winter-02", "Winter", "/images/collections/aespa/winter-02-r1.webp"),
+    ("winter-03", "Winter", "/images/collections/aespa/winter-03-r1.webp"),
+    ("winter-04", "Winter", "/images/collections/aespa/winter-04-r1.webp"),
+)
+_CHECKIN_PREVIEW_RARITY = {
+    "key": "common",
+    "label": "普通",
+    "rank": 10,
+    "effect_intensity": 20,
+}
+
+
+def _build_checkin_preview_inventory(
+    *, total_days: int, copy_count: int, unique_cards: int
+) -> list[dict[str, object]]:
+    inventory: list[dict[str, object]] = []
+    distributed_copies = copy_count + max(0, unique_cards - 1)
+    final_card_extra_copies = max(0, total_days - distributed_copies)
+    for index, (key, name, portrait_url) in enumerate(
+        _CHECKIN_PREVIEW_CARDS[:unique_cards],
+        start=1,
+    ):
+        card_copy_count = copy_count if index == 1 else 1
+        if index == unique_cards:
+            card_copy_count += final_card_extra_copies
+        inventory.append(
+            {
+                "card": {
+                    "id": index,
+                    "revision_id": index,
+                    "key": key,
+                    "number": f"{index:03d}",
+                    "name": name,
+                    "artwork": {
+                        "portrait_url": portrait_url,
+                        "square_url": None,
+                        "backdrop_url": None,
+                    },
+                },
+                "rarity": dict(_CHECKIN_PREVIEW_RARITY),
+                "copy_count": card_copy_count,
+            }
+        )
+    return inventory
+
+
 def build_checkin_preview_payload(now: datetime, *, total_days: int = 8) -> dict[str, object]:
     """Build a synthetic binder event without touching the check-in/draw ledger."""
     copy_count = 1 if total_days == 1 else 2
+    total_cards = len(_CHECKIN_PREVIEW_CARDS)
+    unique_cards = min(total_days - copy_count + 1, total_cards)
     return {
         "total_days": total_days,
         "checkin_date": now.date().isoformat(),
@@ -52,29 +107,31 @@ def build_checkin_preview_payload(now: datetime, *, total_days: int = 8) -> dict
             "card": {
                 "id": 1,
                 "revision_id": 1,
-                "key": "astral-compass",
+                "key": "karina-01",
                 "number": "001",
-                "name": "星羅羅盤",
+                "name": "Karina",
                 "artwork": {
-                    "portrait_url": None,
+                    "portrait_url": "/images/collections/aespa/karina-01-r1.webp",
                     "square_url": None,
                     "backdrop_url": None,
                 },
             },
-            "set": {"id": 1, "key": "first-path", "name": "初途秘典"},
+            "set": {"id": 1, "key": "aespa", "name": "aespa"},
             "rarity": {
-                "key": "common",
-                "label": "普通",
-                "rank": 10,
-                "effect_intensity": 20,
+                **_CHECKIN_PREVIEW_RARITY,
             },
             "is_new": total_days == 1,
             "copy_count": copy_count,
             "progress": {
                 "owned_copies": total_days,
-                "unique_cards": min(total_days - copy_count + 1, 9),
-                "total_cards": 9,
+                "unique_cards": unique_cards,
+                "total_cards": total_cards,
             },
+            "owned_cards": _build_checkin_preview_inventory(
+                total_days=total_days,
+                copy_count=copy_count,
+                unique_cards=unique_cards,
+            ),
         },
     }
 

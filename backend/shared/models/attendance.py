@@ -21,7 +21,7 @@ class CheckinSettings:
     timezone: str
     success_template: str
     duplicate_template: str
-    reply_delay_seconds: int = 0
+    reply_delay_seconds: int = 5
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -53,9 +53,11 @@ class CheckinResult:
     display_name: str | None
     checkin_date: date
     total_days: int
-    checkin_id: int
+    checkin_id: int | None
     event_id: int | None
     occurred_at: datetime
+    current_streak: int = 1
+    today_order: int = 0
     collection: CollectionDraw | None = None
 
     @property

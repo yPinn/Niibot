@@ -26,6 +26,10 @@ def _settings(timezone: str = "Asia/Taipei") -> CheckinSettings:
     )
 
 
+def test_new_checkin_settings_default_reply_delay_is_five_seconds() -> None:
+    assert _settings().reply_delay_seconds == 5
+
+
 @pytest.mark.asyncio
 class TestAttendanceService:
     async def test_get_leaderboard_uses_requested_channel(self):
@@ -106,7 +110,7 @@ class TestAttendanceService:
             timezone="Asia/Tokyo",
             success_template="$(@user) 第 $(count) 天",
             duplicate_template="$(@user) 今天已簽到",
-            reply_delay_seconds=0,
+            reply_delay_seconds=5,
         )
 
     async def test_update_settings_updates_only_the_reply_delay(self):
@@ -288,6 +292,41 @@ class TestAttendanceService:
         )
 
         assert outcome.delay_seconds == 7
+
+    async def test_check_in_with_reply_renders_current_streak(self):
+        settings = CheckinSettings(
+            channel_id="ch1",
+            timezone="Asia/Taipei",
+            success_template="$(user) 今天第 $(today_order) 位，連續 $(streak) 天，累積 $(count) 天",
+            duplicate_template="already $(streak)",
+        )
+        result = CheckinResult(
+            status=CheckinStatus.RECORDED,
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 31),
+            total_days=16,
+            checkin_id=1,
+            event_id=2,
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+            current_streak=4,
+            today_order=7,
+        )
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=settings)
+        repo.record_checkin = AsyncMock(return_value=result)
+
+        outcome = await AttendanceService(repo).check_in_with_reply(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+
+        assert outcome.message == "Alice 今天第 7 位，連續 4 天，累積 16 天"
 
     async def test_duplicate_reply_is_immediate_even_when_channel_delay_is_configured(self):
         settings = CheckinSettings(

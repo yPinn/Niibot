@@ -299,39 +299,35 @@ async def test_pool_publish_and_member_insert_are_serialized(member_kind: str) -
     pool = await asyncpg.create_pool(_DATABASE_URL, min_size=2, max_size=2)
     conn1 = await pool.acquire()
     conn2 = await pool.acquire()
-    starter = await conn1.fetchrow(
+    catalog = await conn1.fetchrow(
         """
         SELECT
-            common_entry.card_revision_id AS common_revision_id,
-            rare_entry.card_revision_id AS rare_revision_id,
-            common_card.rarity_revision_id AS common_rarity_id,
-            rare_card.rarity_revision_id AS rare_rarity_id
-        FROM collection_system_settings AS settings
-        JOIN draw_pool_entries AS common_entry
-          ON common_entry.pool_revision_id = settings.fallback_pool_revision_id
-        JOIN collection_card_revisions AS common_revision
-          ON common_revision.id = common_entry.card_revision_id
-        JOIN collection_cards AS common_card
-          ON common_card.id = common_revision.card_id
-        JOIN rarity_definition_revisions AS common_rarity
-          ON common_rarity.id = common_card.rarity_revision_id
-         AND common_rarity.rarity_key = 'common'
-        JOIN draw_pool_entries AS rare_entry
-          ON rare_entry.pool_revision_id = settings.fallback_pool_revision_id
-        JOIN collection_card_revisions AS rare_revision
-          ON rare_revision.id = rare_entry.card_revision_id
-        JOIN collection_cards AS rare_card
-          ON rare_card.id = rare_revision.card_id
-        JOIN rarity_definition_revisions AS rare_rarity
-          ON rare_rarity.id = rare_card.rarity_revision_id
-         AND rare_rarity.rarity_key = 'rare'
-        LIMIT 1
+            (
+                SELECT entry.card_revision_id
+                FROM collection_system_settings AS settings
+                JOIN draw_pool_entries AS entry
+                  ON entry.pool_revision_id = settings.fallback_pool_revision_id
+                ORDER BY entry.entry_order
+                LIMIT 1
+            ) AS first_revision_id,
+            (
+                SELECT entry.card_revision_id
+                FROM collection_system_settings AS settings
+                JOIN draw_pool_entries AS entry
+                  ON entry.pool_revision_id = settings.fallback_pool_revision_id
+                ORDER BY entry.entry_order
+                OFFSET 1 LIMIT 1
+            ) AS second_revision_id,
+            (
+                SELECT id FROM rarity_definition_revisions
+                WHERE rarity_key = 'rare' AND revision_number = 1
+            ) AS rare_rarity_id
         """
     )
-    assert starter is not None
+    assert catalog is not None
     pool_id = await _insert_draft_pool(
         conn1,
-        card_revision_id=starter["common_revision_id"],
+        card_revision_id=catalog["first_revision_id"],
     )
     publish = conn1.transaction()
     await publish.start()
@@ -352,7 +348,7 @@ async def test_pool_publish_and_member_insert_are_serialized(member_kind: str) -
                     VALUES ($1, $2, 1)
                     """,
                     pool_id,
-                    starter["rare_rarity_id"],
+                    catalog["rare_rarity_id"],
                 )
             return await conn2.execute(
                 """
@@ -361,7 +357,7 @@ async def test_pool_publish_and_member_insert_are_serialized(member_kind: str) -
                 VALUES ($1, $2, 2)
                 """,
                 pool_id,
-                starter["rare_revision_id"],
+                catalog["second_revision_id"],
             )
 
         insert_task = asyncio.create_task(insert_while_publish_is_open())
@@ -612,8 +608,7 @@ async def test_official_seed_is_a_complete_unique_fallback_pool() -> None:
                 COUNT(DISTINCT card.id) AS card_count,
                 COUNT(DISTINCT revision.id) AS revision_count,
                 COUNT(*) FILTER (WHERE rarity.rarity_key = 'common') AS common_count,
-                COUNT(*) FILTER (WHERE rarity.rarity_key = 'rare') AS rare_count,
-                COUNT(*) FILTER (WHERE rarity.rarity_key = 'legendary') AS legendary_count,
+                COUNT(DISTINCT collection_set.id) AS set_count,
                 MIN(pool.published_at) IS NOT NULL AS is_published
             FROM collection_system_settings AS settings
             JOIN draw_pool_revisions AS pool
@@ -622,18 +617,18 @@ async def test_official_seed_is_a_complete_unique_fallback_pool() -> None:
             JOIN collection_card_revisions AS revision
               ON revision.id = entry.card_revision_id
             JOIN collection_cards AS card ON card.id = revision.card_id
+            JOIN collection_sets AS collection_set ON collection_set.id = card.set_id
             JOIN rarity_definition_revisions AS rarity
               ON rarity.id = card.rarity_revision_id
             """
         )
         assert row is not None
         assert dict(row) == {
-            "entry_count": 9,
-            "card_count": 9,
-            "revision_count": 9,
-            "common_count": 5,
-            "rare_count": 3,
-            "legendary_count": 1,
+            "entry_count": 48,
+            "card_count": 48,
+            "revision_count": 48,
+            "common_count": 48,
+            "set_count": 7,
             "is_published": True,
         }
         weights = await conn.fetch(
@@ -647,11 +642,49 @@ async def test_official_seed_is_a_complete_unique_fallback_pool() -> None:
             ORDER BY rarity.sort_rank
             """
         )
-        assert [(row["rarity_key"], row["weight"]) for row in weights] == [
-            ("common", 70),
-            ("rare", 25),
-            ("legendary", 5),
-        ]
+        assert [(row["rarity_key"], row["weight"]) for row in weights] == [("common", 100)]
         assert await conn.fetchval("SELECT COUNT(*) FROM collection_system_settings") == 1
+        assert (
+            await conn.fetchval(
+                """
+            SELECT COUNT(*)
+            FROM collection_sets
+            WHERE set_key = ANY($1::TEXT[])
+            """,
+                ["aespa", "bts", "itzy", "ive", "le-sserafim", "nmixx", "uc"],
+            )
+            == 7
+        )
+        assert (
+            await conn.fetchval(
+                """
+            SELECT COUNT(*)
+            FROM draw_pool_revisions
+            WHERE published_at IS NOT NULL
+              AND pool_key = ANY($1::TEXT[])
+            """,
+                [
+                    "official-all",
+                    "official-set-aespa",
+                    "official-set-bts",
+                    "official-set-itzy",
+                    "official-set-ive",
+                    "official-set-le-sserafim",
+                    "official-set-nmixx",
+                    "official-set-uc",
+                ],
+            )
+            == 8
+        )
+        assert (
+            await conn.fetchval("SELECT COUNT(*) FROM collection_sets WHERE set_key = 'first-path'")
+            == 0
+        )
+        assert (
+            await conn.fetchval(
+                "SELECT COUNT(*) FROM draw_pool_revisions WHERE pool_key = 'official-starter'"
+            )
+            == 0
+        )
     finally:
         await conn.close()

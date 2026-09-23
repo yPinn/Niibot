@@ -5,21 +5,24 @@
 
 ## architecture/ — 系統設計
 
-| 文件                                                                                      | 內容                                                                    |
-| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [overview.md](architecture/overview.md)                                                   | 服務拓樸、跨程序訊號、AI provider 鏈、部署拓樸、資料流範例              |
-| [admission-and-tenancy.md](architecture/admission-and-tenancy.md)                         | 身分／入會／多租戶三層拆分、狀態機、schema rollout（migration 076–084） |
-| [bot-accounts-and-collaboration.md](architecture/bot-accounts-and-collaboration.md)       | Bot OAuth、租戶私有帳號、Owner／MOD、Twitch MOD 同步的目標架構          |
-| [attendance-and-community-overlays.md](architecture/attendance-and-community-overlays.md) | 被動出席、主動簽到與社群 Overlay 的資料邊界                             |
-| [roleplay-character-system-v1.md](architecture/roleplay-character-system-v1.md)           | 角色系統 V1、非技術建立流程、runtime 摘要、OOC 與分享邊界               |
+| 文件                                                                                        | 內容                                                                    |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [overview.md](architecture/overview.md)                                                     | 服務拓樸、跨程序訊號、AI provider 鏈、部署拓樸、資料流範例              |
+| [admission-and-tenancy.md](architecture/admission-and-tenancy.md)                           | 身分／入會／多租戶三層拆分、狀態機、schema rollout（migration 076–084） |
+| [bot-accounts-and-collaboration.md](architecture/bot-accounts-and-collaboration.md)         | Bot OAuth、租戶私有帳號、Owner／MOD、Twitch MOD 同步的目標架構          |
+| [attendance-and-community-overlays.md](architecture/attendance-and-community-overlays.md)   | 被動出席、主動簽到與社群 Overlay 的資料邊界                             |
+| [checkin-photocard-artwork-pipeline.md](architecture/checkin-photocard-artwork-pipeline.md) | Check-in 小卡原畫保存、衍生圖與 CSS／SVG 非破壞式疊圖契約               |
+| [roleplay-character-system-v1.md](architecture/roleplay-character-system-v1.md)             | 角色系統 V1、非技術建立流程、runtime 摘要、OOC 與分享邊界               |
 
 ## guides/ — 操作步驟
 
-| 文件                                    | 內容                                                             |
-| --------------------------------------- | ---------------------------------------------------------------- |
-| [development.md](guides/development.md) | 本機把服務跑起來：env 範本、`uv`、`npm`、Docker Compose profiles |
-| [deployment.md](guides/deployment.md)   | 三環境 Compose overlay、CI/CD 密鑰同步、`staging.sh`、版本標記   |
-| [environment.md](guides/environment.md) | 所有環境變數檔案的唯一總表                                       |
+| 文件                                                                          | 內容                                                             |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| [development.md](guides/development.md)                                       | 本機把服務跑起來：env 範本、`uv`、`npm`、Docker Compose profiles |
+| [deployment.md](guides/deployment.md)                                         | 三環境 Compose overlay、CI/CD 密鑰同步、`staging.sh`、版本標記   |
+| [environment.md](guides/environment.md)                                       | 所有環境變數檔案的唯一總表                                       |
+| [checkin-photocard-artist-brief.md](guides/checkin-photocard-artist-brief.md) | Check-in 小卡常態繪師合作用尺寸、構圖與交稿說明                  |
+| [artwork-commission-messages.md](guides/artwork-commission-messages.md)       | 原畫委託的分階段詢問、用途揭露與授權確認文字                     |
 
 ## reference/ — 查詢用
 

@@ -15,7 +15,10 @@ import asyncpg
 
 from shared.errors import ConflictError, InvalidInputError, NotFoundError
 from shared.twitch_scopes import BOT_SCOPES
-from shared.twitch_token_crypto import encrypt_twitch_token
+from shared.twitch_token_crypto import (
+    encrypt_twitch_token,
+    require_twitch_token_encryption_key,
+)
 
 BotInvitePurpose = Literal["link_new", "reauthorize", "system_default_reset"]
 
@@ -46,6 +49,11 @@ class BotAccountSummary:
     requires_reauth: bool
     last_validated_at: datetime | None
     revoked_at: datetime | None
+    last_checked_at: datetime | None = None
+    validation_error_code: str | None = None
+    linked_at: datetime | None = None
+    is_active: bool = False
+    is_desired: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,8 +118,6 @@ class BotAccountService:
     """Owns invitation consumption and the credential/mapping transaction."""
 
     def __init__(self, pool: asyncpg.Pool, *, token_encryption_key: str) -> None:
-        if not token_encryption_key:
-            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required")
         self.pool = pool
         self.token_encryption_key = token_encryption_key
 
@@ -125,6 +131,7 @@ class BotAccountService:
         lifetime: timedelta = timedelta(minutes=30),
     ) -> BotInviteCreated:
         """Create a one-time invitation and return its secrets exactly once."""
+        require_twitch_token_encryption_key(self.token_encryption_key)
         if purpose != "link_new" and not expected_bot_user_id:
             raise ValueError("expected_bot_user_id is required for reset invitations")
 
@@ -307,6 +314,7 @@ class BotAccountService:
         avatar: str | None,
     ) -> BotAuthorizationResult:
         """Consume an invitation and atomically persist the bot for its tenant."""
+        token_encryption_key = require_twitch_token_encryption_key(self.token_encryption_key)
         now = datetime.now(UTC)
 
         async with self.pool.acquire() as conn:
@@ -342,10 +350,10 @@ class BotAccountService:
                     )
 
                 encrypted_access, encryption_version = encrypt_twitch_token(
-                    access_token, self.token_encryption_key
+                    access_token, token_encryption_key
                 )
                 encrypted_refresh, refresh_version = encrypt_twitch_token(
-                    refresh_token, self.token_encryption_key
+                    refresh_token, token_encryption_key
                 )
                 if refresh_version != encryption_version:
                     raise RuntimeError("Twitch credential encryption versions diverged")
@@ -362,12 +370,24 @@ class BotAccountService:
                 identity_id = str(identity["id"]) if identity else None
                 normalized_scopes = " ".join(sorted(scopes))
 
+                # Match lifecycle validation/unlink lock ordering. New accounts
+                # have no row to lock and cannot yet be visible to those flows.
+                await conn.execute(
+                    """
+                    SELECT platform_user_id
+                      FROM bot_accounts
+                     WHERE platform_user_id = $1
+                     FOR UPDATE
+                    """,
+                    platform_user_id,
+                )
                 await conn.execute(
                     """
                     INSERT INTO tokens
                         (user_id, token, refresh, token_type, scopes, identity_id,
-                         requires_reauth, encryption_version)
-                    VALUES ($1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6)
+                         requires_reauth, encryption_version, last_checked_at,
+                         last_validated_at, invalidated_at, validation_error_code)
+                    VALUES ($1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6, $7, $7, NULL, NULL)
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token = EXCLUDED.token,
                         refresh = EXCLUDED.refresh,
@@ -375,6 +395,10 @@ class BotAccountService:
                         identity_id = COALESCE(EXCLUDED.identity_id, tokens.identity_id),
                         requires_reauth = FALSE,
                         encryption_version = EXCLUDED.encryption_version,
+                        last_checked_at = EXCLUDED.last_checked_at,
+                        last_validated_at = EXCLUDED.last_validated_at,
+                        invalidated_at = NULL,
+                        validation_error_code = NULL,
                         updated_at = NOW()
                     """,
                     platform_user_id,
@@ -383,6 +407,7 @@ class BotAccountService:
                     normalized_scopes,
                     identity_id,
                     encryption_version,
+                    now,
                 )
                 await conn.execute(
                     """
@@ -494,10 +519,22 @@ class BotAccountService:
                        account.avatar,
                        account.requires_reauth,
                        account.last_validated_at,
-                       account.revoked_at
+                       account.revoked_at,
+                       token.last_checked_at,
+                       token.validation_error_code,
+                       mapping.linked_at,
+                       COALESCE(settings.active_bot_user_id = account.platform_user_id, FALSE)
+                           AS is_active,
+                       COALESCE(settings.desired_bot_user_id = account.platform_user_id, FALSE)
+                           AS is_desired
                   FROM bot_accounts account
                   JOIN channel_bot_accounts mapping
                     ON mapping.bot_user_id = account.platform_user_id
+                  LEFT JOIN tokens token
+                    ON token.user_id = account.platform_user_id
+                   AND token.token_type = 'bot'
+                  LEFT JOIN channel_bot_settings settings
+                    ON settings.channel_id = mapping.channel_id
                  WHERE mapping.channel_id = $1
                  ORDER BY mapping.linked_at ASC, account.platform_user_id ASC
                 """,
@@ -505,15 +542,41 @@ class BotAccountService:
             )
         return [BotAccountSummary(**dict(row)) for row in rows]
 
+    async def assert_available_to_tenant(self, *, channel_id: str, bot_user_id: str) -> None:
+        """Allow only the global system account or an explicit tenant mapping."""
+        async with self.pool.acquire() as conn:
+            available = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM bot_accounts account
+                      LEFT JOIN channel_bot_accounts mapping
+                        ON mapping.bot_user_id = account.platform_user_id
+                       AND mapping.channel_id = $1
+                     WHERE account.platform_user_id = $2
+                       AND (account.is_system_default OR mapping.channel_id IS NOT NULL)
+                )
+                """,
+                channel_id,
+                bot_user_id,
+            )
+        if not available:
+            raise BotAccountNotFoundError()
+
     async def get_system_default(self) -> BotAccountSummary | None:
         """Return the one globally visible account, never arbitrary custom rows."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 SELECT platform_user_id, login, display_name, avatar,
-                       requires_reauth, last_validated_at, revoked_at
-                  FROM bot_accounts
-                 WHERE is_system_default = TRUE
+                       account.requires_reauth, account.last_validated_at,
+                       account.revoked_at, token.last_checked_at,
+                       token.validation_error_code
+                  FROM bot_accounts account
+                  LEFT JOIN tokens token
+                    ON token.user_id = account.platform_user_id
+                   AND token.token_type = 'bot'
+                 WHERE account.is_system_default = TRUE
                 """
             )
         return BotAccountSummary(**dict(row)) if row else None

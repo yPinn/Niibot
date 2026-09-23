@@ -171,5 +171,11 @@ def match_entries(
 
 def _key_matches(key: str, query: str) -> bool:
     if _ASCII_KEY.match(key):
-        return re.search(r"\b" + re.escape(key) + r"\b", query) is not None
+        return (
+            re.search(
+                r"(?<![A-Za-z0-9_])" + re.escape(key) + r"(?![A-Za-z0-9_])",
+                query,
+            )
+            is not None
+        )
     return key in query

@@ -1,6 +1,6 @@
 # Bot Accounts、租戶協作與 Twitch MOD 同步
 
-> 狀態：**Phase 0–2 已實作；Phase 3–6 仍為目標架構**（2026-08-31）。
+> 狀態：**Phase 0–3 與 Twitch 授權生命週期已實作；Phase 4–6 仍為目標架構**（2026-09-20）。
 > 本文件承接現行 [Admission & Tenancy Model](admission-and-tenancy.md)，定義 Bot OAuth 邀請、
 > 租戶私有 Bot 帳號、per-tenant sender、Owner／MOD Dashboard 與可選 Twitch MOD 同步。
 
@@ -12,8 +12,12 @@
   `TenantContext` 與 workspace selector foundation。
 - Phase 2：`bot_accounts`、`channel_bot_accounts`、一次性 OAuth invite、tenant audit、Owner Settings card、
   public consent/result page、Admin Niibot reset 與 `bot_token_updated` runtime hot reload。
-- 尚未交付：sender selection／unlink active guard、manual MOD invite source model、Twitch MOD sync、完整 private API
-  tenant-path migration，以及 RLS enable。這些仍依 Phase 3–6 go/no-go 執行。
+- Phase 3：per-tenant desired／active sender selection、runtime hot reload、切換失敗保留舊 sender，以及
+  active／desired Bot 的 unlink 409 guard。
+- 授權生命週期：Bot 與 broadcaster token 的定期／手動檢查、refresh、健康狀態、Owner unlink／disconnect、
+  server-side session 撤銷與明確失效時的安全 fallback。
+- 尚未交付：manual MOD invite source model、Twitch MOD sync、完整 private API tenant-path migration，以及 RLS
+  enable。這些仍依 Phase 4–6 go/no-go 執行。
 
 ## 目標
 
@@ -62,6 +66,32 @@
 | MOD 登入        | 必須用自己的 Twitch identity 登入；同步本身不建立 ghost User        |
 | MOD 權限        | 營運設定可編輯；credential、成員、金流與安全設定不可操作            |
 | 授權來源        | `manual` 與 `twitch_mod_sync` 是 grant source，不是兩種角色         |
+
+## 已交付的 Twitch 授權生命週期
+
+Bot credential 與 broadcaster credential 仍是不同用途、不同 scope 的 token；它們只共用檢查、refresh、狀態與
+撤回機制，不能互相替代。API 啟動後會分批檢查超過 55 分鐘未確認的 token，讓每筆有效 credential 約每小時至少
+檢查一次，也提供 Owner 手動重查。
+
+介面只呈現四種可採取行動的狀態：
+
+| 狀態                       | 語意                                                       |
+| -------------------------- | ---------------------------------------------------------- |
+| `valid`                    | 身分、client 與必要 scopes 均已確認                        |
+| `requires_reauthorization` | 明確失效、refresh 失敗、身分／client 不符或缺少必要 scopes |
+| `temporarily_unavailable`  | Twitch 暫時不可用；保留現有服務，不誤判為撤權              |
+| `not_checked`              | 尚未完成第一次檢查                                         |
+
+移除與解除的固定語意：
+
+- 自訂 Bot 只能由 tenant Owner 移除；system Niibot 永遠不能移除。
+- active 或 desired Bot 必須先切換，否則 unlink 回 409。
+- unlink 只刪除目前 tenant 的 mapping；仍有其他 mapping 時保留共用 credential。移除最後一個 mapping 時，才刪除
+  本地 token 並 best-effort 呼叫 Twitch revoke。
+- broadcaster disconnect 會先停用 channel、刪除本地 broadcaster token，並增加 `users.session_version`，使該
+  Owner 現有 Dashboard JWT 在下一次 request 立即失效；之後再 best-effort 呼叫 Twitch revoke。
+- 這些操作保留 tenant 設定、角色設定與歷史紀錄。永久刪除帳號／歷史資料是獨立、高風險流程，不與解除授權混用。
+- 上游 revoke 暫時失敗不會還原本地解除結果；重新授權會建立新的 token 狀態。
 
 ## 剩餘缺口與已完成基礎
 
@@ -292,12 +322,19 @@ Audit、error、URL、PG NOTIFY payload 永遠不包含 access／refresh token �
 ### Bot accounts
 
 - `GET /api/tenants/{channel_id}/bot-accounts`：Owner/MOD；只回安全 summary。
+- `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/authorization-check`：Owner-only，立即重查。
 - `POST /api/tenants/{channel_id}/bot-accounts/invites`：Owner-only，201。
 - `GET /api/tenants/{channel_id}/bot-accounts/invites/{id}`：Owner-only status polling。
 - `GET /api/public/bot-invites/{public_token}`：public safe consent summary。
 - `GET /api/auth/twitch/bot/callback`：public OAuth callback。
 - `DELETE /api/tenants/{channel_id}/bot-accounts/{bot_id}`：Owner-only；active／desired 時回 409。
 - `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD，寫 desired + version。
+- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
+- `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only，立即重查。
+- `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only，停用服務、撤銷 Owner session 並解除 token。
+
+所有授權檢查與解除 mutation 都要求 `X-Niibot-Action: twitch-authorization-management`；GET summary 不要求
+action header。Owner dependency 與 tenant isolation 在 server 執行，不能只依賴前端隱藏按鈕。
 
 ### Collaboration
 
@@ -507,6 +544,9 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 - Resolver／CredentialBroker、EventSub拆分、per-channel lock、dedup、ack／restart reconcile。
 - 遷移所有 send/mod API call sites。
 - **Go/no-go：** 切換失敗保留舊 active；A 切換不影響 C。
+
+實作結果：desired／active/version contract、channel-scoped resolver、切換通知與 restart reconcile 已完成；授權生命週期
+再補上 active／desired unlink guard、credential 明確失效時 fallback 與 channel-scoped runtime reload。
 
 ### Phase 4 — Manual MOD Dashboard
 

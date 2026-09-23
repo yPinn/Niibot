@@ -36,6 +36,10 @@ vi.mock('@/api/events', () => ({
   updateRedemptionConfig: vi.fn(),
   NonPartnerError: class NonPartnerError extends Error {},
 }))
+vi.mock('@/api/checkin', () => ({
+  getCheckinCollections: vi.fn(),
+  updateCheckinCollection: vi.fn(),
+}))
 vi.mock('@/hooks/useDocumentTitle', () => ({ useDocumentTitle: vi.fn() }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn() }))
 vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
@@ -45,6 +49,11 @@ vi.mock('sonner', () => ({
 
 import { toast } from 'sonner'
 
+import {
+  type CheckinCollectionCatalog,
+  getCheckinCollections,
+  updateCheckinCollection,
+} from '@/api/checkin'
 import {
   type CommunityOverlayAccess,
   type CommunityOverlayThemeState,
@@ -124,6 +133,27 @@ const CHECKIN_REWARD = {
   max_per_stream: 100,
   max_per_user_per_stream: 1,
 }
+const COLLECTIONS: CheckinCollectionCatalog = {
+  selected_set_key: null,
+  total_cards: 1,
+  sets: [
+    {
+      key: 'aespa',
+      name: 'aespa',
+      card_count: 1,
+      cards: [
+        {
+          key: 'karina-01',
+          number: 1,
+          name: 'Karina',
+          portrait_url: '/images/collections/aespa/karina-01-r1.webp',
+          rarity_key: 'common',
+          rarity_name: '普通',
+        },
+      ],
+    },
+  ],
+}
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -161,6 +191,8 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(getRedemptionConfigs).mockResolvedValue([CHECKIN_REDEMPTION])
     vi.mocked(getTwitchRewards).mockResolvedValue([CHECKIN_REWARD])
     vi.mocked(updateRedemptionConfig).mockResolvedValue(CHECKIN_REDEMPTION)
+    vi.mocked(getCheckinCollections).mockResolvedValue(COLLECTIONS)
+    vi.mocked(updateCheckinCollection).mockResolvedValue(COLLECTIONS)
   })
 
   it('renders an isolated development preview without loading tenant settings', async () => {
@@ -176,9 +208,101 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByText('已停用')).toBeInTheDocument()
   })
 
+  it('keeps the loading skeleton aligned with the responsive workspace', () => {
+    const pendingAccess = deferred<CommunityOverlayAccess>()
+    vi.mocked(getCommunityOverlaySettings).mockReturnValueOnce(pendingAccess.promise)
+
+    const { container } = render(<CommunityOverlaySettings />)
+
+    const workspace = container.querySelector('[data-layout="live-display-workspace"]')
+    expect(workspace?.closest('main')).toHaveClass('h-full', 'xl:overflow-y-hidden')
+    expect(workspace).toHaveClass(
+      'grid',
+      'grid-cols-1',
+      'xl:min-h-0',
+      'xl:flex-1',
+      'xl:grid-cols-12',
+      'xl:grid-rows-[minmax(0,1fr)]',
+      'xl:overflow-hidden'
+    )
+    expect(
+      Array.from(workspace?.querySelectorAll('[data-layout-column]') ?? []).map(column =>
+        column.getAttribute('data-layout-column')
+      )
+    ).toEqual(['content', 'support'])
+    const content = workspace?.querySelector('[data-layout-column="content"]')
+    expect(content).toHaveAttribute('data-layout-scroll', 'content')
+    expect(content).toHaveClass(
+      'xl:col-span-8',
+      'xl:h-full',
+      'xl:min-h-0',
+      'xl:overflow-y-auto',
+      'xl:overscroll-contain'
+    )
+    expect(
+      Array.from(content?.querySelectorAll('[data-layout-panel]') ?? []).map(panel =>
+        panel.getAttribute('data-layout-panel')
+      )
+    ).toEqual(['checkin', 'tarot'])
+    const support = workspace?.querySelector('[data-layout-column="support"]')
+    expect(support).toHaveAttribute('data-layout-position', 'fixed')
+    expect(support).toHaveClass(
+      'xl:col-span-4',
+      'xl:sticky',
+      'xl:top-0',
+      'xl:max-h-full',
+      'xl:overflow-y-auto'
+    )
+    expect(
+      Array.from(support?.querySelectorAll('[data-layout-panel]') ?? []).map(panel =>
+        panel.getAttribute('data-layout-panel')
+      )
+    ).toEqual(['connection', 'preview'])
+  })
+
+  it('aligns the first content card with OBS and keeps page guidance concise', async () => {
+    render(<CommunityOverlaySettings preview />)
+
+    expect(screen.getByText('設定直播內容與 OBS 連線。')).toBeInTheDocument()
+    const content = screen.getByRole('region', { name: '顯示內容' })
+    expect(within(content).getByRole('heading', { name: '顯示內容' })).toHaveClass('sr-only')
+    expect(content.children[1]).toHaveAttribute('data-layout-start', 'cards')
+    expect(
+      within(content).queryByText('管理直播畫面要播放的內容；每項都能直接測試，不會寫入正式紀錄。')
+    ).not.toBeInTheDocument()
+
+    expect(within(content).getByText('觀眾簽到時抽卡，並顯示個人卡冊。')).toBeInTheDocument()
+    expect(within(content).getByText('直播顯示牌面，完整解讀回覆在聊天室。')).toBeInTheDocument()
+    expect(within(content).getByText('設定只套用到這個頻道。')).toBeInTheDocument()
+    expect(within(content).getByText('預設左下，可避開右下角實況視訊。')).toBeInTheDocument()
+
+    const connection = screen.getByRole('region', { name: 'OBS 連線' })
+    expect(connection.children[0]).toHaveAttribute('data-layout-start', 'connection')
+    expect(
+      within(connection).getByText('將連結加入 OBS Browser Source，設定為 1920 × 1080、透明背景。')
+    ).toBeInTheDocument()
+
+    const preview = screen.getByRole('region', { name: '預覽' })
+    expect(within(preview).queryByText('即時查看草稿與測試播放。')).not.toBeInTheDocument()
+    expect(within(preview).queryByText('發布後才會套用至 OBS。')).not.toBeInTheDocument()
+    expect(preview.parentElement).toHaveClass('gap-section')
+    expect(preview.querySelector('[data-slot="card-header"]')).toHaveClass(
+      'gap-element',
+      'px-card',
+      'pb-section'
+    )
+    expect(preview.querySelector('[data-slot="card-content"]')).toHaveClass('px-card', 'pt-card')
+  })
+
   it('routes the development check-in test to the real binder sample renderer', async () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings preview />)
+
+    const toolbar = document.querySelector('[data-layout="theme-preview-toolbar"]')
+    expect(toolbar).toHaveClass('min-h-8', 'items-center')
+    const actionSlot = toolbar?.querySelector('[data-layout="theme-preview-action"]')
+    expect(actionSlot).toHaveClass('ml-auto', 'h-8', 'w-28', 'shrink-0', 'justify-end')
+    expect(actionSlot).toBeEmptyDOMElement()
 
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
 
@@ -186,6 +310,11 @@ describe('CommunityOverlaySettings', () => {
       'src',
       `${window.location.origin}/live-display#key=${KEY}&preview=1&block=checkin&sample=checkin`
     )
+    expect(
+      within(actionSlot as HTMLElement).getByRole('button', { name: '返回草稿預覽' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('只測試動畫，不會簽到、抽卡或累積天數。')).not.toBeInTheDocument()
+    expect(screen.queryByText('只測試動畫，不會新增或覆寫抽牌紀錄。')).not.toBeInTheDocument()
     expect(triggerCommunityOverlayPreview).not.toHaveBeenCalled()
   })
 
@@ -204,9 +333,11 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByText('4.5 秒')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '展開每日塔羅設定' }))
 
-    expect(screen.getByText('每個主題每天固定一張')).toBeInTheDocument()
-    expect(screen.getByText('同一主題重查結果不變')).toBeInTheDocument()
-    expect(screen.getByText('未填為綜合；另有感情、事業、財運')).toBeInTheDocument()
+    expect(screen.getByText('每個主題每天一張')).toBeInTheDocument()
+    expect(screen.getByText('同主題重查結果不變')).toBeInTheDocument()
+    expect(screen.getByText('未填為綜合；可選感情、事業、財運')).toBeInTheDocument()
+    expect(screen.getByText('內建牌組')).toBeInTheDocument()
+    expect(screen.getByText('更新不影響歷史紀錄')).toBeInTheDocument()
     expect(screen.getByText('16px')).toBeInTheDocument()
     expect(screen.getByText('5 秒')).toBeInTheDocument()
     expect(document.querySelector('[data-theme-preview]')).toHaveAttribute(
@@ -224,7 +355,7 @@ describe('CommunityOverlaySettings', () => {
     await user.type(accent, '#112233')
     await user.click(screen.getByRole('button', { name: '左上' }))
 
-    const card = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const card = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(card).toHaveStyle({ '--overlay-accent': '#112233' })
     expect(card.closest('[data-theme-preview]')).toHaveAttribute('data-placement', 'top-left')
     expect(screen.getByText('尚未儲存')).toBeInTheDocument()
@@ -279,17 +410,113 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    const originalCard = await screen.findByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const originalCard = await screen.findByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(originalCard).toHaveAttribute('data-motion-state', 'final')
-    expect(document.querySelector('[data-preview-content]')).toHaveClass(
-      'scale-100',
-      'sm:scale-[0.86]'
-    )
+    expect(document.querySelector('[data-theme-preview]')).toHaveClass('aspect-video', 'w-full')
+    expect(document.querySelector('[data-preview-content]')).toHaveClass('w-[660px]')
     await user.click(screen.getByRole('button', { name: '柔和' }))
 
-    const remountedCard = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')
+    const remountedCard = screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
     expect(remountedCard).not.toBe(originalCard)
     expect(remountedCard).toHaveAttribute('data-motion-state', 'final')
+  })
+
+  it('uniformly scales the selected quarter of a 1920 by 1080 preview canvas', async () => {
+    const user = userEvent.setup()
+    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      bottom: 270,
+      height: 270,
+      left: 0,
+      right: 480,
+      top: 0,
+      width: 480,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    })
+
+    try {
+      render(<CommunityOverlaySettings />)
+
+      const viewport = await screen.findByTestId('theme-preview-viewport')
+      const canvas = screen.getByTestId('theme-preview-canvas')
+      expect(viewport).toHaveAttribute('data-focus', 'quarter')
+      expect(viewport).toHaveClass('aspect-video')
+      expect(canvas).toHaveStyle({
+        width: '1920px',
+        height: '1080px',
+        left: '0px',
+        top: '-270px',
+        transform: 'scale(0.5)',
+      })
+
+      await user.click(screen.getByRole('button', { name: '右上' }))
+      expect(canvas).toHaveStyle({ left: '-480px', top: '0px', transform: 'scale(0.5)' })
+    } finally {
+      rectSpy.mockRestore()
+    }
+  })
+
+  it('keeps block controls at the standard settings density', async () => {
+    render(<CommunityOverlaySettings />)
+
+    await screen.findByLabelText('背景色')
+    const editor = document.querySelector('[data-layout="live-display-theme-editor"]')
+    expect(editor).not.toBeNull()
+    expect(within(editor as HTMLElement).getByText('外觀')).toHaveClass('text-sub')
+    expect(within(editor as HTMLElement).getByText('背景色')).toHaveClass('text-sub')
+    expect(within(editor as HTMLElement).getByText('設定只套用到這個頻道。')).toHaveClass(
+      'text-label'
+    )
+    expect(within(editor as HTMLElement).getByRole('button', { name: '儲存草稿' })).toHaveClass(
+      'h-8'
+    )
+    expect(within(editor as HTMLElement).getByRole('button', { name: '發布至 OBS' })).toHaveClass(
+      'h-8'
+    )
+  })
+
+  it('uses a split settings workspace with a visual screen placement selector', async () => {
+    const user = userEvent.setup()
+    render(<CommunityOverlaySettings />)
+
+    await screen.findByLabelText('背景色')
+    const editor = document.querySelector('[data-layout="live-display-theme-editor"]')
+    expect(editor).not.toBeNull()
+
+    const columns = editor?.querySelector('[data-layout="live-display-theme-editor-columns"]')
+    expect(columns).toHaveClass('grid', 'grid-cols-1', 'lg:grid-cols-2')
+    expect(columns?.querySelector('[data-layout-panel="appearance"]')).not.toBeNull()
+    expect(columns?.querySelector('[data-layout-panel="placement-motion"]')).not.toBeNull()
+
+    const selector = within(editor as HTMLElement).getByRole('group', { name: '顯示位置' })
+    expect(selector).toHaveClass('aspect-video', 'grid', 'grid-cols-2', 'grid-rows-2', 'bg-border')
+
+    const positions = [
+      ['左上', 'top-left', ['left-2', 'top-2']],
+      ['右上', 'top-right', ['right-2', 'top-2']],
+      ['左下', 'bottom-left', ['bottom-2', 'left-2']],
+      ['右下', 'bottom-right', ['bottom-2', 'right-2']],
+    ] as const
+
+    for (const [label, value, indicatorClasses] of positions) {
+      const button = within(selector).getByRole('button', { name: label })
+      expect(button).toHaveAttribute('data-placement-option', value)
+      expect(button).toHaveAttribute('aria-pressed', value === 'bottom-left' ? 'true' : 'false')
+      expect(within(button).getByTestId(`placement-indicator-${value}`)).toHaveClass(
+        ...indicatorClasses
+      )
+    }
+
+    await user.click(within(selector).getByRole('button', { name: '右上' }))
+    expect(within(selector).getByRole('button', { name: '右上' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(document.querySelector('[data-theme-preview]')).toHaveAttribute(
+      'data-placement',
+      'top-right'
+    )
   })
 
   it('saves a complete draft before allowing publish', async () => {
@@ -357,7 +584,7 @@ describe('CommunityOverlaySettings', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '返回草稿預覽' }))
-    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).toBeInTheDocument()
+    expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
     expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
 
     expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
@@ -417,7 +644,7 @@ describe('CommunityOverlaySettings', () => {
     expect(button).toBeEnabled()
   })
 
-  it('keeps each display block as one workspace with global OBS setup always visible', async () => {
+  it('keeps settings in the content column and shares OBS plus preview in the right rail', async () => {
     render(<CommunityOverlaySettings />)
 
     const content = await screen.findByRole('region', { name: '顯示內容' })
@@ -425,6 +652,8 @@ describe('CommunityOverlaySettings', () => {
     expect(within(content).getAllByRole('heading', { name: '每日塔羅' })).toHaveLength(1)
     expect(within(content).getByRole('button', { name: '測試每日簽到動畫' })).toBeInTheDocument()
     expect(within(content).getByRole('button', { name: '儲存草稿' })).toBeInTheDocument()
+    expect(within(content).queryAllByText('草稿預覽')).toHaveLength(0)
+    expect(content.querySelector('[data-theme-preview]')).not.toBeInTheDocument()
     expect(within(content).queryByRole('button', { name: '返回草稿預覽' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '卡片樣式' })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '預覽與測試' })).not.toBeInTheDocument()
@@ -434,12 +663,53 @@ describe('CommunityOverlaySettings', () => {
     expect(within(connection).getByText('OBS 連線')).toBeInTheDocument()
     expect(within(connection).getByRole('button', { name: '更新連結' })).toBeInTheDocument()
 
+    const preview = screen.getByRole('region', { name: '預覽' })
+    expect(within(preview).getByText('每日簽到')).toBeInTheDocument()
+    expect(within(preview).getAllByText('草稿預覽')).toHaveLength(2)
+    expect(within(preview).getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
+
+    const workspace = content.parentElement
+    expect(workspace).toHaveAttribute('data-layout', 'live-display-workspace')
+    expect(workspace?.closest('main')).toHaveClass('h-full', 'xl:overflow-y-hidden')
+    expect(workspace).toHaveClass(
+      'grid',
+      'grid-cols-1',
+      'xl:min-h-0',
+      'xl:flex-1',
+      'xl:grid-cols-12',
+      'xl:grid-rows-[minmax(0,1fr)]',
+      'xl:overflow-hidden'
+    )
+    expect(content).toHaveAttribute('data-layout-column', 'content')
+    expect(content).toHaveAttribute('data-layout-scroll', 'content')
+    expect(content).toHaveClass(
+      'xl:col-span-8',
+      'xl:h-full',
+      'xl:min-h-0',
+      'xl:overflow-y-auto',
+      'xl:overscroll-contain'
+    )
+    const support = connection.parentElement
+    expect(support).toHaveAttribute('data-layout-column', 'support')
+    expect(support).toHaveAttribute('data-layout-position', 'fixed')
+    expect(support).toHaveClass(
+      'xl:col-span-4',
+      'xl:sticky',
+      'xl:top-0',
+      'xl:max-h-full',
+      'xl:overflow-y-auto'
+    )
+    expect(preview.parentElement).toBe(support)
+
+    const themeEditor = document.querySelector('[data-layout="live-display-theme-editor"]')
+    expect(themeEditor).toHaveClass('flex', 'flex-col')
+
     const pageRegions = screen
       .getAllByRole('region')
       .filter(region => region.getAttribute('aria-labelledby')?.startsWith('live-display-'))
     expect(
       pageRegions.map(region => within(region).getByRole('heading', { level: 2 }).textContent)
-    ).toEqual(['OBS 連線', '顯示內容'])
+    ).toEqual(['顯示內容', 'OBS 連線', '預覽'])
     expect(screen.queryByRole('button', { name: /上移|下移/ })).not.toBeInTheDocument()
     expect(getCommunityOverlayThemeSettings).toHaveBeenCalledWith('checkin')
     expect(getCommunityOverlayThemeSettings).toHaveBeenCalledWith('tarot')
@@ -453,8 +723,15 @@ describe('CommunityOverlaySettings', () => {
 
     expect(screen.getByRole('button', { name: '收合每日塔羅設定' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '展開每日簽到設定' })).toBeInTheDocument()
-    expect(screen.getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
-    expect(screen.queryByLabelText('NiibotFan 的卡冊：獲得普通卡星路羅盤')).not.toBeInTheDocument()
+    const preview = screen.getByRole('region', { name: '預覽' })
+    expect(within(preview).getByText('每日塔羅')).toBeInTheDocument()
+    expect(within(preview).getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
+    expect(
+      within(preview).queryByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '收合每日塔羅設定' }))
+    expect(within(preview).getByLabelText('NiibotFan 的每日塔羅：愚者正位')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '測試每日塔羅動畫' }))
     await waitFor(() => expect(triggerCommunityOverlayPreview).toHaveBeenCalledWith('tarot'))
@@ -485,7 +762,7 @@ describe('CommunityOverlaySettings', () => {
     expect(within(trigger).getByText(/10 點/)).toBeInTheDocument()
     expect(within(trigger).getByText('由 Twitch 管理獎勵')).toBeInTheDocument()
     expect(within(trigger).getByText('已啟用')).toBeInTheDocument()
-    expect(within(trigger).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(trigger).getByRole('combobox', { name: '抽卡範圍' })).toBeInTheDocument()
     expect(within(trigger).queryByRole('switch')).not.toBeInTheDocument()
     expect(within(trigger).getByRole('link', { name: '管理簽到入口' })).toHaveAttribute(
       'href',
@@ -506,7 +783,7 @@ describe('CommunityOverlaySettings', () => {
     render(<CommunityOverlaySettings />)
 
     expect(await screen.findByText('頻道點數尚不可用')).toBeInTheDocument()
-    expect(screen.getByText(/仍可繼續使用聊天指令簽到/)).toBeInTheDocument()
+    expect(screen.getByText(/仍可用聊天指令簽到/)).toBeInTheDocument()
     expect(screen.queryByText('無法載入 Twitch 簽到設定')).not.toBeInTheDocument()
   })
 

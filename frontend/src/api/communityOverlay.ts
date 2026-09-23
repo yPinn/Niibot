@@ -18,29 +18,39 @@ export interface CheckinCollectionArtworkSnapshot {
   backdrop_url: string | null
 }
 
+export interface CheckinCollectionCardSnapshot {
+  id: number
+  revision_id: number
+  key: string
+  number: string
+  name: string
+  artwork: CheckinCollectionArtworkSnapshot
+}
+
+export interface CheckinCollectionRaritySnapshot {
+  key: string
+  label: string
+  rank: number
+  effect_intensity: number
+}
+
+export interface CheckinOwnedCollectionCardSnapshot {
+  card: CheckinCollectionCardSnapshot
+  rarity: CheckinCollectionRaritySnapshot
+  copy_count: number
+}
+
 export interface CheckinCollectionSnapshot {
   draw_id: number
   pool_revision_id: number
   algorithm_version: string
-  card: {
-    id: number
-    revision_id: number
-    key: string
-    number: string
-    name: string
-    artwork: CheckinCollectionArtworkSnapshot
-  }
+  card: CheckinCollectionCardSnapshot
   set: {
     id: number
     key: string
     name: string
   }
-  rarity: {
-    key: string
-    label: string
-    rank: number
-    effect_intensity: number
-  }
+  rarity: CheckinCollectionRaritySnapshot
   is_new: boolean
   copy_count: number
   progress: {
@@ -48,6 +58,7 @@ export interface CheckinCollectionSnapshot {
     unique_cards: number
     total_cards: number
   }
+  owned_cards?: CheckinOwnedCollectionCardSnapshot[]
 }
 
 export interface CommunityOverlayFeed {

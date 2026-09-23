@@ -14,7 +14,7 @@ class TestParser:
         assert "Niibot dev CLI" in capsys.readouterr().out
 
     @pytest.mark.parametrize(
-        "group", ["db", "twitch", "discord", "models", "env", "staging", "badges"]
+        "group", ["db", "twitch", "discord", "models", "assets", "env", "staging", "badges"]
     )
     def test_every_group_listed_in_help(self, group, capsys):
         with pytest.raises(SystemExit):
@@ -62,6 +62,19 @@ class TestDispatch:
         assert seen["args"].dc_action == "sync"
         assert seen["args"].prod is True
         assert seen["args"].yes is True
+
+    @pytest.mark.parametrize("action", ["preview", "build"])
+    def test_collection_assets_dispatches_catalog_action(self, monkeypatch, action):
+        seen = {}
+        monkeypatch.setattr(nb, "_call", lambda mod, a: (seen.update(mod=mod, args=a), 0)[1])
+
+        nb.main(["assets", "collections", action])
+
+        assert seen["mod"] == "build_collection_assets"
+        assert seen["args"].action == action
+        assert seen["args"].output_width is None
+        assert seen["args"].output_height is None
+        assert seen["args"].crop_warning_percent == 18.0
 
     def test_env_gen_shells_to_gen_env(self, monkeypatch):
         calls = []

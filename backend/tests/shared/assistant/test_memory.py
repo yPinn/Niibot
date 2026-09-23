@@ -23,8 +23,13 @@ class _Clock:
         self.now += seconds
 
 
-def _key(viewer: str, *, channel: str = "channel-1") -> ConversationKey:
-    return ConversationKey("twitch", channel, viewer)
+def _key(
+    viewer: str,
+    *,
+    channel: str = "channel-1",
+    assistant_scope: str = "persona",
+) -> ConversationKey:
+    return ConversationKey("twitch", channel, viewer, assistant_scope)
 
 
 def _turn(user: str = "hi", assistant: str = "hello") -> ConversationTurn:
@@ -50,16 +55,18 @@ def test_null_store_never_retains_content() -> None:
     assert store.append(key, _turn()) is False
     assert store.get(key) == ()
     assert store.clear_channel("twitch", "channel-1") == 0
+    assert store.clear_channel_except_scope("twitch", "channel-1", "persona") == 0
     assert store.stats().active_sessions == 0
 
 
-def test_sessions_are_isolated_by_platform_channel_and_participant() -> None:
+def test_sessions_are_isolated_by_platform_channel_participant_and_assistant_scope() -> None:
     clock = _Clock()
     store = _store(clock)
     first = _key("viewer-1")
     second = _key("viewer-2")
     other_channel = _key("viewer-1", channel="channel-2")
-    other_platform = ConversationKey("discord", "channel-1", "viewer-1")
+    other_platform = ConversationKey("discord", "channel-1", "viewer-1", "persona")
+    other_scope = _key("viewer-1", assistant_scope="roleplay:41")
 
     store.append(first, _turn("one", "answer-one"))
 
@@ -67,6 +74,21 @@ def test_sessions_are_isolated_by_platform_channel_and_participant() -> None:
     assert store.get(second) == ()
     assert store.get(other_channel) == ()
     assert store.get(other_platform) == ()
+    assert store.get(other_scope) == ()
+
+
+def test_scope_switch_keeps_old_history_inaccessible_without_sender_identity() -> None:
+    clock = _Clock()
+    store = _store(clock)
+    persona = _key("viewer-1", assistant_scope="persona")
+    roleplay = _key("viewer-1", assistant_scope="roleplay:41")
+
+    store.append(persona, _turn("persona question", "persona answer"))
+    store.append(roleplay, _turn("role question", "role answer"))
+
+    assert store.get(persona) == (_turn("persona question", "persona answer"),)
+    assert store.get(roleplay) == (_turn("role question", "role answer"),)
+    assert store.stats().active_sessions == 2
 
 
 def test_ttl_expires_from_last_successful_append_not_read() -> None:
@@ -165,6 +187,33 @@ def test_clear_channel_removes_only_matching_platform_channel() -> None:
     assert store.clear_channel("twitch", "channel-1") == 2
     assert store.get(_key("one")) == ()
     assert store.get(_key("three", channel="channel-2"))
+
+
+def test_scope_change_removes_old_scopes_but_preserves_current_scope() -> None:
+    clock = _Clock()
+    store = _store(clock)
+    current = _key("one", assistant_scope="roleplay:41")
+    old_persona = _key("two", assistant_scope="persona")
+    old_revision = _key("three", assistant_scope="roleplay:40")
+    other_channel = _key(
+        "four",
+        channel="channel-2",
+        assistant_scope="persona",
+    )
+    for key in (current, old_persona, old_revision, other_channel):
+        store.append(key, _turn())
+
+    removed = store.clear_channel_except_scope(
+        "twitch",
+        "channel-1",
+        "roleplay:41",
+    )
+
+    assert removed == 2
+    assert store.get(current)
+    assert store.get(old_persona) == ()
+    assert store.get(old_revision) == ()
+    assert store.get(other_channel)
 
 
 def test_stats_are_aggregate_only_and_do_not_expose_keys_or_content() -> None:

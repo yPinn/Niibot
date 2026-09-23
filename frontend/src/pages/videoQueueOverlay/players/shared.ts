@@ -1,5 +1,7 @@
 import type { RefObject } from 'react'
 
+import type { VideoQueueEntry } from '@/api/videoQueue'
+
 import type { MountContext, YTPlayer } from './types'
 
 /** Destroy all active YT players, clear the clip timer, and stop the progress interval. */
@@ -7,6 +9,7 @@ export function destroyAllPlayers(
   refs: Array<RefObject<YTPlayer | null>>,
   progressRef: RefObject<ReturnType<typeof setInterval> | null>,
   clipTimerRef: RefObject<ReturnType<typeof setTimeout> | null>,
+  playbackStartTimerRef: RefObject<ReturnType<typeof setTimeout> | null>,
   containerRef: RefObject<HTMLDivElement | null>,
   setElapsed: (v: number) => void,
   // Side-panel containers (blurred columns for vertical video): YouTube's YT.Player
@@ -34,6 +37,10 @@ export function destroyAllPlayers(
     clearTimeout(clipTimerRef.current)
     clipTimerRef.current = null
   }
+  if (playbackStartTimerRef.current) {
+    clearTimeout(playbackStartTimerRef.current)
+    playbackStartTimerRef.current = null
+  }
   // Clear any iframe/video left by the previous entry's player
   if (containerRef.current) {
     containerRef.current.innerHTML = ''
@@ -41,9 +48,32 @@ export function destroyAllPlayers(
   for (const ref of sideContainerRefs) {
     if (ref.current) {
       ref.current.innerHTML = ''
+      ref.current.style.backgroundImage = ''
     }
   }
   setElapsed(0)
+}
+
+/**
+ * Fill vertical-video side columns with the provider poster instead of
+ * decoding/streaming the media three times. The dark overlay and CSS blur keep
+ * these decorative; the centre remains the only active player.
+ */
+export function mountPosterSidePanels(
+  current: Pick<VideoQueueEntry, 'thumbnail_url'>,
+  sideContainerRefs: Array<RefObject<HTMLDivElement | null>>
+): void {
+  for (const ref of sideContainerRefs) {
+    const container = ref.current
+    if (!container) continue
+    container.innerHTML = ''
+    container.style.backgroundImage = current.thumbnail_url
+      ? `url("${current.thumbnail_url.replaceAll('"', '%22')}")`
+      : ''
+    container.style.backgroundPosition = 'center'
+    container.style.backgroundRepeat = 'no-repeat'
+    container.style.backgroundSize = 'cover'
+  }
 }
 
 /** Create a fresh full-size mount div inside a container, clearing previous children. */

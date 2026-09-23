@@ -12,6 +12,7 @@ from .command_config_service import CommandConfigService
 from .event_config_service import EventConfigService
 from .identity_service import FindOrLinkResult, IdentityService
 from .payment import PROVIDERS, CheckoutContext, PaymentProvider, WebhookResult, get_provider
+from .roleplay_service import RoleplayService
 from .tenant_service import (
     TenantAccessDeniedError,
     TenantContext,
@@ -19,7 +20,12 @@ from .tenant_service import (
     TenantService,
     TenantSuspendedError,
 )
-from .twitch_api import TokenRefreshResult, TwitchAPIClient
+from .twitch_api import (
+    TokenRefreshResult,
+    TokenRevocationResult,
+    TokenValidationResult,
+    TwitchAPIClient,
+)
 
 __all__ = [
     "AdmissionDecision",
@@ -34,6 +40,7 @@ __all__ = [
     "IdentityService",
     "PROVIDERS",
     "PaymentProvider",
+    "RoleplayService",
     "WebhookResult",
     "get_provider",
     "TenantAccessDeniedError",
@@ -42,5 +49,7 @@ __all__ = [
     "TenantService",
     "TenantSuspendedError",
     "TokenRefreshResult",
+    "TokenRevocationResult",
+    "TokenValidationResult",
     "TwitchAPIClient",
 ]

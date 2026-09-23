@@ -54,6 +54,7 @@ class AssistantRequest:
     sections: tuple[InputSection, ...]
     max_output_tokens: int
     request_id: str | None = None
+    scheduling_scope: str = "default"
 
     def __post_init__(self) -> None:
         if self.max_output_tokens <= 0:
@@ -71,6 +72,10 @@ class AssistantRequest:
 
         if self.request_id is not None and not self.request_id.strip():
             raise ValueError("request_id must not be blank")
+        if not self.scheduling_scope.strip():
+            raise ValueError("scheduling_scope must not be blank")
+        if len(self.scheduling_scope) > 128:
+            raise ValueError("scheduling_scope must not exceed 128 characters")
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +120,7 @@ class ProviderRequest:
     messages: tuple[ProviderMessage, ...]
     max_output_tokens: int
     request_id: str | None = None
+    scheduling_scope: str = "default"
 
     def __post_init__(self) -> None:
         if not self.messages:
@@ -123,6 +129,10 @@ class ProviderRequest:
             raise ValueError("max_output_tokens must be positive")
         if self.request_id is not None and not self.request_id.strip():
             raise ValueError("request_id must not be blank")
+        if not self.scheduling_scope.strip():
+            raise ValueError("scheduling_scope must not be blank")
+        if len(self.scheduling_scope) > 128:
+            raise ValueError("scheduling_scope must not exceed 128 characters")
 
 
 class FailureKind(StrEnum):

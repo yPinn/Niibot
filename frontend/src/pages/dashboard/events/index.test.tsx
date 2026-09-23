@@ -46,7 +46,7 @@ describe('Events page', () => {
         display_name: '追隨',
         category_label: '追隨',
         accent: 'follow',
-        requires_affiliate: false,
+        requires_affiliate: true,
         default_template: '感謝 $(user) 的追隨！',
         default_enabled: true,
         variables: [],
@@ -65,5 +65,43 @@ describe('Events page', () => {
     expect(getRedemptionConfigs).not.toHaveBeenCalled()
     expect(getTwitchRewards).not.toHaveBeenCalled()
     expect(screen.queryByText('頻道點數動作')).not.toBeInTheDocument()
+  })
+
+  it('renders the catalog-driven Watch Streak event', async () => {
+    vi.mocked(getEventConfigs).mockResolvedValue([
+      {
+        id: 8,
+        channel_id: 'channel-1',
+        event_type: 'watch_streak',
+        message_template: '感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！',
+        enabled: false,
+        options: {},
+        trigger_count: null,
+      },
+    ])
+    vi.mocked(getEventCatalog).mockResolvedValue([
+      {
+        key: 'watch_streak',
+        display_name: '連續觀看',
+        category_label: '觀看',
+        accent: 'online',
+        requires_affiliate: false,
+        default_template: '感謝 $(@user) 的陪伴，已連續觀看 $(streak) 場直播！',
+        default_enabled: false,
+        variables: [
+          { name: 'user', description: '分享者名稱', sample: '小明' },
+          { name: '@user', description: '分享者名稱（含 @）', sample: '@小明' },
+          { name: 'streak', description: '連續觀看場數', sample: '7' },
+          { name: 'points', description: '獲得的忠誠點數', sample: '450' },
+        ],
+        options_schema: [],
+      },
+    ])
+
+    render(<Events />)
+
+    expect(await screen.findByText('連續觀看')).toBeInTheDocument()
+    expect(screen.getByText('觀看')).toBeInTheDocument()
+    expect(screen.getByText(/感謝 \$\(@user\) 的陪伴/)).toBeInTheDocument()
   })
 })

@@ -6,13 +6,15 @@ import re
 from datetime import date
 
 _VARIABLE_PATTERN = re.compile(r"\$\(([^)]+)\)")
-_SUPPORTED_VARIABLES = frozenset({"@user", "user", "count", "date"})
+_SUPPORTED_VARIABLES = frozenset({"@user", "user", "count", "streak", "date", "today_order"})
 _TWITCH_MESSAGE_LIMIT = 500
 _MAX_REPLACEMENT_LENGTHS = {
     "@user": 129,
     "user": 128,
     "count": 19,
+    "streak": 19,
     "date": 10,
+    "today_order": 19,
 }
 
 
@@ -41,6 +43,8 @@ def render_checkin_template(
     display_name: str | None,
     total_days: int,
     checkin_date: date,
+    current_streak: int | None = None,
+    today_order: int | None = None,
 ) -> str:
     """Render the small, explicit variable set accepted by check-in templates."""
     validate_checkin_template(template)
@@ -50,7 +54,9 @@ def render_checkin_template(
         "@user": f"@{user}",
         "user": user,
         "count": str(total_days),
+        "streak": str(current_streak or 0),
         "date": checkin_date.isoformat(),
+        "today_order": str(today_order or 0),
     }
     rendered = _VARIABLE_PATTERN.sub(lambda match: replacements[match.group(1)], template)
     return rendered

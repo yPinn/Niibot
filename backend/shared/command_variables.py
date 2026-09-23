@@ -17,12 +17,16 @@ from __future__ import annotations
 import re
 
 #: Named groups let the expander dispatch without re-parsing:
-#: ``simple`` for the plain lookups, ``position`` for ``$(1)``–``$(9)``,
-#: ``lo``/``hi`` for ``$(random a,b)``, ``items`` for ``$(pick a,b,c)``.
+#: ``simple`` for the plain lookups, ``position`` plus the optional range or
+#: fallback groups for argument tokens, ``lo``/``hi`` for ``$(random a,b)``,
+#: and ``items`` for ``$(pick a,b,c)``.
 VARIABLE_PATTERN = re.compile(
     r"\$\((?:"
-    r"(?P<simple>user|sender|touser|query|channel|count)"
-    r"|(?P<position>[1-9])"
+    r"(?P<simple>user|sender|touser|query|queryescape|pathescape|channel|count)"
+    r"|(?P<position>[1-9]\d*)(?:"
+    r"(?P<range_sep>:)(?P<range_end>[1-9]\d*)?"
+    r"|\|(?P<fallback>[^()]*)"
+    r")?"
     r"|random\s+(?P<lo>\d+)\s*,\s*(?P<hi>\d+)"
     r"|pick\s+(?P<items>[^)]+)"
     r")\)"
@@ -30,7 +34,7 @@ VARIABLE_PATTERN = re.compile(
 
 #: Anything shaped like a variable, in either Niibot's ``$(name)`` or
 #: StreamElements' ``${name}`` spelling.
-_ANY_VARIABLE = re.compile(r"\$[({]\s*([a-zA-Z_][\w.]*|\d+)")
+_ANY_VARIABLE = re.compile(r"\$[({]\s*([a-zA-Z_][\w.]*|\d+|:)")
 
 
 def unsupported_variables(text: str) -> list[str]:

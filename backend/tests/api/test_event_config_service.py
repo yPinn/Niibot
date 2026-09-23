@@ -44,9 +44,11 @@ class TestTriggerCount:
 
         assert row["trigger_count"] == 7
 
-    async def test_resub_and_gift_sub_have_no_count(self):
+    async def test_chat_notification_events_without_analytics_bucket_have_no_count(self):
         svc, repo = _make_svc()
-        repo.ensure_defaults = AsyncMock(return_value=[_cfg("resub"), _cfg("gift_sub")])
+        repo.ensure_defaults = AsyncMock(
+            return_value=[_cfg("resub"), _cfg("gift_sub"), _cfg("watch_streak")]
+        )
         repo.get_stream_event_counts = AsyncMock(return_value={"subscribe": 3})
 
         rows = await svc.list_configs_with_counts(CHANNEL_ID)

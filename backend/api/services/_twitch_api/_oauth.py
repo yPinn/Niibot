@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import quote
 
 import httpx
@@ -19,6 +20,28 @@ class TokenRefreshResult:
     access_token: str | None = None
     refresh_token: str | None = None
     error: str | None = None
+    error_code: Literal["refresh_failed", "provider_unavailable"] | None = None
+
+
+@dataclass(frozen=True)
+class TokenValidationResult:
+    """Structured token validation result without collapsing outages into revocation."""
+
+    status: Literal["valid", "invalid", "unavailable"]
+    client_id: str | None = None
+    login: str | None = None
+    user_id: str | None = None
+    scopes: frozenset[str] = frozenset()
+    expires_in: int | None = None
+    error_code: str | None = None
+
+
+@dataclass(frozen=True)
+class TokenRevocationResult:
+    """Idempotent result of asking Twitch to revoke a user access token."""
+
+    status: Literal["revoked", "already_invalid", "unavailable"]
+    error_code: str | None = None
 
 
 class _OAuthMixin(_TwitchAPIBase):
@@ -155,8 +178,13 @@ class _OAuthMixin(_TwitchAPIBase):
             if response.status_code != 200:
                 error_data = response.json() if response.text else {}
                 error_msg = error_data.get("message", f"HTTP {response.status_code}")
-                LOGGER.error(f"Token refresh failed: {error_msg}")
-                return TokenRefreshResult(success=False, error=error_msg)
+                error_code: Literal["refresh_failed", "provider_unavailable"] = (
+                    "refresh_failed"
+                    if response.status_code in {400, 401}
+                    else "provider_unavailable"
+                )
+                LOGGER.warning("Twitch token refresh failed: HTTP %s", response.status_code)
+                return TokenRefreshResult(success=False, error=error_msg, error_code=error_code)
 
             data = response.json()
             new_access_token = data.get("access_token")
@@ -164,7 +192,9 @@ class _OAuthMixin(_TwitchAPIBase):
 
             if not new_access_token:
                 return TokenRefreshResult(
-                    success=False, error="No access_token in refresh response"
+                    success=False,
+                    error="No access_token in refresh response",
+                    error_code="provider_unavailable",
                 )
 
             LOGGER.debug("Successfully refreshed user access token")
@@ -176,19 +206,78 @@ class _OAuthMixin(_TwitchAPIBase):
 
         except httpx.TimeoutException:
             LOGGER.error("Timeout refreshing user token")
-            return TokenRefreshResult(success=False, error="timeout")
+            return TokenRefreshResult(
+                success=False, error="timeout", error_code="provider_unavailable"
+            )
         except Exception as e:
             LOGGER.exception("Unexpected error refreshing user token")
-            return TokenRefreshResult(success=False, error=str(e))
+            return TokenRefreshResult(
+                success=False, error=str(e), error_code="provider_unavailable"
+            )
 
-    async def validate_token(self, access_token: str) -> bool:
-        """Validate if an access token is still valid."""
+    async def validate_token_details(self, access_token: str) -> TokenValidationResult:
+        """Validate a token while preserving invalid-vs-provider-outage semantics."""
         try:
             response = await self._http.get(
                 f"{OAUTH_BASE}/validate",
                 headers={"Authorization": f"OAuth {access_token}"},
             )
-            return response.status_code == 200
-        except Exception as e:
-            LOGGER.warning(f"Token validation failed: {e}")
-            return False
+            if response.status_code == 401:
+                return TokenValidationResult(status="invalid", error_code="invalid_token")
+            if response.status_code != 200:
+                LOGGER.warning("Twitch token validation unavailable: HTTP %s", response.status_code)
+                return TokenValidationResult(
+                    status="unavailable", error_code="provider_unavailable"
+                )
+
+            data = response.json()
+            client_id = data.get("client_id")
+            user_id = data.get("user_id")
+            login = data.get("login")
+            scopes = data.get("scopes")
+            expires_in = data.get("expires_in")
+            if (
+                not isinstance(client_id, str)
+                or not isinstance(user_id, str)
+                or not isinstance(login, str)
+                or not isinstance(scopes, list)
+                or not all(isinstance(scope, str) for scope in scopes)
+                or not isinstance(expires_in, int)
+            ):
+                LOGGER.warning("Twitch token validation returned a malformed success response")
+                return TokenValidationResult(
+                    status="unavailable", error_code="provider_unavailable"
+                )
+
+            return TokenValidationResult(
+                status="valid",
+                client_id=client_id,
+                login=login,
+                user_id=user_id,
+                scopes=frozenset(scopes),
+                expires_in=expires_in,
+            )
+        except (httpx.HTTPError, ValueError, TypeError):
+            LOGGER.warning("Twitch token validation request failed", exc_info=True)
+            return TokenValidationResult(status="unavailable", error_code="provider_unavailable")
+
+    async def validate_token(self, access_token: str) -> bool:
+        """Compatibility wrapper for callers that only need valid or not-valid."""
+        return (await self.validate_token_details(access_token)).status == "valid"
+
+    async def revoke_access_token(self, access_token: str) -> TokenRevocationResult:
+        """Revoke a user token without exposing credential or provider response details."""
+        try:
+            response = await self._http.post(
+                f"{OAUTH_BASE}/revoke",
+                data={"client_id": self.client_id, "token": access_token},
+            )
+            if response.status_code == 200:
+                return TokenRevocationResult(status="revoked")
+            if response.status_code == 400:
+                return TokenRevocationResult(status="already_invalid")
+            LOGGER.warning("Twitch token revocation unavailable: HTTP %s", response.status_code)
+            return TokenRevocationResult(status="unavailable", error_code="provider_unavailable")
+        except httpx.HTTPError:
+            LOGGER.warning("Twitch token revocation request failed", exc_info=True)
+            return TokenRevocationResult(status="unavailable", error_code="provider_unavailable")

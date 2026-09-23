@@ -1,7 +1,7 @@
 """Resumable historical check-in to collection-draw backfill.
 
-The historical assignment contract is intentionally frozen to the provider's
-first published starter pool. Mutable channel and system pool pointers are not
+The historical assignment contract is intentionally frozen to the first
+image-backed official pool. Mutable channel and system pool pointers are not
 consulted, so a rerun produces the same selection for a given check-in.
 """
 
@@ -18,9 +18,9 @@ import asyncpg
 from shared.collection_draw import select_card
 from shared.repositories.collection import CollectionRepository
 
-BACKFILL_POOL_KEY: Final = "official-starter"
+BACKFILL_POOL_KEY: Final = "official-all"
 BACKFILL_POOL_REVISION: Final = 1
-BACKFILL_SEED_VERSION: Final = "historical-checkins-v1"
+BACKFILL_SEED_VERSION: Final = "image-catalog-v1"
 DEFAULT_BATCH_SIZE: Final = 100
 MAX_BATCH_SIZE: Final = 1000
 

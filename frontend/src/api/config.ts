@@ -1,13 +1,8 @@
 const getBaseUrl = (): string => {
+  if (import.meta.env.DEV) return ''
+
   const rawBase = import.meta.env.VITE_API_URL || ''
-  if (!rawBase) {
-    if (import.meta.env.DEV) {
-      console.warn(
-        '[config] VITE_API_URL is not set — falling back to relative paths (Vite proxy).'
-      )
-    }
-    return ''
-  }
+  if (!rawBase) return ''
   const withProtocol = rawBase.startsWith('http') ? rawBase : `https://${rawBase}`
   return withProtocol.replace(/\/$/, '')
 }
@@ -35,6 +30,33 @@ export const API_ENDPOINTS = {
   },
   tenants: {
     list: join('/api/tenants'),
+    aiSettings: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/ai/settings`),
+    aiSettingsReset: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/ai/settings/reset`),
+    emotes: (channelId: string) => join(`/api/tenants/${encodeURIComponent(channelId)}/emotes`),
+    roleplaySets: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets`),
+    roleplaySet: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}`
+      ),
+    roleplayRevisions: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/revisions`
+      ),
+    roleplayRevisionExport: (channelId: string, setId: string, revisionId: number) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/revisions/${revisionId}/export`
+      ),
+    roleplayImports: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/roleplay-imports`),
+    roleplayActiveRevision: (channelId: string, setId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/roleplay-sets/${encodeURIComponent(setId)}/active-revision`
+      ),
+    activeRoleplay: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/active-roleplay`),
     botAccounts: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts`),
     botInvites: (channelId: string) =>
@@ -47,6 +69,18 @@ export const API_ENDPOINTS = {
       join(
         `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}/reauthorize-invite`
       ),
+    botAuthorizationCheck: (channelId: string, botUserId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}/authorization-check`
+      ),
+    botAccount: (channelId: string, botUserId: string) =>
+      join(
+        `/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/${encodeURIComponent(botUserId)}`
+      ),
+    broadcasterAuthorization: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization`),
+    broadcasterAuthorizationCheck: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/broadcaster-authorization/check`),
   },
   publicBotInvites: {
     get: (publicToken: string, nonce: string) =>
@@ -113,6 +147,14 @@ export const API_ENDPOINTS = {
   checkin: {
     settings: join('/api/checkin/settings'),
     leaderboard: join('/api/checkin/leaderboard'),
+    collections: join('/api/checkin/collections'),
+    dataSummary: join('/api/checkin/data/summary'),
+    dataExport: join('/api/checkin/data/export'),
+    dataClear: join('/api/checkin/data/clear'),
+    importColumns: join('/api/checkin/import/summary/columns'),
+    importPreview: join('/api/checkin/import/summary/preview'),
+    importIdentityPreview: join('/api/checkin/import/identity/preview'),
+    importApply: join('/api/checkin/import/apply'),
   },
   vip: {
     state: join('/api/vip/state'),
@@ -140,6 +182,8 @@ export const API_ENDPOINTS = {
     public: (u: string) => join(`/api/video-queue/public/${u}`),
     stream: (u: string) => join(`/api/video-queue/public/${u}/stream`),
     advance: (u: string) => join(`/api/video-queue/public/${u}/advance`),
+    playbackStarted: (u: string, id: number) =>
+      join(`/api/video-queue/public/${u}/entries/${id}/playback-started`),
     metadata: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/metadata`),
     clipSource: (u: string, id: number) =>
@@ -147,10 +191,13 @@ export const API_ENDPOINTS = {
     reelSource: (u: string, id: number) =>
       join(`/api/video-queue/public/${u}/entries/${id}/reel-source`),
     state: join('/api/video-queue/state'),
+    dashboardAdvance: join('/api/video-queue/advance'),
     history: join('/api/video-queue/history'),
+    rankings: join('/api/video-queue/rankings'),
     skip: join('/api/video-queue/skip'),
     clear: join('/api/video-queue/clear'),
     settings: join('/api/video-queue/settings'),
+    rotateKey: join('/api/video-queue/settings/rotate-key'),
     setNext: (id: number) => join(`/api/video-queue/entries/${id}/set-next`),
     playNow: (id: number) => join(`/api/video-queue/entries/${id}/play-now`),
     removeEntry: (id: number) => join(`/api/video-queue/entries/${id}`),

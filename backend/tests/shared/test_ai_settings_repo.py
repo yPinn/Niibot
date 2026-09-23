@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from shared.assistant import AssistantMode, AssistantScope
 from shared.repositories.ai_settings import AISettingsRepository, _ai_settings_cache
 
 
@@ -32,6 +33,8 @@ async def test_missing_row_returns_conservative_persona_v2_defaults() -> None:
     assert settings["refusal_style"] == "polite"
     assert settings["memory_enabled"] is False
     assert settings["cooldown"] == 30
+    assert settings["assistant_mode"] == "persona"
+    assert settings["active_roleplay_revision_id"] is None
 
 
 @pytest.mark.asyncio
@@ -54,6 +57,8 @@ async def test_upsert_persists_all_persona_v2_fields() -> None:
         "memory_enabled": True,
         "cooldown": 15,
         "min_role": "everyone",
+        "assistant_mode": "persona",
+        "active_roleplay_revision_id": None,
     }
     pool, conn = _make_pool(fetchrow=None)
     conn.fetchrow.side_effect = [None, returned]
@@ -74,9 +79,38 @@ async def test_upsert_persists_all_persona_v2_fields() -> None:
     assert "catchphrase_frequency" in sql
     assert "example_replies" in sql
     assert "memory_enabled" in sql
+    assert "assistant_mode" in sql
+    assert "active_roleplay_revision_id" in sql
     assert "各位" in args
     assert "witty" in args
     assert "occasional" in args
     assert ["收到", "交給我"] in args
     assert True in args
     assert result["example_replies"] == ["收到", "交給我"]
+
+
+@pytest.mark.asyncio
+async def test_scope_read_bypasses_cached_authoring_settings() -> None:
+    pool, conn = _make_pool(
+        fetchrow={
+            "assistant_mode": "roleplay",
+            "active_roleplay_revision_id": 41,
+        }
+    )
+
+    scope = await AISettingsRepository(pool).get_scope("channel-1")
+
+    assert scope == AssistantScope(AssistantMode.ROLEPLAY, 41)
+    sql, channel_id = conn.fetchrow.await_args.args
+    assert "assistant_mode" in sql
+    assert "active_roleplay_revision_id" in sql
+    assert channel_id == "channel-1"
+
+
+@pytest.mark.asyncio
+async def test_missing_scope_row_is_conservative_persona() -> None:
+    pool, _ = _make_pool(fetchrow=None)
+
+    scope = await AISettingsRepository(pool).get_scope("channel-1")
+
+    assert scope == AssistantScope(AssistantMode.PERSONA, None)

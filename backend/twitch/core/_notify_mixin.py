@@ -17,7 +17,12 @@ from typing import TYPE_CHECKING
 import twitchio
 
 from core.config import get_settings
-from shared.cache_invalidation import invalidate_channel_config, invalidate_module_config
+from shared.assistant import AssistantScopeChange
+from shared.cache_invalidation import (
+    invalidate_ai_settings_cache,
+    invalidate_channel_config,
+    invalidate_module_config,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -282,6 +287,19 @@ class _NotifyMixin:
         except Exception:
             LOGGER.exception("[NOTIFY] Bot credential hot reload failed")
 
+    async def _handle_bot_selection_changed(self, connection, pid, channel, payload) -> None:
+        """Refresh sender routing after selection, fallback, or tenant unlink."""
+        try:
+            data = json.loads(payload)
+            channel_id = data.get("channel_id")
+            if channel_id:
+                await self.bots.refresh(channel_id)  # type: ignore[attr-defined]
+            else:
+                await self.bots.load_all()  # type: ignore[attr-defined]
+            LOGGER.info("[NOTIFY] Bot sender selection refreshed")
+        except Exception:
+            LOGGER.exception("[NOTIFY] Bot sender selection refresh failed")
+
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""
         try:
@@ -302,8 +320,30 @@ class _NotifyMixin:
                 f"[NOTIFY] Config change on {table} for {self._ch(channel_id)}, refreshing cache"
             )  # type: ignore[attr-defined]
             await self._refresh_channel_cache(channel_id)  # type: ignore[attr-defined]
+            if data.get("clear_assistant_memory") is True:
+                self._clear_component_channel_memory(channel_id)
         except Exception as e:
             LOGGER.warning(f"[NOTIFY] Error handling config_change: {e}")
+
+    async def _handle_assistant_scope_changed(self, connection, pid, channel, payload) -> None:
+        """Invalidate assistant settings and retire old scoped conversations."""
+        try:
+            change = AssistantScopeChange.from_payload(payload)
+        except ValueError:
+            LOGGER.warning("[NOTIFY] Invalid assistant_scope_changed payload")
+            return
+
+        invalidate_ai_settings_cache(change.channel_id)
+        self._clear_component_channel_memory_except_scope(
+            change.channel_id,
+            change.scope.memory_key,
+        )
+        LOGGER.info(
+            "[NOTIFY] Assistant scope changed for %s: mode=%s revision=%s",
+            self._ch(change.channel_id),
+            change.assistant_mode.value,
+            change.active_roleplay_revision_id,
+        )
 
     # ------------------------------------------------------------------
     # Cache management
@@ -321,6 +361,25 @@ class _NotifyMixin:
             except Exception:
                 LOGGER.exception("[NOTIFY] Failed to clear component memory for %s", channel_id)
 
+    def _clear_component_channel_memory_except_scope(
+        self,
+        channel_id: str,
+        assistant_scope: str,
+    ) -> None:
+        """Remove retired assistant identities without clearing duplicate events."""
+        components = getattr(self, "_components", {})
+        for component in components.values():
+            hook = getattr(component, "clear_channel_memory_except_scope", None)
+            if not callable(hook):
+                continue
+            try:
+                hook(channel_id, assistant_scope)
+            except Exception:
+                LOGGER.exception(
+                    "[NOTIFY] Failed to retire old component memory for %s",
+                    channel_id,
+                )
+
     async def _refresh_channel_cache(self, channel_id: str) -> None:
         """Reload all config caches for a single channel from DB.
 
@@ -332,7 +391,6 @@ class _NotifyMixin:
         stale rows back into the cache (see cache_invalidation.py docstring).
         """
         invalidate_channel_config(channel_id)
-        self._clear_component_channel_memory(channel_id)
         try:
             await self.command_configs.warm_cache(channel_id)  # type: ignore[attr-defined]
         except Exception as e:

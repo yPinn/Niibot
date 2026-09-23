@@ -3,11 +3,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requestUrl } from '@/test/requestUrl'
 
 import {
+  checkBotAuthorization,
+  checkBroadcasterAuthorization,
   createBotInvite,
   declineBotInvite,
+  disconnectBroadcasterAuthorization,
   getBotInviteStatus,
+  getBroadcasterAuthorization,
   getPublicBotInvite,
   listBotAccounts,
+  unlinkBotAccount,
 } from './botAccounts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -85,5 +90,61 @@ describe('bot account APIs', () => {
     expect(urls[0].searchParams.get('nonce')).toBe('state-nonce')
     expect(urls[1].pathname).toBe('/api/public/bot-invites/opaque/decline')
     expect(fetchMock.mock.calls[1][1]).toEqual({ method: 'POST' })
+  })
+
+  it('uses the explicit authorization-management contract for checks and removal', async () => {
+    const health = {
+      status: 'valid',
+      last_checked_at: '2026-09-20T01:00:00Z',
+      last_validated_at: '2026-09-20T01:00:00Z',
+      error_code: null,
+    }
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(health))
+      .mockResolvedValueOnce(jsonResponse(health))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          channel_id: 'channel-a',
+          channel_name: 'alice',
+          display_name: 'Alice',
+          enabled: true,
+          ...health,
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ credential_retained: true, upstream_revoke_confirmed: false })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ credential_retained: false, upstream_revoke_confirmed: true })
+      )
+
+    await checkBotAuthorization('channel-a', 'bot-b')
+    await checkBroadcasterAuthorization('channel-a')
+    await getBroadcasterAuthorization('channel-a')
+    await unlinkBotAccount('channel-a', 'bot-b')
+    await disconnectBroadcasterAuthorization('channel-a')
+
+    expect(fetchMock.mock.calls.map(call => requestUrl(call[0]).pathname)).toEqual([
+      '/api/tenants/channel-a/bot-accounts/bot-b/authorization-check',
+      '/api/tenants/channel-a/broadcaster-authorization/check',
+      '/api/tenants/channel-a/broadcaster-authorization',
+      '/api/tenants/channel-a/bot-accounts/bot-b',
+      '/api/tenants/channel-a/broadcaster-authorization',
+    ])
+    for (const call of [fetchMock.mock.calls[0], fetchMock.mock.calls[1]]) {
+      expect(call[1]).toEqual({
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-Niibot-Action': 'twitch-authorization-management' },
+      })
+    }
+    for (const call of [fetchMock.mock.calls[3], fetchMock.mock.calls[4]]) {
+      expect(call[1]).toEqual({
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'X-Niibot-Action': 'twitch-authorization-management' },
+      })
+    }
   })
 })

@@ -2,40 +2,41 @@
 
 FastAPI 服務（`backend/api/`）提供的路由前綴。開發環境互動式文件：`http://localhost:8000/docs`。
 
-25 個 router 模組掛在 `backend/api/app.py`；前綴以各檔的 `APIRouter(prefix=...)` 為準。
+27 個 router 模組掛在 `backend/api/app.py`；前綴以各檔的 `APIRouter(prefix=...)` 為準。
 「前端頁面」欄位是這個 API 實際餵給哪個 dashboard 路由／nav 項目——用來在「從 UI 找後端」或
 「從後端找 UI」時直接對照，不必每次重新搜尋。沒有獨立頁面（被其他頁面內嵌，或純資料來源）的
 router 標記為「（無獨立頁面）」。
 
-| 前綴                            | Router                       | 功能                                                                               | 前端頁面                                                           |
-| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `/api/auth`                     | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 | `/login`、`/activate`                                              |
-| `/api/tenants`                  | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           | （無獨立頁面，跨頁共用）                                           |
-| `/api/tenants/.../bot-accounts` | `bot_accounts_router`        | 租戶私有 Bot 名單、Owner invite／reauthorize 與狀態輪詢                            | `/bot-invite/:publicToken`、`/bot-auth/result`                     |
-| `/api/public/bot-invites`       | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          | 同上                                                               |
-| `/api/channels`                 | `channels_router`            | 監控頻道管理、Bot 啟停                                                             | Overview（`/`）                                                    |
-| `/api/commands`                 | `commands_router`            | 指令 CRUD、啟停、公開列表                                                          | `/commands`                                                        |
-| `/api/events`                   | `events_router`              | EventSub 事件設定、Channel Points 兌換                                             | `/events`；兌換設定併入 `/channel-points`                          |
-| `/api/vip`                      | `vip_router`                 | VIP 門檻、獎勵規則與序號發放                                                       | 併入 `/channel-points`（VipSettingsSheet）                         |
-| `/api/checkin`                  | `checkin_router`             | 目前租戶的每日簽到時區與回覆模板                                                   | 併入 `/channel-points`（CheckinSettingsSheet／CheckinLeaderboard） |
-| `/api/analytics`                | `analytics_router`           | 場次分析、觀眾 Profile、熱門指令統計                                               | `/analytics/insights`                                              |
-| `/api/analytics/matcher`        | `matcher_router`             | 頻道觀眾重疊分析                                                                   | `/analytics/matcher`                                               |
-| `/api/stats`                    | `stats_router`               | 頻道統計（top chatters／commands）                                                 | Overview 小工具                                                    |
-| `/api/game-queue`               | `game_queue_router`          | 遊戲排隊                                                                           | `/modules/game-queue`、`/:username/game-queue/overlay`             |
-| `/api/video-queue`              | `video_queue_router`         | 影片佇列                                                                           | `/modules/video-queue`、`/:username/video-queue/overlay`           |
-| `/api/timers`                   | `timers_router`              | 定時訊息 CRUD                                                                      | `/timers`                                                          |
-| `/api/triggers`                 | `message_triggers_router`    | 關鍵字觸發 CRUD                                                                    | （目前 build 未掛 nav 項目）                                       |
-| `/api/crosshairs`               | `crosshairs_router`          | 準星管理、公開庫                                                                   | `/modules/crosshairs`、`/:username/crosshairs`                     |
-| `/api/live-display`             | `community_overlay_router`   | 公開 cursor event feed、租戶 Live Display key 啟用／輪替                           | `/modules/live-display`、公開 `/live-display`                      |
-| `/api/ai`                       | `ai_settings_router`         | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）                             | `/modules/ai`                                                      |
-| `/api/donate`                   | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 | `/donate/:username`                                                |
-| `/api/payment-configs`          | `payment_config_router`      | 金流平台設定                                                                       | （無獨立頁面，設定子面板）                                         |
-| `/api/bots`                     | `bots_router`                | Bot 狀態查詢                                                                       | （無獨立頁面，狀態小工具）                                         |
-| `/api/discord`                  | `discord_webhook_router`     | Discord 互動 webhook（slash command 簽章驗證）                                     | `/discord`                                                         |
-| `/api/client-errors`            | `client_errors_router`       | 前端 client-side 錯誤回報與查詢                                                    | 併入 `/admin/monitor`                                              |
-| `/api/releases`                 | `releases_router`            | 版本資訊查詢（`git describe`）                                                     | `/docs/releases`                                                   |
-| `/api/admin`                    | `admin_router`               | 管理員工具（限 Owner）；聚合 `routers/admin/` 下 `logs`／`db`／`modules` 子 router | `/admin`、`/admin/monitor`、`/admin/modules`                       |
-| `/health`、`/status`            | —                            | 服務健康檢查                                                                       | —                                                                  |
+| 前綴                             | Router                       | 功能                                                                               | 前端頁面                                                           |
+| -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `/api/auth`                      | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 | `/login`、`/activate`                                              |
+| `/api/tenants`                   | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           | （無獨立頁面，跨頁共用）                                           |
+| `/api/tenants/.../bot-accounts`  | `bot_accounts_router`        | Bot／實況主授權狀態、Owner invite、重查、移除與解除                                | Settings、`/bot-invite/:publicToken`、`/bot-auth/result`           |
+| `/api/tenants/.../roleplay-sets` | `roleplay_router`            | 租戶私有角色設定集的草稿、發布、啟用與封存                                         | （尚無頁面）                                                       |
+| `/api/public/bot-invites`        | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          | 同上                                                               |
+| `/api/channels`                  | `channels_router`            | 監控頻道管理、Bot 啟停                                                             | Overview（`/`）                                                    |
+| `/api/commands`                  | `commands_router`            | 指令 CRUD、啟停、公開列表                                                          | `/commands`                                                        |
+| `/api/events`                    | `events_router`              | EventSub 事件設定、Channel Points 兌換                                             | `/events`；兌換設定併入 `/channel-points`                          |
+| `/api/vip`                       | `vip_router`                 | VIP 門檻、獎勵規則與序號發放                                                       | 併入 `/channel-points`（VipSettingsSheet）                         |
+| `/api/checkin`                   | `checkin_router`             | 目前租戶的每日簽到時區與回覆模板                                                   | 併入 `/channel-points`（CheckinSettingsSheet／CheckinLeaderboard） |
+| `/api/analytics`                 | `analytics_router`           | 場次分析、觀眾 Profile、熱門指令統計                                               | `/analytics/insights`                                              |
+| `/api/analytics/matcher`         | `matcher_router`             | 頻道觀眾重疊分析                                                                   | `/analytics/matcher`                                               |
+| `/api/stats`                     | `stats_router`               | 頻道統計（top chatters／commands）                                                 | Overview 小工具                                                    |
+| `/api/game-queue`                | `game_queue_router`          | 遊戲排隊                                                                           | `/modules/game-queue`、`/:username/game-queue/overlay`             |
+| `/api/video-queue`               | `video_queue_router`         | 影片佇列                                                                           | `/modules/video-queue`、`/:username/video-queue/overlay`           |
+| `/api/timers`                    | `timers_router`              | 定時訊息 CRUD                                                                      | `/timers`                                                          |
+| `/api/triggers`                  | `message_triggers_router`    | 關鍵字觸發 CRUD                                                                    | （目前 build 未掛 nav 項目）                                       |
+| `/api/crosshairs`                | `crosshairs_router`          | 準星管理、公開庫                                                                   | `/modules/crosshairs`、`/:username/crosshairs`                     |
+| `/api/live-display`              | `community_overlay_router`   | 公開 cursor event feed、租戶 Live Display key 啟用／輪替                           | `/modules/live-display`、公開 `/live-display`                      |
+| `/api/ai`                        | `ai_settings_router`         | AI 助手設定（角色、enabled、cooldown、min_role、貼圖）                             | `/modules/ai`                                                      |
+| `/api/donate`                    | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 | `/donate/:username`                                                |
+| `/api/payment-configs`           | `payment_config_router`      | 金流平台設定                                                                       | （無獨立頁面，設定子面板）                                         |
+| `/api/bots`                      | `bots_router`                | Bot 狀態查詢                                                                       | （無獨立頁面，狀態小工具）                                         |
+| `/api/discord`                   | `discord_webhook_router`     | Discord 互動 webhook（slash command 簽章驗證）                                     | `/discord`                                                         |
+| `/api/client-errors`             | `client_errors_router`       | 前端 client-side 錯誤回報與查詢                                                    | 併入 `/admin/monitor`                                              |
+| `/api/releases`                  | `releases_router`            | 版本資訊查詢（`git describe`）                                                     | `/docs/releases`                                                   |
+| `/api/admin`                     | `admin_router`               | 管理員工具（限 Owner）；聚合 `routers/admin/` 下 `logs`／`db`／`modules` 子 router | `/admin`、`/admin/monitor`、`/admin/modules`                       |
+| `/health`、`/status`             | —                            | 服務健康檢查                                                                       | —                                                                  |
 
 ## 已知的命名分歧
 
@@ -82,6 +83,8 @@ router 標記為「（無獨立頁面）」。
 
 - `GET /api/tenants`：server-side 解析工作區與 capability。
 - `GET /api/tenants/{channel_id}/bot-accounts`：Owner/MOD 安全摘要；system Niibot + 該 tenant mappings。
+- `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/authorization-check`：Owner-only；立即驗證 token、身分與 scopes。
+- `DELETE /api/tenants/{channel_id}/bot-accounts/{bot_id}`：Owner-only；active／desired 回 409，只移除該 tenant mapping。
 - `POST /api/tenants/{channel_id}/bot-accounts/invites`：Owner-only；需
   `X-Niibot-Action: bot-account-management`。
 - `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/reauthorize-invite`：Owner-only、expected-account reset。
@@ -90,9 +93,36 @@ router 標記為「（無獨立頁面）」。
 - `GET /api/auth/twitch/bot/callback`：不建立 User、session、membership 或 tenant。
 - `GET /api/auth/twitch/collaborator/oauth|callback`：identity-only collaborator session。
 - `POST /api/admin/bot-accounts/system-default/reset-invite`：system owner-only Niibot token reset。
+- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
+- `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only 手動驗證。
+- `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only；停用頻道、撤銷 Owner sessions 並解除 token，
+  但保留設定與歷史紀錄。
 
-仍在 Phase 3–5：Bot unlink／sender selection、`/members` manual MOD grants、
+授權檢查與解除 mutation 使用 `X-Niibot-Action: twitch-authorization-management`。仍在 Phase 4–5：`/members` manual MOD grants、
 `/collaboration-settings` 與 Twitch MOD sync。既有 private feature routers 尚未全數遷移到 `{channel_id}` path。
+
+## Canon Role-play authoring API
+
+角色設定集以頻道 workspace 為 owner；所有路徑都由 `require_tenant_access` 解析登入者可操作的
+`channel_id`，不沿用只代表登入者自己頻道的 `require_activated`，request body 也不能另行指定 tenant。
+目前可呼叫：
+
+- `GET /api/tenants/{channel_id}/roleplay-sets`：列出未封存設定集；`include_archived=true` 可包含封存項目，
+  list response 不傳回完整草稿。
+- `POST /api/tenants/{channel_id}/roleplay-sets`：建立含 strict role-play document 的私人草稿。
+- `GET /api/tenants/{channel_id}/roleplay-sets/{set_id}`：讀取完整草稿與目前發布摘要。
+- `PATCH /api/tenants/{channel_id}/roleplay-sets/{set_id}`：以 `expected_draft_version` 更新草稿與名稱；版本落後回
+  `409 ROLEPLAY.VERSION_CONFLICT`。
+- `POST /api/tenants/{channel_id}/roleplay-sets/{set_id}/revisions`：驗證、編譯並發布 immutable revision；不會自動啟用。
+- `PUT /api/tenants/{channel_id}/roleplay-sets/{set_id}/active-revision`：啟用同 tenant、同設定集的已發布 revision。
+- `DELETE /api/tenants/{channel_id}/active-roleplay`：切回既有 Persona Assistant。
+- `DELETE /api/tenants/{channel_id}/roleplay-sets/{set_id}`：soft archive；正在使用的設定集必須先切換。
+
+所有 mutation 都要求 `X-Niibot-Action: roleplay-settings`，並套用 user + tenant + IP 限流；body schema
+拒絕未知欄位與型別轉換。只有啟用 revision 或切回 Persona 會發送 versioned
+`assistant_scope_changed` 通知，讓其他 API instance 精準失效該頻道的 `ai_settings` cache；編輯草稿、發布未啟用
+revision 與封存非 active 設定集都不通知 runtime。Twitch compact runtime 與 revision-scoped memory 已接入；
+非技術 Dashboard wizard 尚未接入，因此目前仍需直接呼叫 API 才能建立與啟用故事角色。
 
 ## Community Overlay feed
 
@@ -117,7 +147,7 @@ router 標記為「（無獨立頁面）」。
 Daily Check-in 成功時仍送出 `event_type = checkin.recorded`、`schema_version = 1`。新事件的 payload
 可額外包含 validated `collection` snapshot：draw／pool／algorithm、card revision、set、rarity、同源 artwork
 derivatives、`is_new`、`copy_count` 與進度。欄位是 additive optional contract，沒有該欄位的舊事件仍合法；
-前端遇到缺漏或 malformed collection 會顯示 legacy 簽到卡。現階段沒有租戶 cards／pool 管理 API，也沒有
+前端遇到缺漏或 malformed collection 會顯示 legacy 簽到卡。現階段沒有租戶自訂 cards／pool 管理 API，也沒有
 viewer collection 查詢端點。
 
 OBS URL 將 public key 放在 fragment，瀏覽器不會把 fragment 傳到 server；公開 API 再以
@@ -156,31 +186,42 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   且 `video_queue_settings` 沒有 NOTIFY trigger，送出會是不誠實的過期值）。5 分鐘 hard lease、15 秒
   heartbeat、429 容量上限，行為與 Live Display stream 一致；詳見
   [docs/guides/cloudflare-pages.md](../guides/cloudflare-pages.md)。
-- 既有 `GET /api/video-queue/public/{username}`、`POST .../advance`、
-  `PATCH .../entries/{id}/metadata` 等 REST 端點不變，dashboard 與 overlay 的 kickstart／advance
-  互動仍走 REST；`stream` 只是取代原本的 overlay 狀態輪詢。
+- `GET /api/video-queue/public/{username}` 維持匿名唯讀；`POST .../advance` 與
+  `PATCH .../entries/{id}/metadata`、`POST .../entries/{id}/playback-started` 必須帶
+  `X-Overlay-Key` capability。播放開始只接受 `confirmed`／`best_effort`，同一 entry 重送不重複計次；
+  dashboard preview 永不 mutation，登入 dashboard 改走 `POST /api/video-queue/advance`。`stream` 只取代狀態輪詢。
 - `GET /api/video-queue/public/{username}/entries/{id}/clip-source`（無需認證、rate-limited、
   scoped 到該頻道佇列裡的 `twitch_clip` entry）：回 `{url}` — Twitch clip 的簽章直連 MP4，讓 overlay
   用 `<video>` 播（embed iframe 在 OBS 無法 autoplay）。走 Twitch 私有 GraphQL（`ShareClipRenderStatus`，
   非官方、Bilibili-tier 依賴，token 現拿不存）；失敗回 404，overlay fallback 回 iframe。
   詳見 [docs/architecture/video-queue-platforms.md](../architecture/video-queue-platforms.md)。
+- `GET /api/video-queue/public/{username}/entries/{id}/reel-source`（匿名、rate-limited、頻道與 entry scoped）：
+  透過 InstaFix 即時解析 Instagram Reel 簽章 MP4；失敗回 404，overlay 直接略過（Instagram 無 embed fallback）。
 - `GET /api/video-queue/history?limit=&cursor=`（`require_activated`，租戶自身頻道）：已播／已略過的
   entry，`ended_at` 由新到舊，keyset 分頁——`cursor` 帶上一頁最後一列的 `ended_at` ISO 字串，
   `next_cursor` 為 `null` 代表沒有更多。無新表，紀錄一直是留在 `video_queue` 裡的 terminal row，
   只是之前沒有讀取路徑；`idx_video_queue_channel_ended`（migration 107）建索引，超過 30 天由
   `video_queue_history_retention_loop`（`api/app.py` lifespan，每日）刪除。
-- `GET`／`PUT /api/video-queue/settings` 的 `max_duration_seconds`（全域影片長度上限，秒；0 = 不限）
-  與 `replay_cooldown_hours`（同一支影片在 N 小時內播過就拒收；0 = 不限）為投稿閘門，chat／點數兌換／
-  dashboard 三條加入路徑都套用（migration 109 加在 `video_queue_settings`）。`max_duration_seconds`
-  與點數兌換原有的 `max_duration_redemption` 取兩者較嚴；重播冷卻查 `video_queue` 裡 `status = 'done'`
-  且 `ended_at` 在區間內的 terminal row（`repo.played_within`）。
+- `GET /api/video-queue/rankings?scope=channel|global&days=7|30&video_type=`
+  （`require_activated`、`private, no-store`）：回傳有效播放的匿名彙總；本台依播放次數排序，全站先依不同
+  頻道數、再依播放次數排序。回應不含 contributing channel 或點播者 identity，另帶目前租戶自己的
+  `active_status`／`blocked_kind` 供操作按鈕使用。
+- `GET`／`PUT /api/video-queue/settings` 回傳／更新全域規則；`max_duration_seconds` 套用 Chat、點數兌換、
+  Donate 與 dashboard，並與點數的 `max_duration_redemption` 取較嚴者。容量、最低觀看數與
+  `replay_cooldown_hours` 套用 Chat、點數與 Donate；dashboard 是 broadcaster override。重複與重播 identity
+  使用 `(video_type, video_id)`。`volume_percent`（0–100，migration 133）套用可控播放器；嵌入式 fallback
+  只支援靜音。設定回應為 `private, no-store`。
+- `POST /api/video-queue/settings/rotate-key`（登入且 `X-Niibot-Action: video-queue`）輪替 OBS capability，
+  舊 URL 立即失效（migration 132）。
 - `GET`／`POST /api/video-queue/blocklist`、`DELETE /api/video-queue/blocklist/{id}`
   （`require_activated`，租戶自身頻道）：Video Queue 封鎖清單（`video_queue_blocklist`，migration 110）。
-  `kind`：`video`（video_id）／`keyword`（標題不分大小寫子字串）／`user`（`requested_by_id` 優先，否則
-  小寫 login）。`creator` 已在 DB CHECK 但先不開放（要等 `creator_id` metadata，B3）。三條加入路徑
-  insert 前呼叫 `VideoQueueBlocklistRepository.check`（per-channel 30s TTL 快取，Python 比對）；
-  命中時 API 回 `VIDEO_QUEUE.BLOCKED`（422），chat／兌換回中文訊息。`POST` 對 `(channel, kind,
-lower(value))` idempotent。
+  `kind`：`video`（video_id）／`creator`（平台原生 creator_id）／`keyword`（標題不分大小寫子字串）／
+  `user`（`requested_by_id` 優先，否則小寫 login）。四條加入路徑 insert 前呼叫
+  `VideoQueueBlocklistRepository.check`（per-channel 30s TTL 快取，Python 比對）；Donate 無穩定 Twitch
+  user identity，因此 `user` 規則只套用 Chat／點數兌換。
+  命中時 API 回 `VIDEO_QUEUE.BLOCKED`（422），chat／兌換回中文訊息。migration 135 起 `video`／
+  `creator` 可帶 `video_type`，`POST` 對 `(channel, kind, lower(value), COALESCE(video_type, '*'))`
+  idempotent；既有 `video_type IS NULL` 規則保留跨平台 wildcard 語意，keyword／user 不接受 provider。
 
 ## Events 與 Twitch 頻道點數
 
@@ -198,17 +239,51 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 ## Daily Check-in settings
 
 - `GET /api/checkin/settings`：讀取目前登入租戶的 IANA timezone、簽到成功模板、同日重複模板，
-  以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 0）。
+  以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 5）。
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
+- `GET /api/checkin/collections`：讀取第一個有圖 catalog、目前抽卡範圍與全部 7 個 set／48 張卡片資料。
+- `PATCH /api/checkin/collections`：body 只接受 nullable `set_key`；`null` 使用包含全部卡片的官方 fallback，
+  其餘值只可指向已發布的官方單一 set pool。mutation 必須帶 `X-Niibot-Action: checkin-collections`。
 
-模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(date)`；server 會同時驗證未知變數與 Twitch
-500 字元的最壞輸出長度。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
+模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`；server 會同時驗證
+未知變數與 Twitch 500 字元的最壞輸出長度。`$(count)` 包含 carry-over，`$(streak)` 可接續匯入紀錄；
+`$(today_order)` 是頻道當地日期內的穩定簽到順序。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
 只有確實建立 check-in、draw 與 Overlay event 的 `recorded` 結果套用 reply delay；`duplicate` 沒有 draw／event
 且立即回覆。延遲是 in-process best-effort 校準，不等待或要求 Overlay ACK；OBS 離線也不會回滾已提交資料。
 前端 `/events` 只管理 EventSub 回覆；`/channel-points` 管理 reward → action 映射，並由每日簽到列開啟
 獨立的 `Check-in settings` 編輯面。`Community Overlay` 只顯示目前 reward 綁定摘要並導向
 `/channel-points`，不提供第二個 mutation 入口。
+
+### Daily Check-in carry-over import
+
+- `POST /api/checkin/import/summary/columns`：owner-only multipart 欄位檢查。接受一個 upload 或公開
+  Google Sheets URL，只回傳 bounded headers、格式、工作表名稱與 exact-alias 建議 mapping；不解析 Twitch
+  身份、不保存原始內容。
+- `POST /api/checkin/import/summary/preview`：owner-only multipart preview。接受一個 `.csv`、`.tsv`、`.xlsx`
+  upload，或一個可匿名讀取的 Google Sheets URL；另帶 source slug、IANA source timezone 與 through date。
+  可帶 `column_mapping` JSON，以 canonical field → zero-based source column index 手動覆寫欄位對應；回傳
+  stable Twitch identity、逐列狀態及預設選取，不保存原始輸入。
+- `POST /api/checkin/import/apply`：owner-only、all-or-nothing apply。body 帶 `import_id`、`selected_keys` 與
+  `old_source_disabled: true`；相同 content／selection／policy 具 idempotency，不會重複加總。
+
+三個 POST 都要求 `X-Niibot-Action: checkin-import`。第一版若同一 stable viewer 已有任何 Niibot ledger
+或 carry-over，整批回 `409 CHECKIN_IMPORT.CONFLICT`；不提供 sum、max 或 overwrite。
+
+### Daily Check-in data management
+
+- `GET /api/checkin/data/summary`：owner-only，回傳匯入承接值與完整簽到資料兩種清除範圍的影響數量，
+  以及 destructive confirmation 使用的頻道名稱。
+- `GET /api/checkin/data/export`：owner-only，下載 UTF-8 BOM CSV。欄位固定為 `Username`、
+  `Twitch User ID`、`DisplayName`、`Count`、`LastDate`、`Streak`、`TodayOrder`，可直接走同一個
+  carry-over importer。文字欄位會防止試算表公式執行；回應為 `private, no-store`。
+- `POST /api/checkin/data/clear`：owner-only，body 只接受 `scope: imported | all` 與頻道名稱確認字串，
+  並要求 `X-Niibot-Action: checkin-data`。`imported` 只撤銷 carry-over/import batch 並依真實 ledger
+  重算 streak；`all` 另清除簽到 ledger、對應收藏卡及 `checkin.recorded` 畫面事件。兩者都保留時區、
+  回覆模板、reward mapping 與收藏卡池設定，並在同一交易寫入 tenant audit event。
+
+匯出是跨 Bot 可攜的「每位觀眾彙總」，不是 lossless 備份；它不包含逐日簽到歷史、抽卡結果或 Overlay
+事件。完整清除以前應先下載 CSV。清除與即時簽到／匯入共用 channel advisory lock，避免 cutover 競爭。
 
 ## 租戶邊界
 

@@ -49,6 +49,12 @@ class TestCreateAccessToken:
         assert payload["sub"] == "user-1"
         assert payload["platform"] == "twitch"
         assert payload["platform_user_id"] == "54321"
+        assert payload["sv"] == 1
+
+    def test_token_can_carry_current_session_version(self, service: AuthService):
+        token = service.create_access_token("user-1", "twitch", "54321", session_version=7)
+        payload = jwt.decode(token, "test-secret-key-for-unit-tests-32b", algorithms=["HS256"])
+        assert payload["sv"] == 7
 
     def test_token_has_expiry(self, service: AuthService):
         token = service.create_access_token("u", "twitch", "1")

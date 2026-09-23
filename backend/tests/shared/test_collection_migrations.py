@@ -1,10 +1,14 @@
 """Static contracts for the immutable daily check-in collection schema."""
 
+import json
 from pathlib import Path
 
 _VERSIONS = Path(__file__).parents[2] / "shared" / "migrations" / "versions"
 _SCHEMA = _VERSIONS / "112_add_checkin_collections.sql"
 _SEED = _VERSIONS / "113_seed_official_checkin_starter_pool.sql"
+_CHECKIN_RESET = _VERSIONS / "131_allow_checkin_collection_reset.sql"
+_IMAGE_CATALOG = _VERSIONS / "136_replace_checkin_starter_with_image_catalog.sql"
+_ARTWORK_CATALOG = Path(__file__).parents[3] / "artwork" / "collections" / "catalog.json"
 
 
 def test_collection_schema_separates_catalog_pool_and_draw_facts() -> None:
@@ -103,3 +107,58 @@ def test_official_starter_catalog_uses_original_product_identifiers() -> None:
         assert original_key in sql
     for protected_term in ("greed island", "hunter x hunter", "pokemon", "yu-gi-oh"):
         assert protected_term not in sql
+
+
+def test_checkin_reset_keeps_draws_immutable_until_the_parent_is_removed() -> None:
+    sql = _CHECKIN_RESET.read_text(encoding="utf-8")
+
+    assert "CREATE OR REPLACE FUNCTION fn_prevent_viewer_card_draw_change()" in sql
+    assert "NOT EXISTS" in sql
+    assert "FROM viewer_checkins" in sql
+    assert "channel_id = OLD.channel_id" in sql
+    assert "user_id = OLD.user_id" in sql
+    assert "id = OLD.checkin_id" in sql
+    assert "DISABLE TRIGGER" not in sql
+    assert "DROP TRIGGER" not in sql
+
+
+def test_image_catalog_replaces_starter_with_every_versioned_artwork() -> None:
+    sql = _IMAGE_CATALOG.read_text(encoding="utf-8")
+    catalog = json.loads(_ARTWORK_CATALOG.read_text(encoding="utf-8"))
+
+    expected_cards = 0
+    for collection in catalog["collections"]:
+        assert f"'{collection['key']}'" in sql
+        for card in collection["cards"]:
+            expected_cards += 1
+            assert f"'{card['key']}'" in sql
+            assert (
+                f"'/images/collections/{collection['key']}/{card['key']}-r{card['revision']}.webp'"
+            ) in sql
+
+    normalized = " ".join(sql.split()).lower()
+    assert expected_cards == 48
+    assert "'official-all'" in normalized
+    assert normalized.count("'official-set-") >= 7
+    assert "(pool_revision_id, card_revision_id, card_id, entry_order)" in normalized
+    assert "delete from viewer_card_draws" in normalized
+    assert "delete from channel_collection_settings" in normalized
+    assert "delete from community_overlay_events" in normalized
+    assert "payload ? 'collection'" in normalized
+    assert "set_key = 'first-path'" in normalized
+    assert "pool_key = 'official-starter'" in normalized
+    assert "delete from collection_sets" in normalized
+    assert "delete from draw_pool_revisions" in normalized
+
+
+def test_image_catalog_reset_preserves_checkin_ledger_and_restores_guards() -> None:
+    sql = _IMAGE_CATALOG.read_text(encoding="utf-8")
+    normalized = " ".join(sql.split()).lower()
+
+    assert "delete from viewer_checkins" not in normalized
+    assert "disable trigger trg_viewer_card_draws_immutable" in normalized
+    assert "enable trigger trg_viewer_card_draws_immutable" in normalized
+    assert "disable trigger trg_collection_sets_publish_once" in normalized
+    assert "enable trigger trg_collection_sets_publish_once" in normalized
+    assert "update collection_system_settings" in normalized
+    assert "fallback_pool_revision_id" in normalized

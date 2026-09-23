@@ -22,6 +22,7 @@ export interface VideoQueueEntry {
 
 export interface PublicVideoQueueState {
   enabled: boolean
+  volume_percent: number
   current: VideoQueueEntry | null
   queue: VideoQueueEntry[]
   queue_size: number
@@ -33,10 +34,11 @@ export interface VideoQueueHistoryEntry {
   video_id: string
   title: string | null
   duration_seconds: number | null
+  start_seconds: number
   requested_by: string
   requested_by_id: string | null
   source: string
-  video_type: string
+  video_type: VideoType
   status: 'done' | 'skipped'
   started_at: string | null
   ended_at: string | null
@@ -49,8 +51,27 @@ export interface VideoQueueHistoryPage {
   next_cursor: string | null
 }
 
+export type VideoQueueRankingScope = 'channel' | 'global'
+
+export interface VideoQueueRankingEntry {
+  rank: number
+  video_type: VideoType
+  video_id: string
+  start_seconds: number
+  title: string | null
+  thumbnail_url: string | null
+  creator_id: string | null
+  creator_name: string | null
+  play_count: number
+  channel_count: number
+  last_played_at: string
+  active_status: 'queued' | 'playing' | null
+  blocked_kind: 'video' | 'creator' | 'keyword' | null
+}
+
 export interface VideoQueueSettings {
   channel_id: string
+  overlay_key: string
   enabled: boolean
   redemption_enabled: boolean
   max_duration_redemption: number
@@ -60,6 +81,7 @@ export interface VideoQueueSettings {
   max_per_user: number
   max_duration_seconds: number
   replay_cooldown_hours: number
+  volume_percent: number
 }
 
 export type BlocklistKind = 'video' | 'creator' | 'keyword' | 'user'
@@ -67,6 +89,7 @@ export type BlocklistKind = 'video' | 'creator' | 'keyword' | 'user'
 export interface BlocklistEntry {
   id: number
   kind: BlocklistKind
+  video_type: VideoType | null
   value: string
   label: string | null
   created_at: string | null
@@ -82,6 +105,7 @@ export interface VideoQueueSettingsUpdate {
   max_per_user?: number
   max_duration_seconds?: number
   replay_cooldown_hours?: number
+  volume_percent?: number
 }
 
 // ---- Public (OBS Overlay) ----
@@ -94,15 +118,30 @@ export async function getPublicVideoQueueState(username: string): Promise<Public
 
 export async function advanceVideoQueue(
   username: string,
-  doneId: number | null
+  doneId: number | null,
+  overlayKey: string,
+  reason: 'completed' | 'provider_error' | 'autoplay_blocked' | 'startup_timeout' = 'completed'
 ): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.advance(username), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ done_id: doneId }),
+    headers: { 'Content-Type': 'application/json', 'X-Overlay-Key': overlayKey },
+    body: JSON.stringify({ done_id: doneId, ...(doneId === null ? {} : { reason }) }),
   })
   if (!response.ok) throw await parseApiError(response, '播放下一部失敗')
   return response.json()
+}
+
+export async function reportPlaybackStarted(
+  username: string,
+  entryId: number,
+  signal: 'confirmed' | 'best_effort',
+  overlayKey: string
+): Promise<void> {
+  await apiFetch(API_ENDPOINTS.videoQueue.playbackStarted(username, entryId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Overlay-Key': overlayKey },
+    body: JSON.stringify({ signal }),
+  })
 }
 
 /**
@@ -149,11 +188,12 @@ export async function fetchInstagramReelSource(
 export async function reportVideoMetadata(
   username: string,
   entryId: number,
-  durationSeconds: number
+  durationSeconds: number,
+  overlayKey: string
 ): Promise<void> {
   await apiFetch(API_ENDPOINTS.videoQueue.metadata(username, entryId), {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Overlay-Key': overlayKey },
     body: JSON.stringify({ duration_seconds: durationSeconds }),
   })
 }
@@ -163,6 +203,19 @@ export async function reportVideoMetadata(
 export async function getVideoQueueState(): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.state, { credentials: 'include' })
   if (!response.ok) throw await parseApiError(response, '載入點播佇列失敗')
+  return response.json()
+}
+
+export async function advanceVideoQueueFromDashboard(
+  doneId: number | null
+): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.dashboardAdvance, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ done_id: doneId }),
+  })
+  if (!response.ok) throw await parseApiError(response, '播放下一部失敗')
   return response.json()
 }
 
@@ -193,6 +246,20 @@ export async function getVideoQueueHistory(cursor?: string): Promise<VideoQueueH
   return response.json()
 }
 
+export async function getVideoQueueRankings(
+  scope: VideoQueueRankingScope,
+  days: 7 | 30,
+  videoType?: VideoType
+): Promise<VideoQueueRankingEntry[]> {
+  const params = new URLSearchParams({ scope, days: String(days) })
+  if (videoType) params.set('video_type', videoType)
+  const response = await apiFetch(`${API_ENDPOINTS.videoQueue.rankings}?${params}`, {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '載入點播排行失敗')
+  return response.json()
+}
+
 export async function getVideoQueueSettings(): Promise<VideoQueueSettings> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.settings, { credentials: 'include' })
   if (!response.ok) throw await parseApiError(response, '載入點播設定失敗')
@@ -209,6 +276,16 @@ export async function updateVideoQueueSettings(
     body: JSON.stringify(data),
   })
   if (!response.ok) throw await parseApiError(response, '更新點播設定失敗')
+  return response.json()
+}
+
+export async function rotateVideoQueueOverlayKey(): Promise<VideoQueueSettings> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.rotateKey, {
+    method: 'POST',
+    headers: { 'X-Niibot-Action': 'video-queue' },
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '更新顯示網址失敗')
   return response.json()
 }
 
@@ -248,13 +325,14 @@ export async function getVideoQueueBlocklist(): Promise<BlocklistEntry[]> {
 export async function addVideoQueueBlock(
   kind: BlocklistKind,
   value: string,
-  label?: string | null
+  label?: string | null,
+  videoType?: VideoType | null
 ): Promise<BlocklistEntry> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.blocklist, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ kind, value, label: label ?? null }),
+    body: JSON.stringify({ kind, value, label: label ?? null, video_type: videoType ?? null }),
   })
   if (!response.ok) throw await parseApiError(response, '加入封鎖清單失敗')
   return response.json()

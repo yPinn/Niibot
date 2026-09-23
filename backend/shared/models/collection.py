@@ -73,12 +73,21 @@ class CollectionProgress:
 
 
 @dataclass(frozen=True, slots=True)
+class OwnedCollectionCard:
+    """One logical card owned by the viewer within the selected card's set."""
+
+    card: CollectionCardRevision
+    copy_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class CollectionDraw:
     id: int
     selection: DrawSelection
     is_new: bool
     copy_count: int
     progress: CollectionProgress
+    owned_cards: tuple[OwnedCollectionCard, ...]
 
     def to_event_snapshot(self) -> dict[str, object]:
         """Build the presentation-neutral snapshot carried by the overlay event."""
@@ -117,4 +126,28 @@ class CollectionDraw:
                 "unique_cards": self.progress.unique_cards,
                 "total_cards": self.progress.total_cards,
             },
+            "owned_cards": [
+                {
+                    "card": {
+                        "id": item.card.card_id,
+                        "revision_id": item.card.revision_id,
+                        "key": item.card.key,
+                        "number": item.card.number,
+                        "name": item.card.name,
+                        "artwork": {
+                            "portrait_url": item.card.portrait_url,
+                            "square_url": item.card.square_url,
+                            "backdrop_url": item.card.backdrop_url,
+                        },
+                    },
+                    "rarity": {
+                        "key": item.card.rarity.key,
+                        "label": item.card.rarity.display_name,
+                        "rank": item.card.rarity.sort_rank,
+                        "effect_intensity": item.card.rarity.effect_intensity,
+                    },
+                    "copy_count": item.copy_count,
+                }
+                for item in self.owned_cards
+            ],
         }

@@ -26,10 +26,10 @@ interface BlockInfoGridProps {
  */
 export function BlockInfoGrid({ cells, className }: BlockInfoGridProps) {
   return (
-    <div className={cn('grid min-w-0 gap-3', className)}>
+    <div className={cn('grid min-w-0 gap-section', className)}>
       {cells.map(cell => (
         <div key={cell.label} className="space-y-1">
-          <div className="flex min-h-5 flex-wrap items-center gap-2">
+          <div className="flex min-h-5 flex-wrap items-center gap-element">
             <p className="text-label text-muted-foreground">{cell.label}</p>
             {cell.badge}
           </div>

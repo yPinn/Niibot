@@ -17,9 +17,9 @@ from shared.collection_backfill import (
 
 
 def test_backfill_contract_is_pinned_to_the_first_official_pool_revision() -> None:
-    assert BACKFILL_POOL_KEY == "official-starter"
+    assert BACKFILL_POOL_KEY == "official-all"
     assert BACKFILL_POOL_REVISION == 1
-    assert BACKFILL_SEED_VERSION == "historical-checkins-v1"
+    assert BACKFILL_SEED_VERSION == "image-catalog-v1"
 
 
 def test_entropy_is_stable_versioned_and_sensitive_to_every_identity_field() -> None:
@@ -31,7 +31,7 @@ def test_entropy_is_stable_versioned_and_sensitive_to_every_identity_field() -> 
         checkin_id=42,
     )
 
-    assert expected.hex() == "426b581fdf53115f26c554f54c82da3a"
+    assert expected.hex() == "9e74746b4b7d71baca689f126457a5c7"
     assert expected == derive_backfill_entropy(
         channel_id="channel-a",
         user_id="viewer-a",

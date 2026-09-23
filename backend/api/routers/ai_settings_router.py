@@ -7,16 +7,18 @@ import re
 from typing import Literal
 
 import asyncpg
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, Depends, Header
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.config import DATA_DIR
 from core.dependencies import (
     get_current_channel_id,
     get_db_pool,
     require_activated,
+    require_tenant_access,
 )
 from services.emote_sync import notify_config_change
+from services.tenant_service import TenantContext
 from shared.errors import InvalidInputError
 from shared.packs import Pack, load_packs
 from shared.repositories.ai_settings import DEFAULT_AI_SETTINGS, AISettingsRepository
@@ -68,6 +70,7 @@ def _contains_bias(text: str) -> bool:
 
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+tenant_router = APIRouter(prefix="/api/tenants/{channel_id}/ai", tags=["ai"])
 
 TonePreset = Literal["neutral", "witty", "energetic", "tsundere", "calm"]
 CatchphraseFrequency = Literal["off", "rare", "occasional"]
@@ -96,6 +99,8 @@ class AISettingsResponse(BaseModel):
     memory_enabled: bool
     cooldown: int
     min_role: str
+    assistant_mode: Literal["persona", "roleplay"]
+    active_roleplay_revision_id: int | None
 
 
 class PackInfo(BaseModel):
@@ -105,6 +110,8 @@ class PackInfo(BaseModel):
 
 
 class AISettingsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     bot_name: str | None = Field(None, min_length=1, max_length=50)
     persona: str | None = Field(None, max_length=300)
     self_pronoun: str | None = Field(None, max_length=20)
@@ -171,8 +178,7 @@ async def get_ai_settings(
     _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Return current AI settings for the authenticated channel."""
-    settings = await AISettingsRepository(pool).get(channel_id)
-    return AISettingsResponse(**settings)
+    return await _get_ai_settings(channel_id, pool)
 
 
 @router.patch("/settings", response_model=AISettingsResponse)
@@ -183,14 +189,49 @@ async def patch_ai_settings(
     _: None = Depends(require_activated),
 ) -> AISettingsResponse:
     """Update one or more AI settings fields for the authenticated channel."""
+    return await _patch_ai_settings(body, channel_id, pool)
+
+
+async def _get_ai_settings(channel_id: str, pool: asyncpg.Pool) -> AISettingsResponse:
+    settings = await AISettingsRepository(pool).get(channel_id)
+    return AISettingsResponse(**settings)
+
+
+async def _patch_ai_settings(
+    body: AISettingsPatch,
+    channel_id: str,
+    pool: asyncpg.Pool,
+) -> AISettingsResponse:
     patch = body.model_dump(exclude_none=True)
     if not patch:
         raise AISettingsEmptyPatchError()
 
     result = await AISettingsRepository(pool).upsert(channel_id, **patch)
-    await notify_config_change(pool, channel_id)
+    await notify_config_change(
+        pool,
+        channel_id,
+        clear_assistant_memory=patch.get("memory_enabled") is False,
+    )
 
     LOGGER.info("ai_settings_updated", extra={"fields": list(patch)})
+    return AISettingsResponse(**result)
+
+
+async def _reset_ai_settings(channel_id: str, pool: asyncpg.Pool) -> AISettingsResponse:
+    reset_data = {
+        key: value
+        for key, value in DEFAULT_AI_SETTINGS.items()
+        if key
+        not in {
+            "enabled_emotes",
+            "assistant_mode",
+            "active_roleplay_revision_id",
+        }
+    }
+    result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
+    await notify_config_change(pool, channel_id, clear_assistant_memory=True)
+
+    LOGGER.info("ai_settings_reset")
     return AISettingsResponse(**result)
 
 
@@ -205,9 +246,34 @@ async def reset_ai_settings(
     enabled_emotes is excluded — it is bot-managed and re-synced automatically
     when the emotes page is visited; resetting it would cause a temporary gap.
     """
-    reset_data = {k: v for k, v in DEFAULT_AI_SETTINGS.items() if k != "enabled_emotes"}
-    result = await AISettingsRepository(pool).upsert(channel_id, **reset_data)
-    await notify_config_change(pool, channel_id)
+    return await _reset_ai_settings(channel_id, pool)
 
-    LOGGER.info("ai_settings_reset")
-    return AISettingsResponse(**result)
+
+@tenant_router.get("/settings", response_model=AISettingsResponse)
+async def get_tenant_ai_settings(
+    tenant: TenantContext = Depends(require_tenant_access),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> AISettingsResponse:
+    """Return AI settings for the authorized workspace."""
+    return await _get_ai_settings(tenant.channel_id, pool)
+
+
+@tenant_router.patch("/settings", response_model=AISettingsResponse)
+async def patch_tenant_ai_settings(
+    body: AISettingsPatch,
+    _action: Literal["ai-settings"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_access),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> AISettingsResponse:
+    """Update AI settings for the authorized workspace."""
+    return await _patch_ai_settings(body, tenant.channel_id, pool)
+
+
+@tenant_router.post("/settings/reset", response_model=AISettingsResponse)
+async def reset_tenant_ai_settings(
+    _action: Literal["ai-settings"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_access),
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> AISettingsResponse:
+    """Reset Persona settings without changing the active assistant scope."""
+    return await _reset_ai_settings(tenant.channel_id, pool)

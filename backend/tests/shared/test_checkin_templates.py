@@ -11,14 +11,16 @@ from shared.checkin_templates import render_checkin_template
 
 def test_renders_only_supported_checkin_variables() -> None:
     rendered = render_checkin_template(
-        "$(@user) / $(user) / $(count) / $(date)",
+        "$(@user) / $(user) / $(count) / $(streak) / $(date) / $(today_order)",
         username="alice",
         display_name="Alice",
         total_days=12,
+        current_streak=4,
+        today_order=7,
         checkin_date=date(2026, 8, 31),
     )
 
-    assert rendered == "@Alice / Alice / 12 / 2026-08-31"
+    assert rendered == "@Alice / Alice / 12 / 4 / 2026-08-31 / 7"
 
 
 def test_falls_back_to_login_when_display_name_is_missing() -> None:

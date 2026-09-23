@@ -39,6 +39,14 @@ async function fetchChannelEmotes(): Promise<ChannelEmotesResponse> {
   return (await response.json()) as ChannelEmotesResponse
 }
 
+async function fetchTenantChannelEmotes(channelId: string): Promise<ChannelEmotesResponse> {
+  const response = await apiFetch(API_ENDPOINTS.tenants.emotes(channelId), {
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '載入表情符號失敗')
+  return (await response.json()) as ChannelEmotesResponse
+}
+
 // Same per-channel caching convention as STATS_CHANNEL/ANALYTICS_SUMMARY —
 // the cache key is not channel-scoped, matching how those already behave
 // across a tenant switch (a known, accepted gap, not introduced here).
@@ -46,6 +54,16 @@ export async function getChannelEmotes(options?: {
   forceRefresh?: boolean
 }): Promise<ChannelEmotesResponse> {
   return apiCache.fetch(CACHE_KEYS.CHANNEL_EMOTES, fetchChannelEmotes, {
+    ttl: 5 * 60 * 1000,
+    forceRefresh: options?.forceRefresh,
+  })
+}
+
+export async function getTenantChannelEmotes(
+  channelId: string,
+  options?: { forceRefresh?: boolean }
+): Promise<ChannelEmotesResponse> {
+  return apiCache.fetch(`channels:emotes:${channelId}`, () => fetchTenantChannelEmotes(channelId), {
     ttl: 5 * 60 * 1000,
     forceRefresh: options?.forceRefresh,
   })

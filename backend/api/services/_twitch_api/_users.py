@@ -8,6 +8,10 @@ from services._twitch_api._base import _TwitchAPIBase
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
+class TwitchUsersLookupError(RuntimeError):
+    """A batched user lookup could not be completed reliably."""
+
+
 class _UsersMixin(_TwitchAPIBase):
     # ------------------------------------------------------------------
     # User data
@@ -62,6 +66,37 @@ class _UsersMixin(_TwitchAPIBase):
         except Exception:
             LOGGER.exception("Error getting users by ids (count=%d)", len(user_ids))
             return []
+
+    async def get_users_by_ids_strict(self, user_ids: list[str]) -> list[dict]:
+        """Resolve at most 100 IDs, distinguishing no match from transport failure."""
+        return await self._get_users_strict("id", user_ids)
+
+    async def get_users_by_logins_strict(self, logins: list[str]) -> list[dict]:
+        """Resolve at most 100 logins, distinguishing no match from transport failure."""
+        return await self._get_users_strict("login", logins)
+
+    async def _get_users_strict(self, key: str, values: list[str]) -> list[dict]:
+        if not values:
+            return []
+        if len(values) > 100:
+            raise ValueError("Twitch user lookups accept at most 100 values")
+        response = await self._helix_get("users", {key: values})
+        if response is None or response.status_code != 200:
+            raise TwitchUsersLookupError(f"Twitch user lookup failed for {key}")
+        payload = response.json()
+        data = payload.get("data")
+        if not isinstance(data, list):
+            raise TwitchUsersLookupError("Twitch user lookup returned invalid data")
+        if any(
+            not isinstance(user, dict)
+            or not isinstance(user.get("id"), str)
+            or not user["id"]
+            or not isinstance(user.get("login"), str)
+            or not user["login"]
+            for user in data
+        ):
+            raise TwitchUsersLookupError("Twitch user lookup returned incomplete identities")
+        return cast(list[dict], data)
 
     async def get_channels_info(self, broadcaster_ids: list[str]) -> list[dict]:
         """Get channel info (language, tags) for multiple broadcasters via /helix/channels."""

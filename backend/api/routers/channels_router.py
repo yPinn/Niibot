@@ -16,6 +16,7 @@ from core.dependencies import (
     get_twitch_api,
     require_activated,
     require_self_tenant_access,
+    require_tenant_access,
 )
 from services import ChannelService, TenantContext, TwitchAPIClient
 from services.emote_sync import (
@@ -34,6 +35,7 @@ from shared.repositories.channel import ChannelRepository
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
+tenant_router = APIRouter(prefix="/api/tenants/{channel_id}", tags=["channels"])
 
 
 class ChannelAccessDeniedError(AccessDeniedError):
@@ -322,6 +324,23 @@ async def get_channel_emotes(
     for subscription/bits emotes if the bot token is missing or the scope is
     not yet granted.
     """
+    return await _get_channel_emotes(
+        background_tasks=background_tasks,
+        channel_id=channel_id,
+        pool=pool,
+        twitch=twitch,
+        settings=settings,
+    )
+
+
+async def _get_channel_emotes(
+    *,
+    background_tasks: BackgroundTasks,
+    channel_id: str,
+    pool: Pool,
+    twitch: TwitchAPIClient,
+    settings: Settings,
+) -> ChannelEmotesResponse:
     bot_id = await resolve_bot_id(pool, channel_id, system_bot_id=settings.bot_id)
     token_row = await ChannelRepository(pool).get_token(bot_id, "bot")
     bot_token = token_row.token if token_row else None
@@ -337,4 +356,22 @@ async def get_channel_emotes(
         bot_token_available=fetch.bot_token_available,
         emotes=items,
         other_channels=other_channels,
+    )
+
+
+@tenant_router.get("/emotes", response_model=ChannelEmotesResponse)
+async def get_tenant_channel_emotes(
+    background_tasks: BackgroundTasks,
+    tenant: TenantContext = Depends(require_tenant_access),
+    pool: Pool = Depends(get_db_pool),
+    twitch: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
+) -> ChannelEmotesResponse:
+    """Return emotes usable by the authorized workspace's active Bot account."""
+    return await _get_channel_emotes(
+        background_tasks=background_tasks,
+        channel_id=tenant.channel_id,
+        pool=pool,
+        twitch=twitch,
+        settings=settings,
     )
