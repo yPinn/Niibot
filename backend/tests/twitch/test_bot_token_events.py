@@ -196,11 +196,15 @@ class TestLoadTokens:
     def load_bot(self, bot):
         bot.channels.list_tokens = AsyncMock()
         bot.add_channel_to_db = AsyncMock()
-        bot._mark_reauth_required = AsyncMock()
+
+        async def _mark_reauth_required(user_id, *, expected_revision=None):
+            bot._needs_reauth.add(user_id)
+
+        bot._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
         return bot
 
     @staticmethod
-    def _token(reauth_notified_at):
+    def _token(reauth_notified_at, *, requires_reauth=False):
         from shared.models.channel import Token
 
         return Token(
@@ -208,25 +212,26 @@ class TestLoadTokens:
             token="tok",
             refresh="ref",
             token_type="broadcaster",
+            requires_reauth=requires_reauth,
             reauth_notified_at=reauth_notified_at,
         )
 
     async def test_never_notified_logs_and_marks(self, load_bot, caplog):
         load_bot.channels.list_tokens.return_value = [self._token(None)]
-        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=[])
         load_bot.add_token = AsyncMock(return_value=user_info)
 
         with caplog.at_level(logging.WARNING):
             await load_bot.load_tokens()
 
-        load_bot._mark_reauth_required.assert_awaited_once_with("u1")
+        load_bot._mark_reauth_required.assert_awaited_once_with("u1", expected_revision=1)
         assert "u1" in load_bot._needs_reauth
         assert any("missing scopes" in r.message for r in caplog.records)
 
     async def test_within_cooldown_skips_notify_but_keeps_flag(self, load_bot):
         recent = datetime.now(UTC) - timedelta(hours=1)
-        load_bot.channels.list_tokens.return_value = [self._token(recent)]
-        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        load_bot.channels.list_tokens.return_value = [self._token(recent, requires_reauth=True)]
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=[])
         load_bot.add_token = AsyncMock(return_value=user_info)
 
         await load_bot.load_tokens()
@@ -237,12 +242,12 @@ class TestLoadTokens:
     async def test_past_cooldown_notifies_again(self, load_bot):
         stale = datetime.now(UTC) - timedelta(hours=13)
         load_bot.channels.list_tokens.return_value = [self._token(stale)]
-        user_info = MagicMock(user_id="u1", login="streamer", scopes=["channel:bot"])
+        user_info = MagicMock(user_id="u1", login="streamer", scopes=[])
         load_bot.add_token = AsyncMock(return_value=user_info)
 
         await load_bot.load_tokens()
 
-        load_bot._mark_reauth_required.assert_awaited_once_with("u1")
+        load_bot._mark_reauth_required.assert_awaited_once_with("u1", expected_revision=1)
 
 
 @pytest.mark.asyncio
@@ -251,11 +256,13 @@ class TestEventSubscriptionRevoked:
     def revoked_bot(self, bot):
         bot._ch = lambda cid: cid
         bot._mark_reauth_required = AsyncMock()
+        token = MagicMock(credential_revision=7)
+        bot.channels.get_token = AsyncMock(return_value=token)
         return bot
 
     async def test_authorization_revoked_flags_reauth(self, revoked_bot):
         await revoked_bot.event_subscription_revoked(_make_revoked_payload("authorization_revoked"))
-        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch1")
+        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch1", expected_revision=7)
 
     async def test_authorization_revoked_clears_subscription_state(self, revoked_bot):
         # Without this, is_subscribed() keeps returning True for a token Twitch
@@ -274,7 +281,7 @@ class TestEventSubscriptionRevoked:
             "authorization_revoked", condition={"to_broadcaster_user_id": "ch2"}
         )
         await revoked_bot.event_subscription_revoked(payload)
-        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch2")
+        revoked_bot._mark_reauth_required.assert_awaited_once_with("ch2", expected_revision=7)
 
     async def test_non_auth_reason_does_not_flag_reauth(self, revoked_bot):
         await revoked_bot.event_subscription_revoked(

@@ -3,8 +3,8 @@
 Focus areas (master-slave scope migration):
 - channel.follow uses moderator_user_id=bot, so a 403 at subscribe time means
   "bot not mod yet" — it must NOT flag the broadcaster for reauth.
-- channel.moderator.* 403 still flags reauth (broadcaster lacks
-  channel:manage:moderators).
+- EventSub subscription failures never declare a credential globally invalid;
+  capability health is reconciled by the authorization service.
 - resubscribe_follow (re)creates the follow sub once the bot is granted mod.
 - Error classification is by typed HTTPException.status / subscription.type,
   not brittle string matching.
@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from core.subscription_manager import SubscriptionManager
+from shared.twitch_scopes import BOT_CORE_SCOPES, BROADCASTER_CORE_SCOPES
 
 
 def _make_manager(needs_reauth: set[str] | None = None) -> SubscriptionManager:
@@ -62,14 +63,15 @@ class TestSubscribe:
         assert "123" not in mgr._needs_reauth
         assert mgr.is_subscribed("123")
 
-    async def test_channel_moderator_403_flags_reauth(self):
+    async def test_channel_moderator_403_does_not_flag_global_reauth(self):
         mgr = _make_manager()
         mgr._multi_subscribe.return_value = _resp(
             success=["s1"],
             errors=[_err(403, "channel.moderator.add")],
         )
         await mgr.subscribe("123")
-        assert "123" in mgr._needs_reauth
+        assert "123" not in mgr._needs_reauth
+        assert mgr.is_subscribed("123")
 
     async def test_409_conflicts_are_ignored(self):
         mgr = _make_manager()
@@ -95,6 +97,31 @@ class TestSubscribe:
         mgr._subscribed = {"123"}
         await mgr.subscribe("123")
         mgr._multi_subscribe.assert_not_awaited()
+
+    async def test_runtime_scope_resolver_filters_subscription_plan(self):
+        resolver = AsyncMock(
+            return_value=(
+                set(BROADCASTER_CORE_SCOPES),
+                set(BOT_CORE_SCOPES),
+                set(),
+            )
+        )
+        mgr = SubscriptionManager(
+            bot_id="bot-1",
+            multi_subscribe=AsyncMock(return_value=_resp(success=["s1"])),
+            delete_subscription=AsyncMock(),
+            needs_reauth=set(),
+            scope_resolver=resolver,
+        )
+
+        await mgr.subscribe("123")
+
+        resolver.assert_awaited_once_with("123")
+        sent = mgr._multi_subscribe.await_args.args[0]
+        sent_types = {sub.type for sub in sent}
+        assert "channel.chat.message" in sent_types
+        assert "channel.cheer" not in sent_types
+        assert "channel.moderator.add" not in sent_types
 
 
 class TestResubscribeFollow:
