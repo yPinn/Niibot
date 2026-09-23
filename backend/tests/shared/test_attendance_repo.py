@@ -329,6 +329,7 @@ class TestCheckinSettings:
 
         assert settings.channel_id == "ch1"
         assert settings.timezone == "Asia/Taipei"
+        assert settings.reply_delay_seconds == 0
         assert "ON CONFLICT" in conn.execute.await_args.args[0]
         assert "WHERE channel_id = $1" in conn.fetchrow.await_args.args[0]
 

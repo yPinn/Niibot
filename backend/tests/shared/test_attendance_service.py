@@ -26,6 +26,10 @@ def _settings(timezone: str = "Asia/Taipei") -> CheckinSettings:
     )
 
 
+def test_new_checkin_settings_default_reply_delay_is_five_seconds() -> None:
+    assert _settings().reply_delay_seconds == 5
+
+
 @pytest.mark.asyncio
 class TestAttendanceService:
     async def test_get_leaderboard_uses_requested_channel(self):
@@ -106,7 +110,7 @@ class TestAttendanceService:
             timezone="Asia/Tokyo",
             success_template="$(@user) 第 $(count) 天",
             duplicate_template="$(@user) 今天已簽到",
-            reply_delay_seconds=0,
+            reply_delay_seconds=5,
         )
 
     async def test_update_settings_updates_only_the_reply_delay(self):

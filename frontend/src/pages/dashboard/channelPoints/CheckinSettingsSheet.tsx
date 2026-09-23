@@ -324,7 +324,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                       onChange={event => updateReplyDelay(Number(event.target.value))}
                     />
                     <p className="text-label text-muted-foreground">
-                      補償畫面比聊天室晚顯示的秒數；預設 0 秒（不延遲）。
+                      補償畫面比聊天室晚顯示的秒數；預設 5 秒。
                     </p>
                   </section>
 

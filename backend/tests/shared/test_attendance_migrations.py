@@ -106,8 +106,15 @@ def test_overlay_stream_notifications_are_wake_only_and_transaction_safe() -> No
     assert "payload" not in function_body
 
 
-def test_checkin_reply_delay_is_bounded_and_opt_in() -> None:
+def test_checkin_reply_delay_was_initially_bounded_and_opt_in() -> None:
     sql = (_VERSIONS / "105_add_checkin_reply_delay.sql").read_text(encoding="utf-8")
 
     assert "ADD COLUMN reply_delay_seconds SMALLINT NOT NULL DEFAULT 0" in sql
     assert "CHECK (reply_delay_seconds BETWEEN 0 AND 30)" in sql
+
+
+def test_checkin_reply_delay_default_becomes_five_without_rewriting_rows() -> None:
+    sql = (_VERSIONS / "137_set_checkin_reply_delay_default.sql").read_text(encoding="utf-8")
+
+    assert "ALTER COLUMN reply_delay_seconds SET DEFAULT 5" in sql
+    assert "UPDATE checkin_settings" not in sql

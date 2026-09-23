@@ -43,7 +43,7 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
 成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
 
-`checkin_settings.reply_delay_seconds`（預設 0，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
+`checkin_settings.reply_delay_seconds`（預設 5，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
 聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
 這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在 `recorded` 的「送出訊息」
 動作；check-in ledger、抽卡與 Overlay event 維持立即原子提交。同日 `duplicate` 沒有動畫，因此立即回覆。

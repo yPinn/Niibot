@@ -293,6 +293,7 @@ describe('Channel Points page', () => {
 
     expect(await screen.findByRole('heading', { name: 'Check-in settings' })).toBeInTheDocument()
     expect(screen.getByText(/聊天指令與 Twitch 點數簽到共用/)).toBeInTheDocument()
+    expect(screen.getByText('補償畫面比聊天室晚顯示的秒數；預設 5 秒。')).toBeInTheDocument()
     expect(getCheckinSettings).toHaveBeenCalledOnce()
     expect(getCheckinLeaderboard).toHaveBeenCalledOnce()
     const todayOrderVariable = screen.getByRole('button', { name: '$(today_order)' })

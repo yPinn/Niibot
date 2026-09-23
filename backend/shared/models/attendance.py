@@ -21,7 +21,7 @@ class CheckinSettings:
     timezone: str
     success_template: str
     duplicate_template: str
-    reply_delay_seconds: int = 0
+    reply_delay_seconds: int = 5
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
