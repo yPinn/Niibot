@@ -27,7 +27,7 @@ const COLLECTION = {
     id: 11,
     revision_id: 2,
     key: 'moonlit-compass',
-    number: 'GI-011',
+    number: '011',
     name: '月巡羅盤',
     artwork: {
       portrait_url: '/images/collections/starter/moonlit-compass.webp',
@@ -40,6 +40,32 @@ const COLLECTION = {
   is_new: true,
   copy_count: 1,
   progress: { owned_copies: 8, unique_cards: 6, total_cards: 24 },
+}
+
+const COMPLETE_COLLECTION = {
+  ...COLLECTION,
+  is_new: false,
+  copy_count: 2,
+  progress: { owned_copies: 3, unique_cards: 2, total_cards: 24 },
+  owned_cards: [
+    {
+      card: COLLECTION.card,
+      rarity: COLLECTION.rarity,
+      copy_count: 2,
+    },
+    {
+      card: {
+        ...COLLECTION.card,
+        id: 12,
+        revision_id: 3,
+        key: 'starlit-map',
+        number: '012',
+        name: '星圖',
+      },
+      rarity: { key: 'common', label: '普通', rank: 1, effect_intensity: 10 },
+      copy_count: 1,
+    },
+  ],
 }
 
 function checkinEvent(collection: unknown = undefined) {
@@ -62,12 +88,37 @@ describe('community overlay renderer registry', () => {
     expect(screen.getByLabelText('Alice 的簽到集點卡')).toBeInTheDocument()
   })
 
-  it('uses the binder only when the complete collection snapshot validates', () => {
+  it('keeps legacy v1 collection events without inventory on the binder', () => {
     const resolved = resolveOverlayEvent(checkinEvent(COLLECTION))
     expect(resolved?.rendererId).toBe('collection-binder')
 
     render(<OverlayEventRenderer resolved={resolved!} theme={DEFAULT_COMMUNITY_OVERLAY_THEME} />)
     expect(screen.getByLabelText('Alice 的卡冊：獲得稀有卡月巡羅盤')).toBeInTheDocument()
+  })
+
+  it('uses the binder when the complete owned-card inventory validates', () => {
+    expect(resolveOverlayEvent(checkinEvent(COMPLETE_COLLECTION))?.rendererId).toBe(
+      'collection-binder'
+    )
+  })
+
+  it.each([
+    {
+      ...COMPLETE_COLLECTION,
+      owned_cards: [COMPLETE_COLLECTION.owned_cards[0], COMPLETE_COLLECTION.owned_cards[0]],
+    },
+    {
+      ...COMPLETE_COLLECTION,
+      owned_cards: COMPLETE_COLLECTION.owned_cards.map((item, index) =>
+        index === 0 ? { ...item, copy_count: 3 } : item
+      ),
+    },
+    {
+      ...COMPLETE_COLLECTION,
+      owned_cards: [COMPLETE_COLLECTION.owned_cards[1]],
+    },
+  ])('falls back when the complete inventory is inconsistent', collection => {
+    expect(resolveOverlayEvent(checkinEvent(collection))?.rendererId).toBe('checkin-card')
   })
 
   it.each([

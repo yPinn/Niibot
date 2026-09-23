@@ -69,6 +69,10 @@ class TestPublishCheckinPreview:
         )
         assert kwargs["payload"]["collection"]["rarity"]["key"] == "common"
         assert kwargs["payload"]["collection"]["is_new"] is False
+        assert len(kwargs["payload"]["collection"]["owned_cards"]) == 7
+        assert (
+            sum(item["copy_count"] for item in kwargs["payload"]["collection"]["owned_cards"]) == 8
+        )
         assert kwargs["idempotency_key"].startswith("preview-checkin:")
 
     async def test_generic_preview_rejects_unregistered_content(self) -> None:
@@ -140,8 +144,10 @@ class TestPublishCheckinPreview:
         assert kwargs["payload"]["collection"]["progress"] == {
             "owned_copies": 8,
             "unique_cards": 7,
-            "total_cards": 48,
+            "total_cards": 9,
         }
+        assert kwargs["payload"]["collection"]["owned_cards"][0]["card"]["key"] == ("karina-01")
+        assert kwargs["payload"]["collection"]["owned_cards"][0]["copy_count"] == 2
         assert kwargs["expires_at"] == _NOW + timedelta(minutes=10)
         assert kwargs["idempotency_key"].startswith("preview-checkin:")
 

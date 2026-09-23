@@ -14,6 +14,7 @@ from shared.models.collection import (
     CollectionProgress,
     CollectionSet,
     DrawSelection,
+    OwnedCollectionCard,
     RarityRevision,
 )
 from shared.repositories.attendance import AttendanceRepository
@@ -78,6 +79,7 @@ def _collection_draw() -> CollectionDraw:
         is_new=True,
         copy_count=1,
         progress=CollectionProgress(owned_copies=1, unique_cards=1, total_cards=9),
+        owned_cards=(OwnedCollectionCard(card=card, copy_count=1),),
     )
 
 

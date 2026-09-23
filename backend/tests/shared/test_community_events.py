@@ -46,9 +46,149 @@ def test_accepts_checkin_payload_with_a_complete_collection_snapshot():
                 "is_new": False,
                 "copy_count": 2,
                 "progress": {"owned_copies": 4, "unique_cards": 3, "total_cards": 9},
+                "owned_cards": [
+                    {
+                        "card": {
+                            "id": 31,
+                            "revision_id": 41,
+                            "key": "first-step",
+                            "number": "001",
+                            "name": "第一步",
+                            "artwork": {
+                                "portrait_url": None,
+                                "square_url": "/images/collections/first-step-square.webp",
+                                "backdrop_url": None,
+                            },
+                        },
+                        "rarity": {
+                            "key": "common",
+                            "label": "普通",
+                            "rank": 10,
+                            "effect_intensity": 10,
+                        },
+                        "copy_count": 2,
+                    },
+                    {
+                        "card": {
+                            "id": 32,
+                            "revision_id": 42,
+                            "key": "second-step",
+                            "number": "002",
+                            "name": "第二步",
+                            "artwork": {
+                                "portrait_url": "/images/collections/second-step.webp",
+                                "square_url": None,
+                                "backdrop_url": None,
+                            },
+                        },
+                        "rarity": {
+                            "key": "common",
+                            "label": "普通",
+                            "rank": 10,
+                            "effect_intensity": 10,
+                        },
+                        "copy_count": 1,
+                    },
+                    {
+                        "card": {
+                            "id": 33,
+                            "revision_id": 43,
+                            "key": "third-step",
+                            "number": "003",
+                            "name": "第三步",
+                            "artwork": {
+                                "portrait_url": None,
+                                "square_url": None,
+                                "backdrop_url": None,
+                            },
+                        },
+                        "rarity": {
+                            "key": "rare",
+                            "label": "稀有",
+                            "rank": 20,
+                            "effect_intensity": 50,
+                        },
+                        "copy_count": 1,
+                    },
+                ],
             },
         },
     )
+
+
+def test_accepts_legacy_collection_snapshot_without_owned_cards():
+    validate_community_event(
+        "checkin.recorded",
+        1,
+        {
+            "total_days": 3,
+            "checkin_date": "2026-08-30",
+            "collection": _legacy_collection_snapshot(),
+        },
+    )
+
+
+def _legacy_collection_snapshot():
+    return {
+        "draw_id": 61,
+        "pool_revision_id": 51,
+        "algorithm_version": "weighted-rarity-v1",
+        "card": {
+            "id": 31,
+            "revision_id": 41,
+            "key": "first-step",
+            "number": "001",
+            "name": "第一步",
+            "artwork": {
+                "portrait_url": None,
+                "square_url": "/images/collections/first-step-square.webp",
+                "backdrop_url": None,
+            },
+        },
+        "set": {"id": 11, "key": "starter", "name": "起始收藏"},
+        "rarity": {
+            "key": "common",
+            "label": "普通",
+            "rank": 10,
+            "effect_intensity": 10,
+        },
+        "is_new": False,
+        "copy_count": 2,
+        "progress": {"owned_copies": 4, "unique_cards": 3, "total_cards": 9},
+    }
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda snapshot: snapshot["owned_cards"].append(snapshot["owned_cards"][0]),
+        lambda snapshot: snapshot["owned_cards"][0].__setitem__("copy_count", 3),
+        lambda snapshot: snapshot["owned_cards"].pop(),
+        lambda snapshot: snapshot["owned_cards"][0]["card"].__setitem__("id", 99),
+        lambda snapshot: snapshot["owned_cards"][0]["card"]["artwork"].__setitem__(
+            "portrait_url", "https://untrusted.example/card.webp"
+        ),
+    ],
+)
+def test_rejects_inconsistent_complete_inventory(mutate):
+    snapshot = _legacy_collection_snapshot()
+    snapshot["progress"] = {"owned_copies": 2, "unique_cards": 1, "total_cards": 9}
+    snapshot["owned_cards"] = [
+        {
+            "card": snapshot["card"].copy(),
+            "rarity": snapshot["rarity"].copy(),
+            "copy_count": 2,
+        }
+    ]
+    snapshot["owned_cards"][0]["card"]["artwork"] = snapshot["card"]["artwork"].copy()
+    mutate(snapshot)
+
+    with pytest.raises(ValueError, match="collection"):
+        validate_community_event(
+            "checkin.recorded",
+            1,
+            {"total_days": 3, "checkin_date": "2026-08-30", "collection": snapshot},
+        )
 
 
 @pytest.mark.parametrize(

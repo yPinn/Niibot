@@ -148,6 +148,57 @@ def _validate_collection_snapshot(value: object) -> None:
     if unique_cards > owned_copies - copy_count + 1:
         raise _collection_error("progress.unique_cards is impossible for the selected copy_count")
 
+    if "owned_cards" not in value:
+        return
+    owned_cards = value["owned_cards"]
+    if not isinstance(owned_cards, list) or not owned_cards:
+        raise _collection_error("owned_cards must be a non-empty list")
+
+    seen_card_ids: set[int] = set()
+    seen_card_numbers: set[str] = set()
+    inventory_copy_count = 0
+    selected_inventory_item: Mapping[str, Any] | None = None
+    for index, item_value in enumerate(owned_cards):
+        if not isinstance(item_value, Mapping):
+            raise _collection_error(f"owned_cards[{index}] must be an object")
+        item_card = _mapping_field(item_value, "card")
+        item_card_id = _positive_int(item_card, "id")
+        _positive_int(item_card, "revision_id")
+        _text_field(item_card, "key", maximum=64, key=True)
+        item_card_number = _text_field(item_card, "number", maximum=16)
+        _text_field(item_card, "name", maximum=100)
+        item_artwork = _mapping_field(item_card, "artwork")
+        for field in ("portrait_url", "square_url", "backdrop_url"):
+            if field not in item_artwork:
+                raise _collection_error(f"owned_cards[{index}].card.artwork.{field} is required")
+            _validate_artwork_url(item_artwork[field], field)
+
+        item_rarity = _mapping_field(item_value, "rarity")
+        _text_field(item_rarity, "key", maximum=64, key=True)
+        _text_field(item_rarity, "label", maximum=40)
+        _bounded_int(item_rarity, "rank", minimum=1, maximum=32_767)
+        _bounded_int(item_rarity, "effect_intensity", minimum=0, maximum=100)
+        item_copy_count = _positive_int(item_value, "copy_count")
+
+        if item_card_id in seen_card_ids or item_card_number in seen_card_numbers:
+            raise _collection_error("owned_cards must contain unique cards and catalog numbers")
+        seen_card_ids.add(item_card_id)
+        seen_card_numbers.add(item_card_number)
+        inventory_copy_count += item_copy_count
+        if item_card_id == card["id"]:
+            selected_inventory_item = item_value
+
+    if len(owned_cards) != unique_cards:
+        raise _collection_error("owned_cards length must match progress.unique_cards")
+    if inventory_copy_count != owned_copies:
+        raise _collection_error("owned_cards copy total must match progress.owned_copies")
+    if selected_inventory_item is None:
+        raise _collection_error("owned_cards must include the selected card")
+    if selected_inventory_item["copy_count"] != copy_count:
+        raise _collection_error("selected owned card count must match copy_count")
+    if selected_inventory_item["card"] != card or selected_inventory_item["rarity"] != rarity:
+        raise _collection_error("selected owned card must match the top-level card and rarity")
+
 
 def validate_community_event(
     event_type: str,

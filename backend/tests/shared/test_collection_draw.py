@@ -12,6 +12,7 @@ from shared.models.collection import (
     CollectionSet,
     DrawPoolRarity,
     DrawPoolRevision,
+    OwnedCollectionCard,
     RarityRevision,
 )
 
@@ -202,6 +203,7 @@ def test_collection_draw_builds_the_complete_neutral_event_snapshot() -> None:
         is_new=True,
         copy_count=1,
         progress=CollectionProgress(owned_copies=1, unique_cards=1, total_cards=3),
+        owned_cards=(OwnedCollectionCard(card=_COMMON_A, copy_count=1),),
     )
 
     assert draw.to_event_snapshot() == {
@@ -230,4 +232,27 @@ def test_collection_draw_builds_the_complete_neutral_event_snapshot() -> None:
         "is_new": True,
         "copy_count": 1,
         "progress": {"owned_copies": 1, "unique_cards": 1, "total_cards": 3},
+        "owned_cards": [
+            {
+                "card": {
+                    "id": 31,
+                    "revision_id": 41,
+                    "key": "first-step",
+                    "number": "001",
+                    "name": "第一步",
+                    "artwork": {
+                        "portrait_url": None,
+                        "square_url": None,
+                        "backdrop_url": None,
+                    },
+                },
+                "rarity": {
+                    "key": "common",
+                    "label": "普通",
+                    "rank": 10,
+                    "effect_intensity": 10,
+                },
+                "copy_count": 1,
+            }
+        ],
     }

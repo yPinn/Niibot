@@ -133,7 +133,88 @@ export function parseCheckinCollectionSnapshot(value: unknown): CheckinCollectio
     return null
   }
 
+  if ('owned_cards' in value) {
+    const ownedCards = value.owned_cards
+    if (!Array.isArray(ownedCards) || ownedCards.length === 0) return null
+
+    const seenIds = new Set<number>()
+    const seenNumbers = new Set<string>()
+    let inventoryCopies = 0
+    let selectedItem: Record<string, unknown> | null = null
+    for (const item of ownedCards) {
+      if (!isRecord(item) || !isRecord(item.card) || !isRecord(item.rarity)) return null
+      const itemCard = item.card
+      const itemArtwork = itemCard.artwork
+      const itemRarity = item.rarity
+      if (
+        !isRecord(itemArtwork) ||
+        !isIntegerBetween(itemCard.id, 1) ||
+        !isIntegerBetween(itemCard.revision_id, 1) ||
+        !isSizedString(itemCard.key, 64, KEY) ||
+        !isSizedString(itemCard.number, 16) ||
+        !isSizedString(itemCard.name, 100) ||
+        !isNullableSizedString(itemArtwork.portrait_url, 500) ||
+        !isNullableSizedString(itemArtwork.square_url, 500) ||
+        !isNullableSizedString(itemArtwork.backdrop_url, 500) ||
+        !isSizedString(itemRarity.key, 64, KEY) ||
+        !isSizedString(itemRarity.label, 40) ||
+        !isIntegerBetween(itemRarity.rank, 1, 32_767) ||
+        !isIntegerBetween(itemRarity.effect_intensity, 0, 100) ||
+        !isIntegerBetween(item.copy_count, 1)
+      ) {
+        return null
+      }
+
+      const itemId = Number(itemCard.id)
+      const itemNumber = String(itemCard.number)
+      if (seenIds.has(itemId) || seenNumbers.has(itemNumber)) return null
+      seenIds.add(itemId)
+      seenNumbers.add(itemNumber)
+      inventoryCopies += Number(item.copy_count)
+      if (itemId === Number(card.id)) selectedItem = item
+    }
+
+    if (
+      ownedCards.length !== Number(progress.unique_cards) ||
+      inventoryCopies !== Number(progress.owned_copies) ||
+      !selectedItem ||
+      Number(selectedItem.copy_count) !== Number(value.copy_count) ||
+      !sameCollectionCard(selectedItem.card, card) ||
+      !sameCollectionRarity(selectedItem.rarity, rarity)
+    ) {
+      return null
+    }
+  }
+
   return value as unknown as CheckinCollectionSnapshot
+}
+
+function sameCollectionCard(leftValue: unknown, rightValue: Record<string, unknown>): boolean {
+  if (!isRecord(leftValue) || !isRecord(leftValue.artwork) || !isRecord(rightValue.artwork)) {
+    return false
+  }
+  const leftArtwork = leftValue.artwork
+  const rightArtwork = rightValue.artwork
+  return (
+    leftValue.id === rightValue.id &&
+    leftValue.revision_id === rightValue.revision_id &&
+    leftValue.key === rightValue.key &&
+    leftValue.number === rightValue.number &&
+    leftValue.name === rightValue.name &&
+    leftArtwork.portrait_url === rightArtwork.portrait_url &&
+    leftArtwork.square_url === rightArtwork.square_url &&
+    leftArtwork.backdrop_url === rightArtwork.backdrop_url
+  )
+}
+
+function sameCollectionRarity(leftValue: unknown, rightValue: Record<string, unknown>): boolean {
+  return (
+    isRecord(leftValue) &&
+    leftValue.key === rightValue.key &&
+    leftValue.label === rightValue.label &&
+    leftValue.rank === rightValue.rank &&
+    leftValue.effect_intensity === rightValue.effect_intensity
+  )
 }
 
 function isCheckinEvent(event: CommunityOverlayEvent): event is CheckinEvent {

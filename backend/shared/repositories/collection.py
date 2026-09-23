@@ -19,6 +19,7 @@ from shared.models.collection import (
     DrawPoolRarity,
     DrawPoolRevision,
     DrawSelection,
+    OwnedCollectionCard,
     RarityRevision,
 )
 
@@ -144,6 +145,65 @@ _DRAW_SELECT = """
     WHERE draw.channel_id = $1
       AND draw.user_id = $2
       AND draw.checkin_id = $3
+"""
+
+_OWNED_CARDS_SELECT = """
+    SELECT
+        inventory.card_revision_id,
+        inventory.card_id,
+        inventory.card_key,
+        inventory.card_number,
+        inventory.card_display_name,
+        inventory.description,
+        inventory.portrait_url,
+        inventory.square_url,
+        inventory.backdrop_url,
+        inventory.set_id,
+        inventory.set_key,
+        inventory.set_display_name,
+        inventory.total_cards,
+        inventory.rarity_revision_id,
+        inventory.rarity_key,
+        inventory.rarity_display_name,
+        inventory.sort_rank,
+        inventory.effect_intensity,
+        inventory.copy_count
+    FROM (
+        SELECT DISTINCT ON (owned_card.id)
+            owned_revision.id AS card_revision_id,
+            owned_card.id AS card_id,
+            owned_card.card_key,
+            owned_card.card_number,
+            owned_revision.display_name AS card_display_name,
+            owned_revision.description,
+            owned_revision.portrait_url,
+            owned_revision.square_url,
+            owned_revision.backdrop_url,
+            collection_set.id AS set_id,
+            collection_set.set_key,
+            collection_set.display_name AS set_display_name,
+            collection_set.total_cards,
+            rarity.id AS rarity_revision_id,
+            rarity.rarity_key,
+            rarity.display_name AS rarity_display_name,
+            rarity.sort_rank,
+            rarity.effect_intensity,
+            COUNT(*) OVER (PARTITION BY owned_card.id)::INT AS copy_count
+        FROM viewer_card_draws AS owned_draw
+        JOIN collection_card_revisions AS owned_revision
+          ON owned_revision.id = owned_draw.card_revision_id
+        JOIN collection_cards AS owned_card
+          ON owned_card.id = owned_revision.card_id
+        JOIN collection_sets AS collection_set
+          ON collection_set.id = owned_card.set_id
+        JOIN rarity_definition_revisions AS rarity
+          ON rarity.id = owned_card.rarity_revision_id
+        WHERE owned_draw.channel_id = $1
+          AND owned_draw.user_id = $2
+          AND owned_card.set_id = $3
+        ORDER BY owned_card.id, owned_draw.drawn_at DESC, owned_draw.id DESC
+    ) AS inventory
+    ORDER BY inventory.card_number, inventory.card_id
 """
 
 
@@ -311,7 +371,13 @@ class CollectionRepository:
         row = await conn.fetchrow(_DRAW_SELECT, channel_id, user_id, checkin_id)
         if row is None:
             raise RuntimeError("Failed to persist or load collection draw")
-        return _draw_from_row(row)
+        owned_rows = await conn.fetch(
+            _OWNED_CARDS_SELECT,
+            channel_id,
+            user_id,
+            int(row["set_id"]),
+        )
+        return _draw_from_row(row, owned_rows)
 
 
 def _pool_from_rows(rows: Sequence[Mapping[str, Any]]) -> DrawPoolRevision | None:
@@ -380,7 +446,7 @@ def _pool_from_rows(rows: Sequence[Mapping[str, Any]]) -> DrawPoolRevision | Non
     )
 
 
-def _draw_from_row(row: Mapping[str, Any]) -> CollectionDraw:
+def _card_from_row(row: Mapping[str, Any]) -> CollectionCardRevision:
     rarity = RarityRevision(
         id=int(row["rarity_revision_id"]),
         key=str(row["rarity_key"]),
@@ -394,7 +460,7 @@ def _draw_from_row(row: Mapping[str, Any]) -> CollectionDraw:
         display_name=str(row["set_display_name"]),
         total_cards=int(row["total_cards"]),
     )
-    card = CollectionCardRevision(
+    return CollectionCardRevision(
         card_id=int(row["card_id"]),
         revision_id=int(row["card_revision_id"]),
         key=str(row["card_key"]),
@@ -407,6 +473,13 @@ def _draw_from_row(row: Mapping[str, Any]) -> CollectionDraw:
         square_url=_optional_text(row["square_url"]),
         backdrop_url=_optional_text(row["backdrop_url"]),
     )
+
+
+def _draw_from_row(
+    row: Mapping[str, Any],
+    owned_rows: Sequence[Mapping[str, Any]],
+) -> CollectionDraw:
+    card = _card_from_row(row)
     selection = DrawSelection(
         pool_revision_id=int(row["pool_revision_id"]),
         algorithm_version=str(row["algorithm_version"]),
@@ -418,16 +491,45 @@ def _draw_from_row(row: Mapping[str, Any]) -> CollectionDraw:
         card_bucket_size=int(row["card_bucket_size"]),
     )
     copy_count = int(row["copy_count"])
+    owned_cards = tuple(
+        _owned_card_from_row(owned_row, selected_card=card) for owned_row in owned_rows
+    )
+    owned_copies = int(row["owned_copies"])
+    unique_cards = int(row["unique_cards"])
+    selected_inventory_item = next(
+        (item for item in owned_cards if item.card.card_id == card.card_id),
+        None,
+    )
+    if (
+        len(owned_cards) != unique_cards
+        or sum(item.copy_count for item in owned_cards) != owned_copies
+        or selected_inventory_item is None
+        or selected_inventory_item.copy_count != copy_count
+    ):
+        raise RuntimeError("Collection inventory does not match draw progress")
     return CollectionDraw(
         id=int(row["draw_id"]),
         selection=selection,
         is_new=copy_count == 1,
         copy_count=copy_count,
         progress=CollectionProgress(
-            owned_copies=int(row["owned_copies"]),
-            unique_cards=int(row["unique_cards"]),
-            total_cards=collection_set.total_cards,
+            owned_copies=owned_copies,
+            unique_cards=unique_cards,
+            total_cards=card.collection_set.total_cards,
         ),
+        owned_cards=owned_cards,
+    )
+
+
+def _owned_card_from_row(
+    row: Mapping[str, Any],
+    *,
+    selected_card: CollectionCardRevision,
+) -> OwnedCollectionCard:
+    inventory_card = _card_from_row(row)
+    return OwnedCollectionCard(
+        card=(selected_card if inventory_card.card_id == selected_card.card_id else inventory_card),
+        copy_count=int(row["copy_count"]),
     )
 
 
