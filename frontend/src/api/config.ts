@@ -230,6 +230,15 @@ export const API_ENDPOINTS = {
     toggleConfig: (name: string) => join(`/api/timers/configs/${name}/toggle`),
     deleteConfig: (name: string) => join(`/api/timers/configs/${name}`),
   },
+  streamSchedule: {
+    settings: join('/api/stream-schedule/settings'),
+    schedules: join('/api/stream-schedule/schedules'),
+    schedule: (id: number) => join(`/api/stream-schedule/schedules/${id}`),
+    segments: (scheduleId: number) => join(`/api/stream-schedule/schedules/${scheduleId}/segments`),
+    segment: (id: number) => join(`/api/stream-schedule/segments/${id}`),
+    gamesSearch: (query: string) =>
+      join(`/api/stream-schedule/games/search?${new URLSearchParams({ q: query })}`),
+  },
   triggers: {
     configs: join('/api/triggers/configs'),
     createConfig: join('/api/triggers/configs'),

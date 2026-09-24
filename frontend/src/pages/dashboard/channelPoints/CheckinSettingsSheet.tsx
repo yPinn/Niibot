@@ -41,38 +41,12 @@ import { VariableInserter } from '@/components/VariableInserter'
 import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { tokenizeVars } from '@/lib/templateParts'
+import { withCurrentTimezone } from '@/lib/timezones'
 import { toastApiError } from '@/lib/toast-error'
 
 import { CheckinDataManagement } from './CheckinDataManagement'
 import { CheckinImportSheet } from './CheckinImportSheet'
 import { CheckinLeaderboard } from './CheckinLeaderboard'
-
-// Curated IANA zones, not a free-text field — a typo here silently breaks
-// the daily check-in boundary. Picking from a list also keeps DST handling
-// correct (ZoneInfo), which a raw UTC-offset number can't do.
-const TIMEZONE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Asia/Taipei', label: '台北（UTC+8）' },
-  { value: 'Asia/Hong_Kong', label: '香港（UTC+8）' },
-  { value: 'Asia/Shanghai', label: '上海（UTC+8）' },
-  { value: 'Asia/Singapore', label: '新加坡（UTC+8）' },
-  { value: 'Asia/Manila', label: '馬尼拉（UTC+8）' },
-  { value: 'Asia/Tokyo', label: '東京（UTC+9）' },
-  { value: 'Asia/Seoul', label: '首爾（UTC+9）' },
-  { value: 'Asia/Bangkok', label: '曼谷（UTC+7）' },
-  { value: 'Asia/Kolkata', label: '新德里（UTC+5:30）' },
-  { value: 'Asia/Dubai', label: '杜拜（UTC+4）' },
-  { value: 'Europe/Moscow', label: '莫斯科（UTC+3）' },
-  { value: 'Europe/Berlin', label: '柏林（UTC+1/+2）' },
-  { value: 'Europe/Paris', label: '巴黎（UTC+1/+2）' },
-  { value: 'Europe/London', label: '倫敦（UTC+0/+1）' },
-  { value: 'UTC', label: 'UTC（UTC+0）' },
-  { value: 'America/New_York', label: '紐約（UTC-5/-4）' },
-  { value: 'America/Chicago', label: '芝加哥（UTC-6/-5）' },
-  { value: 'America/Denver', label: '丹佛（UTC-7/-6）' },
-  { value: 'America/Los_Angeles', label: '洛杉磯（UTC-8/-7）' },
-  { value: 'Australia/Sydney', label: '雪梨（UTC+10/+11）' },
-  { value: 'Pacific/Auckland', label: '奧克蘭（UTC+12/+13）' },
-]
 
 interface CheckinSettingsSheetProps {
   open: boolean
@@ -141,15 +115,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
   const [leaderboardLoadFailed, setLeaderboardLoadFailed] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
 
-  // Existing settings may hold an IANA zone outside the curated list (typed
-  // in before this became a dropdown) — keep it selectable instead of
-  // silently resetting the field to blank.
-  const timezoneOptions = useMemo(() => {
-    if (!form.timezone || TIMEZONE_OPTIONS.some(option => option.value === form.timezone)) {
-      return TIMEZONE_OPTIONS
-    }
-    return [{ value: form.timezone, label: form.timezone }, ...TIMEZONE_OPTIONS]
-  }, [form.timezone])
+  const timezoneOptions = useMemo(() => withCurrentTimezone(form.timezone), [form.timezone])
 
   const loadSettings = useCallback(async () => {
     setLoading(true)
