@@ -162,6 +162,50 @@ describe('CheckinImportSheet', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('bulk-selects all ready/review rows and clears the selection', async () => {
+    const user = userEvent.setup()
+    render(<CheckinImportSheet open onOpenChange={vi.fn()} defaultTimezone="Asia/Taipei" />)
+
+    await user.upload(
+      screen.getByLabelText('選擇簽到資料檔案'),
+      new File(['Username,Count,LastDate\nalice,15,2026-09-10'], 'checkins.csv', {
+        type: 'text/csv',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: '讀取並預覽' }))
+    await screen.findByText('Alice')
+
+    // default_selection only pre-selects the ready row.
+    await user.click(screen.getByLabelText('選取 Alice'))
+    expect(screen.getByLabelText('選取 Alice')).not.toBeChecked()
+
+    await user.click(screen.getByRole('button', { name: '全選可匯入' }))
+    expect(screen.getByLabelText('選取 Alice')).toBeChecked()
+    expect(screen.getByLabelText('選取 Bob')).not.toBeChecked() // conflict row, never selectable
+
+    await user.click(screen.getByRole('button', { name: '取消全選' }))
+    expect(screen.getByLabelText('選取 Alice')).not.toBeChecked()
+  })
+
+  it('colors the conflict badge as urgent, distinct from the ready badge', async () => {
+    const user = userEvent.setup()
+    render(<CheckinImportSheet open onOpenChange={vi.fn()} defaultTimezone="Asia/Taipei" />)
+
+    await user.upload(
+      screen.getByLabelText('選擇簽到資料檔案'),
+      new File(['Username,Count,LastDate\nalice,15,2026-09-10'], 'checkins.csv', {
+        type: 'text/csv',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: '讀取並預覽' }))
+    await screen.findByText('Alice')
+
+    const conflictBadge = screen.getByText('資料衝突').closest('[data-slot="badge"]')
+    const readyBadge = screen.getByText('可匯入 1').closest('[data-slot="badge"]')
+    expect(conflictBadge).toHaveClass('text-status-offline')
+    expect(readyBadge).toHaveClass('text-status-success')
+  })
+
   it('asks for manual mapping only when required columns cannot be recognized', async () => {
     vi.mocked(inspectCheckinImportColumns).mockResolvedValue(MANUAL_COLUMNS)
     const user = userEvent.setup()
