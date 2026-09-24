@@ -33,7 +33,7 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from shared.builtin_commands import BUILTIN_MAP

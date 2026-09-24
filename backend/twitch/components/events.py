@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from shared.events import tier_label
 from utils.event_render import clean_message_var, compose_note, mention_vars, render_template

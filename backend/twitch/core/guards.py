@@ -6,7 +6,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from shared.models.channel import Channel
 from shared.models.command_config import CommandConfig

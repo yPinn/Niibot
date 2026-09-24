@@ -11,7 +11,7 @@ from typing import Any
 import asyncpg
 import httpx
 import twitchio
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 from twitchio.ext.commands import CommandNotFound
 from twitchio.payloads import TokenRefreshedPayload as _TokenRefreshedPayload
 

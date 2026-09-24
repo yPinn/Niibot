@@ -7,7 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
-from twitchio.ext import commands, routines
+import twitchio.ext.commands as commands
+import twitchio.ext.routines as routines
 
 from shared.builtin_timers import BUILTIN_TIMERS, BuiltinTimerDef
 from utils.substitution import substitute_variables

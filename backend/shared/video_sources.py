@@ -32,6 +32,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import parse_qs, quote, urlunsplit
 from weakref import WeakKeyDictionary
 
@@ -914,6 +915,9 @@ async def fetch_twitch_clip_source(
 # — they're already covered by tests and used directly where only one step
 # (e.g. just URL parsing) is needed.
 
+type VideoType = Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"]
+
+
 _WATCH_URL_BUILDERS: dict[str, str] = {
     "youtube": "https://youtu.be/{video_id}",
     "twitch_clip": "https://clips.twitch.tv/{video_id}",
@@ -927,7 +931,7 @@ _WATCH_URL_BUILDERS: dict[str, str] = {
 class ResolvedVideo:
     """A URL identified as belonging to a platform, with its platform-native ID."""
 
-    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
+    video_type: VideoType
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
     start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else

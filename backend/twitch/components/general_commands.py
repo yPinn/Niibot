@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from core.config import get_settings

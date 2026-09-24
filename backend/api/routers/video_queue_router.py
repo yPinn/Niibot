@@ -54,6 +54,7 @@ from shared.services.video_queue_admission import (
     VideoQueueAdmissionService,
 )
 from shared.video_sources import (
+    VideoType,
     fetch_twitch_clip_source,
     fetch_video_metadata,
     resolve_video_url,
@@ -258,9 +259,7 @@ class BlocklistEntryResponse(BaseModel):
 
 class BlocklistAddRequest(BaseModel):
     kind: str
-    video_type: (
-        Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"] | None
-    ) = None
+    video_type: VideoType | None = None
     value: str = Field(min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=256)
 
@@ -905,8 +904,7 @@ async def get_rankings(
     response: Response,
     scope: Literal["channel", "global"] = "channel",
     days: int = Query(default=7),
-    video_type: Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"]
-    | None = None,
+    video_type: VideoType | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),

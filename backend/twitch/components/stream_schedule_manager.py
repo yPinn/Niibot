@@ -16,7 +16,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import twitchio
-from twitchio.ext import commands, routines
+import twitchio.ext.commands as commands
+import twitchio.ext.routines as routines
 
 from shared.repositories.stream_schedule import StreamScheduleRepository
 from shared.services.stream_schedule_service import StreamScheduleService

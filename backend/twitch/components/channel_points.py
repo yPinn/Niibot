@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Literal, cast
 import aiohttp
 import asyncpg
 import twitchio
+import twitchio.ext.commands as commands
 from cachetools import TTLCache  # type: ignore[import-untyped]
-from twitchio.ext import commands
 
 from core.config import get_settings
 from shared.models.command_config import RedemptionConfig
