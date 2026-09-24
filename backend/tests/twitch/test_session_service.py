@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -265,6 +266,27 @@ class TestWatchTimeTokenFlow:
             snapshot = await svc._fetch_chatters("ch1")
         assert snapshot.complete is False
         assert snapshot.viewers == []
+        mock_client.assert_not_called()
+
+    async def test_fetch_chatters_credential_error_logs_once_and_skips_http(self, caplog):
+        from shared.twitch_token_crypto import TwitchTokenEncryptionError
+
+        channels = MagicMock()
+        channels.get_token = AsyncMock(
+            side_effect=TwitchTokenEncryptionError("invalid credential ciphertext")
+        )
+        svc = _make_service(channels=channels)
+
+        with (
+            patch("core.session_service.httpx.AsyncClient") as mock_client,
+            caplog.at_level(logging.ERROR),
+        ):
+            first = await svc._fetch_chatters("ch1")
+            second = await svc._fetch_chatters("ch2")
+
+        assert first.complete is second.complete is False
+        assert first.viewers == second.viewers == []
+        assert caplog.text.count("cannot be decrypted") == 1
         mock_client.assert_not_called()
 
     async def test_fetch_chatters_discards_partial_pages_after_api_failure(self):

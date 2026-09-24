@@ -129,6 +129,7 @@ def cached(
     key_func: Callable[..., str],
     *,
     retry: int = 2,
+    non_retryable: tuple[type[Exception], ...] = (),
 ):
     """Decorator for caching async function results with DB resilience.
 
@@ -141,6 +142,8 @@ def cached(
         and returns the cache key string.
     retry : int
         Max number of attempts on DB failure (default 2).
+    non_retryable : tuple[type[Exception], ...]
+        Deterministic failures that must bypass retries and stale fallback.
 
     Behaviour on DB failure
     -----------------------
@@ -175,6 +178,8 @@ def cached(
                     except asyncio.CancelledError:
                         raise
                     except Exception as exc:
+                        if isinstance(exc, non_retryable):
+                            raise
                         last_exc = exc
                         if attempt < retry:
                             delay = 1.0 * attempt

@@ -148,6 +148,28 @@ class TestGetToken:
 
 
 @pytest.mark.asyncio
+class TestGetTokenScopes:
+    async def test_returns_presence_and_scopes_without_loading_credential(self):
+        pool, conn = _make_pool(fetchrow={"scopes": "user:read:chat user:write:chat"})
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        result = await repo.get_token_scopes("bot-001", "bot")
+
+        assert result == (True, "user:read:chat user:write:chat")
+        query = conn.fetchrow.await_args.args[0]
+        assert "SELECT scopes" in query
+        assert conn.fetchrow.await_args.args[1:] == ("bot-001", "bot")
+
+    async def test_returns_absent_when_credential_does_not_exist(self):
+        pool, _ = _make_pool(fetchrow=None)
+        repo = ChannelRepository(pool)
+
+        result = await repo.get_token_scopes("missing", "bot")
+
+        assert result == (False, None)
+
+
+@pytest.mark.asyncio
 class TestUpsertTokenOnly:
     async def test_invalidates_token_cache(self):
         _token_cache.set("token:u1:broadcaster", _TOKEN_ROW)
