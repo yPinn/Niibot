@@ -536,6 +536,7 @@ class TestLoadTokens:
         with caplog.at_level(logging.WARNING):
             await load_bot.load_tokens()
 
+        load_bot.channels.list_tokens.assert_awaited_once_with(skip_invalid_envelopes=True)
         load_bot.add_token.assert_awaited_once_with(
             "tok",
             "ref",

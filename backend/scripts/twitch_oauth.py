@@ -35,6 +35,8 @@ import httpx
 from _lib import load_env, utf8_stdio
 from twitch.core.config import BOT_SCOPES, BROADCASTER_SCOPES
 
+from shared.twitch_token_crypto import encrypt_twitch_token
+
 utf8_stdio()
 
 LISTEN_PORT = 3000
@@ -140,23 +142,31 @@ async def save_token(
     refresh: str,
     scopes: list[str],
     token_type: str,
+    *,
+    encryption_key: str,
 ) -> None:
+    encrypted_token, encryption_version = encrypt_twitch_token(token, encryption_key)
+    encrypted_refresh, refresh_version = encrypt_twitch_token(refresh, encryption_key)
+    if refresh_version != encryption_version:  # pragma: no cover - defensive future guard
+        raise RuntimeError("Twitch token and refresh encryption versions diverged")
+
     conn = await asyncpg.connect(database_url, ssl="prefer")
     try:
         await conn.execute(
             """
             INSERT INTO tokens (
                 user_id, token, refresh, scopes, token_type,
-                last_checked_at, last_validated_at, next_validation_at
+                encryption_version, last_checked_at, last_validated_at, next_validation_at
             )
             VALUES (
-                $1, $2, $3, $4, $5, NOW(), NOW(),
+                $1, $2, $3, $4, $5, $6, NOW(), NOW(),
                 NOW() + INTERVAL '55 minutes'
             )
             ON CONFLICT (user_id, token_type) DO UPDATE SET
                 token           = EXCLUDED.token,
                 refresh         = EXCLUDED.refresh,
                 scopes          = EXCLUDED.scopes,
+                encryption_version = EXCLUDED.encryption_version,
                 requires_reauth = FALSE,
                 last_checked_at = NOW(),
                 last_validated_at = NOW(),
@@ -165,10 +175,11 @@ async def save_token(
                 updated_at      = NOW()
             """,
             user_id,
-            token,
-            refresh,
+            encrypted_token,
+            encrypted_refresh,
             " ".join(scopes) if scopes else None,
             token_type,
+            encryption_version,
         )
     finally:
         await conn.close()
@@ -343,6 +354,7 @@ def run(args: argparse.Namespace) -> int:
     client_id = os.getenv("TWITCH_CLIENT_ID")
     client_secret = os.getenv("TWITCH_CLIENT_SECRET")
     database_url = os.getenv("DATABASE_URL")
+    encryption_key = os.getenv("TWITCH_TOKEN_ENCRYPTION_KEY")
 
     missing = [
         k
@@ -350,6 +362,7 @@ def run(args: argparse.Namespace) -> int:
             "TWITCH_CLIENT_ID": client_id,
             "TWITCH_CLIENT_SECRET": client_secret,
             "DATABASE_URL": database_url,
+            "TWITCH_TOKEN_ENCRYPTION_KEY": encryption_key,
         }.items()
         if not v
     ]
@@ -421,7 +434,15 @@ def run(args: argparse.Namespace) -> int:
     assert database_url is not None
     try:
         asyncio.run(
-            save_token(database_url, user_id, access_token, refresh_token, granted_scopes, role)
+            save_token(
+                database_url,
+                user_id,
+                access_token,
+                refresh_token,
+                granted_scopes,
+                role,
+                encryption_key=encryption_key,  # type: ignore[arg-type]
+            )
         )
     except Exception as e:
         fail(f"資料庫寫入失敗: {e}")

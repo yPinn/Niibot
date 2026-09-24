@@ -76,6 +76,18 @@ Profile：`api` / `twitch` / `discord` / `bots` / `full`（見 [development.md](
 6. 由 `/admin` 建立 Niibot reset invite，使用指定 `BOT_ID` 帳號完成授權；callback 成功後 runtime 透過
    `bot_token_updated` 即時換 token。不要再以 `scripts/twitch_oauth.py --role bot` 作正式環境主要流程。
 
+若 Twitch runtime 回報 `Encrypted Twitch token is missing the v1 envelope`，代表至少一列資料標成
+`encryption_version=1`，內容卻被舊 writer 以明文覆寫。先停止 restart loop、備份資料庫，再於持有同一份
+`TWITCH_TOKEN_ENCRYPTION_KEY` 的 backend 環境執行 bounded repair；命令只回報列數，不輸出 token：
+
+```bash
+python scripts/encrypt_twitch_tokens.py --repair-missing-envelopes --dry-run
+python scripts/encrypt_twitch_tokens.py --repair-missing-envelopes --batch-size 100
+```
+
+確認 `remaining=0` 後再啟動 Twitch runtime。不要手動把 `encryption_version` 改成 0，也不要在事故處理時更換
+encryption key；若 repair 因 Fernet 驗證失敗而停止，應先確認部署載入的是原 key。
+
 Rollback：Phase 2 schema 是 expand-only，可先關閉前端入口並回滾 application；不要回滾已加密資料欄位或換掉 key。
 在同一 Twitch identity 同時作 broadcaster 與 Bot 前，授權 scopes 必須符合 union-scope 契約。
 

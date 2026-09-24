@@ -1082,7 +1082,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         # which decides whether a given 'bot'-typed row gets loaded at all.
         await self.bots.load_all()
 
-        tokens = await self.channels.list_tokens()
+        tokens = await self.channels.list_tokens(skip_invalid_envelopes=True)
         relevant_bot_ids = self.bots.relevant_bot_ids()
 
         for tok in tokens:
