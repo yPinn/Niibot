@@ -56,6 +56,7 @@ interface ChannelPointActionsTableProps {
   onToggle: (redemption: RedemptionConfig) => void
   onRewardSelect: (redemption: RedemptionConfig, rewardId: string) => void
   onEditCheckinSettings: () => void
+  onImportCheckinData: () => void
   onEditFirstSettings: () => void
   onEditVipSettings: () => void
   vipRules: VipRewardRule[]
@@ -74,6 +75,7 @@ export function ChannelPointActionsTable({
   onToggle,
   onRewardSelect,
   onEditCheckinSettings,
+  onImportCheckinData,
   onEditFirstSettings,
   onEditVipSettings,
   vipRules,
@@ -122,7 +124,7 @@ export function ChannelPointActionsTable({
                 <SortableHead className="w-24 text-center" sortKey="enabled" sort={sort}>
                   狀態
                 </SortableHead>
-                <TableHead className="w-24 text-right">操作</TableHead>
+                <TableHead className="w-32 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -229,15 +231,26 @@ export function ChannelPointActionsTable({
                       </TableCell>
                       <TableCell className="text-right">
                         {redemption.action_type === 'checkin' && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`編輯${actionLabel}設定`}
-                            onClick={onEditCheckinSettings}
-                            disabled={!channelPointsAvailable}
-                          >
-                            設定
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label="轉移舊 Bot 簽到資料"
+                              onClick={onImportCheckinData}
+                              disabled={!channelPointsAvailable}
+                            >
+                              轉移
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`編輯${actionLabel}設定`}
+                              onClick={onEditCheckinSettings}
+                              disabled={!channelPointsAvailable}
+                            >
+                              設定
+                            </Button>
+                          </div>
                         )}
                         {redemption.action_type === 'first' && (
                           <Button

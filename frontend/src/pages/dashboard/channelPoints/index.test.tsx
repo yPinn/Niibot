@@ -363,6 +363,18 @@ describe('Channel Points page', () => {
     )
   })
 
+  it('opens the old-bot import panel directly, without going through settings', async () => {
+    const user = userEvent.setup()
+    render(<ChannelPoints />)
+
+    await user.click(await screen.findByRole('button', { name: '轉移舊 Bot 簽到資料' }))
+
+    expect(await screen.findByRole('heading', { name: '轉移舊 Bot 簽到' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Check-in settings' })).not.toBeInTheDocument()
+    expect(getCheckinSettings).not.toHaveBeenCalled()
+    expect(getCheckinLeaderboard).not.toHaveBeenCalled()
+  })
+
   it('edits the 頭香 announcement message separately from the reward mapping', async () => {
     const user = userEvent.setup()
     vi.mocked(getRedemptionConfigs).mockResolvedValueOnce([FIRST, CHECKIN])

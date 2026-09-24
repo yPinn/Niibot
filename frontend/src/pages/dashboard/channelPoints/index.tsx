@@ -23,6 +23,7 @@ import { applyDir } from '@/lib/sort'
 import { toastApiError } from '@/lib/toast-error'
 
 import { ChannelPointActionsTable, type ChannelPointSortKey } from './ChannelPointActionsTable'
+import { CheckinImportSheet } from './CheckinImportSheet'
 import { CheckinSettingsSheet } from './CheckinSettingsSheet'
 import { ACTION_TYPE_DEFAULT_ORDER, ACTION_TYPE_LABELS } from './constants'
 import { FirstSettingsSheet } from './FirstSettingsSheet'
@@ -44,6 +45,7 @@ export default function ChannelPoints() {
   const [rewardsLoading, setRewardsLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [checkinSettingsOpen, setCheckinSettingsOpen] = useState(false)
+  const [checkinImportOpen, setCheckinImportOpen] = useState(false)
   const [firstSettingsOpen, setFirstSettingsOpen] = useState(false)
   const [vipSettingsOpen, setVipSettingsOpen] = useState(false)
   const [vipRules, setVipRules] = useState<VipRewardRule[]>([])
@@ -212,6 +214,7 @@ export default function ChannelPoints() {
           onToggle={handleToggle}
           onRewardSelect={(redemption, rewardId) => void handleRewardSelect(redemption, rewardId)}
           onEditCheckinSettings={() => setCheckinSettingsOpen(true)}
+          onImportCheckinData={() => setCheckinImportOpen(true)}
           onEditFirstSettings={() => setFirstSettingsOpen(true)}
           onEditVipSettings={() => setVipSettingsOpen(true)}
           vipRules={vipRules}
@@ -220,6 +223,11 @@ export default function ChannelPoints() {
       </SlideUp>
 
       <CheckinSettingsSheet open={checkinSettingsOpen} onOpenChange={setCheckinSettingsOpen} />
+      <CheckinImportSheet
+        open={checkinImportOpen}
+        onOpenChange={setCheckinImportOpen}
+        defaultTimezone=""
+      />
       <FirstSettingsSheet
         open={firstSettingsOpen}
         onOpenChange={setFirstSettingsOpen}
