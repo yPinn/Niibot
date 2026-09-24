@@ -22,7 +22,7 @@ import {
 import { toastApiError } from '@/lib/toast-error'
 
 import { GamePicker, type GameValue } from './GamePicker'
-import { durationBetween, endTimeFor } from './time'
+import { endTimeFor, offsetFromStart } from './time'
 
 const STEP_MINUTES = 30
 
@@ -235,7 +235,7 @@ export function SegmentList({ scheduleId, startTime, durationMinutes }: SegmentL
     setAdding(true)
     try {
       const created = await createStreamScheduleSegment(scheduleId, {
-        offset_minutes: durationBetween(startTime, effectiveAddForm.time),
+        offset_minutes: offsetFromStart(startTime, effectiveAddForm.time),
         title_template: effectiveAddForm.title_template.trim(),
         game_id: effectiveAddForm.game?.id,
         game_name: effectiveAddForm.game?.name,
@@ -260,7 +260,7 @@ export function SegmentList({ scheduleId, startTime, durationMinutes }: SegmentL
     setSavingId(segment.id)
     try {
       const updated = await updateStreamScheduleSegment(segment.id, {
-        offset_minutes: durationBetween(startTime, editForm.time),
+        offset_minutes: offsetFromStart(startTime, editForm.time),
         title_template: editForm.title_template.trim(),
         game_id: editForm.game?.id ?? '',
         game_name: editForm.game?.name ?? '',
@@ -279,7 +279,12 @@ export function SegmentList({ scheduleId, startTime, durationMinutes }: SegmentL
     }
   }
 
+  // The offset-0 segment is what applies the instant the schedule goes
+  // live — removing it would leave that moment undefined, so it's
+  // edit-only. Guarded here too, not just via the disabled delete button,
+  // since this is a real invariant, not just a UI nicety.
   const handleDelete = async (segment: StreamScheduleSegment) => {
+    if (segment.offset_minutes === 0) return
     try {
       await deleteStreamScheduleSegment(segment.id)
       setSegments(prev => prev.filter(s => s.id !== segment.id))
