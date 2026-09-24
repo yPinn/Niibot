@@ -36,6 +36,16 @@ describe('Twitch navigation', () => {
     ])
   })
 
+  it('lists standalone feature modules together', () => {
+    const modules = navigationData.navMain.find(group => group.title === 'Modules')
+
+    expect(modules?.items).toEqual([
+      { title: 'AI Assistant', url: '/modules/ai' },
+      { title: 'Crosshair Repo', url: '/modules/crosshairs' },
+      { title: 'Stream Schedule', url: '/modules/stream-schedule' },
+    ])
+  })
+
   it('preserves owner-only admin access and Discord navigation', () => {
     expect(navigationData.navMain.at(-1)).toMatchObject({ title: 'Admin', ownerOnly: true })
     expect(discordNavigationData.navMain.map(group => group.title)).toEqual([

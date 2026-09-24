@@ -102,6 +102,10 @@ export const navigationData: NavigationData = {
           title: 'Crosshair Repo',
           url: '/modules/crosshairs',
         },
+        {
+          title: 'Stream Schedule',
+          url: '/modules/stream-schedule',
+        },
       ],
     },
     {
