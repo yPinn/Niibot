@@ -785,7 +785,12 @@ class ChannelPointsComponent(commands.Component):
         """處理影片佇列點數兌換（無 role 檢查：已兌換點數視為授權）"""
         broadcaster = payload.broadcaster
         channel_id = broadcaster.id
-        user_input = payload.user_input or ""
+        # Twitch's redemption text box gives back the raw text as typed —
+        # strip surrounding whitespace here, same as the !vq chat command's
+        # args[1].strip(). Quote/bracket wrapping and invisible characters are
+        # handled deeper, in shared.safe_urls, so every submission source
+        # (chat/redemption/donation/dashboard) gets the same tolerance.
+        user_input = (payload.user_input or "").strip()
         user_id: str | None = payload.user.id or None
 
         try:

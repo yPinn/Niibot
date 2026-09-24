@@ -163,6 +163,30 @@ class TestVideoQueueRedemptionPlatforms:
         component.vq_repo.add_if_within_limits.assert_not_awaited()
         component._reply.assert_awaited_once()
 
+    async def test_surrounding_whitespace_is_trimmed_before_resolving(self):
+        # Twitch's redemption text box returns the raw typed text — a stray
+        # leading/trailing space must not be forwarded as part of the URL
+        # (resolve_video_url itself also tolerates it, but the chat !vq path
+        # trims too, and the two should behave identically).
+        component = _component()
+        resolved = ResolvedVideo("youtube", "vid123", False)
+        metadata = VideoMetadata("YT Title", 120, 5000, False)
+        resolve_mock = AsyncMock(return_value=resolved)
+        with (
+            patch("twitch.components.channel_points.resolve_video_url", resolve_mock),
+            patch(
+                "twitch.components.channel_points.fetch_video_metadata",
+                AsyncMock(return_value=metadata),
+            ),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="  https://youtube.com/watch?v=vid123  "), "Viewer"
+            )
+        resolve_mock.assert_awaited_once_with(
+            "https://youtube.com/watch?v=vid123", session=component._session
+        )
+        component.vq_repo.add_if_within_limits.assert_awaited_once()
+
     async def test_unplayable_video_replies_and_does_not_queue(self):
         component = _component()
         resolved = ResolvedVideo("youtube", "vid123", False)
