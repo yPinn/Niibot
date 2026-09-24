@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, staging]
+    # staging is the single tested release-candidate branch. main only
+    # receives a promotion after this exact tree has passed CI and staging.
+    branches: [staging]
   pull_request:
-    branches: [main, staging]
+    # Validate changes before they enter staging. The later staging -> main
+    # promotion deliberately reuses the staging result instead of rerunning.
+    branches: [staging]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_call:
   workflow_dispatch:
@@ -12,9 +16,8 @@ on:
 permissions:
   contents: read
 
-# Only supersede stale commits for the same pull request. Pushes to protected
-# branches use the unique run id so a staging validation/deploy is never
-# interrupted by a newer push.
+# Only supersede stale commits for the same pull request. Staging pushes use
+# the unique run id so validation/deploy is never interrupted by a newer push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

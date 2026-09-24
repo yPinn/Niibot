@@ -8,11 +8,11 @@ GitHub Actions 的共用額度、事件矩陣與安全節流規則見 [ci-policy
 
 ## 分支與環境
 
-| 分支                 | 環境   | 部署方式                                                               |
-| -------------------- | ------ | ---------------------------------------------------------------------- |
-| `main`               | 正式區 | `deploy-prod.yml`：手動 `workflow_dispatch` 或每週排程（基底映像更新） |
-| `staging`            | 測試區 | 推 `staging` → CI 綠 → 自動部署（`ci.yml`）                            |
-| `feature/*`、`fix/*` | 本機   | —                                                                      |
+| 分支                 | 環境   | 部署方式                                                             |
+| -------------------- | ------ | -------------------------------------------------------------------- |
+| `main`               | 正式區 | 重用 staging release-candidate 驗證；production 由手動或每週排程部署 |
+| `staging`            | 測試區 | 推 `staging` → CI 綠 → 自動部署（`ci.yml`）                          |
+| `feature/*`、`fix/*` | 本機   | —                                                                    |
 
 - `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
 - `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
@@ -20,8 +20,9 @@ GitHub Actions 的共用額度、事件矩陣與安全節流規則見 [ci-policy
 - runner 上的 env 檔由 `scripts/ci_write_env.sh` 依 `env.manifest.json` 寫出
   （來源 GitHub Secrets／Variables）。
 
-一般流程：`feature/xxx` ──PR──▶ `staging` ──(QA)──PR──▶ `main`。
-Hotfix：`hotfix/xxx` ──PR──▶ `main` ──PR──▶ `staging`（backport）。
+一般流程：`feature/xxx` ──PR──▶ `staging` ──完整 CI／coverage／deploy／QA──▶ PR ──▶ `main`。
+`staging → main` promotion PR 與 merge 後 main push 不重跑相同 CI；main 不接受其他來源或 direct push。
+Hotfix 同樣先進 `staging` 完成驗證與部署，再 promotion 到 `main`，不得先改 main 再 backport。
 
 期望分支規則：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
 截至 2026-09-08，此 private Repo 使用 GitHub Free，GitHub API 回覆 branch protection 需升級方案或公開
