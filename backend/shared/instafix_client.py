@@ -48,17 +48,32 @@ _UA = (
 _BOT_UA = "Discordbot/2.0"
 _TIMEOUT = aiohttp.ClientTimeout(total=6)
 
-_INSTAGRAM_HOSTS = frozenset({"instagram.com", "www.instagram.com", "m.instagram.com"})
+_INSTAGRAM_HOSTS = frozenset(
+    {
+        "instagram.com",
+        "www.instagram.com",
+        "m.instagram.com",
+        "instagr.am",
+        "www.instagr.am",
+    }
+)
 _INSTAGRAM_SHORTCODE_RE = re.compile(r"[A-Za-z0-9_-]+")
+# `/p/` (feed photo or video post) and `/tv/` (legacy IGTV, merged into feed
+# video since Meta deprecated the standalone IGTV product) share the same
+# shortcode namespace as `/reel/` — a pasted link to any of the four shapes
+# resolves the same way. Whether a `/p/` shortcode's post actually *is* a
+# video is unknown until fetch_instagram_reel_info() resolves its video
+# redirect (see InstagramReelInfo.is_video).
+_INSTAGRAM_PATH_KINDS = frozenset({"reel", "reels", "p", "tv"})
 
 
 def extract_instagram_shortcode(text: str) -> str | None:
-    """Extract a Reel shortcode from a direct `instagram.com/reel(s)/{code}` URL."""
+    """Extract a shortcode from a direct `instagram.com/{reel(s)|p|tv}/{code}` URL."""
     parsed = find_allowed_http_url(text, _INSTAGRAM_HOSTS)
     if parsed is None:
         return None
     segments = [segment for segment in parsed.path.split("/") if segment]
-    if len(segments) < 2 or segments[0].lower() not in {"reel", "reels"}:
+    if len(segments) < 2 or segments[0].lower() not in _INSTAGRAM_PATH_KINDS:
         return None
     return segments[1] if _INSTAGRAM_SHORTCODE_RE.fullmatch(segments[1]) else None
 
@@ -86,7 +101,11 @@ async def resolve_instagram_url(
     if len(share_segments) < 2 or share_segments[0].lower() != "share":
         return None
 
-    full_url = urlunsplit(("https", "www.instagram.com", share_url.path, share_url.query, ""))
+    # Drop the incoming query — the mobile app appends `igsh` (an
+    # identifier for whoever shared the link) to `/share/` URLs, and that's
+    # tracking, not routing state InstaFix or Instagram need to redirect
+    # correctly.
+    full_url = urlunsplit(("https", "www.instagram.com", share_url.path, "", ""))
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
@@ -384,6 +403,13 @@ class InstagramReelInfo:
     to this integration, unlike YouTube's channelId or Bilibili's owner.mid.
     A display name can change or collide, so a ``creator`` blocklist rule
     against a Reel is only as reliable as that string was at fetch time.
+
+    ``is_video`` is ``None`` (unknown) unless the ``/videos/{shortcode}/1``
+    redirect positively resolved to something — ``True`` for an ``.mp4``
+    target, ``False`` for any other target (a `/p/` link that turned out to
+    be a photo post). A submission gate should only reject on the ``False``
+    case, same "only a positive signal rejects" convention as everywhere else
+    in this module — a redirect that merely failed to resolve stays unknown.
     """
 
     title: str | None
@@ -392,6 +418,7 @@ class InstagramReelInfo:
     is_vertical: bool = True
     creator_id: str | None = None
     creator_name: str | None = None
+    is_video: bool | None = None
 
 
 async def _resolve_instafix_redirect(
@@ -430,6 +457,53 @@ async def _resolve_instafix_redirect(
         return None
 
 
+async def _resolve_instafix_video_redirect(
+    instafix_host: str,
+    path: str,
+    session: aiohttp.ClientSession,
+) -> tuple[str | None, bool | None]:
+    """Like ``_resolve_instafix_redirect(require_mp4=True)``, but also reports
+    whether the target is positively known to be non-video, for
+    ``InstagramReelInfo.is_video`` — a plain ``None`` return can't tell "this
+    isn't a video" (a `/p/` photo post) apart from "could not resolve"
+    (network error, InstaFix down). Returns ``(cdn_url, True)`` for an mp4
+    target, ``(None, False)`` for a redirect to anything else, and
+    ``(None, None)`` when the redirect itself couldn't be resolved.
+    """
+    if not path.startswith("/"):
+        LOGGER.warning("[InstaFix] Unexpected path (not relative): %r", path)
+        return None, None
+    url = f"http://{instafix_host}{path}"
+    try:
+        async with session.get(
+            url,
+            headers={"User-Agent": _BOT_UA},
+            allow_redirects=False,
+            timeout=_TIMEOUT,
+        ) as resp:
+            if resp.status not in (301, 302, 303, 307, 308):
+                return None, None
+            cdn_url = resp.headers.get("Location")
+            if not cdn_url:
+                return None, None
+            if ".mp4" in cdn_url.split("?")[0]:
+                return cdn_url, True
+            return None, False
+    except Exception as exc:
+        LOGGER.debug("[InstaFix] redirect resolve failed for %s: %s", path, type(exc).__name__)
+        return None, None
+
+
+# Path shapes InstaFix proxies an OG page under, tried in this order — mirrors
+# `INSTAGRAM_PROXY_URL` in the Discord cog's social-preview integration, which
+# proxies the *original* path type (`/p/`, `/reel/`, `/tv/`) rather than one
+# fixed shape. This module doesn't know which shape a shortcode came from
+# (`resolve_video_url()` only threads the bare shortcode through), so it tries
+# the two that account for the shortcode namespace in practice: `/reel/` for
+# Reels/legacy IGTV shortcodes, `/p/` for a feed photo or video post.
+_OG_PATH_KINDS = ("reel", "p")
+
+
 async def fetch_instagram_reel_info(
     shortcode: str,
     instafix_host: str,
@@ -447,24 +521,30 @@ async def fetch_instagram_reel_info(
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
-        og_url = f"http://{instafix_host}/reel/{shortcode}/"
-        try:
-            async with _session.get(
-                og_url,
-                headers={"User-Agent": _BOT_UA},
-                allow_redirects=False,
-                timeout=_TIMEOUT,
-            ) as resp:
-                if resp.status in (301, 302, 303, 307, 308):
-                    # InstaFix couldn't proxy this Reel and bounced back to IG.
-                    return InstagramReelInfo(None, None, None)
-                if resp.status != 200:
-                    return InstagramReelInfo(None, None, None)
-                html = await resp.text()
-        except Exception as exc:
-            LOGGER.warning(
-                "[InstaFix] OG fetch failed for reel %s: %s", shortcode, type(exc).__name__
-            )
+        html: str | None = None
+        for path_kind in _OG_PATH_KINDS:
+            og_url = f"http://{instafix_host}/{path_kind}/{shortcode}/"
+            try:
+                async with _session.get(
+                    og_url,
+                    headers={"User-Agent": _BOT_UA},
+                    allow_redirects=False,
+                    timeout=_TIMEOUT,
+                ) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        break
+                    # A redirect back to IG or any non-200 just means this
+                    # path shape wasn't the shortcode's real one — try the
+                    # next one before giving up.
+            except Exception as exc:
+                LOGGER.warning(
+                    "[InstaFix] OG fetch failed for %s (%s): %s",
+                    shortcode,
+                    path_kind,
+                    type(exc).__name__,
+                )
+        if html is None:
             return InstagramReelInfo(None, None, None)
 
         og = _parse_og(html)
@@ -478,11 +558,9 @@ async def fetch_instagram_reel_info(
                 return img_path
             return None
 
-        thumbnail_url, video_cdn_url = await asyncio.gather(
+        thumbnail_url, (video_cdn_url, is_video) = await asyncio.gather(
             _resolve_thumbnail(),
-            _resolve_instafix_redirect(
-                instafix_host, f"/videos/{shortcode}/1", _session, require_mp4=True
-            ),
+            _resolve_instafix_video_redirect(instafix_host, f"/videos/{shortcode}/1", _session),
         )
         duration_seconds = _extract_duration_seconds(video_cdn_url) if video_cdn_url else None
         handle = _extract_title(og)
@@ -500,6 +578,7 @@ async def fetch_instagram_reel_info(
             is_vertical=is_vertical,
             creator_id=handle,
             creator_name=handle,
+            is_video=is_video,
         )
     finally:
         if _own_session:

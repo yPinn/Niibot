@@ -47,6 +47,46 @@ Every parser tokenizes the URL and validates an exact `http`/`https` hostname;
 short-link redirects are followed manually and every hop is checked again.
 Never reintroduce substring URL matching or automatic redirects here.
 
+`shared/safe_urls.py` is where every submission source's raw text first gets
+tokenized, so its tolerance is shared by all of them: chat, Channel Points
+redemption, and the donation/dashboard forms. It strips straight/smart quotes
+and the CJK quotation/title-mark brackets a pasted link commonly ends up
+wrapped in (`「連結」`, `'https://…'`, `《…》`), plus zero-width/format
+characters (U+200B, a stray BOM, …) a mobile keyboard or paste-from-app can
+leave inside otherwise-correct text — invisible, so a viewer has no way to
+notice or remove one before redeeming. None of this widens what counts as an
+_allowed_ URL: trimming only ever shrinks the candidate token, and the exact
+hostname check in `find_allowed_http_url()` / `parse_allowed_absolute_url()`
+still runs on whatever's left (see `tests/shared/test_safe_urls.py`).
+
+## Accepted URL shapes, and tracking-param hygiene
+
+Only a platform's native id (and, for Twitch VOD/Bilibili, a `?t=`/`?p=`
+value) is ever extracted from a submitted URL — everything else in the query
+string is discarded, so `utm_*`, `si`, `igsh`, `spm_id_from`, and similar
+share-tracking params never reach storage, a log line, or an outbound
+request. The one place this needs active stripping rather than just not
+reading a field is a short-link resolve that forwards a request upstream:
+`resolve_bilibili_url()`'s `b23.tv` hop and `resolve_instagram_url()`'s
+`/share/...` hop both drop the incoming query before making that request.
+
+Recognized shapes per platform (all case-insensitive on path segments):
+
+| Platform    | Hosts                                                                                   | Path shapes                                                                                       |
+| ----------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| YouTube     | `youtube.com`, `m.youtube.com`, `music.youtube.com`, `youtube-nocookie.com`, `youtu.be` | `/watch?v=`, `/shorts/{id}`, `/live/{id}`, `/embed/{id}`, `/v/{id}`, `youtu.be/{id}`              |
+| Twitch Clip | `clips.twitch.tv`, `twitch.tv`, `m.twitch.tv`                                           | `clips.twitch.tv/{slug}`, `.../embed?clip={slug}`, `.../{channel}/clip/{slug}`, `.../clip/{slug}` |
+| Twitch VOD  | `twitch.tv`, `m.twitch.tv`                                                              | `/videos/{id}[?t=1h2m3s]`                                                                         |
+| Bilibili    | `bilibili.com`, `m.bilibili.com`, `b23.tv` (redirect)                                   | `/video/BV…[?p=N]`, `/video/av{aid}` (converted to BV), `b23.tv/{code}`                           |
+| Instagram   | `instagram.com`, `instagr.am`                                                           | `/reel(s)/{code}`, `/p/{code}`, `/tv/{code}`, `/share/...` (redirect)                             |
+
+Bilibili's multi-part (`分P`) videos are the one place a query value becomes
+part of the stored identity rather than being discarded: `extract_bilibili_bvid()`
+folds `?p=N` (N≥2) into the id itself as `BVxxxxxxxxxx_pN` — see "Bilibili
+multi-part videos" below. `av{aid}` links are converted to their BV id via
+`_av_to_bv()`, Bilibili's published (reverse-engineered) base58/XOR encoding —
+deterministic, no network call.
+
 ## Submission-source policy
 
 Submission source and video provider are separate axes. `VideoQueueAdmissionService`
@@ -116,10 +156,28 @@ carousel/grid probing and profile enrichment that Video Queue doesn't need,
 and consolidating the two into one shared client is a tracked follow-up
 (see "Deferred" below), not done in this pass.
 
-- `resolve_instagram_url()` matches a direct `/reel(s)/{shortcode}` URL, or
-  follows the redirect on an `instagram.com/share/...` link (the mobile
-  app's "Copy Link" output) to find the shortcode — same shape as
-  `resolve_bilibili_url()`'s `b23.tv` handling.
+- `resolve_instagram_url()`/`extract_instagram_shortcode()` match a direct
+  `/reel(s)/{shortcode}`, `/p/{shortcode}` (feed post), or `/tv/{shortcode}`
+  (legacy IGTV, merged into feed video) URL on `instagram.com` or the
+  `instagr.am` short domain, or follow the redirect on an
+  `instagram.com/share/...` link (the mobile app's "Copy Link" output,
+  stripped of its `igsh` tracking query before the request) to find the
+  shortcode — same shape as `resolve_bilibili_url()`'s `b23.tv` handling.
+  Every shape is stored as `video_type = "instagram_reel"`: InstaFix and the
+  playback path are shortcode-keyed, not path-keyed, so a `/p/`- or
+  `/tv/`-sourced entry plays back identically to a `/reel/`-sourced one.
+- `fetch_instagram_reel_info()` doesn't know which of the four path shapes a
+  shortcode came from (only the bare shortcode is threaded through
+  `ResolvedVideo`), so its OpenGraph fetch tries InstaFix's `/reel/{code}/`
+  proxy first, then `/p/{code}/` — mirroring `INSTAGRAM_PROXY_URL` in the
+  Discord cog, which proxies whichever path type the original URL used.
+- A `/p/` link isn't guaranteed to be a video — it's Instagram's general feed
+  post shape, and can be a photo. `InstagramReelInfo.is_video` reports
+  `True`/`False` only when the `/videos/{shortcode}/1` redirect positively
+  resolved to something (`.mp4` or not); a redirect that merely failed to
+  resolve leaves it `None` (unknown, not rejected — see "Playability
+  precheck" below). `fetch_video_metadata()` rejects with
+  `UNPLAYABLE_NOT_VIDEO` only on the positive `False` case.
 - **Title** (`_extract_display_title()`) prefers the caption
   (`og:description`) over `@handle` — a caption actually describes the
   content, matching every other platform's title. It's cleaned first
@@ -185,7 +243,7 @@ instagramReel.ts` plays it in a host `<video>` with real `ended` /
 
 | Capability         | YouTube                                                                  | Twitch Clip                               | Twitch VOD                                                         | Instagram Reel                           | Bilibili                                                |
 | ------------------ | ------------------------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------- |
-| Canonical identity | `youtube + video id`                                                     | `twitch_clip + slug`                      | `twitch_vod + VOD id`; timestamp stored separately                 | `instagram_reel + shortcode`             | `bilibili + BV id`                                      |
+| Canonical identity | `youtube + video id`                                                     | `twitch_clip + slug`                      | `twitch_vod + VOD id`; timestamp stored separately                 | `instagram_reel + shortcode`             | `bilibili + BV id`; part N≥2 folded in as `_pN`         |
 | Metadata           | Official Data API                                                        | Official Helix                            | Official Helix                                                     | Unofficial InstaFix; best-effort         | Unofficial web API; best-effort                         |
 | Playback           | YT IFrame API                                                            | Signed MP4; iframe fallback               | Twitch Player API                                                  | Signed MP4; no fallback                  | Official embed iframe                                   |
 | Gain `0..100`      | Yes (`setVolume`)                                                        | Yes on MP4; iframe is mute-only           | Yes (`setVolume`)                                                  | Yes (`video.volume`)                     | No; mute-only                                           |
@@ -292,8 +350,11 @@ before insertion. `min_view_count` and replay/capacity gates vary by source;
 playability, global duration and blocklist do not, so the dashboard's
 broadcaster-authority bypass does **not** skip them.
 
-Twitch Clip and Bilibili always report `playable = True`: clips always embed,
-and Bilibili's metadata is already too unreliable (`-412`) to gate on.
+Twitch Clip always reports `playable = True` — clips always embed. Twitch VOD
+(`invalid_timestamp`), Bilibili (`invalid_page`), and Instagram (`not_video`)
+each add exactly one submission-time reason of their own, for an out-of-range
+`?t=`/`?p=` or a `/p/` link that resolved to a photo post — Bilibili's general
+metadata is otherwise too unreliable (`-412`) to gate on.
 
 ## Submission gates and best-effort metadata
 
@@ -352,6 +413,33 @@ No login (`SESSDATA`) — members-only / restricted videos stay unfetchable.
 The `-412` risk is **reduced, not eliminated**: Bilibili can tighten any of
 these at any time. If tier 3 also starts failing, the next step is routing
 through the `scrapling` browser sidecar.
+
+## Bilibili multi-part videos (`?p=`)
+
+A single BV id can hold several parts (`分P` — a collection or a
+multi-episode upload); the website's `?p=N` selects which one plays.
+Video Queue folds that into the stored id rather than adding a DB column:
+
+- `extract_bilibili_bvid()` returns `BVxxxxxxxxxx` for P1 (or no `?p=`) and
+  `BVxxxxxxxxxx_pN` for `?p=N` with N≥2. P1 staying suffix-free means every
+  row stored before multi-part support existed, and the common single-part
+  case, are unaffected — `(video_type, video_id)` dedupe/blocklist/ranking
+  keys still just work.
+- `split_bilibili_id(video_id)` (backend) / `splitBilibiliId()` (frontend,
+  `modules/videoQueue/utils.ts`) reverse it back to `(bvid, page)`. Every
+  consumer of a stored Bilibili id — `fetch_video_metadata()`,
+  `build_watch_url()`, the overlay's `players/bilibili.ts` (which passes
+  `page=N` to the official embed) — splits first rather than assuming the id
+  is a bare BV.
+- `fetch_bilibili_info(bvid, page=N)` reads `data["pages"][N-1]` for that
+  part's duration/dimension/title when the view endpoint's response included
+  a `pages` list (it can be absent on a `-412`, same as everything else
+  here). `page_count = len(pages)` when known, so a caller can tell "this
+  part doesn't exist" (`page > page_count`, rejected with
+  `UNPLAYABLE_INVALID_PAGE`) apart from "we don't know" (`page_count is
+None`, not rejected).
+- `_av_to_bv(aid)` runs before any of this: a pasted `/video/av{aid}` link
+  is converted to its BV id first, then the same `?p=` folding applies.
 
 ## Thumbnails
 

@@ -102,6 +102,18 @@ def test_extract_shortcode_from_reels_plural():
     assert ic.extract_instagram_shortcode("https://instagram.com/reels/Cabc123/") == "Cabc123"
 
 
+def test_extract_shortcode_from_photo_post():
+    assert ic.extract_instagram_shortcode("https://www.instagram.com/p/Cabc123/") == "Cabc123"
+
+
+def test_extract_shortcode_from_igtv():
+    assert ic.extract_instagram_shortcode("https://www.instagram.com/tv/Cabc123/") == "Cabc123"
+
+
+def test_extract_shortcode_from_short_domain():
+    assert ic.extract_instagram_shortcode("https://instagr.am/reel/Cabc123/") == "Cabc123"
+
+
 def test_extract_shortcode_no_match():
     assert ic.extract_instagram_shortcode("https://example.com/not-instagram") is None
 
@@ -132,6 +144,20 @@ class TestResolveInstagramUrl:
 
     async def test_non_instagram_url_returns_none(self):
         assert await ic.resolve_instagram_url("https://example.com/whatever") is None
+
+    async def test_share_link_drops_incoming_tracking_query(self):
+        # The mobile app's "Copy Link" appends `igsh` (identifies the sharer) —
+        # must not be forwarded to Instagram on the resolve request.
+        session = _FakeSession(
+            {"share": lambda: _FakeResp(final_url="https://www.instagram.com/reel/Cabc123/")}
+        )
+        shortcode = await ic.resolve_instagram_url(
+            "https://www.instagram.com/share/abcXYZ?igsh=trackme", session=session
+        )
+        assert shortcode == "Cabc123"
+        requested_url = session.calls[0][0]
+        assert "?" not in requested_url
+        assert "igsh" not in requested_url
 
     async def test_share_link_failure_fails_open(self):
         shortcode = await ic.resolve_instagram_url(
@@ -495,6 +521,54 @@ class TestFetchInstagramReelInfo:
         )
         info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
         assert info.duration_seconds is None
+
+    async def test_is_video_true_when_video_redirect_resolves_to_mp4(self):
+        session = _FakeSession(
+            {
+                "/reel/Cabc123/": lambda: _FakeResp(text_body=_og_html("@alice", "")),
+                "/videos/Cabc123/1": lambda: _FakeResp(
+                    status=302, headers={"Location": _mp4_url(duration_s=5)}
+                ),
+            }
+        )
+        info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
+        assert info.is_video is True
+
+    async def test_is_video_false_when_redirect_target_is_not_mp4(self):
+        # A `/p/` photo post — the /videos/ redirect resolves to something,
+        # just not an mp4. Positive signal: this isn't a video.
+        session = _FakeSession(
+            {
+                "/p/Cabc123/": lambda: _FakeResp(text_body=_og_html("A photo", "")),
+                "/videos/Cabc123/1": lambda: _FakeResp(
+                    status=302, headers={"Location": "https://cdn.example/photo.jpg"}
+                ),
+            }
+        )
+        info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
+        assert info.is_video is False
+
+    async def test_is_video_unknown_when_redirect_unresolvable(self):
+        session = _FakeSession(
+            {
+                "/reel/Cabc123/": lambda: _FakeResp(text_body=_og_html("@alice", "")),
+                "/videos/Cabc123/1": lambda: _FakeResp(status=404),
+            }
+        )
+        info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
+        assert info.is_video is None
+
+    async def test_og_fetch_falls_back_to_photo_post_path(self):
+        # /reel/ 404s (this shortcode isn't a Reel) — falls back to /p/, which
+        # InstaFix actually proxies this shortcode under.
+        session = _FakeSession(
+            {
+                "/reel/Cabc123/": lambda: _FakeResp(status=404),
+                "/p/Cabc123/": lambda: _FakeResp(text_body=_og_html("@alice", "")),
+            }
+        )
+        info = await ic.fetch_instagram_reel_info("Cabc123", _HOST, session=session)
+        assert info.title == "@alice"
 
 
 # ---------------------------------------------------------------------------

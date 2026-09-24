@@ -47,27 +47,6 @@ const KIND_PLACEHOLDER: Record<BlocklistKind, string> = {
   user: 'Twitch 使用者名稱',
 }
 
-// A full video URL carries both identity pieces. Bare native ids deliberately
-// remain providerless wildcard rules because their platform cannot be inferred.
-function normalizeValue(
-  kind: BlocklistKind,
-  raw: string
-): { value: string; videoType?: VideoType } {
-  const v = raw.trim()
-  if (kind !== 'video') return { value: v }
-  const yt = v.match(/(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/)
-  if (yt) return { value: yt[1], videoType: 'youtube' }
-  const bili = v.match(/(BV[A-Za-z0-9]{10})/)
-  if (bili) return { value: bili[1], videoType: 'bilibili' }
-  const clip = v.match(/(?:clips\.twitch\.tv\/|\/clip\/)([A-Za-z0-9_-]+)/)
-  if (clip) return { value: clip[1], videoType: 'twitch_clip' }
-  const vod = v.match(/twitch\.tv\/videos\/(\d+)/)
-  if (vod) return { value: vod[1], videoType: 'twitch_vod' }
-  const reel = v.match(/instagram\.com\/reel\/([A-Za-z0-9_-]+)/)
-  if (reel) return { value: reel[1], videoType: 'instagram_reel' }
-  return { value: v }
-}
-
 export interface BlocklistSectionHandle {
   addBlock: (
     kind: BlocklistKind,
@@ -108,13 +87,17 @@ export function BlocklistSection({
 
   const addBlock = useCallback(
     async (k: BlocklistKind, v: string, label?: string | null, videoType?: VideoType | null) => {
-      const normalized = normalizeValue(k, v)
-      if (!normalized.value) return
-      const scopedType = videoType === undefined ? normalized.videoType : videoType
+      const trimmed = v.trim()
+      if (!trimmed) return
+      // A pasted video URL (kind === 'video') is normalized server-side —
+      // it resolves b23.tv/share redirects, av→BV, etc., and never logs the
+      // raw link (may carry tracking params). A caller that already knows
+      // the native id + platform (e.g. the history "封鎖" button) still
+      // passes videoType explicitly and skips that resolution.
       const created =
-        scopedType === undefined
-          ? await addVideoQueueBlock(k, normalized.value, label)
-          : await addVideoQueueBlock(k, normalized.value, label, scopedType)
+        videoType === undefined
+          ? await addVideoQueueBlock(k, trimmed, label)
+          : await addVideoQueueBlock(k, trimmed, label, videoType)
       setEntries(prev => [created, ...prev.filter(e => e.id !== created.id)])
     },
     []

@@ -915,6 +915,60 @@ class TestBlocklistEndpoints:
         )
         assert r.status_code == 422
 
+    def test_add_video_url_normalizes_server_side(self):
+        # A pasted URL (kind=video, contains "/") is resolved through the same
+        # cascade admission uses, instead of trusting a client-side regex.
+        with (
+            patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl,
+            patch(
+                "routers.video_queue_router.resolve_video_url",
+                new=AsyncMock(
+                    return_value=ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
+                ),
+            ),
+        ):
+            bl.return_value.add = AsyncMock(
+                return_value=_blocklist_entry(
+                    kind="video", value="dQw4w9WgXcQ", video_type="youtube"
+                )
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist",
+                json={"kind": "video", "value": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+            )
+
+        assert r.status_code == 201
+        assert bl.return_value.add.await_args.args == (CHANNEL_ID, "video", "dQw4w9WgXcQ")
+        assert bl.return_value.add.await_args.kwargs["video_type"] == "youtube"
+
+    def test_add_unrecognized_video_url_rejected(self):
+        with patch(
+            "routers.video_queue_router.resolve_video_url", new=AsyncMock(return_value=None)
+        ):
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist",
+                json={"kind": "video", "value": "https://example.com/not-a-video"},
+            )
+        assert r.status_code == 422
+
+    def test_add_bare_video_id_skips_url_resolution(self):
+        # No slash — a bare native id stays a providerless wildcard rule, same
+        # as before; resolve_video_url must not even be called.
+        with (
+            patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl,
+            patch("routers.video_queue_router.resolve_video_url") as resolve_mock,
+        ):
+            bl.return_value.add = AsyncMock(
+                return_value=_blocklist_entry(kind="video", value="dQw4w9WgXcQ")
+            )
+            r = _make_auth_client().post(
+                "/api/video-queue/blocklist", json={"kind": "video", "value": "dQw4w9WgXcQ"}
+            )
+
+        assert r.status_code == 201
+        assert bl.return_value.add.await_args.args == (CHANNEL_ID, "video", "dQw4w9WgXcQ")
+        resolve_mock.assert_not_called()
+
     def test_delete_missing_returns_404(self):
         with patch("routers.video_queue_router.VideoQueueBlocklistRepository") as bl:
             bl.return_value.remove = AsyncMock(return_value=False)

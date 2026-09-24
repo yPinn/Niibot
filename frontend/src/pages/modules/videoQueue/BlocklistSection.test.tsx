@@ -63,7 +63,9 @@ describe('BlocklistSection', () => {
     expect(await screen.findByText('drama')).toBeInTheDocument()
   })
 
-  it('extracts a YouTube id when blocking a video URL', async () => {
+  it('sends a pasted video URL as-is for the backend to normalize', async () => {
+    // Extraction (b23.tv/share redirects, av→BV, etc.) now happens server-side
+    // in add_blocklist_entry — the frontend just forwards the trimmed input.
     addVideoQueueBlock.mockResolvedValue(block({ id: 8, kind: 'video', value: 'dQw4w9WgXcQ' }))
     render(<BlocklistSection />)
     await screen.findByText('尚無封鎖項目')
@@ -76,7 +78,11 @@ describe('BlocklistSection', () => {
     )
     await userEvent.click(screen.getByRole('button', { name: '封鎖' }))
 
-    expect(addVideoQueueBlock).toHaveBeenCalledWith('video', 'dQw4w9WgXcQ', undefined, 'youtube')
+    expect(addVideoQueueBlock).toHaveBeenCalledWith(
+      'video',
+      'https://youtube.com/watch?v=dQw4w9WgXcQ',
+      undefined
+    )
   })
 
   it('removes a rule optimistically', async () => {

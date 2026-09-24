@@ -23,6 +23,7 @@ from shared.video_sources import (
     TwitchMediaInfo,
     YouTubeInfo,
     _app_token_cache,
+    _av_to_bv,
     _get_twitch_app_token,
     _parse_hms,
     _parse_iso8601_duration,
@@ -35,6 +36,7 @@ from shared.video_sources import (
     fetch_twitch_vod_info,
     fetch_yt_info,
     resolve_bilibili_url,
+    split_bilibili_id,
 )
 
 # ---------------------------------------------------------------------------
@@ -228,6 +230,31 @@ class TestExtractYoutubeInfo:
         assert video_id is None
         assert is_vertical is False
 
+    def test_live_url_not_vertical(self):
+        video_id, is_vertical = extract_youtube_info("https://www.youtube.com/live/dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+        assert is_vertical is False
+
+    def test_embed_url(self):
+        video_id, is_vertical = extract_youtube_info(
+            "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"
+        )
+        assert video_id == "dQw4w9WgXcQ"
+        assert is_vertical is False
+
+    def test_legacy_v_url(self):
+        video_id, _ = extract_youtube_info("https://www.youtube.com/v/dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+
+    def test_music_youtube_watch_url(self):
+        video_id, _ = extract_youtube_info("https://music.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert video_id == "dQw4w9WgXcQ"
+
+    def test_channel_live_page_is_not_a_video_id(self):
+        # /@handle/live has no video id segment — must not mis-extract "@handle".
+        video_id, _ = extract_youtube_info("https://www.youtube.com/@SomeChannel/live")
+        assert video_id is None
+
 
 class TestExtractBilibilibvid:
     def test_standard_url(self):
@@ -264,6 +291,63 @@ class TestExtractBilibilibvid:
             extract_bilibili_bvid("https://evil.example/www.bilibili.com/video/BV1GJ411x7h7")
             is None
         )
+
+    def test_page_2_folded_into_composite_id(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=2")
+            == "BV1GJ411x7h7_p2"
+        )
+
+    def test_page_1_stays_bare(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=1")
+            == "BV1GJ411x7h7"
+        )
+
+    def test_non_numeric_page_ignored(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=abc")
+            == "BV1GJ411x7h7"
+        )
+
+    def test_mobile_host(self):
+        assert extract_bilibili_bvid("https://m.bilibili.com/video/BV1GJ411x7h7") == "BV1GJ411x7h7"
+
+    def test_legacy_av_id_converted_to_bv(self):
+        # Reference vector: av170001 is a commonly-cited published test pair
+        # for Bilibili's BV<->av encoding (bilibili-API-collect docs).
+        assert extract_bilibili_bvid("https://www.bilibili.com/video/av170001") == "BV17x411w7KC"
+
+    def test_legacy_av_id_uppercase(self):
+        assert extract_bilibili_bvid("https://www.bilibili.com/video/AV170001") == "BV17x411w7KC"
+
+    def test_av_id_with_page(self):
+        assert (
+            extract_bilibili_bvid("https://www.bilibili.com/video/av170001?p=3")
+            == "BV17x411w7KC_p3"
+        )
+
+
+class TestAvToBv:
+    def test_reference_vector(self):
+        assert _av_to_bv(170001) == "BV17x411w7KC"
+
+    def test_bilibilis_own_av2_test_video(self):
+        # av2 is Bilibili's own long-standing internal test upload — also the
+        # BV id already used as a fixture throughout this test module.
+        assert _av_to_bv(2) == "BV1xx411c7mD"
+
+
+class TestSplitBilibiliId:
+    def test_bare_bvid_is_page_1(self):
+        assert split_bilibili_id("BV1GJ411x7h7") == ("BV1GJ411x7h7", 1)
+
+    def test_suffixed_id_splits_out_page(self):
+        assert split_bilibili_id("BV1GJ411x7h7_p2") == ("BV1GJ411x7h7", 2)
+
+    def test_roundtrips_with_extract_bilibili_bvid(self):
+        video_id = extract_bilibili_bvid("https://www.bilibili.com/video/BV1GJ411x7h7?p=5")
+        assert split_bilibili_id(video_id) == ("BV1GJ411x7h7", 5)
 
 
 @pytest.mark.asyncio
@@ -355,6 +439,26 @@ class TestResolveBilibiliUrl:
         mock_session.get.assert_called_once()
         assert mock_session.get.call_args.kwargs["allow_redirects"] is False
 
+    async def test_short_url_drops_incoming_tracking_query(self):
+        # A user-shared b23.tv link often carries `?spm_id_from=...` — that's
+        # share tracking, not routing state, and must not be forwarded.
+        mock_resp = MagicMock()
+        mock_resp.url = "https://www.bilibili.com/video/BV1GJ411x7h7"
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+        mock_session.close = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await resolve_bilibili_url("https://b23.tv/Ab1Cd2E?spm_id_from=333.999")
+
+        assert result == "BV1GJ411x7h7"
+        requested_url = mock_session.get.call_args.args[0]
+        assert "?" not in requested_url
+        assert "spm_id_from" not in requested_url
+
 
 class TestExtractTwitchClipSlug:
     def test_clips_domain(self):
@@ -394,6 +498,32 @@ class TestExtractTwitchClipSlug:
 
     def test_rejects_host_spoofing(self):
         assert extract_twitch_clip_slug("https://evil.example/clips.twitch.tv/SomeClipSlug") is None
+
+    def test_mobile_channel_clip_url(self):
+        assert (
+            extract_twitch_clip_slug("https://m.twitch.tv/streamer/clip/AwkwardHelplessSmoothie")
+            == "AwkwardHelplessSmoothie"
+        )
+
+    def test_mobile_clips_domain(self):
+        assert (
+            extract_twitch_clip_slug("https://m.twitch.tv/clip/AwkwardHelplessSmoothie")
+            == "AwkwardHelplessSmoothie"
+        )
+
+    def test_channel_less_clip_url(self):
+        assert (
+            extract_twitch_clip_slug("https://www.twitch.tv/clip/AwkwardHelplessSmoothie")
+            == "AwkwardHelplessSmoothie"
+        )
+
+    def test_embed_share_form(self):
+        assert (
+            extract_twitch_clip_slug(
+                "https://clips.twitch.tv/embed?clip=AwkwardHelplessSmoothie&parent=example.com"
+            )
+            == "AwkwardHelplessSmoothie"
+        )
 
 
 class TestParseIso8601Duration:
