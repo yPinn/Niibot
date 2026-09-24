@@ -1,33 +1,67 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import {
-  getStreamScheduleSegments,
-  type ScheduleKind,
-  type StreamSchedule,
-  type StreamScheduleSegment,
-} from '@/api/streamSchedule'
+import type { StreamSchedule, StreamScheduleSegment } from '@/api/streamSchedule'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import {
+  firstSegment,
   isLiveNow,
+  resolveActiveSegment,
   resolveContinuationForDate,
   resolveScheduleForDate,
   timeStrToMinutes,
   toDateStr,
   weekdayOf,
 } from './calendar'
-import { WEEKDAY_LABELS } from './constants'
-import { endTimeFor } from './time'
+import { scheduleBlockClass, WEEKDAY_LABELS } from './constants'
+import { useGameColor } from './gameColor'
+import { SchedulePreview } from './schedulePreview'
+import { useSegmentPreview } from './useSegmentPreview'
 
 const LEFT_COL_WIDTH = 88
 const ROW_HEIGHT = 64
 const MINUTES_PER_DAY = 1440
+// A fixed 24 one-hour columns doesn't fit every viewport — flex items won't
+// actually shrink below their text's intrinsic width without min-w-0, so
+// cramming 24 five-character labels into too little space corrupts the
+// layout instead of just looking cramped. Grouping into coarser buckets
+// (4h/6h/etc.) when space is tight avoids that outright, rather than
+// patching around it with ever-smaller text.
+const MIN_COLUMN_PX = 44
+const HOUR_GROUPINGS = [1, 2, 3, 4, 6, 8, 12] as const
+
+function pickHoursPerColumn(trackWidthPx: number): number {
+  for (const hours of HOUR_GROUPINGS) {
+    if (trackWidthPx / (24 / hours) >= MIN_COLUMN_PX) return hours
+  }
+  return HOUR_GROUPINGS[HOUR_GROUPINGS.length - 1]
+}
+
+/** Measures a ref'd element's width, re-measuring on resize (sidebar
+ * collapse, window resize, zoom) — not just at mount. */
+function useElementWidth<T extends HTMLElement>() {
+  const ref = useRef<T>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      const entry = entries[0]
+      if (entry) setWidth(entry.contentRect.width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  return { ref, width }
+}
 
 interface WeekTimelineProps {
   days: Date[] // exactly 7, Sunday first
   schedules: StreamSchedule[]
-  onEditSchedule: (schedule: StreamSchedule) => void
+  onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
   onCreateForDate: (dateStr: string) => void
 }
 
@@ -46,116 +80,43 @@ function xForMinutes(minutes: number): number {
   return (minutes / MINUTES_PER_DAY) * 100
 }
 
-/** One color per schedule kind, applied identically everywhere a schedule's
- * block appears (main block, its continuation, live or not) — a schedule
- * spanning midnight is one event, not two, so it shouldn't change hue
- * depending on which row-portion is showing or whether it's airing this
- * instant. "Live" is communicated by the bold "正在開台" label instead. */
-function blockColorClass(kind: ScheduleKind): string {
-  return kind === 'one_off'
-    ? 'bg-primary/15 text-primary'
-    : 'bg-secondary text-secondary-foreground'
-}
-
-/** Which segment is currently in effect, elapsedMinutes after the schedule's
- * own start — the same "latest offset not in the future" rule the backend's
- * real resolver uses, so a live block shows what's actually airing right now
- * instead of just the schedule's base title (segments can override it
- * mid-stream). */
-function resolveActiveSegment(
-  segments: StreamScheduleSegment[],
-  elapsedMinutes: number
-): StreamScheduleSegment | null {
-  let active: StreamScheduleSegment | null = null
-  for (const seg of segments) {
-    if (
-      seg.offset_minutes <= elapsedMinutes &&
-      (!active || seg.offset_minutes > active.offset_minutes)
-    ) {
-      active = seg
-    }
-  }
-  return active
-}
-
-/** Segment breakdown (title/category per offset) isn't loaded with the
- * schedule list the calendar already has — fetching it for every visible
- * schedule up front would be wasted work most of the time, so each row
- * fetches its own on first hover instead. No cross-hover cache: segments can
- * be edited from the same sheet this calendar opens, so refetching per mount
- * (rather than risking a stale cache) is the simpler correct choice — hover
- * is infrequent enough that this costs nothing noticeable. */
-function useSegmentPreview(scheduleId: number | null) {
-  const [state, setState] = useState<{ id: number; segments: StreamScheduleSegment[] } | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const load = () => {
-    if (scheduleId === null || loading || state?.id === scheduleId) return
-    setLoading(true)
-    getStreamScheduleSegments(scheduleId)
-      .then(data => setState({ id: scheduleId, segments: data }))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }
-
-  return { segments: state?.id === scheduleId ? state.segments : null, loading, load }
-}
-
-interface SchedulePreviewProps {
-  schedule: StreamSchedule
-  segments: StreamScheduleSegment[] | null
-  loading: boolean
-}
-
-function SchedulePreview({ schedule, segments, loading }: SchedulePreviewProps) {
-  const start = schedule.start_time.slice(0, 5)
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="font-medium">{schedule.title_template || '（未設定標題）'}</div>
-      <div className="text-muted-foreground">
-        {start}–{endTimeFor(start, schedule.duration_minutes)}
-      </div>
-      {loading ? (
-        <div className="text-muted-foreground">載入分段中…</div>
-      ) : segments && segments.length > 0 ? (
-        <div className="flex flex-col gap-0.5 border-t border-border pt-1">
-          {segments.map(seg => (
-            <div key={seg.id} className="text-muted-foreground">
-              {endTimeFor(start, seg.offset_minutes)}
-              {seg.offset_minutes === 0 && '（開台）'} {seg.game_name || '（未設定分類）'}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
 interface BlockContentProps {
   isLive: boolean
   fallbackTitle: string
   fallbackSubtitle: string
   activeSegment: StreamScheduleSegment | null
+  defaultSegment: StreamScheduleSegment | null
+  colored: boolean
 }
 
-/** Line 2 is the title, line 3 the category — for a live block these come
- * from whichever segment is currently active (falling back to the
- * schedule's own fields once segments have loaded but none apply yet, or
- * while they're still loading); a non-live block just shows its normal
- * summary. */
+/** Line 2 is the title, line 3 the category — matching Twitch's own schedule
+ * page, every block shows both, not just the one currently airing. A live
+ * block uses whichever segment is currently active (segments can override
+ * the schedule's base title/category mid-stream); a non-live block uses the
+ * earliest segment instead, since that's what go-live will actually apply.
+ * Both fall back to the schedule's own fields while segments are still
+ * loading or if none are set up. `colored` is true once a game-derived
+ * background is in use — the block's own text-white then needs the
+ * subtitle line to follow it too, instead of the fixed muted-foreground
+ * token that assumes the kind-based background. */
 function BlockContent({
   isLive,
   fallbackTitle,
   fallbackSubtitle,
   activeSegment,
+  defaultSegment,
+  colored,
 }: BlockContentProps) {
-  const title = (isLive && activeSegment?.title_template) || fallbackTitle
-  const subtitle = (isLive && activeSegment?.game_name) || fallbackSubtitle
+  const segment = isLive ? activeSegment : defaultSegment
+  const title = segment?.title_template || fallbackTitle
+  const subtitle = segment?.game_name || fallbackSubtitle
   return (
     <>
       {isLive && <div className="font-bold">正在開台</div>}
       <div className="truncate font-medium">{title}</div>
-      <div className="truncate text-muted-foreground">{subtitle}</div>
+      <div className={cn('truncate', colored ? 'text-white/85' : 'text-muted-foreground')}>
+        {subtitle}
+      </div>
     </>
   )
 }
@@ -166,7 +127,8 @@ interface WeekDayRowProps {
   today: string
   now: Date
   nowX: number
-  onEditSchedule: (schedule: StreamSchedule) => void
+  columnCount: number
+  onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
   onCreateForDate: (dateStr: string) => void
 }
 
@@ -176,6 +138,7 @@ function WeekDayRow({
   today,
   now,
   nowX,
+  columnCount,
   onEditSchedule,
   onCreateForDate,
 }: WeekDayRowProps) {
@@ -198,14 +161,13 @@ function WeekDayRow({
   const resolvedPreview = useSegmentPreview(resolved?.id ?? null)
   const continuationPreview = useSegmentPreview(continuation?.schedule.id ?? null)
 
-  // A live block's on-screen text needs segment data immediately (to show
-  // what's actually airing right now), not just on hover like the tooltip —
-  // cheap since at most today's row can ever be live.
+  // Every visible block shows its category, not just the live one — fetch
+  // eagerly rather than waiting for hover.
   useEffect(() => {
-    if (live) resolvedPreview.load()
-    if (continuationLive) continuationPreview.load()
+    resolvedPreview.load()
+    continuationPreview.load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, continuationLive])
+  }, [resolved?.id, continuation?.schedule.id])
 
   const resolvedActiveSegment = live
     ? resolveActiveSegment(
@@ -213,6 +175,7 @@ function WeekDayRow({
         now.getHours() * 60 + now.getMinutes() - startMinutes
       )
     : null
+  const resolvedDefaultSegment = firstSegment(resolvedPreview.segments ?? [])
   const continuationActiveSegment =
     continuationLive && continuation
       ? resolveActiveSegment(
@@ -222,6 +185,20 @@ function WeekDayRow({
             (now.getHours() * 60 + now.getMinutes())
         )
       : null
+  const continuationDefaultSegment = firstSegment(continuationPreview.segments ?? [])
+
+  const resolvedEffectiveSegment = live ? resolvedActiveSegment : resolvedDefaultSegment
+  const continuationEffectiveSegment = continuationLive
+    ? continuationActiveSegment
+    : continuationDefaultSegment
+  const resolvedGameColor = useGameColor(
+    resolvedEffectiveSegment?.game_id ?? null,
+    resolvedEffectiveSegment?.game_name ?? null
+  )
+  const continuationGameColor = useGameColor(
+    continuationEffectiveSegment?.game_id ?? null,
+    continuationEffectiveSegment?.game_name ?? null
+  )
 
   const baseLabel = resolved
     ? `${dateStr}：${resolved.start_time.slice(0, 5)} ${resolved.title_template || '（已排程）'}${live ? '，正在開台' : ''}`
@@ -233,14 +210,14 @@ function WeekDayRow({
   return (
     <button
       type="button"
-      onClick={() => (resolved ? onEditSchedule(resolved) : onCreateForDate(dateStr))}
+      onClick={() => (resolved ? onEditSchedule(resolved, dateStr) : onCreateForDate(dateStr))}
       aria-label={baseLabel + continuationLabel}
       className="flex w-full border-b border-border text-left last:border-b-0 hover:bg-accent/40"
     >
       <div
         style={{ width: LEFT_COL_WIDTH }}
         className={cn(
-          'shrink-0 border-r border-border p-2 text-sub',
+          'flex shrink-0 flex-col items-center justify-center border-r border-border p-2 text-center text-sub',
           isToday && 'font-bold text-primary'
         )}
       >
@@ -250,10 +227,10 @@ function WeekDayRow({
         </div>
       </div>
 
-      <div className="relative flex-1" style={{ height: ROW_HEIGHT }}>
+      <div className="relative min-w-0 flex-1" style={{ height: ROW_HEIGHT }}>
         <div className="absolute inset-0 flex">
-          {Array.from({ length: 24 }, (_, h) => (
-            <div key={h} className="flex-1 border-r border-border/20" />
+          {Array.from({ length: columnCount }, (_, h) => (
+            <div key={h} className="min-w-0 flex-1 border-r border-border/20" />
           ))}
         </div>
 
@@ -270,9 +247,15 @@ function WeekDayRow({
               <div
                 className={cn(
                   'absolute top-1 bottom-1 overflow-hidden rounded-r px-2 py-1 text-label leading-tight',
-                  blockColorClass(continuation.schedule.kind)
+                  continuationGameColor
+                    ? 'text-white'
+                    : scheduleBlockClass(continuation.schedule.kind)
                 )}
-                style={{ left: 0, width: `${xForMinutes(continuation.minutes)}%` }}
+                style={{
+                  left: 0,
+                  width: `${xForMinutes(continuation.minutes)}%`,
+                  ...(continuationGameColor && { background: continuationGameColor }),
+                }}
               >
                 <BlockContent
                   isLive={continuationLive}
@@ -282,6 +265,8 @@ function WeekDayRow({
                   }
                   fallbackSubtitle={`延續至 ${formatMinutesLabel(continuation.minutes)}`}
                   activeSegment={continuationActiveSegment}
+                  defaultSegment={continuationDefaultSegment}
+                  colored={!!continuationGameColor}
                 />
               </div>
             </TooltipTrigger>
@@ -301,11 +286,12 @@ function WeekDayRow({
               <div
                 className={cn(
                   'absolute top-1 bottom-1 overflow-hidden rounded px-2 py-1 text-label leading-tight',
-                  blockColorClass(resolved.kind)
+                  resolvedGameColor ? 'text-white' : scheduleBlockClass(resolved.kind)
                 )}
                 style={{
                   left: `${xForMinutes(startMinutes)}%`,
                   width: `${xForMinutes(visibleMinutes)}%`,
+                  ...(resolvedGameColor && { background: resolvedGameColor }),
                 }}
               >
                 <BlockContent
@@ -313,6 +299,8 @@ function WeekDayRow({
                   fallbackTitle={resolved.title_template || resolved.start_time.slice(0, 5)}
                   fallbackSubtitle={resolved.start_time.slice(0, 5)}
                   activeSegment={resolvedActiveSegment}
+                  defaultSegment={resolvedDefaultSegment}
+                  colored={!!resolvedGameColor}
                 />
               </div>
             </TooltipTrigger>
@@ -346,21 +334,29 @@ export function WeekTimeline({
   const today = toDateStr(now)
   const nowX = xForMinutes(now.getHours() * 60 + now.getMinutes())
 
+  const { ref, width } = useElementWidth<HTMLDivElement>()
+  const trackWidth = Math.max(width - LEFT_COL_WIDTH, 0)
+  // Before the first measurement (width is 0), default to the finest
+  // grouping rather than the coarsest — avoids a visible flash of 2-hour
+  // buckets on a normal-width screen before ResizeObserver reports in.
+  const hoursPerColumn = width === 0 ? 1 : pickHoursPerColumn(trackWidth)
+  const columnCount = 24 / hoursPerColumn
+
   return (
-    <div className="rounded-md border border-border">
+    <div ref={ref} className="rounded-md border border-border">
       <div className="flex border-b border-border bg-muted/30">
         <div
           style={{ width: LEFT_COL_WIDTH }}
-          className="shrink-0 border-r border-border p-2 text-label text-muted-foreground"
+          className="flex shrink-0 items-center justify-center border-r border-border p-2 text-center text-label text-muted-foreground"
         >
           GMT+8
         </div>
-        {Array.from({ length: 24 }, (_, h) => (
+        {Array.from({ length: columnCount }, (_, i) => (
           <div
-            key={h}
-            className="flex-1 overflow-hidden border-r border-border/40 py-2 text-center text-label whitespace-nowrap text-muted-foreground"
+            key={i}
+            className="min-w-0 flex-1 overflow-hidden border-r border-border/40 py-2 text-center text-label whitespace-nowrap text-muted-foreground"
           >
-            {formatHourLabel(h)}
+            {formatHourLabel(i * hoursPerColumn)}
           </div>
         ))}
       </div>
@@ -373,6 +369,7 @@ export function WeekTimeline({
           today={today}
           now={now}
           nowX={nowX}
+          columnCount={columnCount}
           onEditSchedule={onEditSchedule}
           onCreateForDate={onCreateForDate}
         />

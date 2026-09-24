@@ -14,6 +14,10 @@ class TwitchTokenEncryptionError(ValueError):
     """Raised when a Twitch credential cannot be safely decoded."""
 
 
+class TwitchTokenEnvelopeError(TwitchTokenEncryptionError):
+    """A versioned credential is missing its required storage envelope."""
+
+
 class TwitchTokenEncryptionNotConfiguredError(ServiceUnavailableError):
     """Missing Twitch credential encryption configuration."""
 
@@ -51,7 +55,7 @@ def decrypt_twitch_token(value: str, *, version: int, key: str | None) -> str:
     if not key:
         raise TwitchTokenEncryptionError("TWITCH_TOKEN_ENCRYPTION_KEY is not configured")
     if not value.startswith(_V1_PREFIX):
-        raise TwitchTokenEncryptionError("Encrypted Twitch token is missing the v1 envelope")
+        raise TwitchTokenEnvelopeError("Encrypted Twitch token is missing the v1 envelope")
 
     ciphertext = value.removeprefix(_V1_PREFIX)
     return Fernet(key.encode()).decrypt(ciphertext.encode()).decode()

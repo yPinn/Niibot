@@ -158,4 +158,37 @@ describe('resolveScheduleForDate', () => {
     const tuesday = schedule({ id: 1, weekday: 1 })
     expect(resolveScheduleForDate([tuesday], '2026-09-21')).toBeNull() // 2026-09-21 is Monday
   })
+
+  it("doesn't backfill a recurring schedule onto a date before it was created", () => {
+    // Created Friday 2026-09-25 for "every Monday" — 2026-09-21 (this
+    // week's Monday) already happened before the schedule existed.
+    const recurring = schedule({
+      id: 1,
+      weekday: 0,
+      created_at: '2026-09-25T12:00:00',
+    })
+    expect(resolveScheduleForDate([recurring], '2026-09-21')).toBeNull()
+    // Next Monday, after creation, resolves normally.
+    expect(resolveScheduleForDate([recurring], '2026-09-28')?.id).toBe(1)
+  })
+
+  it('resolves a recurring schedule on the exact day it was created', () => {
+    const recurring = schedule({
+      id: 1,
+      weekday: 0,
+      created_at: '2026-09-21T08:00:00',
+    })
+    expect(resolveScheduleForDate([recurring], '2026-09-21')?.id).toBe(1)
+  })
+
+  it('a one-off is never affected by created_at (its date is explicit)', () => {
+    const oneOff = schedule({
+      id: 1,
+      kind: 'one_off',
+      weekday: null,
+      specific_date: '2026-09-21',
+      created_at: '2026-09-25T12:00:00',
+    })
+    expect(resolveScheduleForDate([oneOff], '2026-09-21')?.id).toBe(1)
+  })
 })

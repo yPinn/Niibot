@@ -335,6 +335,37 @@ class TestListTokens:
         assert result[0].user_id == "u1"
         assert result[0].scopes == "channel:bot channel:read:redemptions"
 
+    async def test_can_isolate_a_version_one_row_missing_its_envelope(self, caplog):
+        malformed = {
+            **_TOKEN_ROW,
+            "token": "access-secret",
+            "refresh": "refresh-secret",
+            "encryption_version": 1,
+        }
+        pool, _ = _make_pool(fetch=[malformed, _TOKEN_ROW])
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        result = await repo.list_tokens(skip_invalid_envelopes=True)
+
+        assert len(result) == 1
+        assert result[0].user_id == "u1"
+        assert "Skipped stored Twitch credential with a missing encryption envelope" in caplog.text
+        assert "access-secret" not in caplog.text
+        assert "refresh-secret" not in caplog.text
+
+    async def test_missing_envelope_still_fails_closed_by_default(self):
+        malformed = {
+            **_TOKEN_ROW,
+            "token": "access-secret",
+            "refresh": "refresh-secret",
+            "encryption_version": 1,
+        }
+        pool, _ = _make_pool(fetch=[malformed])
+        repo = ChannelRepository(pool, token_encryption_key=_TOKEN_KEY)
+
+        with pytest.raises(ValueError, match="envelope"):
+            await repo.list_tokens()
+
 
 @pytest.mark.asyncio
 class TestUpsertToken:

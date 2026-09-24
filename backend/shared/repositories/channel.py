@@ -11,7 +11,11 @@ import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
 from shared.models.channel import Channel, DiscordUser, Token
-from shared.twitch_token_crypto import decrypt_twitch_token, encrypt_twitch_token
+from shared.twitch_token_crypto import (
+    TwitchTokenEnvelopeError,
+    decrypt_twitch_token,
+    encrypt_twitch_token,
+)
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -279,8 +283,13 @@ class ChannelRepository:
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
         return str(result).endswith(" 1")
 
-    async def list_tokens(self) -> list[Token]:
-        """Return all tokens (both types)."""
+    async def list_tokens(self, *, skip_invalid_envelopes: bool = False) -> list[Token]:
+        """Return all tokens, optionally isolating rows missing their v1 envelope.
+
+        Only the narrow envelope-format failure may be isolated. Missing keys,
+        wrong keys, tampered ciphertext, and unsupported versions still fail
+        closed so a global encryption incident cannot look like a healthy bot.
+        """
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT user_id, token, refresh, token_type, scopes, credential_revision, "
@@ -288,7 +297,20 @@ class ChannelRepository:
                 "requires_reauth, reauth_notified_at, created_at, updated_at "
                 "FROM tokens"
             )
-            return [self._decode_token_row(r) for r in rows]
+        tokens: list[Token] = []
+        for row in rows:
+            try:
+                tokens.append(self._decode_token_row(row))
+            except TwitchTokenEnvelopeError:
+                if not skip_invalid_envelopes:
+                    raise
+                LOGGER.error(
+                    "Skipped stored Twitch credential with a missing encryption envelope "
+                    "(user_id=%s, token_type=%s); run the bounded envelope repair",
+                    row["user_id"],
+                    row["token_type"],
+                )
+        return tokens
 
     async def upsert_token(
         self,

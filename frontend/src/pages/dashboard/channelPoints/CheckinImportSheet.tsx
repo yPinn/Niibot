@@ -413,7 +413,7 @@ export function CheckinImportSheet({
       <SheetContent className="gap-section sm:max-w-3xl">
         <SheetHeader>
           <SheetTitle>轉移舊 Bot 簽到</SheetTitle>
-          <SheetDescription>先核對觀眾與簽到資料，確認後再匯入。</SheetDescription>
+          <SheetDescription>核對觀眾與簽到資料後再匯入。</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-card overflow-y-auto px-page pb-page">
@@ -421,7 +421,7 @@ export function CheckinImportSheet({
             <Icon icon="fa-solid fa-circle-info" />
             <AlertTitle>匯入前先停用舊 Bot</AlertTitle>
             <AlertDescription>
-              已有 Niibot 資料的觀眾不可匯入；確認時若產生衝突，整批停止。
+              已有 Niibot 資料的觀眾無法匯入，衝突時會整批暫停讓你確認。
             </AlertDescription>
           </Alert>
 
@@ -513,49 +513,16 @@ export function CheckinImportSheet({
                 Google Sheets
               </Button>
             </div>
-            {mode === 'upload' ? (
-              <div className="space-y-2">
-                <Label htmlFor="checkin-import-file">CSV、TSV 或 XLSX</Label>
-                <Input
-                  id="checkin-import-file"
-                  aria-label="選擇簽到資料檔案"
-                  type="file"
-                  accept=".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  onChange={event => {
-                    setUpload(event.target.files?.[0] ?? null)
-                    resetParsedState()
-                  }}
-                />
-                <p className="text-label text-muted-foreground">
-                  XLSX 讀取第一個可見工作表；公式欄位需先貼成值。最多 10,000 筆。
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="checkin-import-sheet-url">Google Sheets 連結</Label>
-                <Input
-                  id="checkin-import-sheet-url"
-                  aria-label="Google Sheets 連結"
-                  type="url"
-                  placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0"
-                  value={sheetUrl}
-                  onChange={event => {
-                    setSheetUrl(event.target.value)
-                    resetParsedState()
-                  }}
-                />
-                <p className="text-label text-muted-foreground">
-                  僅支援已開放「知道連結的使用者可查看」或已發布的試算表；私人表格 OAuth 尚未支援。
-                </p>
-              </div>
-            )}
+            {/* Format guidance comes before the input, not after — so a viewer
+                reads what's expected (or grabs an example) before providing a
+                file, instead of finding out only when the read fails. */}
             <Collapsible className="group text-label text-muted-foreground">
               <CollapsibleTrigger asChild>
                 <button
                   type="button"
                   className="flex w-fit cursor-pointer select-none items-center gap-1 font-medium text-foreground"
                 >
-                  格式需求與範例
+                  檔案格式與範例
                   <Icon
                     icon="fa-solid fa-chevron-down"
                     className="text-label transition-transform group-data-[state=open]:rotate-180"
@@ -565,8 +532,8 @@ export function CheckinImportSheet({
               <CollapsibleContent>
                 <div className="mt-2 space-y-2 pl-3">
                   <p>
-                    必要：觀眾識別、累積天數、最後簽到。可選：顯示名稱、Twitch
-                    ID、連續天數、最後簽到日順位。
+                    必要：帳號、累積天數、最後簽到日。可選：顯示名稱、Twitch
+                    ID、連續天數、當日排名。
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -589,6 +556,53 @@ export function CheckinImportSheet({
                 </div>
               </CollapsibleContent>
             </Collapsible>
+            {/* Both modes' fields are always mounted, stacked in the same grid
+                cell (one hidden via visibility, not unmounted) so the container's
+                height is always the taller of the two — switching modes no
+                longer changes the box's height and shifts everything below it. */}
+            <div className="grid rounded-md border bg-muted/30 p-3">
+              <div
+                className={`col-start-1 row-start-1 space-y-2 ${mode === 'upload' ? '' : 'invisible'}`}
+                aria-hidden={mode !== 'upload'}
+              >
+                <Label htmlFor="checkin-import-file">CSV、TSV 或 XLSX</Label>
+                <Input
+                  id="checkin-import-file"
+                  aria-label="選擇簽到資料檔案"
+                  type="file"
+                  tabIndex={mode === 'upload' ? undefined : -1}
+                  accept=".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={event => {
+                    setUpload(event.target.files?.[0] ?? null)
+                    resetParsedState()
+                  }}
+                />
+                <p className="text-label text-muted-foreground">
+                  XLSX 讀取第一個可見工作表；公式欄位需先貼成值。最多 10,000 筆。
+                </p>
+              </div>
+              <div
+                className={`col-start-1 row-start-1 space-y-2 ${mode === 'google' ? '' : 'invisible'}`}
+                aria-hidden={mode !== 'google'}
+              >
+                <Label htmlFor="checkin-import-sheet-url">Google Sheets 連結</Label>
+                <Input
+                  id="checkin-import-sheet-url"
+                  aria-label="Google Sheets 連結"
+                  type="url"
+                  tabIndex={mode === 'google' ? undefined : -1}
+                  placeholder="https://docs.google.com/spreadsheets/d/.../edit?gid=0"
+                  value={sheetUrl}
+                  onChange={event => {
+                    setSheetUrl(event.target.value)
+                    resetParsedState()
+                  }}
+                />
+                <p className="text-label text-muted-foreground">
+                  僅支援公開分享或「知道連結者可查看」的試算表，私人表格暫不支援。
+                </p>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -613,7 +627,7 @@ export function CheckinImportSheet({
                   對應來源欄位
                 </h3>
                 <p className="text-label text-muted-foreground">
-                  已自動填入可辨識的欄位；只需修正沒有對上的項目。
+                  已自動填入可辨識的欄位，請確認沒對上的項目。
                 </p>
               </div>
               {!mappingReady && (
@@ -629,11 +643,11 @@ export function CheckinImportSheet({
                 mapping={columnMapping}
                 onChange={updateMapping}
               />
-              <Collapsible className="group">
+              <Collapsible className="group text-label">
                 <CollapsibleTrigger asChild>
                   <button
                     type="button"
-                    className="flex w-fit cursor-pointer select-none items-center gap-1 text-sm font-medium"
+                    className="flex w-fit cursor-pointer select-none items-center gap-1 font-medium text-foreground"
                   >
                     其他欄位（可選）
                     <Icon
@@ -677,8 +691,8 @@ export function CheckinImportSheet({
                   </h3>
                 </div>
                 <p className="text-label text-muted-foreground">
-                  尚未寫入任何資料。已選 {selectedKeys.length}{' '}
-                  筆。系統已自動偵測重複資料與已匯入過的觀眾，標示為「資料衝突」。
+                  尚未寫入資料，已選 {selectedKeys.length}{' '}
+                  筆；重複或已匯入過的資料會標示為「資料衝突」。
                 </p>
                 <div className="flex flex-wrap gap-2" aria-label="預覽結果統計">
                   <Badge variant="outline" className={STATUS_BADGE_CLASS.ready}>
@@ -918,7 +932,7 @@ export function CheckinImportSheet({
                   checked={oldSourceDisabled}
                   onChange={event => setOldSourceDisabled(event.target.checked)}
                 />
-                <span>我已停用舊 Bot 的簽到，並了解匯入只增加累積值、不補發歷史卡片。</span>
+                <span>我已停用舊 Bot 的簽到，且了解匯入只累加天數，不會補發歷史卡片。</span>
               </label>
             </section>
           )}
@@ -966,7 +980,7 @@ export function CheckinImportSheet({
                   <AlertDialogTitle>確認匯入簽到資料</AlertDialogTitle>
                   <AlertDialogDescription>
                     即將為 {selectedKeys.length}{' '}
-                    位觀眾寫入簽到累積，這個動作無法復原。確定資料無誤後再繼續。
+                    位觀眾寫入簽到累積，且無法復原，請再次確認資料無誤。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

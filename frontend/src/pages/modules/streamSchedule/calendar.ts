@@ -1,4 +1,4 @@
-import type { StreamSchedule } from '@/api/streamSchedule'
+import type { StreamSchedule, StreamScheduleSegment } from '@/api/streamSchedule'
 
 // Local-date (not UTC) helpers — a UTC-based ISO string can land on the wrong
 // calendar day for the user, especially right around midnight.
@@ -68,6 +68,37 @@ export function isLiveNow(schedule: StreamSchedule, dateStr: string, now: Date):
   return nowMinutes >= startMinutes && nowMinutes < startMinutes + schedule.duration_minutes
 }
 
+/** Minutes since a specific schedule's own start, only when it's the one
+ * actually airing right now (enabled, applies to today by weekday/date, and
+ * within its time window) — null otherwise. Unlike isLiveNow, this checks a
+ * single schedule object directly rather than "whatever resolved for a
+ * date," so the caller doesn't need to have already matched it against the
+ * day-level override rule themselves (e.g. the schedule-edit sheet, which
+ * only ever has one schedule in hand, not the full list to resolve against). */
+export function liveElapsedMinutesFor(schedule: StreamSchedule, now: Date): number | null {
+  if (!schedule.enabled) return null
+  const today = toDateStr(now)
+  const appliesToday =
+    schedule.kind === 'one_off'
+      ? schedule.specific_date === today
+      : schedule.weekday === weekdayOf(now)
+  if (!appliesToday || !isLiveNow(schedule, today, now)) return null
+  return now.getHours() * 60 + now.getMinutes() - timeStrToMinutes(schedule.start_time)
+}
+
+/** Whether a recurring schedule already existed by a given date — a schedule
+ * created this Friday for "every Monday" shouldn't retroactively backfill
+ * onto this week's Monday, which already passed before it existed. Doesn't
+ * apply to one-offs: their specific_date is an explicit, deliberate choice,
+ * not an implicit weekly match to guard against. The real auto-apply
+ * resolver (shared/services/stream_schedule_service.py) never needs this —
+ * it only ever evaluates today/yesterday relative to the actual current
+ * moment, so it can't reach a date before the schedule existed regardless.
+ * This is purely about the calendar not showing a misleading backfill. */
+function existedBy(schedule: StreamSchedule, dateStr: string): boolean {
+  return !schedule.created_at || toDateStr(new Date(schedule.created_at)) <= dateStr
+}
+
 /** Resolve which schedule (if any) applies on a given date — the same
  * day-level override rule the backend's resolver uses (see
  * shared/services/stream_schedule_service.py): an enabled one-off on that
@@ -85,7 +116,9 @@ export function resolveScheduleForDate(
 
   const weekday = weekdayOf(new Date(`${dateStr}T00:00:00`))
   const recurring = schedules
-    .filter(s => s.enabled && s.kind === 'recurring' && s.weekday === weekday)
+    .filter(
+      s => s.enabled && s.kind === 'recurring' && s.weekday === weekday && existedBy(s, dateStr)
+    )
     .sort((a, b) => a.start_time.localeCompare(b.start_time))
   return recurring[0] ?? null
 }
@@ -107,4 +140,36 @@ export function resolveContinuationForDate(
   if (!prev) return null
   const overflowMinutes = timeStrToMinutes(prev.start_time) + prev.duration_minutes - 1440
   return overflowMinutes > 0 ? { schedule: prev, minutes: overflowMinutes } : null
+}
+
+/** Which segment is currently in effect, elapsedMinutes after the schedule's
+ * own start — the same "latest offset not in the future" rule the backend's
+ * real resolver uses, so a live view shows what's actually airing right now
+ * instead of just the schedule's base title (segments can override it
+ * mid-stream). Shared by the week timeline (per visible block) and the
+ * segment editor (to mark which row is current/past while live). */
+export function resolveActiveSegment(
+  segments: StreamScheduleSegment[],
+  elapsedMinutes: number
+): StreamScheduleSegment | null {
+  let active: StreamScheduleSegment | null = null
+  for (const seg of segments) {
+    if (
+      seg.offset_minutes <= elapsedMinutes &&
+      (!active || seg.offset_minutes > active.offset_minutes)
+    ) {
+      active = seg
+    }
+  }
+  return active
+}
+
+/** The earliest (lowest-offset) segment — used as a block's default
+ * title/category when it isn't currently live (resolveActiveSegment covers
+ * the live case, where a later segment may already be in effect). */
+export function firstSegment(segments: StreamScheduleSegment[]): StreamScheduleSegment | null {
+  if (segments.length === 0) return null
+  return segments.reduce((earliest, s) =>
+    s.offset_minutes < earliest.offset_minutes ? s : earliest
+  )
 }
