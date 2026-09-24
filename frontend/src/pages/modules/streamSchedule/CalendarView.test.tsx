@@ -54,7 +54,7 @@ describe('CalendarView', () => {
 
     await user.click(dayButton(todayLocalDate()))
 
-    expect(onEditSchedule).toHaveBeenCalledWith(recurring)
+    expect(onEditSchedule).toHaveBeenCalledWith(recurring, todayLocalDate())
   })
 
   it('clicking an empty day calls onCreateForDate with that date', async () => {

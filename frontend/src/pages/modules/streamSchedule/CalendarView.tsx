@@ -1,12 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { StreamSchedule } from '@/api/streamSchedule'
 import { Icon } from '@/components/primitives'
-import { Button, Tabs, TabsList, TabsTrigger } from '@/components/ui'
+import {
+  Button,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import {
   addDays,
+  firstSegment,
   monthGridWeekCount,
   resolveScheduleForDate,
   startOfMonthGrid,
@@ -14,19 +23,119 @@ import {
   toDateStr,
   todayLocalDate,
 } from './calendar'
-import { WEEK_DISPLAY_ORDER, WEEKDAY_LABELS } from './constants'
+import { scheduleBlockClass, WEEK_DISPLAY_ORDER, WEEKDAY_LABELS } from './constants'
+import { useGameColor } from './gameColor'
+import { SchedulePreview } from './schedulePreview'
+import { useSegmentPreview } from './useSegmentPreview'
 import { WeekTimeline } from './WeekTimeline'
 
 type ViewMode = 'week' | 'month'
 
 interface CalendarViewProps {
   schedules: StreamSchedule[]
-  onEditSchedule: (schedule: StreamSchedule) => void
+  onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
   onCreateForDate: (dateStr: string) => void
 }
 
 function addMonths(date: Date, delta: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1)
+}
+
+interface MonthDayCellProps {
+  day: Date
+  schedules: StreamSchedule[]
+  isToday: boolean
+  inCurrentMonth: boolean
+  onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
+  onCreateForDate: (dateStr: string) => void
+}
+
+/** Same treatment as the week timeline's blocks — game-derived color and a
+ * hover tooltip with the full breakdown — so a schedule looks and behaves
+ * consistently whether you're looking at it in week or month view. Only the
+ * earliest segment is used here (no live/current-segment distinction like
+ * the week view has); month is a birds-eye overview, not a live-tracking
+ * surface. */
+function MonthDayCell({
+  day,
+  schedules,
+  isToday,
+  inCurrentMonth,
+  onEditSchedule,
+  onCreateForDate,
+}: MonthDayCellProps) {
+  const dateStr = toDateStr(day)
+  const resolved = resolveScheduleForDate(schedules, dateStr)
+
+  const preview = useSegmentPreview(resolved?.id ?? null)
+  useEffect(() => {
+    preview.load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolved?.id])
+
+  const defaultSegment = firstSegment(preview.segments ?? [])
+  const gameColor = useGameColor(defaultSegment?.game_id ?? null, defaultSegment?.game_name ?? null)
+
+  return (
+    <button
+      type="button"
+      onClick={() => (resolved ? onEditSchedule(resolved, dateStr) : onCreateForDate(dateStr))}
+      aria-label={
+        resolved
+          ? `${dateStr}：${resolved.start_time.slice(0, 5)} ${resolved.title_template || '（已排程）'}`
+          : `${dateStr}：尚未排程`
+      }
+      className={cn(
+        'flex min-h-20 flex-col items-start gap-1 rounded-md border border-border p-2 text-left transition-colors hover:bg-accent',
+        // Tinting the padding days (not the current month) reads better —
+        // the actual month stays at its normal, fully-readable appearance,
+        // and the padding days recede by contrast instead of the current
+        // month having to carry an odd background of its own.
+        !inCurrentMonth && 'bg-opacity-20 bg-background',
+        isToday && 'border-primary'
+      )}
+    >
+      <span
+        className={cn(
+          'flex size-5 items-center justify-center rounded-full text-label',
+          isToday ? 'bg-primary font-bold text-primary-foreground' : 'text-muted-foreground'
+        )}
+      >
+        {day.getDate()}
+      </span>
+      {/* Twitch-style event chip: a solid colour block per entry (game-derived
+          when available, kind-based otherwise). */}
+      {resolved && (
+        <Tooltip onOpenChange={open => open && preview.load()}>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                'w-full min-w-0 rounded px-1.5 py-1 text-label leading-tight',
+                gameColor ? 'text-white' : scheduleBlockClass(resolved.kind)
+              )}
+              style={gameColor ? { background: gameColor } : undefined}
+            >
+              <div className="font-medium">{resolved.start_time.slice(0, 5)}</div>
+              {resolved.title_template && (
+                <div
+                  className={cn('truncate', gameColor ? 'text-white/85' : 'text-muted-foreground')}
+                >
+                  {resolved.title_template}
+                </div>
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <SchedulePreview
+              schedule={resolved}
+              segments={preview.segments}
+              loading={preview.loading}
+            />
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </button>
+  )
 }
 
 export function CalendarView({ schedules, onEditSchedule, onCreateForDate }: CalendarViewProps) {
@@ -107,60 +216,17 @@ export function CalendarView({ schedules, onEditSchedule, onCreateForDate }: Cal
             </div>
           ))}
 
-          {monthDays.map(day => {
-            const dateStr = toDateStr(day)
-            const resolved = resolveScheduleForDate(schedules, dateStr)
-            const isToday = dateStr === today
-            const inCurrentMonth = day.getMonth() === anchor.getMonth()
-
-            return (
-              <button
-                key={dateStr}
-                type="button"
-                onClick={() => (resolved ? onEditSchedule(resolved) : onCreateForDate(dateStr))}
-                aria-label={
-                  resolved
-                    ? `${dateStr}：${resolved.start_time.slice(0, 5)} ${resolved.title_template || '（已排程）'}`
-                    : `${dateStr}：尚未排程`
-                }
-                className={cn(
-                  'flex min-h-20 flex-col items-start gap-1 rounded-md border border-border p-2 text-left transition-colors hover:bg-accent',
-                  !inCurrentMonth && 'opacity-40',
-                  isToday && 'border-primary'
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-5 items-center justify-center rounded-full text-label',
-                    isToday
-                      ? 'bg-primary font-bold text-primary-foreground'
-                      : 'text-muted-foreground'
-                  )}
-                >
-                  {day.getDate()}
-                </span>
-                {/* Twitch-style event chip: a solid colour block per entry (one-off
-                    vs. recurring get distinct colours). */}
-                {resolved && (
-                  <div
-                    className={cn(
-                      'w-full min-w-0 rounded px-1.5 py-1 text-label leading-tight',
-                      resolved.kind === 'one_off'
-                        ? 'bg-primary/15 text-primary'
-                        : 'bg-secondary text-secondary-foreground'
-                    )}
-                  >
-                    <div className="font-medium">{resolved.start_time.slice(0, 5)}</div>
-                    {resolved.title_template && (
-                      <div className="truncate text-muted-foreground">
-                        {resolved.title_template}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </button>
-            )
-          })}
+          {monthDays.map(day => (
+            <MonthDayCell
+              key={toDateStr(day)}
+              day={day}
+              schedules={schedules}
+              isToday={toDateStr(day) === today}
+              inCurrentMonth={day.getMonth() === anchor.getMonth()}
+              onEditSchedule={onEditSchedule}
+              onCreateForDate={onCreateForDate}
+            />
+          ))}
         </div>
       )}
     </div>

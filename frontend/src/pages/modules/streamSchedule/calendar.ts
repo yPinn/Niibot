@@ -1,4 +1,4 @@
-import type { StreamSchedule } from '@/api/streamSchedule'
+import type { StreamSchedule, StreamScheduleSegment } from '@/api/streamSchedule'
 
 // Local-date (not UTC) helpers — a UTC-based ISO string can land on the wrong
 // calendar day for the user, especially right around midnight.
@@ -140,4 +140,36 @@ export function resolveContinuationForDate(
   if (!prev) return null
   const overflowMinutes = timeStrToMinutes(prev.start_time) + prev.duration_minutes - 1440
   return overflowMinutes > 0 ? { schedule: prev, minutes: overflowMinutes } : null
+}
+
+/** Which segment is currently in effect, elapsedMinutes after the schedule's
+ * own start — the same "latest offset not in the future" rule the backend's
+ * real resolver uses, so a live view shows what's actually airing right now
+ * instead of just the schedule's base title (segments can override it
+ * mid-stream). Shared by the week timeline (per visible block) and the
+ * segment editor (to mark which row is current/past while live). */
+export function resolveActiveSegment(
+  segments: StreamScheduleSegment[],
+  elapsedMinutes: number
+): StreamScheduleSegment | null {
+  let active: StreamScheduleSegment | null = null
+  for (const seg of segments) {
+    if (
+      seg.offset_minutes <= elapsedMinutes &&
+      (!active || seg.offset_minutes > active.offset_minutes)
+    ) {
+      active = seg
+    }
+  }
+  return active
+}
+
+/** The earliest (lowest-offset) segment — used as a block's default
+ * title/category when it isn't currently live (resolveActiveSegment covers
+ * the live case, where a later segment may already be in effect). */
+export function firstSegment(segments: StreamScheduleSegment[]): StreamScheduleSegment | null {
+  if (segments.length === 0) return null
+  return segments.reduce((earliest, s) =>
+    s.offset_minutes < earliest.offset_minutes ? s : earliest
+  )
 }

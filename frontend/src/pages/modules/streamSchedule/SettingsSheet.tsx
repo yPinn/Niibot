@@ -92,7 +92,7 @@ function SettingsSheetForm({ settings, onSaved, onClose }: SettingsSheetFormProp
     <>
       <SheetHeader>
         <SheetTitle>排程設定</SheetTitle>
-        <SheetDescription>用來判斷「今天星期幾」，以及排程的開始、結束時間</SheetDescription>
+        <SheetDescription>選擇你所在的時區，會影響排程判斷開台時間</SheetDescription>
       </SheetHeader>
 
       <div className="flex flex-1 flex-col gap-card overflow-y-auto px-page">
@@ -122,8 +122,8 @@ function SettingsSheetForm({ settings, onSaved, onClose }: SettingsSheetFormProp
           )}
         </div>
 
-        <SettingRow title="啟用排程自動套用" description="關閉後不會自動套用任何排程的標題／分類">
-          <Switch aria-label="啟用排程自動套用" checked={enabled} onCheckedChange={setEnabled} />
+        <SettingRow title="自動套用排程" description="關閉後，開台不會自動改標題或分類">
+          <Switch aria-label="自動套用排程" checked={enabled} onCheckedChange={setEnabled} />
         </SettingRow>
       </div>
 

@@ -79,9 +79,11 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
     <TableShell>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[12%]">{kind === 'recurring' ? '星期' : '日期'}</TableHead>
-          <TableHead className="w-[20%]">時段</TableHead>
-          <TableHead>標題</TableHead>
+          <TableHead className="w-[12%] text-center">
+            {kind === 'recurring' ? '星期' : '日期'}
+          </TableHead>
+          <TableHead className="w-[20%] text-center">時段</TableHead>
+          <TableHead className="text-center">標題</TableHead>
           <TableHead className="w-[8%] text-center">狀態</TableHead>
           <TableHead className="w-[7%] text-right">操作</TableHead>
         </TableRow>
@@ -187,7 +189,7 @@ export default function StreamSchedule() {
       {settings && !settings.enabled && (
         <Alert>
           <AlertDescription>
-            排程自動套用目前已關閉，開台時不會自動改標題或分類。到「排程設定」重新啟用。
+            「自動套用排程」目前已關閉，開台不會自動改標題或分類，可以到「排程設定」重新開啟。
           </AlertDescription>
         </Alert>
       )}
@@ -197,7 +199,7 @@ export default function StreamSchedule() {
           <CardHeader>
             <CardTitle>排程列表</CardTitle>
             <CardDescription>
-              同時支援「每週固定」與「單次」排程；當天若兩者都有設定，單次排程優先套用
+              可以設定「每週固定」或「單次」的排程；同一天兩種都有的話，單次排程優先
             </CardDescription>
             <CardAction className="flex items-center gap-2">
               <Tabs
@@ -228,7 +230,9 @@ export default function StreamSchedule() {
             ) : displayMode === 'calendar' ? (
               <CalendarView
                 schedules={schedules}
-                onEditSchedule={s => setEditing({ mode: 'edit', schedule: s })}
+                onEditSchedule={(s, dateStr) =>
+                  setEditing({ mode: 'edit', schedule: s, calendarDate: dateStr })
+                }
                 onCreateForDate={dateStr =>
                   setEditing({
                     mode: 'create',
