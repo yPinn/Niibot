@@ -26,6 +26,17 @@ import type { MountContext, PlayerStrategy } from './types'
 // advances the queue precisely instead of waiting out the timer ceiling.
 // Bilibili's `-412` risk-control block means we usually have no real duration,
 // so that ceiling is otherwise the only thing that ends a Bilibili entry.
+
+// A multi-part video's non-first part is stored as `BVxxxxxxxxxx_pN` (see
+// split_bilibili_id() in shared/video_sources.py) — split it back out for the
+// player's separate `bvid`/`p` params. Kept as a local one-liner rather than
+// importing modules/videoQueue/utils's splitBilibiliId: this overlay bundle
+// has no existing cross-import from that package, and the split is trivial.
+function splitBilibiliId(videoId: string): [bvid: string, page: number] {
+  const m = /_p(\d+)$/.exec(videoId)
+  return m ? [videoId.slice(0, m.index), Number(m[1])] : [videoId, 1]
+}
+
 function mount(ctx: MountContext): (() => void) | void {
   const {
     current,
@@ -49,8 +60,9 @@ function mount(ctx: MountContext): (() => void) | void {
 
   const iframe = document.createElement('iframe')
   const startSeconds = Math.floor(joinElapsed)
+  const [bvid, page] = splitBilibiliId(current.video_id)
   const base =
-    `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(current.video_id)}` +
+    `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(bvid)}&page=${page}` +
     `&autoplay=1&danmaku=0&high_quality=1&as_wide=1&enablejsapi=1&t=${startSeconds}`
   iframe.src = muted ? `${base}&muted=1` : base
   iframe.style.cssText = 'width:100%;height:100%;border:none'

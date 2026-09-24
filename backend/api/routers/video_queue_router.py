@@ -54,6 +54,7 @@ from shared.services.video_queue_admission import (
     VideoQueueAdmissionService,
 )
 from shared.video_sources import (
+    VideoType,
     fetch_twitch_clip_source,
     fetch_video_metadata,
     resolve_video_url,
@@ -258,9 +259,7 @@ class BlocklistEntryResponse(BaseModel):
 
 class BlocklistAddRequest(BaseModel):
     kind: str
-    video_type: (
-        Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"] | None
-    ) = None
+    video_type: VideoType | None = None
     value: str = Field(min_length=1, max_length=256)
     label: str | None = Field(default=None, max_length=256)
 
@@ -905,8 +904,7 @@ async def get_rankings(
     response: Response,
     scope: Literal["channel", "global"] = "channel",
     days: int = Query(default=7),
-    video_type: Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"]
-    | None = None,
+    video_type: VideoType | None = None,
     limit: int = Query(default=50, ge=1, le=100),
     _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
@@ -996,16 +994,29 @@ async def add_blocklist_entry(
     value = body.value.strip()
     if not value:
         raise HTTPException(status_code=422, detail="value must not be blank")
+    video_type = body.video_type
+    if body.kind == "video" and "/" in value:
+        # A URL, not a bare native id (every native id — YouTube id, BV id,
+        # clip slug, IG shortcode — is a single path segment with no slash).
+        # Normalize it server-side through the same cascade admission uses
+        # (resolves b23.tv/share redirects, av→BV, etc.) instead of trusting
+        # a client-side regex, and never persist or log the raw URL — it may
+        # carry tracking params (utm_*, si, igsh, ...).
+        resolved = await resolve_video_url(value)
+        if resolved is None:
+            raise HTTPException(status_code=422, detail="無法辨識的影片網址")
+        value = resolved.video_id
+        video_type = resolved.video_type
     try:
         entry = await VideoQueueBlocklistRepository(pool).add(
             channel_id,
             body.kind,
             value,
-            video_type=body.video_type,
+            video_type=video_type,
             label=(body.label.strip() or None) if body.label else None,
             created_by=channel_id,
         )
-        LOGGER.info("Channel %s blocked %s %r", channel_id, body.kind, body.value)
+        LOGGER.info("Channel %s blocked %s %r", channel_id, body.kind, value)
         return _blocklist_response(entry)
     except HTTPException:
         raise

@@ -4,8 +4,8 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import twitchio.ext.commands as commands
 from pypinyin import lazy_pinyin
-from twitchio.ext import commands
 
 from core.component import BotComponent
 from core.config import DATA_DIR, get_settings

@@ -12,11 +12,37 @@ from collections.abc import Iterator
 from urllib.parse import SplitResult, urljoin, urlsplit
 
 _HTTP_SCHEMES = frozenset({"http", "https"})
-_TRIM_CHARS = "\"'<>[](){}，。！？、,;"
+# Punctuation a pasted URL commonly ends up wrapped in: straight quotes/brackets,
+# smart/curly quotes (iOS/autocorrect turns ' into '), and the CJK quotation
+# and title-mark brackets Traditional Chinese users reach for when quoting a
+# link in chat (「連結」, 《標題》, （備註） etc).
+_TRIM_CHARS = (
+    "\"'<>[](){}，。！？、,;"
+    "‘’“”"  # ' ' " "
+    "「」『』《》〈〉【】（）"
+)
+# Zero-width/format characters a mobile keyboard or paste-from-app can leave
+# inside otherwise-correct text (invisible, so a user has no way to notice or
+# manually remove one) — stripped from anywhere in the token, not just the
+# edges, since one can land in the middle of a copy-pasted URL.
+#
+# Built from codepoints rather than embedding the (invisible, by definition)
+# characters directly in this source file — a formatter would otherwise
+# happily collapse a unicode-escape string literal back into the literal
+# character, leaving something unreviewable sitting in a diff. See
+# test_safe_urls.py for the same convention.
+_INVISIBLE_CODEPOINTS = (
+    0x200B,  # ZERO WIDTH SPACE
+    0x200C,  # ZERO WIDTH NON-JOINER
+    0x200D,  # ZERO WIDTH JOINER
+    0x2060,  # WORD JOINER
+    0xFEFF,  # ZERO WIDTH NO-BREAK SPACE / BOM
+)
+_INVISIBLE_RE = re.compile("[" + "".join(chr(cp) for cp in _INVISIBLE_CODEPOINTS) + "]")
 
 
 def _parse_http_token(token: str) -> SplitResult | None:
-    candidate = token.strip(_TRIM_CHARS)
+    candidate = _INVISIBLE_RE.sub("", token).strip(_TRIM_CHARS)
     if not candidate:
         return None
     if "://" not in candidate:

@@ -6,7 +6,9 @@ bot, channel-points redemptions, and the donation webhook.
 
   - extract_youtube_id / extract_youtube_info : pure YouTube URL parsing
   - fetch_yt_info                              : YouTube Data API v3 call
-  - extract_bilibili_bvid / resolve_bilibili_url : Bilibili BV parsing (+ b23.tv)
+  - extract_bilibili_bvid / resolve_bilibili_url : Bilibili BV parsing (+ b23.tv,
+    legacy av{id} conversion via _av_to_bv, and ?p= multi-part folding — see
+    split_bilibili_id)
   - fetch_bilibili_info                        : Bilibili metadata (via
     shared.bilibili_client — three risk-control-aware tiers)
   - extract_twitch_clip_slug                   : Twitch clip URL parsing
@@ -30,6 +32,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import parse_qs, quote, urlunsplit
 from weakref import WeakKeyDictionary
 
@@ -50,21 +53,36 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # YouTube utilities
 # ---------------------------------------------------------------------------
 
-_YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"})
+_YOUTUBE_HOSTS = frozenset(
+    {
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+        "www.youtube-nocookie.com",
+        "youtu.be",
+    }
+)
 _VIDEO_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 
 _ISO8601_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
 
 # Playability reasons the OBS overlay cannot recover from — the iframe either
 # refuses to embed or silently shows an error, and the queue only advances once
-# the timer ceiling expires. Reject these at submission instead. YouTube-only:
-# Twitch clips always embed, and Bilibili's metadata endpoint is too unreliable
-# to gate on (see docs/architecture/video-queue-platforms.md).
+# the timer ceiling expires. Reject these at submission instead. Most are
+# YouTube-only (Twitch clips always embed, and Bilibili's metadata endpoint is
+# too unreliable to gate on generally — see
+# docs/architecture/video-queue-platforms.md); INVALID_TIMESTAMP/INVALID_PAGE
+# are Twitch VOD/Bilibili-specific out-of-range submissions, and NOT_VIDEO is
+# Instagram-specific (a pasted `/p/` link that turned out to be a photo post).
 UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
 UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
 UNPLAYABLE_PRIVATE = "private"
 UNPLAYABLE_REMOVED = "removed"
 UNPLAYABLE_INVALID_TIMESTAMP = "invalid_timestamp"
+UNPLAYABLE_INVALID_PAGE = "invalid_page"
+UNPLAYABLE_NOT_VIDEO = "not_video"
 
 _UNPLAYABLE_MESSAGES: dict[str, str] = {
     UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不開放外部播放",
@@ -72,6 +90,8 @@ _UNPLAYABLE_MESSAGES: dict[str, str] = {
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
     UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
     UNPLAYABLE_INVALID_TIMESTAMP: "影片時間點已超出可播放範圍",
+    UNPLAYABLE_INVALID_PAGE: "指定的分P不存在",
+    UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片",
 }
 
 
@@ -125,6 +145,14 @@ def extract_youtube_info(text: str) -> tuple[str | None, bool]:
     if len(segments) >= 2 and segments[0] == "shorts":
         video_id = segments[1]
         return (video_id, True) if _VIDEO_ID_RE.fullmatch(video_id) else (None, False)
+
+    # /live/{id} (live stream or its post-stream VOD share) and /embed/{id} (copy-embed-code
+    # output, youtube-nocookie's only path shape) — same flat "one id segment" shape as
+    # youtu.be, just under a different first path segment. /v/{id} is the pre-2010 watch
+    # URL, still resolvable today. None of these are Shorts, so is_vertical stays False.
+    if len(segments) >= 2 and segments[0] in ("live", "embed", "v"):
+        video_id = segments[1]
+        return (video_id, False) if _VIDEO_ID_RE.fullmatch(video_id) else (None, False)
 
     if parsed.path.rstrip("/") == "/watch":
         video_id = parse_qs(parsed.query).get("v", [""])[0]
@@ -251,18 +279,76 @@ async def fetch_yt_info(
 _BILIBILI_HOSTS = frozenset({"bilibili.com", "www.bilibili.com", "m.bilibili.com"})
 _BILIBILI_REDIRECT_HOSTS = _BILIBILI_HOSTS | frozenset({"b23.tv"})
 _BILIBILI_BV_RE = re.compile(r"BV[A-Za-z0-9]{10}")
+_BILIBILI_AV_RE = re.compile(r"[Aa][Vv](\d+)")
 _BILIBILI_SHORT_CODE_RE = re.compile(r"[A-Za-z0-9]+")
+_BILIBILI_PAGE_SUFFIX_RE = re.compile(r"_p(\d+)$")
+
+# Bilibili's BV<->av id encoding — a published (reverse-engineered) base58 XOR
+# scheme with no network round-trip (see bilibili-API-collect's
+# docs/misc/bvid_desc.md). Bilibili's address bar has shown BV ids only since
+# ~2020, but the legacy numeric `av{id}` path still resolves, so a pasted
+# `bilibili.com/video/av170001` link needs converting to be usable as this
+# module's canonical id.
+_BILIBILI_BV_XOR_CODE = 23442827791579
+_BILIBILI_BV_MAX_AID = 1 << 51
+_BILIBILI_BV_ALPHABET = "FcwAPNKTMug3GV5Lj7EJnHpWsx4tb8haYeviqBz6rkCy12mUSDQX9RdoZf"
+
+
+def _av_to_bv(aid: int) -> str:
+    """Convert a legacy numeric Bilibili aid to its BV id. Deterministic, pure."""
+    chars = list("BV1" + "0" * 9)
+    index = len(chars) - 1
+    value = (_BILIBILI_BV_MAX_AID | aid) ^ _BILIBILI_BV_XOR_CODE
+    while value > 0:
+        chars[index] = _BILIBILI_BV_ALPHABET[value % 58]
+        value //= 58
+        index -= 1
+    chars[3], chars[9] = chars[9], chars[3]
+    chars[4], chars[7] = chars[7], chars[4]
+    return "".join(chars)
+
+
+def split_bilibili_id(video_id: str) -> tuple[str, int]:
+    """Split a stored Bilibili id back into ``(bvid, page)``.
+
+    A multi-part video's non-first part is stored as ``BVxxxxxxxxxx_pN`` (see
+    ``extract_bilibili_bvid``); anything else — including every id stored
+    before multi-part support existed — has no suffix and is page 1. Keeping
+    P1 suffix-free means existing rows and dedupe/blocklist/ranking keys are
+    unaffected.
+    """
+    m = _BILIBILI_PAGE_SUFFIX_RE.search(video_id)
+    return (video_id[: m.start()], int(m.group(1))) if m else (video_id, 1)
+
+
+def _bilibili_id_with_page(bvid: str, page: int) -> str:
+    return bvid if page <= 1 else f"{bvid}_p{page}"
 
 
 def extract_bilibili_bvid(text: str) -> str | None:
-    """Extract Bilibili BV ID from full bilibili.com URL. Returns None if not found."""
+    """Extract a Bilibili video id from a full bilibili.com URL.
+
+    Returns the composite id ``split_bilibili_id()`` understands: a bare BV id,
+    or ``BVxxxxxxxxxx_pN`` when the URL's ``?p=`` selects part N≥2 of a
+    multi-part video. Also accepts the legacy numeric ``av{id}`` path,
+    converted via ``_av_to_bv``. Returns None if not found.
+    """
     parsed = find_allowed_http_url(text, _BILIBILI_HOSTS)
     if parsed is None:
         return None
     segments = [segment for segment in parsed.path.split("/") if segment]
     if len(segments) < 2 or segments[0] != "video":
         return None
-    return segments[1] if _BILIBILI_BV_RE.fullmatch(segments[1]) else None
+    raw_id = segments[1]
+    if _BILIBILI_BV_RE.fullmatch(raw_id):
+        bvid = raw_id
+    elif av_match := _BILIBILI_AV_RE.fullmatch(raw_id):
+        bvid = _av_to_bv(int(av_match.group(1)))
+    else:
+        return None
+    page_raw = parse_qs(parsed.query).get("p", [""])[0]
+    page = int(page_raw) if page_raw.isdigit() else 1
+    return _bilibili_id_with_page(bvid, page)
 
 
 async def resolve_bilibili_url(
@@ -285,7 +371,11 @@ async def resolve_bilibili_url(
     if not short_segments or not _BILIBILI_SHORT_CODE_RE.fullmatch(short_segments[0]):
         return None
 
-    full_url = urlunsplit(("https", "b23.tv", f"/{short_segments[0]}", short_url.query, ""))
+    # Drop the incoming query — b23.tv is a pure redirect and any query on the
+    # short link is share-tracking cruft (e.g. `spm_id_from`), not routing
+    # state; forwarding it would leak the original sharer's tracking params
+    # to Bilibili on our behalf.
+    full_url = urlunsplit(("https", "b23.tv", f"/{short_segments[0]}", "", ""))
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
@@ -337,14 +427,25 @@ class BilibiliInfo:
     thumbnail_url: str | None = None
     creator_id: str | None = None  # owner.mid
     creator_name: str | None = None  # owner.name
+    page_count: int | None = None  # total 分P count, when the view endpoint returned one
 
 
 async def fetch_bilibili_info(
     bvid: str,
     session: aiohttp.ClientSession | None = None,
+    *,
+    page: int = 1,
 ) -> BilibiliInfo:
     """Fetch title, duration, view count, orientation, cover image, and uploader
     identity from Bilibili.
+
+    ``bvid`` is always the bare video id — a caller holding a composite
+    ``BVxxx_pN`` stored id splits it first via ``split_bilibili_id()``. When
+    ``page`` selects a part beyond P1 of a multi-part video, duration/
+    orientation/title are overridden from that part's ``data["pages"][page-1]``
+    entry when the view endpoint's response included one; a caller can compare
+    the returned ``page_count`` against the requested ``page`` to detect a
+    part that doesn't exist.
 
     All fields are None/False when every tier of :mod:`shared.bilibili_client`
     is blocked or the video is unavailable — Bilibili has no official metadata
@@ -366,6 +467,23 @@ async def fetch_bilibili_info(
     owner = data.get("owner") or {}
     creator_id = str(owner["mid"]) if owner.get("mid") is not None else None
     creator_name: str | None = owner.get("name")
+
+    pages = data.get("pages")
+    page_count = len(pages) if isinstance(pages, list) else None
+    if page > 1 and isinstance(pages, list) and 1 <= page <= len(pages):
+        part = pages[page - 1] or {}
+        part_duration = part.get("duration")
+        if isinstance(part_duration, int):
+            duration_seconds = part_duration
+        part_dim = part.get("dimension") or {}
+        part_width = part_dim.get("width") or 0
+        part_height = part_dim.get("height") or 0
+        if part_width > 0 and part_height > 0:
+            is_vertical = part_height > part_width
+        part_title = part.get("part")
+        if title and part_title:
+            title = f"{title} P{page} {part_title}"
+
     return BilibiliInfo(
         title=title,
         duration_seconds=duration_seconds,
@@ -374,6 +492,7 @@ async def fetch_bilibili_info(
         thumbnail_url=_https(data.get("pic")),
         creator_id=creator_id,
         creator_name=creator_name,
+        page_count=page_count,
     )
 
 
@@ -382,7 +501,7 @@ async def fetch_bilibili_info(
 # ---------------------------------------------------------------------------
 
 
-_TWITCH_CLIP_HOSTS = frozenset({"clips.twitch.tv", "twitch.tv", "www.twitch.tv"})
+_TWITCH_CLIP_HOSTS = frozenset({"clips.twitch.tv", "twitch.tv", "www.twitch.tv", "m.twitch.tv"})
 _TWITCH_VOD_HOSTS = frozenset({"twitch.tv", "www.twitch.tv", "m.twitch.tv"})
 _TWITCH_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
 
@@ -464,7 +583,10 @@ def extract_twitch_clip_slug(text: str) -> str | None:
 
     Supports:
       - https://clips.twitch.tv/{slug}
+      - https://clips.twitch.tv/embed?clip={slug} (the "Embed" share option)
       - https://www.twitch.tv/{channel}/clip/{slug}
+      - https://www.twitch.tv/clip/{slug} (channel-less share form)
+      - m.twitch.tv equivalents of the two twitch.tv shapes above
     """
     parsed = find_allowed_http_url(text, _TWITCH_CLIP_HOSTS)
     if parsed is None or parsed.hostname is None:
@@ -472,9 +594,14 @@ def extract_twitch_clip_slug(text: str) -> str | None:
     segments = [segment for segment in parsed.path.split("/") if segment]
     host = parsed.hostname.lower()
     if host == "clips.twitch.tv":
-        slug = segments[0] if segments else ""
+        if segments and segments[0].lower() == "embed":
+            slug = parse_qs(parsed.query).get("clip", [""])[0]
+        else:
+            slug = segments[0] if segments else ""
     elif len(segments) >= 3 and segments[1] == "clip":
         slug = segments[2]
+    elif len(segments) == 2 and segments[0] == "clip":
+        slug = segments[1]
     else:
         return None
     return slug if _TWITCH_SLUG_RE.fullmatch(slug) else None
@@ -788,6 +915,9 @@ async def fetch_twitch_clip_source(
 # — they're already covered by tests and used directly where only one step
 # (e.g. just URL parsing) is needed.
 
+type VideoType = Literal["youtube", "twitch_clip", "twitch_vod", "bilibili", "instagram_reel"]
+
+
 _WATCH_URL_BUILDERS: dict[str, str] = {
     "youtube": "https://youtu.be/{video_id}",
     "twitch_clip": "https://clips.twitch.tv/{video_id}",
@@ -801,7 +931,7 @@ _WATCH_URL_BUILDERS: dict[str, str] = {
 class ResolvedVideo:
     """A URL identified as belonging to a platform, with its platform-native ID."""
 
-    video_type: str  # 'youtube' | 'twitch_clip' | 'twitch_vod' | 'bilibili' | 'instagram_reel'
+    video_type: VideoType
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
     start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
@@ -811,8 +941,11 @@ class ResolvedVideo:
 class VideoMetadata:
     """Metadata fetch result, normalized to one shape across all platforms.
 
-    ``playable`` / ``unplayable_reason`` are YouTube-only signals (see
-    ``YouTubeInfo``); Twitch Clip and Bilibili are always reported playable.
+    ``playable`` / ``unplayable_reason`` are mostly YouTube signals (see
+    ``YouTubeInfo``); Twitch VOD (``UNPLAYABLE_INVALID_TIMESTAMP``), Bilibili
+    (``UNPLAYABLE_INVALID_PAGE``), and Instagram (``UNPLAYABLE_NOT_VIDEO``) each
+    add one submission-time-only reason of their own. Twitch Clip is always
+    reported playable.
 
     ``metadata_best_effort`` is ``True`` when the values came from an unofficial
     endpoint that datacenter IPs frequently cannot reach (Bilibili, risk-control
@@ -950,7 +1083,25 @@ async def fetch_video_metadata(
         )
 
     if resolved.video_type == "bilibili":
-        bili = await fetch_bilibili_info(resolved.video_id, session)
+        bvid, page = split_bilibili_id(resolved.video_id)
+        bili = await fetch_bilibili_info(bvid, session, page=page)
+        # page_count is only known when the view endpoint actually answered
+        # (not risk-controlled) — reject a part number past the end only when
+        # that's positively established, same "only a positive signal
+        # rejects" convention as YouTube's playability checks.
+        if bili.page_count is not None and page > bili.page_count:
+            return VideoMetadata(
+                bili.title,
+                0,
+                bili.view_count,
+                bili.is_vertical,
+                playable=False,
+                unplayable_reason=UNPLAYABLE_INVALID_PAGE,
+                metadata_best_effort=True,
+                thumbnail_url=bili.thumbnail_url,
+                creator_id=bili.creator_id,
+                creator_name=bili.creator_name,
+            )
         return VideoMetadata(
             bili.title,
             bili.duration_seconds,
@@ -982,6 +1133,25 @@ async def fetch_video_metadata(
         # treatment, same as a YouTube Short (players/instagramReel.ts mounts
         # two extra <video> elements, not YT.Player instances, into the same
         # left/right containers).
+        #
+        # is_video is only ever positively False for a `/p/` link whose video
+        # redirect resolved to a non-mp4 target (a photo post) — a redirect
+        # that merely failed to resolve leaves it None/unknown and is not
+        # rejected here (same "only a positive signal rejects" convention as
+        # YouTube's playability checks).
+        if reel_info.is_video is False:
+            return VideoMetadata(
+                title=reel_info.title,
+                duration_seconds=0,
+                view_count=None,
+                is_vertical=reel_info.is_vertical,
+                playable=False,
+                unplayable_reason=UNPLAYABLE_NOT_VIDEO,
+                metadata_best_effort=True,
+                thumbnail_url=reel_info.thumbnail_url,
+                creator_id=reel_info.creator_id,
+                creator_name=reel_info.creator_name,
+            )
         return VideoMetadata(
             title=reel_info.title,
             duration_seconds=reel_info.duration_seconds,
@@ -1012,6 +1182,10 @@ def build_watch_url(video_type: str, video_id: str, start_seconds: int = 0) -> s
     template = _WATCH_URL_BUILDERS.get(video_type)
     if template is None:
         raise ValueError(f"Unknown video_type: {video_type!r}")
+    if video_type == "bilibili":
+        bvid, page = split_bilibili_id(video_id)
+        url = template.format(video_id=bvid)
+        return f"{url}?p={page}" if page > 1 else url
     url = template.format(video_id=video_id)
     if video_type == "twitch_vod" and start_seconds > 0:
         return f"{url}?t={start_seconds}s"

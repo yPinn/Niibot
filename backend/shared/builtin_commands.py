@@ -62,13 +62,21 @@ BUILTIN_DEFS: list[dict] = [
         "custom_response": "Pong! @$(user)",
     },
     # del 撞 StreamElements 的 !vanish 預設指令 → 預設關。永遠 everyone（對自己
-    # 動手，不需要額外權限判斷）。
+    # 動手，不需要額外權限判斷）。test_new_parity_builtins_land_in_their_declared_category
+    # 鎖定 del 緊接在 ping 後面，新增項目不要插進這兩個中間。
     {
         "command_name": "del",
         "category": "common",
         "cooldown": 5,
         "aliases": "刪除,vanish",
         "enabled": False,
+    },
+    # schedule 是 Niibot 原創功能，沒有其他 bot 的同名指令衝突 → 預設開。
+    {
+        "command_name": "schedule",
+        "category": "common",
+        "cooldown": 10,
+        "aliases": "下次開台,排程",
     },
     # ── 觀眾查詢（查自己；預設關閉：與 Nightbot / StreamElements / Fossabot /
     #    ChiwaBot 的同名指令衝突，交由實況主自行啟用）───────────────────────
@@ -227,6 +235,7 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "checkin": "每日簽到並查詢該頻道累積天數",
     "help": "顯示觀眾可用的公開指令列表",
     "uptime": "查看目前已開播多久",
+    "schedule": "查詢今天或下次的排程",
     "tft": "查詢聯盟戰棋排名",
     "fortune": "運勢占卜",
     "tarot": "每日塔羅（每個主題每天固定一張）",
@@ -256,6 +265,7 @@ BUILTIN_AUDIENCES: dict[str, str] = {
     "help": "viewer",
     "checkin": "viewer",
     "uptime": "viewer",
+    "schedule": "viewer",
     "ping": "viewer",
     "del": "viewer",
     "followage": "viewer",
@@ -284,6 +294,7 @@ BUILTIN_USAGE: dict[str, str] = {
     "help": "!help",
     "checkin": "!checkin",
     "uptime": "!uptime",
+    "schedule": "!schedule ｜ !下次開台 ｜ !排程",
     "ping": "!ping",
     "del": "!del",
     "followage": "!followage",
@@ -312,6 +323,7 @@ BUILTIN_DETAILS: dict[str, str] = {
     "help": "回覆此頻道的公開指令頁連結，讓觀眾查看目前已啟用且適合觀眾使用的指令。",
     "checkin": "為觸發者記錄當日簽到並回覆該頻道的累積簽到天數；同一天重複觸發不會重複累計。",
     "uptime": "查詢頻道目前是否正在直播；開播時回覆本場直播已持續的時間。",
+    "schedule": "查詢今天的排程；今天沒有設定的話，往後找一週內最近一次有排程的日子。找到時回覆時間、標題備註與預計分類；完全沒有排程時明確回覆。",
     "ping": "回覆 Pong 與觸發者名稱，用來快速確認 Niibot 是否在線並能正常處理聊天室訊息。",
     "del": "將觸發者自己 timeout 1 秒，藉此清除他自己最近在聊天室的留言；bot 需為版主才能生效，失敗時不回覆以避免洗頻。",
     "followage": "查詢觸發者是否追隨此頻道；已追隨時回覆從追隨日期至今的時間。",
@@ -348,6 +360,10 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "output": "@小霓 今日簽到成功，已在這個頻道累積簽到 12 天！",
     },
     "uptime": {"input": "!uptime", "output": "目前已開播 2 小時 18 分鐘。"},
+    "schedule": {
+        "input": "!schedule",
+        "output": "今天 20:00 開始，週一固定台，預計玩 Just Chatting",
+    },
     "ping": {"input": "!ping", "output": "Pong! @小霓"},
     "del": {"input": "!del", "output": "（觸發者最近的留言被清除，無聊天室回覆）"},
     "followage": {
@@ -405,6 +421,7 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "checkin": "每日簽到並查詢累積天數，用法：!簽到",
     "help": "顯示觀眾可用的公開指令列表",
     "uptime": "查看目前已開播多久",
+    "schedule": "查詢今天或下次的排程，用法：!schedule ｜ !下次開台 ｜ !排程",
     "ping": "確認 Niibot 是否在線",
     "del": "清除自己最近的聊天室留言，用法：!del",
     "tft": "查詢聯盟戰棋排名，用法：!tft <玩家名>#<tag>",

@@ -107,6 +107,40 @@ class TestResolveVideoUrl:
         assert resolved is not None
         assert resolved.video_type == "youtube"
 
+    async def test_youtube_live_url(self):
+        resolved = await resolve_video_url("https://www.youtube.com/live/dQw4w9WgXcQ")
+        assert resolved == ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
+
+    async def test_twitch_mobile_clip_url(self):
+        resolved = await resolve_video_url("https://m.twitch.tv/streamer/clip/SomeClipSlug")
+        assert resolved == ResolvedVideo(video_type="twitch_clip", video_id="SomeClipSlug")
+
+    async def test_bilibili_page_2_folded_into_video_id(self):
+        resolved = await resolve_video_url("https://www.bilibili.com/video/BV1xx411c7mD?p=2")
+        assert resolved == ResolvedVideo(
+            video_type="bilibili", video_id="BV1xx411c7mD_p2", is_vertical=False
+        )
+
+    async def test_instagram_p_url(self):
+        resolved = await resolve_video_url("https://www.instagram.com/p/Cabc123/")
+        assert resolved == ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&si=abc123&utm_source=share",
+            "https://www.bilibili.com/video/BV1xx411c7mD?spm_id_from=333.999&vd_source=abc",
+            "https://www.instagram.com/reel/Cabc123/?igsh=xyz789",
+        ],
+    )
+    async def test_tracking_params_do_not_affect_resolution(self, url):
+        # utm_*/si/spm_id_from/vd_source/igsh are share-tracking noise — only the
+        # native id is ever extracted, so a tracking-laden URL and a clean one
+        # for the same video resolve to the same id.
+        resolved = await resolve_video_url(url)
+        assert resolved is not None
+        assert resolved.video_id in {"dQw4w9WgXcQ", "BV1xx411c7mD", "Cabc123"}
+
 
 # ---------------------------------------------------------------------------
 # fetch_video_metadata — normalizes all three platforms to one 4-field shape
@@ -284,7 +318,7 @@ class TestFetchVideoMetadata:
             ),
         ) as mock_fetch:
             metadata = await fetch_video_metadata(resolved)
-        mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None)
+        mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None, page=1)
         assert metadata == VideoMetadata(
             title="BV Title",
             duration_seconds=90,
@@ -307,6 +341,49 @@ class TestFetchVideoMetadata:
             metadata = await fetch_video_metadata(resolved)
         assert metadata.metadata_best_effort is True
         assert metadata.duration_seconds is None
+
+    async def test_bilibili_page_2_splits_id_and_forwards_page(self):
+        resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD_p2")
+        with patch(
+            "shared.video_sources.fetch_bilibili_info",
+            new=AsyncMock(
+                return_value=BilibiliInfo(
+                    title="Collection P2 Part Two",
+                    duration_seconds=200,
+                    view_count=10,
+                    page_count=3,
+                )
+            ),
+        ) as mock_fetch:
+            metadata = await fetch_video_metadata(resolved)
+        mock_fetch.assert_awaited_once_with("BV1xx411c7mD", None, page=2)
+        assert metadata.title == "Collection P2 Part Two"
+        assert metadata.duration_seconds == 200
+        assert metadata.playable is True
+
+    async def test_bilibili_page_past_the_end_is_rejected(self):
+        # page_count is only known when the view endpoint actually answered —
+        # rejecting requires that positive signal, not just "duration missing".
+        resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD_p9")
+        with patch(
+            "shared.video_sources.fetch_bilibili_info",
+            new=AsyncMock(return_value=BilibiliInfo(title="Collection", page_count=3)),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.playable is False
+        assert metadata.unplayable_reason == "invalid_page"
+        assert metadata.duration_seconds == 0
+
+    async def test_bilibili_page_past_the_end_not_rejected_when_page_count_unknown(self):
+        # A -412 risk-control miss returns page_count=None — must not reject a
+        # part number we simply couldn't verify.
+        resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD_p9")
+        with patch(
+            "shared.video_sources.fetch_bilibili_info",
+            new=AsyncMock(return_value=BilibiliInfo()),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.playable is True
 
     async def test_instagram_reel_delegates_and_preserves_shape(self):
         # duration_seconds now rides along in the same video-redirect fetch
@@ -358,6 +435,41 @@ class TestFetchVideoMetadata:
         assert metadata.view_count is None
         assert metadata.playable is True
         assert metadata.is_vertical is True
+
+    async def test_instagram_photo_post_rejected_as_not_video(self):
+        # A `/p/` link that resolved to a photo post — is_video is positively
+        # False (the /videos/ redirect resolved to a non-mp4 target), not
+        # merely unknown, so this is the one case that rejects.
+        resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+        with patch(
+            "shared.video_sources.fetch_instagram_reel_info",
+            new=AsyncMock(
+                return_value=InstagramReelInfo(
+                    title="A photo caption",
+                    thumbnail_url=None,
+                    duration_seconds=None,
+                    is_video=False,
+                )
+            ),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.playable is False
+        assert metadata.unplayable_reason == "not_video"
+
+    async def test_instagram_unknown_video_status_not_rejected(self):
+        # The /videos/ redirect merely failed to resolve (network hiccup) —
+        # is_video stays None/unknown, and that must not reject the submission.
+        resolved = ResolvedVideo(video_type="instagram_reel", video_id="Cabc123")
+        with patch(
+            "shared.video_sources.fetch_instagram_reel_info",
+            new=AsyncMock(
+                return_value=InstagramReelInfo(
+                    title="A reel", thumbnail_url=None, duration_seconds=None, is_video=None
+                )
+            ),
+        ):
+            metadata = await fetch_video_metadata(resolved)
+        assert metadata.playable is True
 
     async def test_authoritative_platforms_are_not_best_effort(self):
         yt = ResolvedVideo(video_type="youtube", video_id="dQw4w9WgXcQ")
@@ -417,6 +529,12 @@ class TestBuildWatchUrl:
         assert (
             build_watch_url("bilibili", "BV1xx411c7mD")
             == "https://www.bilibili.com/video/BV1xx411c7mD"
+        )
+
+    def test_bilibili_multi_part(self):
+        assert (
+            build_watch_url("bilibili", "BV1xx411c7mD_p2")
+            == "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
         )
 
     def test_unknown_video_type_raises(self):

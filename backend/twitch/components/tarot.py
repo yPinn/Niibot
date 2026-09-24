@@ -2,7 +2,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from core.config import DATA_DIR

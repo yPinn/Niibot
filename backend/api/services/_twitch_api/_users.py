@@ -165,3 +165,24 @@ class _UsersMixin(_TwitchAPIBase):
         except Exception:
             LOGGER.exception("Error getting games by names")
             return []
+
+    async def search_categories(self, query: str, first: int = 20) -> list[dict]:
+        """Fuzzy category search — the same Helix endpoint Twitch's own category
+        picker uses. Unlike get_games_by_names(), this matches on a partial,
+        not-necessarily-exact query and ranks results."""
+        query = query.strip()
+        if not query:
+            return []
+        try:
+            response = await self._helix_get(
+                "search/categories", {"query": query, "first": min(first, 100)}
+            )
+            if not response or response.status_code != 200:
+                LOGGER.error("Failed to search categories: query=%s", query)
+                return []
+
+            return cast(list[dict], response.json().get("data", []))
+
+        except Exception:
+            LOGGER.exception("Error searching categories for query %s", query)
+            return []

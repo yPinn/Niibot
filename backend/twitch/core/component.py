@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 if TYPE_CHECKING:
     from core.bot import Bot

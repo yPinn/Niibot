@@ -19,11 +19,27 @@ import { Icon, Spinner } from '@/components/primitives'
 import {
   Alert,
   AlertDescription,
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
   AlertTitle,
   Badge,
   Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
   Input,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Sheet,
   SheetContent,
   SheetDescription,
@@ -31,6 +47,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui'
+import { withCurrentTimezone } from '@/lib/timezones'
 import { toastApiError } from '@/lib/toast-error'
 
 interface CheckinImportSheetProps {
@@ -47,6 +64,19 @@ const STATUS_LABELS = {
   invalid: '格式錯誤',
   unresolved: '待配對',
   conflict: '資料衝突',
+} satisfies Record<CheckinImportRowStatus, string>
+
+// Same variant="outline" + border-status-X/50 text-status-X idiom as
+// modules/videoQueue/QueueTable.tsx — ready reads as done, review/unresolved as
+// needing attention, conflict/invalid as blocking. Previously every status
+// rendered as the same neutral grey, so a duplicate-account conflict (see
+// backend's _with_identity_conflicts) looked no different from "ready".
+const STATUS_BADGE_CLASS = {
+  ready: 'border-status-success/50 text-status-success',
+  review: 'border-status-warning/50 text-status-warning',
+  unresolved: 'border-status-warning/50 text-status-warning',
+  conflict: 'border-status-offline/50 text-status-offline',
+  invalid: 'border-status-offline/50 text-status-offline',
 } satisfies Record<CheckinImportRowStatus, string>
 
 const STATUS_PRIORITY: Record<CheckinImportRowStatus, number> = {
@@ -200,7 +230,9 @@ export function CheckinImportSheet({
   const [identityTarget, setIdentityTarget] = useState('')
   const [remapping, setRemapping] = useState(false)
   const [showReceiptDetails, setShowReceiptDetails] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
+  const timezoneOptions = useMemo(() => withCurrentTimezone(sourceTimezone), [sourceTimezone])
   const selected = useMemo(() => new Set(selectedKeys), [selectedKeys])
   const counts = useMemo(() => {
     const result = { ready: 0, review: 0, invalid: 0, unresolved: 0, conflict: 0 }
@@ -301,6 +333,7 @@ export function CheckinImportSheet({
     try {
       const result = await applyCheckinImport(preview.import_id, selectedKeys, true)
       setReceipt(result)
+      setConfirmOpen(false)
       toast.success(
         result.already_applied
           ? '這批簽到資料先前已匯入'
@@ -367,6 +400,14 @@ export function CheckinImportSheet({
     resetPreviewState()
   }
 
+  const selectAllReady = () => {
+    setSelectedKeys(
+      (preview?.rows ?? [])
+        .filter(row => row.status === 'ready' || row.status === 'review')
+        .map(row => row.key)
+    )
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="gap-section sm:max-w-3xl">
@@ -384,53 +425,76 @@ export function CheckinImportSheet({
             </AlertDescription>
           </Alert>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="checkin-import-source">來源 Bot</Label>
-              <select
-                id="checkin-import-source"
-                aria-label="簽到資料來源"
-                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-                value={source}
-                onChange={event => {
-                  setSource(event.target.value)
-                  resetPreviewState()
-                }}
-              >
-                <option value="chiwabots">ChiwaBots</option>
-                <option value="nightbot">Nightbot</option>
-                <option value="streamelements">StreamElements</option>
-                <option value="other-bot">其他 Bot</option>
-              </select>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">1</Badge>
+              <h3 className="font-semibold">資料來源與時區</h3>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkin-import-timezone">來源時區</Label>
-              <Input
-                id="checkin-import-timezone"
-                aria-label="來源時區"
-                value={sourceTimezone}
-                onChange={event => {
-                  setSourceTimezone(event.target.value)
-                  resetPreviewState()
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="checkin-import-through-date">資料截止日</Label>
-              <Input
-                id="checkin-import-through-date"
-                aria-label="資料截止日"
-                type="date"
-                value={throughDate}
-                onChange={event => {
-                  setThroughDate(event.target.value)
-                  resetPreviewState()
-                }}
-              />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="checkin-import-source">來源 Bot</Label>
+                <select
+                  id="checkin-import-source"
+                  aria-label="簽到資料來源"
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                  value={source}
+                  onChange={event => {
+                    setSource(event.target.value)
+                    resetPreviewState()
+                  }}
+                >
+                  <option value="chiwabots">ChiwaBots</option>
+                  <option value="nightbot">Nightbot</option>
+                  <option value="streamelements">StreamElements</option>
+                  <option value="other-bot">其他 Bot</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="checkin-import-timezone">來源時區</Label>
+                <Select
+                  value={sourceTimezone}
+                  onValueChange={value => {
+                    setSourceTimezone(value)
+                    resetPreviewState()
+                  }}
+                >
+                  <SelectTrigger
+                    id="checkin-import-timezone"
+                    aria-label="來源時區"
+                    className="w-full"
+                  >
+                    <SelectValue placeholder="選擇時區" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timezoneOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="checkin-import-through-date">資料截止日</Label>
+                <Input
+                  id="checkin-import-through-date"
+                  aria-label="資料截止日"
+                  type="date"
+                  value={throughDate}
+                  onChange={event => {
+                    setThroughDate(event.target.value)
+                    resetPreviewState()
+                  }}
+                />
+              </div>
             </div>
           </div>
 
           <div className="space-y-3 border-t pt-card">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary">2</Badge>
+              <h3 className="font-semibold">上傳簽到資料</h3>
+            </div>
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -485,35 +549,46 @@ export function CheckinImportSheet({
                 </p>
               </div>
             )}
-            <details className="text-label text-muted-foreground">
-              <summary className="w-fit cursor-pointer select-none font-medium text-foreground">
-                格式需求與範例
-              </summary>
-              <div className="mt-2 space-y-2 pl-3">
-                <p>
-                  必要：觀眾識別、累積天數、最後簽到。可選：顯示名稱、Twitch
-                  ID、連續天數、最後簽到日順位。
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => downloadExample(',', 'csv')}
-                  >
-                    下載 CSV 範例
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => downloadExample('\t', 'tsv')}
-                  >
-                    下載 TSV 範例
-                  </Button>
+            <Collapsible className="group text-label text-muted-foreground">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-fit cursor-pointer select-none items-center gap-1 font-medium text-foreground"
+                >
+                  格式需求與範例
+                  <Icon
+                    icon="fa-solid fa-chevron-down"
+                    className="text-label transition-transform group-data-[state=open]:rotate-180"
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="mt-2 space-y-2 pl-3">
+                  <p>
+                    必要：觀眾識別、累積天數、最後簽到。可選：顯示名稱、Twitch
+                    ID、連續天數、最後簽到日順位。
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => downloadExample(',', 'csv')}
+                    >
+                      下載 CSV 範例
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => downloadExample('\t', 'tsv')}
+                    >
+                      下載 TSV 範例
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </details>
+              </CollapsibleContent>
+            </Collapsible>
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -534,7 +609,7 @@ export function CheckinImportSheet({
           {columns && mappingOpen && (
             <section className="space-y-3 border-t pt-card" aria-labelledby="checkin-column-map">
               <div>
-                <h3 id="checkin-column-map" className="font-medium">
+                <h3 id="checkin-column-map" className="font-semibold">
                   對應來源欄位
                 </h3>
                 <p className="text-label text-muted-foreground">
@@ -554,19 +629,30 @@ export function CheckinImportSheet({
                 mapping={columnMapping}
                 onChange={updateMapping}
               />
-              <details>
-                <summary className="w-fit cursor-pointer select-none text-sm font-medium">
-                  其他欄位（可選）
-                </summary>
-                <div className="mt-3">
-                  <ColumnMappingFields
-                    fields={OPTIONAL_MAPPING_FIELDS}
-                    headers={columns.headers}
-                    mapping={columnMapping}
-                    onChange={updateMapping}
-                  />
-                </div>
-              </details>
+              <Collapsible className="group">
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-fit cursor-pointer select-none items-center gap-1 text-sm font-medium"
+                  >
+                    其他欄位（可選）
+                    <Icon
+                      icon="fa-solid fa-chevron-down"
+                      className="text-label transition-transform group-data-[state=open]:rotate-180"
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-3">
+                    <ColumnMappingFields
+                      fields={OPTIONAL_MAPPING_FIELDS}
+                      headers={columns.headers}
+                      mapping={columnMapping}
+                      onChange={updateMapping}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
               <Button
                 type="button"
                 onClick={() => void handlePreview()}
@@ -584,22 +670,54 @@ export function CheckinImportSheet({
               aria-labelledby="checkin-import-preview"
             >
               <div className="space-y-2">
-                <h3 id="checkin-import-preview" className="font-medium">
-                  匯入前預覽
-                </h3>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">3</Badge>
+                  <h3 id="checkin-import-preview" className="font-semibold">
+                    核對並匯入
+                  </h3>
+                </div>
                 <p className="text-label text-muted-foreground">
-                  尚未寫入任何資料。已選 {selectedKeys.length} 筆。
+                  尚未寫入任何資料。已選 {selectedKeys.length}{' '}
+                  筆。系統已自動偵測重複資料與已匯入過的觀眾，標示為「資料衝突」。
                 </p>
                 <div className="flex flex-wrap gap-2" aria-label="預覽結果統計">
-                  <Badge variant="secondary">可匯入 {counts.ready}</Badge>
+                  <Badge variant="outline" className={STATUS_BADGE_CLASS.ready}>
+                    可匯入 {counts.ready}
+                  </Badge>
                   {counts.unresolved > 0 && (
-                    <Badge variant="outline">待配對 {counts.unresolved}</Badge>
+                    <Badge variant="outline" className={STATUS_BADGE_CLASS.unresolved}>
+                      待配對 {counts.unresolved}
+                    </Badge>
                   )}
-                  {counts.review > 0 && <Badge variant="outline">待確認 {counts.review}</Badge>}
+                  {counts.review > 0 && (
+                    <Badge variant="outline" className={STATUS_BADGE_CLASS.review}>
+                      待確認 {counts.review}
+                    </Badge>
+                  )}
                   {counts.conflict > 0 && (
-                    <Badge variant="outline">資料衝突 {counts.conflict}</Badge>
+                    <Badge variant="outline" className={STATUS_BADGE_CLASS.conflict}>
+                      資料衝突 {counts.conflict}
+                    </Badge>
                   )}
-                  {counts.invalid > 0 && <Badge variant="outline">格式錯誤 {counts.invalid}</Badge>}
+                  {counts.invalid > 0 && (
+                    <Badge variant="outline" className={STATUS_BADGE_CLASS.invalid}>
+                      格式錯誤 {counts.invalid}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="ghost" onClick={selectAllReady}>
+                    全選可匯入
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setSelectedKeys([])}
+                    disabled={selectedKeys.length === 0}
+                  >
+                    取消全選
+                  </Button>
                 </div>
               </div>
               <div className="overflow-hidden rounded-md border text-sm">
@@ -671,7 +789,9 @@ export function CheckinImportSheet({
                         </div>
 
                         <div className="col-start-2 space-y-1.5 md:col-start-auto">
-                          <Badge variant="outline">{STATUS_LABELS[row.status]}</Badge>
+                          <Badge variant="outline" className={STATUS_BADGE_CLASS[row.status]}>
+                            {STATUS_LABELS[row.status]}
+                          </Badge>
                           {row.issues.length > 0 && (
                             <p
                               className={
@@ -758,17 +878,28 @@ export function CheckinImportSheet({
                         )}
 
                         {(row.daily_order !== null || row.source_row > 0) && (
-                          <details className="col-span-full ml-8 text-label text-muted-foreground md:ml-0">
-                            <summary className="w-fit cursor-pointer select-none text-foreground">
-                              來源資料
-                            </summary>
-                            <p className="mt-1">
-                              第 {row.source_row} 列
-                              {row.daily_order !== null
-                                ? ` · 最後簽到日第 ${row.daily_order} 位`
-                                : ''}
-                            </p>
-                          </details>
+                          <Collapsible className="group col-span-full ml-8 text-label text-muted-foreground md:ml-0">
+                            <CollapsibleTrigger asChild>
+                              <button
+                                type="button"
+                                className="flex w-fit cursor-pointer select-none items-center gap-1 text-foreground"
+                              >
+                                來源資料
+                                <Icon
+                                  icon="fa-solid fa-chevron-down"
+                                  className="text-label transition-transform group-data-[state=open]:rotate-180"
+                                />
+                              </button>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <p className="mt-1">
+                                第 {row.source_row} 列
+                                {row.daily_order !== null
+                                  ? ` · 最後簽到日第 ${row.daily_order} 位`
+                                  : ''}
+                              </p>
+                            </CollapsibleContent>
+                          </Collapsible>
                         )}
                       </div>
                     )
@@ -824,13 +955,29 @@ export function CheckinImportSheet({
             關閉
           </Button>
           {preview && !receipt && (
-            <Button
-              onClick={() => void handleApply()}
-              disabled={selectedKeys.length === 0 || !oldSourceDisabled || applying}
-            >
-              {applying && <Spinner className="mr-1.5" />}
-              確認匯入 {selectedKeys.length} 筆
-            </Button>
+            <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+              <AlertDialogTrigger asChild>
+                <Button disabled={selectedKeys.length === 0 || !oldSourceDisabled}>
+                  確認匯入 {selectedKeys.length} 筆
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>確認匯入簽到資料</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    即將為 {selectedKeys.length}{' '}
+                    位觀眾寫入簽到累積，這個動作無法復原。確定資料無誤後再繼續。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={applying}>取消</AlertDialogCancel>
+                  <Button onClick={() => void handleApply()} disabled={applying}>
+                    {applying && <Spinner className="mr-1.5" />}
+                    確定匯入
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
         </SheetFooter>
       </SheetContent>

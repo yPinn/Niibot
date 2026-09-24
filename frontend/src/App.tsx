@@ -31,6 +31,7 @@ const GameQueueOverlay = lazy(() => import('@/pages/GameQueueOverlay'))
 const LoginPage = lazy(() => import('@/pages/Login'))
 const GameQueue = lazy(() => import('@/pages/modules/GameQueue'))
 const VideoQueue = lazy(() => import('@/pages/modules/videoQueue'))
+const StreamSchedule = lazy(() => import('@/pages/modules/streamSchedule'))
 const CrosshairModule = lazy(() => import('@/pages/modules/crosshairs'))
 const AIModule = lazy(() => import('@/pages/modules/AI'))
 const CrosshairRepo = lazy(() => import('@/pages/crosshairs'))
@@ -134,6 +135,7 @@ function App() {
                           path="/modules/live-display"
                           element={<CommunityOverlaySettings />}
                         />
+                        <Route path="/modules/stream-schedule" element={<StreamSchedule />} />
                         <Route path="/modules/crosshairs" element={<CrosshairModule />} />
                         <Route path="/modules/ai" element={<AIModule />} />
                         <Route path="/support" element={<SupportPage />} />

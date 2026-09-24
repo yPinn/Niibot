@@ -2,18 +2,39 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
+from shared.repositories.stream_schedule import StreamScheduleRepository
+from shared.services.stream_schedule_service import StreamScheduleService, UpcomingSchedule
 from utils.substitution import substitute_variables
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from core.bot import Bot
+
+_WEEKDAY_LABELS = ("週一", "週二", "週三", "週四", "週五", "週六", "週日")
+
+
+def _format_schedule_reply(upcoming: UpcomingSchedule) -> str:
+    if upcoming.days_from_today == 0:
+        when = "今天"
+    elif upcoming.days_from_today == 1:
+        when = "明天"
+    else:
+        when = _WEEKDAY_LABELS[upcoming.date.weekday()]
+
+    parts = [f"{when} {upcoming.schedule.start_time.strftime('%H:%M')} 開始"]
+    if upcoming.schedule.title_template:
+        parts.append(upcoming.schedule.title_template)
+    first_game = next((s.game_name for s in upcoming.segments if s.game_name), None)
+    if first_game:
+        parts.append(f"預計玩 {first_game}")
+    return "，".join(parts)
 
 
 class GeneralCommandsComponent(BotComponent):
@@ -23,9 +44,13 @@ class GeneralCommandsComponent(BotComponent):
         self.bot: Bot = bot  # type: ignore[assignment]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
+        self.schedule_service = StreamScheduleService(
+            StreamScheduleRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        )
 
     def refresh_pool(self, pool) -> None:
         self.cmd_repo.pool = pool
+        self.schedule_service = StreamScheduleService(StreamScheduleRepository(pool))
 
     async def _record_command(self, ctx: commands.Context, command_name: str) -> None:
         # Session analytics gate is intentional — always increments usage_count but
@@ -114,6 +139,33 @@ class GeneralCommandsComponent(BotComponent):
             await self._ctx_reply(ctx, "目前未開播")
 
         await self._record_command(ctx, "uptime")
+
+    @commands.command(name="schedule", aliases=["下次開台", "排程"])
+    async def schedule(self, ctx: commands.Context) -> None:
+        """查詢今天或下次的排程。
+
+        Usage: !schedule, !下次開台, !排程
+        """
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="schedule"
+        )
+        if not config:
+            return
+
+        try:
+            upcoming = await self.schedule_service.describe_upcoming(
+                ctx.channel.id, datetime.now(UTC)
+            )
+        except Exception as e:
+            LOGGER.warning(f"[{ctx.channel.name}] !schedule failed: {e}")
+            await self._ctx_reply(ctx, "查詢排程失敗，請稍後再試")
+            return
+
+        if upcoming is None:
+            await self._ctx_reply(ctx, "目前沒有設定排程")
+        else:
+            await self._ctx_reply(ctx, _format_schedule_reply(upcoming))
+        await self._record_command(ctx, "schedule")
 
     @commands.command(name="condemn", aliases=["斥責"])
     async def condemn(self, ctx: commands.Context) -> None:

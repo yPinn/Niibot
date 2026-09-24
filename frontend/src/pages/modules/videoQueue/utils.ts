@@ -24,6 +24,15 @@ export function snapToOption(options: readonly { value: number }[], value: numbe
   ).value
 }
 
+/** Split a stored Bilibili id back into (bvid, page) — frontend mirror of the
+ *  backend's `split_bilibili_id` (shared/video_sources.py). A multi-part
+ *  video's non-first part is stored as `BVxxxxxxxxxx_pN`; anything else,
+ *  including every id stored before multi-part support existed, is page 1. */
+export function splitBilibiliId(videoId: string): [bvid: string, page: number] {
+  const m = /_p(\d+)$/.exec(videoId)
+  return m ? [videoId.slice(0, m.index), Number(m[1])] : [videoId, 1]
+}
+
 /** Canonical watch URL for a queued entry — frontend mirror of the backend's
  *  `build_watch_url` (shared/video_sources.py). */
 export function watchUrl(videoType: string, videoId: string, startSeconds = 0): string {
@@ -34,8 +43,11 @@ export function watchUrl(videoType: string, videoId: string, startSeconds = 0): 
       const url = `https://www.twitch.tv/videos/${videoId}`
       return startSeconds > 0 ? `${url}?t=${startSeconds}s` : url
     }
-    case 'bilibili':
-      return `https://www.bilibili.com/video/${videoId}`
+    case 'bilibili': {
+      const [bvid, page] = splitBilibiliId(videoId)
+      const url = `https://www.bilibili.com/video/${bvid}`
+      return page > 1 ? `${url}?p=${page}` : url
+    }
     case 'instagram_reel':
       return `https://www.instagram.com/reel/${videoId}/`
     default:

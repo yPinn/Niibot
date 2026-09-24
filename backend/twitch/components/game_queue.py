@@ -16,7 +16,7 @@ Moderator+:
 import logging
 from typing import TYPE_CHECKING
 
-from twitchio.ext import commands
+import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository

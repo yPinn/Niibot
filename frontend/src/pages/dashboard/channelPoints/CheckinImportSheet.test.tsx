@@ -106,8 +106,8 @@ describe('CheckinImportSheet', () => {
 
     expect(screen.queryByRole('button', { name: /確認匯入/ })).not.toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('簽到資料來源'), 'nightbot')
-    await user.clear(screen.getByLabelText('來源時區'))
-    await user.type(screen.getByLabelText('來源時區'), 'UTC')
+    await user.click(screen.getByRole('combobox', { name: '來源時區' }))
+    await user.click(screen.getByRole('option', { name: 'UTC（UTC+0）' }))
     await user.clear(screen.getByLabelText('資料截止日'))
     await user.type(screen.getByLabelText('資料截止日'), '2026-09-10')
     const input = screen.getByLabelText('選擇簽到資料檔案')
@@ -147,6 +147,10 @@ describe('CheckinImportSheet', () => {
     await user.click(screen.getByLabelText('選取 Alice'))
     await user.click(screen.getByLabelText('我已停用舊 Bot 的簽到'))
     await user.click(screen.getByRole('button', { name: '確認匯入 1 筆' }))
+
+    expect(applyCheckinImport).not.toHaveBeenCalled()
+    expect(screen.getByRole('alertdialog', { name: '確認匯入簽到資料' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '確定匯入' }))
 
     expect(applyCheckinImport).toHaveBeenCalledWith('preview-1', ['row-ready'], true)
     expect(await screen.findByText(/已匯入 1 位觀眾/)).toBeInTheDocument()
