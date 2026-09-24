@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from shared.config_base import BaseServiceSettings
@@ -43,7 +43,7 @@ def test_encrypted_row_requires_a_configured_key():
 def test_wrong_key_or_tampered_value_fails_closed():
     ciphertext, version = encrypt_twitch_token("secret", _KEY)
 
-    with pytest.raises((InvalidToken, TwitchTokenEncryptionError)):
+    with pytest.raises(TwitchTokenEncryptionError, match="could not be decrypted"):
         decrypt_twitch_token(ciphertext, version=version, key=Fernet.generate_key().decode())
 
 

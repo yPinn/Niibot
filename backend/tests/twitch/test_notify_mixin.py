@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from types import SimpleNamespace
 
@@ -590,6 +591,30 @@ class TestHandleNewTokenAdmissionGate:
 
         mixin._mark_reauth_required.assert_not_awaited()
         mixin.add_channel_to_db.assert_not_awaited()
+
+    async def test_invalid_runtime_token_log_does_not_include_oauth_secret(self, caplog):
+        from twitchio.exceptions import HTTPException, InvalidTokenException
+
+        secret = "oauth-notify-secret-must-not-appear"
+        invalid = InvalidTokenException(
+            f"invalid token={secret} refresh=notify-refresh-secret-must-not-appear",
+            token=secret,
+            refresh="notify-refresh-secret-must-not-appear",
+            type_="token",
+            original=HTTPException(status=401, extra="unauthorized"),
+        )
+        mixin = _StubMixin()
+        mixin.add_token = AsyncMock(side_effect=invalid)
+        mixin._mark_reauth_required = AsyncMock()
+
+        with caplog.at_level(logging.WARNING):
+            await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        assert secret not in caplog.text
+        assert "notify-refresh-secret-must-not-appear" not in caplog.text
+        assert "new user u1" in caplog.text
+        assert "HTTP 401" in caplog.text
+        mixin._mark_reauth_required.assert_awaited_once()
 
     async def test_failed_reconcile_does_not_start_channel_runtime(self):
         from shared.twitch_scopes import BROADCASTER_SCOPES

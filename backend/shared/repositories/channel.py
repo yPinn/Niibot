@@ -12,6 +12,7 @@ import asyncpg
 from shared.cache import AsyncTTLCache, cached
 from shared.models.channel import Channel, DiscordUser, Token
 from shared.twitch_token_crypto import (
+    TwitchTokenEncryptionError,
     TwitchTokenEnvelopeError,
     decrypt_twitch_token,
     encrypt_twitch_token,
@@ -79,6 +80,7 @@ class ChannelRepository:
     @cached(
         cache=_token_cache,
         key_func=lambda self, user_id, token_type="broadcaster": f"token:{user_id}:{token_type}",
+        non_retryable=(TwitchTokenEncryptionError,),
     )
     async def get_token(self, user_id: str, token_type: str = "broadcaster") -> Token | None:
         """Get a user's OAuth token by type ('broadcaster' or 'bot')."""
@@ -94,6 +96,20 @@ class ChannelRepository:
             if not row:
                 return None
             return self._decode_token_row(row)
+
+    async def get_token_scopes(
+        self, user_id: str, token_type: str = "broadcaster"
+    ) -> tuple[bool, str | None]:
+        """Read authorization metadata without decrypting credential secrets."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT scopes FROM tokens WHERE user_id = $1 AND token_type = $2",
+                user_id,
+                token_type,
+            )
+            if not row:
+                return False, None
+            return True, row["scopes"]
 
     async def upsert_token_only(
         self,

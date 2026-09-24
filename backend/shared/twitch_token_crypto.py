@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from shared.errors import ServiceUnavailableError
 
@@ -58,4 +58,9 @@ def decrypt_twitch_token(value: str, *, version: int, key: str | None) -> str:
         raise TwitchTokenEnvelopeError("Encrypted Twitch token is missing the v1 envelope")
 
     ciphertext = value.removeprefix(_V1_PREFIX)
-    return Fernet(key.encode()).decrypt(ciphertext.encode()).decode()
+    try:
+        return Fernet(key.encode()).decrypt(ciphertext.encode()).decode()
+    except (InvalidToken, ValueError) as exc:
+        raise TwitchTokenEncryptionError(
+            "Stored Twitch token ciphertext could not be decrypted"
+        ) from exc

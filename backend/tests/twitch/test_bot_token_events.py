@@ -13,7 +13,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
@@ -125,6 +125,30 @@ class TestBotInit:
 
 @pytest.mark.asyncio
 class TestSubscriptionBootstrap:
+    async def test_eventsub_scope_resolution_does_not_decrypt_stored_credentials(self, bot):
+        from twitch.core.bot import Bot
+
+        bot.channels.get_token_scopes = AsyncMock(
+            side_effect=[
+                (True, "channel:read:redemptions channel:read:subscriptions"),
+                (True, "user:read:chat user:write:chat"),
+            ]
+        )
+        bot.channels.get_token = AsyncMock(side_effect=AssertionError("must not decrypt token"))
+
+        result = await Bot._eventsub_scope_context(bot, "ch1")
+
+        assert result == (
+            {"channel:read:redemptions", "channel:read:subscriptions"},
+            {"user:read:chat", "user:write:chat"},
+            set(),
+        )
+        bot.channels.get_token.assert_not_awaited()
+        assert bot.channels.get_token_scopes.await_args_list == [
+            call("ch1", "broadcaster"),
+            call("bot-001", "bot"),
+        ]
+
     async def test_reconcile_enabled_subscriptions_uses_one_global_diff(self, bot):
         from twitch.core.bot import Bot
 
@@ -569,6 +593,28 @@ class TestLoadTokens:
         await load_bot.load_tokens()
 
         load_bot._mark_reauth_required.assert_awaited_once_with("u1", expected_revision=1)
+
+    async def test_invalid_token_log_does_not_include_oauth_secret(self, load_bot, caplog):
+        from twitchio.exceptions import HTTPException, InvalidTokenException
+
+        secret = "oauth-secret-must-not-appear"
+        invalid = InvalidTokenException(
+            f"invalid token={secret} refresh=refresh-secret-must-not-appear",
+            token=secret,
+            refresh="refresh-secret-must-not-appear",
+            type_="token",
+            original=HTTPException(status=401, extra="unauthorized"),
+        )
+        load_bot.channels.list_tokens.return_value = [self._token(None)]
+        load_bot.add_token = AsyncMock(side_effect=invalid)
+
+        with caplog.at_level(logging.WARNING):
+            await load_bot.load_tokens()
+
+        assert secret not in caplog.text
+        assert "refresh-secret-must-not-appear" not in caplog.text
+        assert "user_id u1" in caplog.text
+        assert "HTTP 401" in caplog.text
 
 
 @pytest.mark.asyncio

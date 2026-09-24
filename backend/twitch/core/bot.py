@@ -192,6 +192,19 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         response = await self.fetch_eventsub_subscriptions(conduit_id=conduit_id)
         return [subscription async for subscription in response.subscriptions]
 
+    async def _stored_token_scopes(
+        self,
+        user_id: str,
+        token_type: TwitchCredential,
+        legacy_scopes: list[str],
+    ) -> set[str]:
+        exists, scopes = await self.channels.get_token_scopes(user_id, token_type)
+        if not exists:
+            return set()
+        if scopes is None:
+            return set(legacy_scopes)
+        return set(scopes.split())
+
     async def _eventsub_scope_context(self, channel_id: str) -> tuple[set[str], set[str], set[str]]:
         """Resolve grants before building one channel's EventSub plan.
 
@@ -203,20 +216,12 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         """
         from shared.twitch_scopes import BOT_SCOPES, BROADCASTER_SCOPES
 
-        broadcaster = await self.channels.get_token(channel_id, "broadcaster")
-        bot = await self.channels.get_token(self._bot_id, "bot")
-        broadcaster_scopes = (
-            set(BROADCASTER_SCOPES)
-            if broadcaster is not None and broadcaster.scopes is None
-            else set((broadcaster.scopes or "").split())
-            if broadcaster is not None
-            else set()
+        broadcaster_scopes = await self._stored_token_scopes(
+            channel_id, "broadcaster", BROADCASTER_SCOPES
         )
         bot_scopes = (
-            set(BOT_SCOPES)
-            if bot is not None and bot.scopes is None
-            else set((bot.scopes or "").split())
-            if bot is not None
+            await self._stored_token_scopes(self._bot_id, "bot", BOT_SCOPES)
+            if self._bot_id is not None
             else set()
         )
         return broadcaster_scopes, bot_scopes, set()
@@ -1116,9 +1121,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                     )
                 else:
                     LOGGER.warning(
-                        "Invalid token for user_id %s, skipping. User needs to re-authenticate: %s",
+                        "Invalid Twitch credential for user_id %s (HTTP %s); "
+                        "skipping until the user re-authenticates",
                         tok.user_id,
-                        e,
+                        e.status,
                     )
                 continue
             except RuntimeError as e:

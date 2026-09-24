@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 import httpx
 
 from shared.twitch_egress import EgressPriority
+from shared.twitch_token_crypto import TwitchTokenEncryptionError
 
 if TYPE_CHECKING:
     from core.bot_resolver import BotAccountResolver
@@ -97,6 +98,7 @@ class SessionService:
         self._buffers: dict[str, dict[str, dict]] = {}
         self._line_counts: dict[str, int] = {}
         self._tasks: set[asyncio.Task] = set()
+        self._credential_decryption_warnings: set[str] = set()
 
     def _ch(self, channel_id: str) -> str:
         return self._subs.ch(channel_id)
@@ -422,7 +424,19 @@ class SessionService:
     async def _fetch_chatters(self, channel_id: str) -> ChatterSnapshot:
         """Fetch all chatters, distinguishing a complete empty result from failure."""
         sender_id = self._bots.sender_id(channel_id)
-        bot_token = await self._channels.get_token(sender_id, "bot")
+        try:
+            bot_token = await self._channels.get_token(sender_id, "bot")
+        except TwitchTokenEncryptionError:
+            if sender_id not in self._credential_decryption_warnings:
+                LOGGER.error(
+                    "Watch-time bot credential for user_id %s cannot be decrypted; "
+                    "chatter snapshots are disabled until repair or reauthorization",
+                    sender_id,
+                )
+                self._credential_decryption_warnings.add(sender_id)
+            return ChatterSnapshot(viewers=[], complete=False)
+
+        self._credential_decryption_warnings.discard(sender_id)
         if not bot_token:
             LOGGER.debug("No bot token, skipping watch time for %s", self._ch(channel_id))
             return ChatterSnapshot(viewers=[], complete=False)

@@ -212,6 +212,31 @@ class TestCachedDecorator:
 
         assert calls == 1  # no retry on cancellation
 
+    async def test_non_retryable_error_skips_retry_and_stale_fallback(self):
+        class DeterministicDecodeError(ValueError):
+            pass
+
+        cache = AsyncTTLCache(maxsize=10, ttl=60)
+        cache.set("credential", "old-value")
+        cache.invalidate("credential")
+        calls = 0
+
+        @cached(
+            cache=cache,
+            key_func=lambda: "credential",
+            retry=3,
+            non_retryable=(DeterministicDecodeError,),
+        )
+        async def cannot_decode():
+            nonlocal calls
+            calls += 1
+            raise DeterministicDecodeError("invalid envelope")
+
+        with pytest.raises(DeterministicDecodeError, match="invalid envelope"):
+            await cannot_decode()
+
+        assert calls == 1
+
     async def test_different_keys_cached_independently(self):
         cache = AsyncTTLCache(maxsize=10, ttl=60)
 

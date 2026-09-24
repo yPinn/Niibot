@@ -308,7 +308,12 @@ class _NotifyMixin:
                         e.status,
                     )
                     return
-                LOGGER.warning(f"[NOTIFY] Invalid token for new user {user_id}: {e}")
+                LOGGER.warning(
+                    "[NOTIFY] Invalid Twitch credential for new user %s (HTTP %s); "
+                    "marking reauthorization required",
+                    user_id,
+                    e.status,
+                )
                 await self._mark_reauth_required(
                     user_id,
                     expected_revision=token_obj.credential_revision,
