@@ -32,9 +32,11 @@ from shared.log_context import bind_log_context
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
 from shared.repositories.roleplay import RoleplayRepository
+from shared.repositories.stream_schedule import StreamScheduleRepository
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.community_overlay import CommunityOverlayService
+from shared.services.stream_schedule_service import StreamScheduleService
 from shared.services.vip import VipService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -118,6 +120,12 @@ def get_game_queue_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> GameQue
 
 def get_attendance_service(pool: asyncpg.Pool = Depends(get_db_pool)) -> AttendanceService:
     return AttendanceService(AttendanceRepository(pool))
+
+
+def get_stream_schedule_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> StreamScheduleService:
+    return StreamScheduleService(StreamScheduleRepository(pool))
 
 
 def get_community_overlay_service(

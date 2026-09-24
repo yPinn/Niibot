@@ -1,4 +1,5 @@
-"""Unit tests for twitch.components.general_commands — the !so shoutout gate.
+"""Unit tests for twitch.components.general_commands — the !so shoutout gate
+and the !schedule query command.
 
 TwitchIO wraps component methods with a Command descriptor; call
 `.callback(component, ctx, ...)` to invoke the raw implementation.
@@ -9,10 +10,14 @@ min_role="moderator" and check_command enforces it, so the handler must rely
 on check_command's return alone — no second gate.
 """
 
+from datetime import date, time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from twitch.components.general_commands import GeneralCommandsComponent
+
+from shared.models.stream_schedule import ScheduleKind, StreamSchedule, StreamScheduleSegment
+from shared.services.stream_schedule_service import UpcomingSchedule
 
 PATCH_CHECK = "twitch.components.general_commands.check_command"
 
@@ -58,6 +63,45 @@ async def _help(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
 
 async def _del(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
     await GeneralCommandsComponent.delete_own_messages.callback(comp, ctx)  # type: ignore[attr-defined]
+
+
+async def _schedule_cmd(comp: GeneralCommandsComponent, ctx: MagicMock) -> None:
+    await GeneralCommandsComponent.schedule.callback(comp, ctx)  # type: ignore[attr-defined]
+
+
+def _upcoming(
+    *,
+    target_date: date = date(2026, 9, 21),  # Monday
+    days_from_today: int = 0,
+    title: str = "",
+    game_name: str | None = None,
+) -> UpcomingSchedule:
+    schedule = StreamSchedule(
+        id=1,
+        channel_id="ch_test",
+        kind=ScheduleKind.RECURRING,
+        weekday=0,
+        start_time=time(20, 0),
+        duration_minutes=180,
+        title_template=title,
+    )
+    segments = (
+        [
+            StreamScheduleSegment(
+                id=1,
+                channel_id="ch_test",
+                schedule_id=1,
+                offset_minutes=0,
+                title_template="",
+                game_name=game_name,
+            )
+        ]
+        if game_name
+        else []
+    )
+    return UpcomingSchedule(
+        date=target_date, days_from_today=days_from_today, schedule=schedule, segments=segments
+    )
 
 
 @pytest.mark.asyncio
@@ -143,4 +187,64 @@ class TestDel:
         with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
             await _del(comp, ctx)
         comp._ctx_reply.assert_not_awaited()
+        comp._record_command.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestSchedule:
+    async def test_blocked_when_check_command_denies(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=_upcoming())
+        with patch(PATCH_CHECK, AsyncMock(return_value=None)):
+            await _schedule_cmd(comp, ctx)
+        comp.schedule_service.describe_upcoming.assert_not_awaited()
+        comp._ctx_reply.assert_not_awaited()
+
+    async def test_no_schedule_at_all(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=None)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(ctx, "目前沒有設定排程")
+        comp._record_command.assert_awaited_once_with(ctx, "schedule")
+
+    async def test_today_with_title_and_game(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        upcoming = _upcoming(days_from_today=0, title="週一固定台", game_name="Just Chatting")
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=upcoming)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(
+            ctx, "今天 20:00 開始，週一固定台，預計玩 Just Chatting"
+        )
+
+    async def test_tomorrow_with_no_title_or_game(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        upcoming = _upcoming(target_date=date(2026, 9, 22), days_from_today=1)
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=upcoming)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(ctx, "明天 20:00 開始")
+
+    async def test_further_out_uses_weekday_label(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        # 2026-09-24 is a Thursday (週四).
+        upcoming = _upcoming(target_date=date(2026, 9, 24), days_from_today=3)
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=upcoming)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(ctx, "週四 20:00 開始")
+
+    async def test_query_failure_replies_generic_error(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        comp.schedule_service.describe_upcoming = AsyncMock(side_effect=RuntimeError("db down"))
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(ctx, "查詢排程失敗，請稍後再試")
         comp._record_command.assert_not_awaited()

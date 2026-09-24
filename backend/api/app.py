@@ -48,6 +48,7 @@ from routers import (
     releases_router,
     roleplay_router,
     stats_router,
+    stream_schedule_router,
     tenants_router,
     timers_router,
     video_queue_router,
@@ -494,6 +495,7 @@ def create_app() -> FastAPI:
     app.include_router(stats_router.router, dependencies=_activated)
     app.include_router(events_router.router, dependencies=_activated)
     app.include_router(timers_router.router, dependencies=_activated)
+    app.include_router(stream_schedule_router.router, dependencies=_activated)
     app.include_router(message_triggers_router.router, dependencies=_activated)
     app.include_router(payment_config_router.router, dependencies=_activated)
     app.include_router(ai_settings_router.router, dependencies=_activated)
