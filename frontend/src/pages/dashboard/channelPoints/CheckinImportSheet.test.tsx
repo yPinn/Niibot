@@ -136,7 +136,7 @@ describe('CheckinImportSheet', () => {
       })
     )
     expect(applyCheckinImport).not.toHaveBeenCalled()
-    expect(screen.getByText(/尚未寫入任何資料/)).toBeInTheDocument()
+    expect(screen.getByText(/尚未寫入資料/)).toBeInTheDocument()
     expect(screen.getByText('資料衝突')).toBeInTheDocument()
     expect(screen.queryByText('101')).not.toBeInTheDocument()
     expect(screen.getByLabelText('選取 Bob')).toBeDisabled()
@@ -246,7 +246,7 @@ describe('CheckinImportSheet', () => {
     render(<CheckinImportSheet open onOpenChange={vi.fn()} defaultTimezone="Asia/Taipei" />)
 
     await user.click(screen.getByRole('button', { name: 'Google Sheets' }))
-    expect(screen.getByText(/私人表格 OAuth 尚未支援/)).toBeInTheDocument()
+    expect(screen.getByText(/私人表格暫不支援/)).toBeInTheDocument()
     await user.type(
       screen.getByLabelText('Google Sheets 連結'),
       'https://docs.google.com/spreadsheets/d/abc123/edit?gid=0'
