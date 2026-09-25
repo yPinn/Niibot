@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import uvicorn
+from browser_admission import BrowserAdmission, BrowserBusyError
 from fastapi import FastAPI, HTTPException, Query
 from scrapling.fetchers import AsyncDynamicSession
 
@@ -72,6 +73,7 @@ _LOGIN_URL_RE = re.compile(r"/login", re.IGNORECASE)
 _CONTENT_WAIT_MAX_MS = 6_000
 
 _session: AsyncDynamicSession | None = None
+_browser_admission = BrowserAdmission(max_queue_depth=1, max_wait_seconds=25.0)
 
 _ui_re = re.compile(r"^(Translate|See translation|See more|See less|\d+/\d+)$", re.I)
 _thread_num_re = re.compile(r"^[\d/]+$")
@@ -479,7 +481,14 @@ async def get_threads_profile(
     if _session is None:
         raise HTTPException(status_code=503, detail="browser not ready")
     try:
-        return await _get_profile_data(url)
+        async with _browser_admission.acquire():
+            return await _get_profile_data(url)
+    except BrowserBusyError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="browser busy",
+            headers={"Retry-After": "1"},
+        ) from exc
     except Exception as exc:
         LOGGER.error("scrapling: unhandled profile error for %s: %s", url, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -499,7 +508,14 @@ async def get_threads_post(
     if _session is None:
         raise HTTPException(status_code=503, detail="browser not ready")
     try:
-        return await _get_post_data(url)
+        async with _browser_admission.acquire():
+            return await _get_post_data(url)
+    except BrowserBusyError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="browser busy",
+            headers={"Retry-After": "1"},
+        ) from exc
     except Exception as exc:
         LOGGER.error("scrapling: unhandled error for %s: %s", url, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
