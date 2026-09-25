@@ -104,8 +104,22 @@ jobs:
 
       - name: Pull latest code
         run: |
-          git -C "$PROJECT_DIR" fetch --force --tags origin "$DEPLOY_BRANCH"
-          git -C "$PROJECT_DIR" reset --hard "origin/$DEPLOY_BRANCH"
+          PROJECT_PATH=$(cd "$PROJECT_DIR" && pwd -P)
+          REPO_ROOT=$(git -C "$PROJECT_PATH" rev-parse --show-toplevel)
+          REPO_ROOT=$(cd "$REPO_ROOT" && pwd -P)
+          if [ "$PROJECT_PATH" != "$REPO_ROOT" ]; then
+            echo "::error::PROJECT_DIR must point to the deployment worktree root"
+            exit 1
+          fi
+
+          CURRENT_BRANCH=$(git -C "$PROJECT_PATH" symbolic-ref --quiet --short HEAD || true)
+          if [ "$CURRENT_BRANCH" != "$DEPLOY_BRANCH" ]; then
+            echo "::error::deployment checkout is on '$CURRENT_BRANCH'; expected '$DEPLOY_BRANCH'"
+            exit 1
+          fi
+
+          git -C "$PROJECT_PATH" fetch --force --tags origin "$DEPLOY_BRANCH"
+          git -C "$PROJECT_PATH" reset --hard "origin/$DEPLOY_BRANCH"
 
       - name: Write env files from secrets
         working-directory: ${{ env.PROJECT_DIR }}

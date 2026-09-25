@@ -128,6 +128,7 @@ class Var:
     group: str = ""
     activates_group: bool = False
     nonprod_shared: bool = False
+    value_format: str = ""
     ci: dict = field(default_factory=dict)
     ci_example: dict = field(default_factory=dict)
 
@@ -179,6 +180,7 @@ def load_registry() -> tuple[list[Var], dict]:
             group=raw.get("group", ""),
             activates_group=bool(raw.get("activates_group", False)),
             nonprod_shared=bool(raw.get("nonprod_shared", False)),
+            value_format=raw.get("format", ""),
             ci=raw.get("ci", {}),
             ci_example=raw.get("ci_example", {}),
         )
@@ -190,6 +192,8 @@ def load_registry() -> tuple[list[Var], dict]:
             sys.exit(f"registry error: {v.key} has unknown scopes {sorted(unknown_scopes)}")
         if v.section not in section_order:
             sys.exit(f"registry error: {v.key} has unknown section {v.section!r}")
+        if v.value_format not in {"", "fernet"}:
+            sys.exit(f"registry error: {v.key} has unknown format {v.value_format!r}")
         for scope in v.scopes:
             identity = (scope, v.env_name)
             if identity in scoped_names:
@@ -322,6 +326,8 @@ def build_manifest(vars_: list[Var]) -> dict:
         }
         if v.ci_file:
             entry["file"] = v.ci_file
+        if v.value_format:
+            entry["format"] = v.value_format
         # var: sources pass GitHub Variables straight through; an unset one would
         # write an empty value, so carry the registry default as a fallback
         # (was `${{ vars.X || 'default' }}` in the old heredoc).

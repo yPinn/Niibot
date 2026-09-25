@@ -18,6 +18,9 @@ Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.
 - `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
 - `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
   路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
+- self-hosted runner 共用主機但不共用工作目錄：production 固定使用 `/Users/pinn/Niibot` 的 `main`，staging
+  固定使用 `/Users/pinn/Niibot-stg` 的 `staging`。部署前會驗證 worktree root 與目前分支，不符即中止。
+- Compose project、image、env 與資料目錄按環境隔離；全域 deploy concurrency 仍禁止兩個部署同時操作 Docker。
 - runner 上的 env 檔由 `scripts/env/ci.py` 依 `env.manifest.json` 解析 GitHub
   Secrets／Variables；`scripts/env/write_ci.sh` 是最小化的 workflow wrapper。
 
@@ -28,6 +31,43 @@ Hotfix 同樣先進 `staging` 完成驗證與部署，再 promotion 到 `main`�
 期望分支規則：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
 截至 2026-09-08，此 private Repo 使用 GitHub Free，GitHub API 回覆 branch protection 需升級方案或公開
 Repo，因此目前以「CI 紅燈不得合併」的人工作業維持；方案支援後再把上述規則設為平台強制。
+
+### 同主機 worktree 一次性切換
+
+兩個 GitHub Environment 的 `PROJECT_DIR` 必須不同：production 使用 `/Users/pinn/Niibot`，staging 使用
+`/Users/pinn/Niibot-stg`。若舊 staging 曾共用 production checkout，先在主機執行下列切換；staging data
+會一起移入新 worktree，production data 不動：
+
+```bash
+(
+  set -euo pipefail
+  cd /Users/pinn/Niibot
+  test -z "$(git status --porcelain --untracked-files=no)"
+  test ! -e /Users/pinn/Niibot-stg
+  git fetch --force --tags origin main staging
+
+  # 先停止舊路徑的 staging stack；down 不加 -v，bind-mounted data 會保留。
+  npm run nb -- stack stg down
+
+  # 建立固定 staging worktree，並移動既有 staging data（若存在）。
+  git worktree add -B staging /Users/pinn/Niibot-stg origin/staging
+  mkdir -p /Users/pinn/Niibot-stg/data
+  if [ -d /Users/pinn/Niibot/data/staging ]; then
+    mv /Users/pinn/Niibot/data/staging /Users/pinn/Niibot-stg/data/staging
+  fi
+
+  # 原 checkout 恢復為真正的 production main。
+  git switch main
+  git reset --hard origin/main
+
+  # staging workflow 從此只操作新 worktree。
+  gh variable set PROJECT_DIR --env staging --body /Users/pinn/Niibot-stg
+)
+```
+
+若 `data/staging` 不存在可略過 `mv`；若目標已存在則先停止，不可覆寫或合併資料夾。完成後確認
+`git -C /Users/pinn/Niibot branch --show-current` 為 `main`、`git -C /Users/pinn/Niibot-stg branch --show-current`
+為 `staging`，再觸發 staging deploy。production 的 `PROJECT_DIR` 維持 `/Users/pinn/Niibot`。
 
 ## Docker Compose overlay
 

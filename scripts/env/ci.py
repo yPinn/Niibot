@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+from base64 import b64decode
+from binascii import Error as Base64Error
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,6 +26,13 @@ def _quote_env(value: str) -> str:
     return f"'{escaped}'"
 
 
+def _is_fernet_key(value: str) -> bool:
+    try:
+        return len(b64decode(value.strip().encode("ascii"), altchars=b"-_", validate=True)) == 32
+    except (Base64Error, UnicodeEncodeError, ValueError):
+        return False
+
+
 def render_files(
     manifest: dict,
     *,
@@ -36,31 +45,23 @@ def render_files(
     try:
         env = ENV_ALIASES[deploy_environment]
     except KeyError as exc:
-        raise ValueError(
-            f"unsupported DEPLOY_ENVIRONMENT={deploy_environment!r}"
-        ) from exc
+        raise ValueError(f"unsupported DEPLOY_ENVIRONMENT={deploy_environment!r}") from exc
 
     secrets = {key: str(value).strip("\r\n") for key, value in secrets.items()}
     variables = {key: str(value).strip("\r\n") for key, value in variables.items()}
 
     missing_secrets = [
-        name
-        for name in manifest.get("required_secrets", [])
-        if not _has_value(secrets.get(name))
+        name for name in manifest.get("required_secrets", []) if not _has_value(secrets.get(name))
     ]
     if missing_secrets:
-        raise ValueError(
-            f"missing required GitHub Secrets: {' '.join(missing_secrets)}"
-        )
+        raise ValueError(f"missing required GitHub Secrets: {' '.join(missing_secrets)}")
     missing_variables = [
         name
         for name in manifest.get("required_variables", [])
         if not _has_value(variables.get(name))
     ]
     if missing_variables:
-        raise ValueError(
-            f"missing required GitHub Variables: {' '.join(missing_variables)}"
-        )
+        raise ValueError(f"missing required GitHub Variables: {' '.join(missing_variables)}")
 
     database_url = "postgresql://{}:{}@postgres:5432/{}".format(
         quote(variables.get("POSTGRES_USER", ""), safe=""),
@@ -83,6 +84,12 @@ def render_files(
             return deploy_environment
         return spec.get("default", "")
 
+    for key, spec in manifest["ci"].items():
+        value = raw_value(spec)
+        if spec.get("format") == "fernet" and _has_value(value):
+            if not _is_fernet_key(value):
+                raise ValueError(f"invalid Fernet key: {key}")
+
     inactive_members: set[str] = set()
     for name, group in manifest.get("ci_groups", {}).items():
         members = group.get("members", [])
@@ -91,9 +98,7 @@ def render_files(
             inactive_members.update(members)
             continue
         missing = [
-            key
-            for key in members
-            if not _has_value(resolved_value(key, manifest["ci"][key]))
+            key for key in members if not _has_value(resolved_value(key, manifest["ci"][key]))
         ]
         if missing:
             raise ValueError(f"incomplete group {name}: missing {', '.join(missing)}")
@@ -122,8 +127,7 @@ def render_files(
         buffers[tag].append(f"{key}={_quote_env(value)}")
 
     return {
-        file_paths[tag]: "".join(f"{line}\n" for line in lines)
-        for tag, lines in buffers.items()
+        file_paths[tag]: "".join(f"{line}\n" for line in lines) for tag, lines in buffers.items()
     }
 
 
@@ -131,9 +135,7 @@ def main() -> int:
     try:
         project_dir = Path(os.environ["PROJECT_DIR"])
         deploy_environment = os.environ["DEPLOY_ENVIRONMENT"]
-        manifest = json.loads(
-            (project_dir / "env.manifest.json").read_text(encoding="utf-8")
-        )
+        manifest = json.loads((project_dir / "env.manifest.json").read_text(encoding="utf-8"))
         secrets = json.loads(os.environ.get("SECRETS_JSON", "{}"))
         variables = json.loads(os.environ.get("VARS_JSON", "{}"))
         rendered = render_files(

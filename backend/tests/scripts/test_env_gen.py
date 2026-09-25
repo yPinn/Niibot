@@ -126,7 +126,13 @@ def test_registry_deploy_defaults_are_explicit_and_safe() -> None:
     assert by_key["GEMINI_MODEL"].default == "gemini-3.5-flash"
     assert by_key["OPENROUTER_MODEL"].default == "inclusionai/ling-3.0-flash-vl:free"
     assert by_key["PAYMENT_ENCRYPTION_KEY"].required is True
+    assert by_key["PAYMENT_ENCRYPTION_KEY"].value_format == "fernet"
+    assert by_key["TWITCH_TOKEN_ENCRYPTION_KEY"].value_format == "fernet"
     assert by_key["DEPLOY_WEBHOOK_URL"].ci_conditional is True
+
+    manifest = gen_env.build_manifest(variables)
+    assert manifest["ci"]["PAYMENT_ENCRYPTION_KEY"]["format"] == "fernet"
+    assert manifest["ci"]["TWITCH_TOKEN_ENCRYPTION_KEY"]["format"] == "fernet"
 
 
 def test_optional_runtime_values_are_commented_until_enabled() -> None:

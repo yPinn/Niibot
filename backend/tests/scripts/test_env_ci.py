@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+from base64 import urlsafe_b64encode
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ assert SPEC is not None and SPEC.loader is not None
 ci = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = ci
 SPEC.loader.exec_module(ci)
+
+VALID_FERNET_KEY = urlsafe_b64encode(b"0" * 32).decode()
 
 
 def _manifest() -> dict:
@@ -137,9 +140,43 @@ def test_multiline_values_are_rejected_without_exposing_the_value() -> None:
     assert "first" not in str(exc_info.value)
 
 
+def test_fernet_values_are_validated_without_exposing_the_value() -> None:
+    manifest = _manifest()
+    manifest["required_secrets"].append("ENCRYPTION_KEY")
+    manifest["ci"]["ENCRYPTION_KEY"] = {
+        "file": "shared",
+        "source": "secret:ENCRYPTION_KEY",
+        "scope": "env",
+        "conditional": False,
+        "format": "fernet",
+    }
+
+    with pytest.raises(ValueError) as exc_info:
+        ci.render_files(
+            manifest,
+            secrets={"REQUIRED_SECRET": "required", "ENCRYPTION_KEY": "invalid-secret"},
+            variables={"PROJECT_DIR": "/srv/niibot"},
+            deploy_environment="staging",
+        )
+
+    assert str(exc_info.value) == "invalid Fernet key: ENCRYPTION_KEY"
+    assert "invalid-secret" not in str(exc_info.value)
+
+    rendered = ci.render_files(
+        manifest,
+        secrets={"REQUIRED_SECRET": "required", "ENCRYPTION_KEY": VALID_FERNET_KEY},
+        variables={"PROJECT_DIR": "/srv/niibot"},
+        deploy_environment="staging",
+    )
+    assert "ENCRYPTION_KEY=" in rendered["backend/shared.stg.env"]
+
+
 def test_generated_manifest_renders_all_deploy_files() -> None:
     manifest = json.loads((ROOT / "env.manifest.json").read_text(encoding="utf-8"))
-    secrets = {key: "test-secret" for key in manifest["required_secrets"]}
+    secrets = {
+        key: VALID_FERNET_KEY if manifest["ci"][key].get("format") == "fernet" else "test-secret"
+        for key in manifest["required_secrets"]
+    }
     variables = {key: "test-value" for key in manifest["required_variables"]}
 
     rendered = ci.render_files(

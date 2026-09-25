@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import sys
 import tomllib
+from base64 import b64decode
+from binascii import Error as Base64Error
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -67,6 +70,13 @@ def _semantic_value(value: str | None) -> str:
     return stripped
 
 
+def _is_fernet_key(value: str) -> bool:
+    try:
+        return len(b64decode(value.strip().encode("ascii"), altchars=b"-_", validate=True)) == 32
+    except (Base64Error, UnicodeEncodeError, ValueError):
+        return False
+
+
 def _registry(root: Path) -> list[dict]:
     data = tomllib.loads((root / "env.registry.toml").read_text(encoding="utf-8"))
     return list(data.get("var", []))
@@ -102,6 +112,11 @@ def value_errors(root: Path, target: str) -> list[str]:
                 key = variable.get("name", variable["key"])
                 if not _has_value(values.get(key)):
                     errors.append(f"required value is blank: {key}")
+            key = variable.get("name", variable["key"])
+            value = values.get(key)
+            if variable.get("format") == "fernet" and _has_value(value):
+                if not _is_fernet_key(value or ""):
+                    errors.append(f"invalid Fernet key: {key}")
 
     groups: dict[str, list[dict]] = {}
     for variable in variables:
@@ -127,6 +142,22 @@ def value_errors(root: Path, target: str) -> list[str]:
         if missing:
             errors.append(f"incomplete group {name}: missing {', '.join(missing)}")
     return errors
+
+
+def deployment_path_errors(root: Path) -> list[str]:
+    """Keep long-lived staging and production checkouts isolated."""
+    paths: dict[str, str] = {}
+    for scope in ("stg", "prod"):
+        path = root / f".github/variables/{scope}.env"
+        if not path.is_file():
+            continue
+        value = _semantic_value(active_values(path).get("PROJECT_DIR"))
+        if value:
+            paths[scope] = posixpath.normpath(value).casefold()
+
+    if paths.get("stg") == paths.get("prod") and "stg" in paths:
+        return ["staging and production PROJECT_DIR must differ"]
+    return []
 
 
 def dev_boundary_errors(root: Path) -> list[str]:
@@ -261,6 +292,8 @@ def validate_target(root: Path, target: str) -> list[str]:
         errors.extend(value_errors(root, target))
         if target == "dev":
             errors.extend(dev_boundary_errors(root))
+        elif target.startswith("gh-"):
+            errors.extend(deployment_path_errors(root))
     return errors
 
 

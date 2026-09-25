@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from base64 import urlsafe_b64encode
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -237,6 +238,22 @@ def test_github_value_validation_rejects_incomplete_groups_without_values(tmp_pa
     assert "nightbot-id" not in " ".join(errors)
 
 
+def test_deployment_paths_must_be_distinct(tmp_path: Path) -> None:
+    for scope in ("stg", "prod"):
+        path = tmp_path / f".github/variables/{scope}.env"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("PROJECT_DIR=/srv/niibot\n", encoding="utf-8")
+
+    assert check.deployment_path_errors(tmp_path) == [
+        "staging and production PROJECT_DIR must differ"
+    ]
+
+    (tmp_path / ".github/variables/stg.env").write_text(
+        "PROJECT_DIR=/srv/niibot-stg/\n", encoding="utf-8"
+    )
+    assert check.deployment_path_errors(tmp_path) == []
+
+
 def test_dev_value_validation_rejects_blank_required_values(tmp_path: Path) -> None:
     (tmp_path / "env.registry.toml").write_text(
         '[[var]]\nkey = "TOKEN"\nscopes = ["shared"]\nrequired = true\n',
@@ -251,6 +268,37 @@ def test_dev_value_validation_rejects_blank_required_values(tmp_path: Path) -> N
     shared.write_text("TOKEN=\n", encoding="utf-8")
 
     assert check.value_errors(tmp_path, "dev") == ["required value is blank: TOKEN"]
+
+
+def test_value_validation_rejects_invalid_fernet_keys(tmp_path: Path) -> None:
+    (tmp_path / "env.registry.toml").write_text(
+        "\n".join(
+            (
+                "[[var]]",
+                'key = "ENCRYPTION_KEY"',
+                'scopes = ["shared"]',
+                "required = true",
+                'format = "fernet"',
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "env.manifest.json").write_text(
+        __import__("json").dumps({"runtime_files": {"backend/shared.env": []}}),
+        encoding="utf-8",
+    )
+    shared = tmp_path / "backend/shared.dev.env"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("ENCRYPTION_KEY=invalid-secret\n", encoding="utf-8")
+
+    assert check.value_errors(tmp_path, "dev") == ["invalid Fernet key: ENCRYPTION_KEY"]
+
+    shared.write_text(
+        f"ENCRYPTION_KEY={urlsafe_b64encode(b'0' * 32).decode()}\n",
+        encoding="utf-8",
+    )
+    assert check.value_errors(tmp_path, "dev") == []
 
 
 def _write_dev_boundary_fixture(tmp_path: Path) -> None:
