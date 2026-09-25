@@ -69,25 +69,21 @@ feature/xxx  ──PR──►  staging  ──(QA pass)──PR──►  main
 3. Push and open PR → `staging`
 4. Test on staging environment
 5. When confirmed stable → open PR `staging` → `main`
-6. Merge to `main` triggers production deploy
+6. Production deploy is triggered manually or by the scheduled workflow
 
-### Hotfix Flow
-
-```text
-hotfix/xxx  ──PR──►  main  ──PR──►  staging  (backport)
-```
+Hotfixes follow the same staging-first path; `main` accepts only promoted release candidates.
 
 ### Docker Compose & Environments
 
-Each environment = `docker-compose.yml` (base, no host ports) + its overlay
-(`prod` / `staging` / `dev`), isolated by Compose project. `migrate` container
+Each environment = `compose.yaml` (base, no host ports) + `compose.<env>.yaml`
+(`prod` / `stg` / `dev`), isolated by Compose project. `migrate` container
 runs DB migrations on startup. Full commands, port table, and CI/CD secret sync:
 [docs/guides/deployment.md](docs/guides/deployment.md).
 
 ### Environment Variables
 
-`npm run nb -- env init` (alias for `bash scripts/env.sh init`) copies every
-`*.env.example` → `*.env`. The single source of truth for every variable is
+`npm run nb -- env init dev` creates the explicit dev env set from generated
+examples. The single source of truth for every variable is
 [docs/guides/environment.md](docs/guides/environment.md). Never commit a `.env`.
 
 All dev/ops scripts share one entry point — `npm run nb -- <group> <command>`

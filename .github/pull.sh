@@ -5,19 +5,23 @@
 #
 # Usage:
 #   bash .github/pull.sh prod
-#   bash .github/pull.sh staging
+#   bash .github/pull.sh stg
 set -euo pipefail
+umask 077
 export PYTHONUTF8=1
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV="${1:-}"
+TEMP_FILES=()
+trap 'rm -f -- "${TEMP_FILES[@]}"' EXIT
 
-if [[ -z "$ENV" || ( "$ENV" != "prod" && "$ENV" != "staging" ) ]]; then
-  echo "Usage: bash .github/pull.sh [prod|staging]"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="${1:-}"
+
+if [[ -z "$TARGET" || ( "$TARGET" != "prod" && "$TARGET" != "stg" ) ]]; then
+  echo "Usage: bash .github/pull.sh [prod|stg]"
   exit 1
 fi
 
-GH_ENV="$( [[ "$ENV" == "prod" ]] && echo "production" || echo "staging" )"
+GH_ENV="$( [[ "$TARGET" == "prod" ]] && echo "production" || echo "staging" )"
 
 # Resolve python binary — test actual execution to skip Windows Store aliases
 PYTHON=""
@@ -28,6 +32,7 @@ for cmd in python3 python; do
   fi
 done
 [[ -z "$PYTHON" ]] && { echo "ERROR: python not found (tried python3, python)"; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/../scripts/env/gen.py" --check >/dev/null
 
 if ! command -v gh &>/dev/null; then
   echo "ERROR: gh CLI not found  (brew install gh | winget install GitHub.cli)"
@@ -47,78 +52,73 @@ printf "%s  →  %s\n\n" "$REPO" "$GH_ENV"
 show_vars() {
   local json="$1" outfile="$2" example="${3:-}"
   local tmp; tmp=$(mktemp)
+  TEMP_FILES+=("$tmp")
   printf '%s' "$json" > "$tmp"
   $PYTHON - "$tmp" "$outfile" "$example" <<'PYEOF'
-import json, sys
+import json, sys, textwrap
 
 with open(sys.argv[1], encoding="utf-8") as f:
     data = json.load(f)
 outfile      = sys.argv[2]
 example_file = sys.argv[3] if len(sys.argv) > 3 else ""
 
-if not data:
-    print("  (none)")
-    sys.exit(0)
-
 vals       = {i["name"]: i["value"] for i in data}
 file_lines = []
 used_ex    = False
 
+bad = [key for key, value in vals.items() if "\n" in value or "\r" in value]
+if bad:
+    print(f"ERROR: multiline GitHub Variables are not supported: {' '.join(bad)}", file=sys.stderr)
+    sys.exit(1)
+
 if example_file:
-    sections = []
-    cur_hdr, cur_hdr_line, cur_keys = None, None, []
     try:
         with open(example_file, encoding="utf-8") as ef:
-            for line in ef:
-                s        = line.rstrip("\n\r")
-                stripped = s.strip()
-                if stripped.startswith("# ──") or stripped.startswith("#──"):
-                    if cur_hdr is not None or cur_keys:
-                        sections.append((cur_hdr, cur_hdr_line, cur_keys))
-                    cur_hdr      = stripped.strip("#─ ").strip()
-                    cur_hdr_line = s
-                    cur_keys     = []
-                elif "=" in stripped and not stripped.startswith("#"):
-                    k = stripped.split("=", 1)[0].strip()
-                    if k:
-                        cur_keys.append(k)
-        if cur_hdr is not None or cur_keys:
-            sections.append((cur_hdr, cur_hdr_line, cur_keys))
+            example_lines = ef.read().splitlines()
     except FileNotFoundError:
-        sections = []
+        example_lines = []
 
-    if sections:
-        all_ex   = [k for _, _, ks in sections for k in ks]
-        extra_ks = [k for k in vals if k not in set(all_ex)]
-        all_disp = [k for k in all_ex if k in vals and vals[k]] + [k for k in extra_ks if vals[k]]
-        w        = max((len(k) for k in all_disp), default=0)
-        first    = True
-        for hdr, hdr_line, keys in sections:
-            sec_all  = [(k, vals[k]) for k in keys if k in vals]
-            sec_show = [(k, v) for k, v in sec_all if v]
-            if not sec_all:
-                continue
-            if not first:
-                file_lines.append("")
-            first = False
-            file_lines.append(hdr_line)
-            for k, v in sec_all:
-                file_lines.append(f"{k}={v}")
-            if sec_show:
-                print(f"  ── {hdr}")
-                for k, v in sec_show:
-                    print(f"    {k:<{w}}  {v}")
+    if example_lines:
+        all_ex, groups, current = [], {}, "variables"
+        for line in example_lines:
+            stripped = line.strip()
+            if stripped.startswith("# ──") or stripped.startswith("#──"):
+                current = stripped.strip("#─ ").strip()
+            if "=" in stripped and not stripped.startswith("#"):
+                key = stripped.split("=", 1)[0].strip()
+                if key:
+                    all_ex.append(key)
+                    value = vals.get(key, "")
+                    file_lines.append(f"{key}={value}")
+                    if value:
+                        groups.setdefault(current, []).append((key, value))
+                    continue
+            file_lines.append(line)
+
+        extra_ks = sorted(k for k in vals if k not in set(all_ex))
+        all_disp = [k for k in all_ex if vals.get(k)] + [k for k in extra_ks if vals[k]]
+        width = max((len(k) for k in all_disp), default=0)
+        for header, items in groups.items():
+            print(f"  ── {header}")
+            for key, value in items:
+                print(f"    {key:<{width}}  {value}")
         if extra_ks:
-            if not first:
+            if file_lines and file_lines[-1]:
                 file_lines.append("")
             file_lines.append("# ── extra")
-            show = [(k, vals[k]) for k in sorted(extra_ks) if vals[k]]
+            show = [(k, vals[k]) for k in extra_ks if vals[k]]
             if show:
                 print("  ── extra")
                 for k, v in show:
-                    print(f"    {k:<{w}}  {v}")
-            for k in sorted(extra_ks):
+                    print(f"    {k:<{width}}  {v}")
+            for k in extra_ks:
                 file_lines.append(f"{k}={vals[k]}")
+
+        missing = [key for key in all_ex if key not in vals]
+        if missing:
+            wrapped = textwrap.wrap("  ".join(missing), width=60)
+            for index, part in enumerate(wrapped):
+                print(("  miss  " if index == 0 else " " * 8) + part)
         used_ex = True
 
 if not used_ex:
@@ -129,41 +129,49 @@ if not used_ex:
         if i["value"]:
             print(f"  {i['name']:<{w}}  {i['value']}")
 
+if not data:
+    print("  (none)")
+
 with open(outfile, "w", encoding="utf-8", newline="\n") as f:
     f.write("\n".join(file_lines) + "\n")
 PYEOF
   rm -f "$tmp"
 }
 
-# Display secret status grouped by: set/env, base, miss
-# Usage: show_secrets <env_json> <base_json> <example_file> <set_label>
+# Report missing, inherited, and unexpected secret names without reading values.
+# Usage: show_secrets <env_json> <base_json> <example_file>
 show_secrets() {
-  local env_json="$1" base_json="$2" example_file="$3" set_label="${4:-env}"
+  local env_json="$1" base_json="$2" example_file="$3"
   local expected_keys
-  expected_keys=$(grep -E '^[A-Z_]+=' "$example_file" | sed 's/=.*//' | tr '\n' ' ' || true)
+  expected_keys=$(grep -E '^[A-Z][A-Z0-9_]*=' "$example_file" | sed 's/=.*//' | tr '\n' ' ' || true)
 
   local tmp; tmp=$(mktemp)
-  printf '%s\n%s\n%s\n%s\n' "$set_label" "$expected_keys" "$env_json" "$base_json" > "$tmp"
+  TEMP_FILES+=("$tmp")
+  printf '%s\n%s\n%s\n' "$expected_keys" "$env_json" "$base_json" > "$tmp"
   $PYTHON - "$tmp" <<'PYEOF'
 import json, sys, textwrap
 
 with open(sys.argv[1], encoding="utf-8") as f:
-    lines = f.read().split("\n", 3)
-keys     = lines[1].split()
-env_set  = {i["name"] for i in json.loads(lines[2])}
-base_set = {i["name"] for i in json.loads(lines[3])}
+    lines = f.read().split("\n", 2)
+keys     = lines[0].split()
+env_set  = {i["name"] for i in json.loads(lines[1])}
+base_set = {i["name"] for i in json.loads(lines[2])}
 
-missing = [k for k in keys if k not in env_set and k not in base_set]
+expected  = set(keys)
+missing   = [k for k in keys if k not in env_set and k not in base_set]
+inherited = [k for k in keys if k not in env_set and k in base_set]
+extra     = sorted(env_set - expected)
 
-if not missing:
+if not missing and not inherited and not extra:
     print("  all set")
 else:
-    row     = "  ".join(missing)
-    wrapped = textwrap.wrap(row, width=60)
-    pad     = "  miss  "
-    cont    = " " * len(pad)
-    for idx, part in enumerate(wrapped):
-        print((pad if idx == 0 else cont) + part)
+    for label, names in (("miss", missing), ("base-only", inherited), ("extra", extra)):
+        if not names:
+            continue
+        wrapped = textwrap.wrap("  ".join(names), width=60)
+        pad = f"  {label}  "
+        for idx, part in enumerate(wrapped):
+            print((pad if idx == 0 else " " * len(pad)) + part)
 PYEOF
   rm -f "$tmp"
 }
@@ -178,15 +186,15 @@ printf "── variables ──────────────────�
 printf "base  →  .github/variables/base.env\n"
 show_vars "$BASE_VARS_JSON" "$SCRIPT_DIR/variables/base.env" "$SCRIPT_DIR/variables/base.env.example"
 printf "\n"
-printf "%s  →  .github/variables/%s.env\n" "$ENV" "$ENV"
-show_vars "$ENV_VARS_JSON" "$SCRIPT_DIR/variables/$ENV.env" "$SCRIPT_DIR/variables/$ENV.env.example"
+printf "%s  →  .github/variables/%s.env\n" "$TARGET" "$TARGET"
+show_vars "$ENV_VARS_JSON" "$SCRIPT_DIR/variables/$TARGET.env" "$SCRIPT_DIR/variables/$TARGET.env.example"
 
 printf "\n── secrets ─────────────────────────────────────────────\n\n"
 printf "base\n"
-show_secrets "$BASE_SECRETS_JSON" "[]" "$SCRIPT_DIR/secrets/base.env.example" "set"
+show_secrets "$BASE_SECRETS_JSON" "[]" "$SCRIPT_DIR/secrets/base.env.example"
 printf "\n"
-printf "%s\n" "$ENV"
-show_secrets "$ENV_SECRETS_JSON" "$BASE_SECRETS_JSON" "$SCRIPT_DIR/secrets/$ENV.env.example" "env"
+printf "%s\n" "$TARGET"
+show_secrets "$ENV_SECRETS_JSON" "$BASE_SECRETS_JSON" "$SCRIPT_DIR/secrets/$TARGET.env.example"
 printf "\n"
 
 printf "→  https://github.com/%s/settings/secrets/actions\n" "$REPO"

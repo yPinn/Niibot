@@ -14,14 +14,9 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    # Load .env files into OS env for os.getenv() call sites.
-    # Order mirrors docker-compose.yml: shared.env first, then service-specific .env.
-    from dotenv import load_dotenv
+    from shared.config_base import load_dev_env
 
-    _twitch_dir = Path(__file__).parent
-    load_dotenv(dotenv_path=_twitch_dir.parent / "shared.env")
-    load_dotenv(dotenv_path=_twitch_dir.parent / "shared.env.local", override=True)
-    load_dotenv(dotenv_path=_twitch_dir / ".env", override=True)
+    load_dev_env("twitch")
 
     # Minimal imports for health server — bind port before heavy setup
     from core.config import get_settings

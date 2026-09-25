@@ -1,31 +1,24 @@
 """Application configuration using Pydantic Settings"""
 
 from functools import lru_cache
-from pathlib import Path
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings, dev_env_files
 
 __all__ = ["DATA_DIR", "RUNTIME_DIR", "Settings", "get_settings"]
 
 
 class Settings(BaseServiceSettings):
     model_config = SettingsConfigDict(
-        # Order mirrors docker-compose.yml: shared.env first, api/.env overrides.
-        # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
-        env_file=(
-            Path(__file__).parent.parent.parent / "shared.env",
-            Path(__file__).parent.parent.parent / "shared.env.local",
-            Path(__file__).parent.parent / ".env",
-        ),
+        env_file=dev_env_files("api"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
 
-    # Twitch OAuth — reads TWITCH_CLIENT_ID/SECRET from shared.env via alias
+    # Twitch OAuth accepts legacy short aliases during migration.
     client_id: str = Field(..., validation_alias=AliasChoices("client_id", "twitch_client_id"))
     client_secret: str = Field(
         ..., validation_alias=AliasChoices("client_secret", "twitch_client_secret")

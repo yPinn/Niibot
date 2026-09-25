@@ -36,7 +36,6 @@ as OG-tagged HTML. Discord (and bots like Niibot) can then scrape the proxy inst
 services:
   instafix:
     image: ghcr.io/wikidepia/instafix:main
-    container_name: nb-instafix
     restart: unless-stopped
     networks:
       - nb-network # internal only — no host port needed
@@ -51,7 +50,7 @@ services:
 
 ```python
 INSTAFIX_HOST = os.getenv("INSTAFIX_HOST", "instafix:3000")
-# Local dev: INSTAFIX_HOST=localhost:3000
+# Local dev: INSTAFIX_HOST=localhost:3002
 # Docker:    default "instafix:3000" works via DNS
 ```
 

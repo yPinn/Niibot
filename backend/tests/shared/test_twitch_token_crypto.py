@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
+from shared import config_base
 from shared.config_base import BaseServiceSettings
 from shared.twitch_token_crypto import (
     CURRENT_TWITCH_TOKEN_ENCRYPTION_VERSION,
@@ -72,3 +75,43 @@ def test_development_configuration_allows_bounded_plaintext_backfill_window():
     )
 
     assert settings.twitch_token_encryption_key == ""
+
+
+@pytest.mark.parametrize("environment", ["dev", "stg", "prod", "testing"])
+def test_runtime_environment_rejects_selectors_and_unknown_values(environment: str):
+    with pytest.raises(ValidationError, match="ENVIRONMENT"):
+        BaseServiceSettings(
+            database_url="postgresql://user:pass@localhost/db",
+            environment=environment,
+            _env_file=None,
+        )
+
+
+def test_dev_env_loader_keeps_process_values_and_applies_local_precedence(tmp_path, monkeypatch):
+    shared = tmp_path / "shared.env"
+    local = tmp_path / "local.env"
+    shared.write_text("FROM_FILE=shared\nOVERRIDE=file\n", encoding="utf-8")
+    local.write_text("FROM_FILE=local\nLOCAL_ONLY=yes\n", encoding="utf-8")
+    monkeypatch.setattr(config_base, "dev_env_files", lambda _service: (shared, local))
+    monkeypatch.setenv("OVERRIDE", "process")
+
+    config_base.load_dev_env("api")
+
+    assert os.environ["FROM_FILE"] == "local"
+    assert os.environ["LOCAL_ONLY"] == "yes"
+    assert os.environ["OVERRIDE"] == "process"
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_deployed_runtime_does_not_consider_dev_env_files(environment: str, monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.delenv("NIIBOT_RUNTIME_CONTEXT", raising=False)
+
+    assert config_base.dev_env_files("api") == ()
+
+
+def test_container_runtime_does_not_consider_dev_env_files(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("NIIBOT_RUNTIME_CONTEXT", "container")
+
+    assert config_base.dev_env_files("twitch") == ()

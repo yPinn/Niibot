@@ -90,11 +90,12 @@ def test_capacity_deployment_guard_declares_single_replica_boundary() -> None:
 
 def test_production_compose_keeps_ai_runtimes_unscaled() -> None:
     repo_root = Path(__file__).resolve().parents[4]
-    base_compose = (repo_root / "docker-compose.yml").read_text(encoding="utf-8")
-    prod_compose = (repo_root / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    base_compose = (repo_root / "compose.yaml").read_text(encoding="utf-8")
+    prod_compose = (repo_root / "compose.prod.yaml").read_text(encoding="utf-8")
 
-    assert "container_name: nb-twitch" in base_compose
-    assert "container_name: nb-discord" in base_compose
+    assert "\n  twitch-bot:" in base_compose
+    assert "\n  discord-bot:" in base_compose
+    assert "container_name:" not in base_compose
     assert "replicas:" not in base_compose
     assert "replicas:" not in prod_compose
 

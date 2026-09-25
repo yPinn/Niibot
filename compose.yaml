@@ -1,0 +1,176 @@
+x-db-env: &db-env
+  DATABASE_URL: ${DOCKER_DATABASE_URL:?DOCKER_DATABASE_URL must be set in the selected root env file}
+  NIIBOT_RUNTIME_CONTEXT: container
+
+# Containers use service DNS; host processes use localhost defaults.
+x-api-svc-urls: &api-svc-urls
+  TWITCH_BOT_URL: http://twitch-bot:4344
+  DISCORD_BOT_URL: http://discord-bot:8080
+
+x-healthcheck: &default-healthcheck
+  interval: 60s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+    compress: "true"
+
+# Profiles select app processes; PostgreSQL and migrations remain shared prerequisites.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    logging: *default-logging
+    command: >
+      postgres
+        -c log_min_duration_statement=500
+        -c log_line_prefix='%m [%p] '
+    networks:
+      - nb-network
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?} -d ${POSTGRES_DB:?}"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+
+  migrate:
+    image: nb-api
+    build:
+      context: ./backend
+      dockerfile: api/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    command: python -m scripts.db.migrate
+    restart: "no"
+    logging: *default-logging
+    networks:
+      - nb-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *db-env
+
+  instafix:
+    image: ghcr.io/wikidepia/instafix:main
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [discord, bots, full, api, twitch]
+    networks:
+      - nb-network
+
+  twitch-bot:
+    image: nb-twitch
+    build:
+      context: ./backend
+      dockerfile: twitch/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [twitch, bots, full]
+    networks:
+      - nb-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      instafix:
+        condition: service_started
+    healthcheck:
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:4344/health').read()",
+        ]
+    environment:
+      <<: *db-env
+
+  discord-bot:
+    image: nb-discord
+    build:
+      context: ./backend
+      dockerfile: discord/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [discord, bots, full]
+    networks:
+      - nb-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      instafix:
+        condition: service_started
+    healthcheck:
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()",
+        ]
+    environment:
+      <<: *db-env
+
+  api:
+    image: nb-api
+    build:
+      context: ./backend
+      dockerfile: api/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+    restart: unless-stopped
+    logging: *default-logging
+    profiles: [api, full]
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks:
+      - nb-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      instafix:
+        condition: service_started
+    healthcheck:
+      <<: *default-healthcheck
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
+    environment:
+      <<: [*db-env, *api-svc-urls]
+
+networks:
+  nb-network:
+    driver: bridge

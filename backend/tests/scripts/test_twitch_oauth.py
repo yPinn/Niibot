@@ -6,16 +6,23 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
 from cryptography.fernet import Fernet
 
 _SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import twitch_oauth  # noqa: E402
+from scripts.twitch_ops import oauth as twitch_oauth  # noqa: E402
 
 from shared.twitch_token_crypto import decrypt_twitch_token  # noqa: E402
 
 _KEY = Fernet.generate_key().decode()
+
+
+def test_oauth_cli_accepts_only_dev() -> None:
+    assert twitch_oauth.build_parser().parse_args(["--env", "dev"]).env == "dev"
+    with pytest.raises(SystemExit):
+        twitch_oauth.build_parser().parse_args(["--env", "prod"])
 
 
 async def test_save_token_persists_v1_envelopes(monkeypatch) -> None:

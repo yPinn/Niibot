@@ -48,7 +48,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Verify env registry
-        run: uv run --no-project python scripts/gen_env.py --check
+        run: uv run --no-project python scripts/env/gen.py --check
 
       - name: Classify CI scope
         id: scope
@@ -65,10 +65,10 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git diff --name-only "$BASE_SHA...$HEAD_SHA" \
-              | python3 scripts/ci_changed_paths.py "${args[@]}" \
+              | python3 scripts/ci/paths.py "${args[@]}" \
               | tee -a "$GITHUB_OUTPUT"
           else
-            python3 scripts/ci_changed_paths.py "${args[@]}" </dev/null \
+            python3 scripts/ci/paths.py "${args[@]}" </dev/null \
               | tee -a "$GITHUB_OUTPUT"
           fi
 
@@ -178,7 +178,7 @@ jobs:
         run: uv run mypy .
 
       - name: Migrate test database
-        run: uv run python scripts/db_migrate.py
+        run: uv run python -m scripts.db.migrate
 
       - name: Run tests
         env:

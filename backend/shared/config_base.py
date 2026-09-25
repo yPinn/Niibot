@@ -3,36 +3,59 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
+from dotenv import dotenv_values
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-# ── Shared filesystem layout ─────────────────────────────────────────────────
-# Single source of truth for backend paths — each service config re-exports
-# DATA_DIR / RUNTIME_DIR from here so the three services can't drift.
-#
-# `shared/config_base.py` sits at backend/shared/, so .parent.parent is the
-# backend root in both local checkouts and Docker images (where /app == backend).
+# Shared paths keep service configs aligned in local and container runtimes.
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = _BACKEND_DIR / "data"  # static repo content baked into image
 RUNTIME_DIR = _BACKEND_DIR / "runtime"  # mutable state, volume-mounted per env
 
+
+def dev_env_files(service: str) -> tuple[Path, ...]:
+    """Local-dev env order; deployed containers inject their env directly."""
+    runtime = os.getenv("ENVIRONMENT", "").lower()
+    if os.getenv("NIIBOT_RUNTIME_CONTEXT") == "container" or runtime in {
+        "staging",
+        "production",
+    }:
+        return ()
+    service_dir = _BACKEND_DIR / service
+    return (
+        _BACKEND_DIR / "shared.dev.env",
+        _BACKEND_DIR / "shared.dev.local.env",
+        service_dir / ".env.dev",
+        service_dir / ".env.dev.local",
+    )
+
+
+def load_dev_env(service: str) -> None:
+    """Merge dev files while preserving injected process values."""
+    merged: dict[str, str | None] = {}
+    for path in dev_env_files(service):
+        merged.update(dotenv_values(path, encoding="utf-8"))
+    for key, value in merged.items():
+        if value is not None:
+            os.environ.setdefault(key, value)
+
+
 try:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
 except OSError:
-    # Read-only FS (some test/CI sandboxes) — writers will surface a clearer
-    # error on first save attempt.
+    # Writers surface a clearer error if the runtime filesystem is read-only.
     LOGGER.warning("Could not pre-create RUNTIME_DIR %s", RUNTIME_DIR, exc_info=True)
 
 
 class BaseServiceSettings(BaseSettings):
     """Common settings shared across api, discord, and twitch services.
 
-    Each subclass must define its own ``model_config`` with the correct
-    ``env_file`` tuple (shared.env first, service .env second).
+    Each subclass defines its local-dev env files; containers use process env.
     """
 
     # Database
@@ -53,11 +76,10 @@ class BaseServiceSettings(BaseSettings):
         description="Fernet key for versioned Twitch OAuth token encryption at rest",
     )
 
-    # Self-hosted InstaFix proxy (see docs/integrations/instafix.md) — used by
-    # Discord's social-preview cog and Video Queue's Instagram Reel support.
+    # Shared by Discord previews and Video Queue Instagram support.
     instafix_host: str = Field(
         default="instafix:3000",
-        description="InstaFix host (Docker: instafix:3000, local: localhost:3000)",
+        description="InstaFix host (Docker: instafix:3000, local: localhost:3002)",
     )
 
     @property
@@ -84,6 +106,15 @@ class BaseServiceSettings(BaseSettings):
             LOGGER.warning("Invalid log level %r, defaulting to INFO", v)
             return "INFO"
         return v_upper
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        value = v.lower()
+        allowed = {"development", "staging", "production"}
+        if value not in allowed:
+            raise ValueError(f"ENVIRONMENT must be one of {sorted(allowed)}")
+        return value
 
     @field_validator("twitch_token_encryption_key")
     @classmethod

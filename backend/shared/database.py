@@ -25,7 +25,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # Hosts for which an unencrypted DB connection is acceptable (local dev / the
 # private Docker network).  Any other host is assumed to be a managed/remote
 # Postgres reachable over a network we don't control, so TLS is required.
-_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "db", "nb-pg"}
+_LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "db"}
 _VALID_SSL_MODES = {
     "disable",
     "allow",

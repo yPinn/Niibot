@@ -1,0 +1,47 @@
+# Dev exposes loopback ports for local tools.
+
+services:
+  migrate:
+    image: nb-api-dev
+    env_file:
+      - ./backend/shared.dev.env
+      - ./backend/api/.env.dev
+
+  twitch-bot:
+    image: nb-twitch-dev
+    ports:
+      - "127.0.0.1:4344:4344"
+    volumes:
+      - ./backend/runtime:/app/runtime
+    env_file:
+      - ./backend/shared.dev.env
+      - ./backend/twitch/.env.dev
+
+  discord-bot:
+    image: nb-discord-dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./backend/runtime:/app/runtime
+    env_file:
+      - ./backend/shared.dev.env
+      - ./backend/discord/.env.dev
+
+  api:
+    image: nb-api-dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend/runtime:/app/runtime
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    env_file:
+      - ./backend/shared.dev.env
+      - ./backend/api/.env.dev
+
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  instafix:
+    ports:
+      - "127.0.0.1:3002:3000"

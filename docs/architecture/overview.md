@@ -38,15 +38,15 @@ Niibot 是多平台直播整合系統，由三個 Python 服務 + 一個前端�
 三個服務共用 `backend/shared/`（DB pool、cache、repositories、models、migrations），
 但**各自獨立程序、獨立部署**。唯一的耦合是 PostgreSQL（資料 + 跨程序訊號）。
 
-| 服務        | 技術         | 對外               | 健康檢查       |
-| ----------- | ------------ | ------------------ | -------------- |
-| API         | FastAPI      | `:8000`（Tunnel）  | `/health`      |
-| Twitch Bot  | TwitchIO 3   | EventSub WebSocket | `:4344/health` |
-| Discord Bot | discord.py 2 | Gateway            | `:8080/health` |
-| PostgreSQL  | PG 16        | `:5433`（Docker）  | —              |
+| 服務        | 技術         | 網路介面                         | 健康檢查       |
+| ----------- | ------------ | -------------------------------- | -------------- |
+| API         | FastAPI      | container `:8000`；host 埠依環境 | `/health`      |
+| Twitch Bot  | TwitchIO 3   | EventSub WebSocket               | `:4344/health` |
+| Discord Bot | discord.py 2 | Gateway                          | `:8080/health` |
+| PostgreSQL  | PG 16        | container `:5432`；僅 dev 發布   | —              |
 
 **scrapling**（`backend/scrapling/`）是選用的旁掛服務：discord 的 social preview 用它抓
-JS 算圖的 Threads 內容。不共用 `backend/shared/`、不在 `docker-compose.yml`、不進 CI 部署——
+JS 算圖的 Threads 內容。不共用 `backend/shared/`、不在 `compose.yaml`、不進 CI 部署——
 需要時獨立啟動並設 `SCRAPLING_HOST`；未設定時 Threads 走純 OG 降級路徑。
 見 [integrations/scrapling.md](../integrations/scrapling.md)。
 
@@ -133,7 +133,7 @@ PromptCompiler → BoundedRouter → OutputProcessor → Twitch / Discord render
 後端透過 **Cloudflare Tunnel** 對外，無需開放主機埠；前端在 **Cloudflare Pages**，
 `/api/*` 由 Pages Functions 代理回後端。
 
-各環境用 `docker-compose.yml`（base）+ overlay，彼此隔離（獨立 project / network / volume）。
+各環境用 `compose.yaml`（base）+ `compose.<dev|stg|prod>.yaml`，彼此以 project / network / volume 隔離。
 `migrate` 容器在部署時自動跑 DB migration；版本由 `git describe` 決定，前後端共用同一 tag。
 完整指令、埠對照、CI/CD 密鑰見 [deployment.md](../guides/deployment.md)。
 

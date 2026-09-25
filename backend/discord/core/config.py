@@ -10,7 +10,7 @@ import discord
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings, dev_env_files
 
 __all__ = ["DATA_DIR", "RUNTIME_DIR", "BotConfig", "DiscordBotSettings", "get_settings"]
 
@@ -36,13 +36,7 @@ class DiscordBotSettings(BaseServiceSettings):
     """Discord bot settings"""
 
     model_config = SettingsConfigDict(
-        # Order mirrors docker-compose.yml: shared.env first, discord/.env overrides.
-        # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
-        env_file=(
-            Path(__file__).parent.parent.parent / "shared.env",
-            Path(__file__).parent.parent.parent / "shared.env.local",
-            Path(__file__).parent.parent / ".env",
-        ),
+        env_file=dev_env_files("discord"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

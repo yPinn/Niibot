@@ -1,65 +1,91 @@
-# scripts/
+# Scripts
 
-Two locations, one entry point:
-
-- **`scripts/`** — repo-wide ops (env files span every service, `env.registry.toml`
-  lives at the repo root, staging compose is repo-level, CI helpers). Mostly bash.
-- **`backend/scripts/`** — backend dev tools (DB, Twitch/Discord, backfills). Python.
-
-Everything is reachable through one command:
+Use one public entry point from the repository root:
 
 ```bash
-npm run nb -- <group> <command> [options]      # from repo root
+npm run nb -- <group> <command> [options]
 ```
 
-`npm run nb -- --help` lists groups; `npm run nb -- <group> --help` lists a group's
-commands. Each script also still runs standalone (see the last column) — `nb` is a
-thin dispatcher that lazy-imports one script per call.
+Run `npm run nb -- --help` or `npm run nb -- <group> --help` for the current
+surface. Leaf scripts remain executable for CI and recovery work.
 
-## Env files: two stages
+## Layout
 
-1. `nb env gen` — regenerate `*.env.example` templates + `env.manifest.json` +
-   the docs table from `env.registry.toml` (the single source of truth).
-2. `nb env init` — copy every `*.env.example` → `*.env` so you can fill in secrets.
+- `scripts/env/`, `scripts/ci/`, `scripts/assets/`: repository-wide tooling.
+- `backend/scripts/<domain>/<verb>.py`: backend operations.
+- `scripts/stack.sh`: environment-scoped Compose wrapper.
+- `.github/{push,pull}.sh`: local GitHub Actions configuration sync.
 
-`nb env snapshot` / `backup` / `restore` / `diff` manage timestamped copies of the
-live (secret-filled) files under `data/`.
+Files use short domain and verb names. `twitch_ops` and `discord_ops` intentionally
+avoid shadowing the runtime `twitch` package and third-party `discord` package.
 
 ## Commands
 
-| `nb` command                                                       | does                                                            | standalone                                                |
-| ------------------------------------------------------------------ | --------------------------------------------------------------- | --------------------------------------------------------- |
-| `db migrate [--dry] [--env staging]`                               | run pending migrations                                          | `uv run --directory backend python scripts/db_migrate.py` |
-| `db check [--env staging]`                                         | verify NOTIFY triggers / schema / migrations                    | `… scripts/db_check.py`                                   |
-| `db seed [channel_id] [n]`                                         | **[dev]** generate fake session/viewer data                     | `… scripts/dev/db_seed.py`                                |
-| `db clear [-y]`                                                    | **[dev]** wipe analytics/session tables (confirms first)        | `… scripts/dev/db_clear.py`                               |
-| `db backup`                                                        | `pg_dump` via docker                                            | `bash backend/scripts/db_backup.sh`                       |
-| `twitch oauth [--role bot\|broadcaster] [--env staging]`           | generate a bot/broadcaster token (interactive if flags omitted) | `… scripts/twitch_oauth.py`                               |
-| `twitch tokens [--env staging]`                                    | list stored tokens, validate, show scopes                       | `… scripts/twitch_diag.py tokens`                         |
-| `twitch emotes [--env staging]`                                    | bot emote access per channel                                    | `… scripts/twitch_diag.py emotes`                         |
-| `twitch backfill-sessions [--limit N] [--keep-existing]`           | backfill sessions from Twitch VODs                              | `… scripts/twitch_backfill_sessions.py`                   |
-| `twitch backfill-matcher [--days 7,30,90] [--dry-run]`             | backfill overlap tables from `chatter_stats`                    | `… scripts/twitch_backfill_matcher.py`                    |
-| `discord ls\|diff\|sync\|rm [--prod] [--guild ID] [--global] [-y]` | manage Discord slash commands                                   | `… scripts/discord_cmds.py <cmd>`                         |
-| `models update [--with-uptime]`                                    | refresh `backend/data/free_models.json` from OpenRouter         | `… scripts/models_update.py`                              |
-| `assets collections preview\|build`                                | preview focal crops or publish immutable WebP card revisions    | `… scripts/build_collection_assets.py preview\|build`     |
-| `env init [-f]`                                                    | copy every `*.env.example` → `*.env`                            | `bash scripts/env.sh init`                                |
-| `env gen \| check \| print KEY`                                    | (re)generate env templates from `env.registry.toml`             | `python scripts/gen_env.py`                               |
-| `env snapshot \| backup \| restore \| diff \| list \| clean`       | snapshot / restore live env files                               | `bash scripts/env.sh <cmd>`                               |
-| `staging up\|down\|reset\|build\|logs\|ps\|restart\|migrate\|exec` | staging docker-compose wrapper                                  | `bash scripts/staging.sh <cmd>`                           |
-| `badges`                                                           | download Twitch role-badge images to `frontend/public/`         | `python scripts/badges.py`                                |
+| `nb` command                                                  | Purpose                                        | Direct entry                                      |
+| ------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------- |
+| `db migrate [--dry] [--env dev\|stg\|prod]`                   | Apply migrations                               | `python -m scripts.db.migrate`                    |
+| `db check [--env …]`                                          | Check schema, triggers, and migrations         | `python -m scripts.db.check`                      |
+| `db seed [channel_id] [n]`                                    | Seed dev data                                  | `python -m scripts.db.seed`                       |
+| `db clear [-y]`                                               | Clear dev analytics/session data               | `python -m scripts.db.clear`                      |
+| `db backup [--env …]`                                         | Dump PostgreSQL through Compose                | `bash backend/scripts/db/backup.sh <env>`         |
+| `twitch oauth --env dev`                                      | Run local OAuth callback                       | `python -m scripts.twitch_ops.oauth`              |
+| `twitch tokens\|emotes [--env …]`                             | Diagnose stored Twitch access                  | `python -m scripts.twitch_ops.diag <action>`      |
+| `twitch credentials [--dry-run] [--repair-missing-envelopes]` | Encrypt or repair credentials                  | `python -m scripts.twitch_ops.credentials`        |
+| `twitch backfill-sessions`                                    | Backfill sessions from VODs                    | `python -m scripts.twitch_ops.backfill_sessions`  |
+| `twitch backfill-matches`                                     | Backfill chatter overlap tables                | `python -m scripts.twitch_ops.backfill_matches`   |
+| `discord ls\|diff\|sync\|rm [--env …]`                        | Manage Discord commands                        | `python -m scripts.discord_ops.commands <action>` |
+| `checkin backfill`                                            | Backfill historical collection draws           | `python -m scripts.checkin.backfill`              |
+| `ai eval`                                                     | Run the role-play prompt gate                  | `python -m scripts.ai.eval`                       |
+| `models update`                                               | Refresh the OpenRouter model list              | `python -m scripts.models.update`                 |
+| `assets collections preview\|build`                           | Build collection card assets                   | `python -m scripts.assets.collections <action>`   |
+| `badges [--env …]`                                            | Download Twitch badge assets                   | `python scripts/assets/badges.py`                 |
+| `stack <env> <command>`                                       | Operate one Compose project; `config` is quiet | `bash scripts/stack.sh <env> <command>`           |
 
-## Not wrapped by `nb` (CI / one-off only)
+Direct Python entries run under `uv run --directory backend` unless their path is
+under root `scripts/`.
 
-- `scripts/ci_write_env.sh` — CI writes runner env files from `env.manifest.json`
-- `scripts/ci_changed_paths.py` — classifies changed paths so CI can skip suites
-  a change cannot affect; unrecognised paths deliberately run everything
-- `backend/scripts/migrate_runtime_data.sh` — one-off `data/` → `runtime/` move (deploy workflow)
+## Environment commands
+
+`env.registry.toml` is the source of truth for runtime and GitHub examples.
+
+| Command                                            | Purpose                                                  |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| `env gen`                                          | Generate examples, manifest, and the env docs table      |
+| `env check`                                        | Check generated-file drift                               |
+| `env validate <dev\|stg\|prod\|gh-stg\|gh-prod>`   | Check live key sets and ordering without printing values |
+| `env print KEY`                                    | Show one registry entry                                  |
+| `env init [dev\|stg\|prod] [-f]`                   | Create one explicit runtime set; defaults to dev         |
+| `env migrate <dev\|stg\|prod>`                     | Rename legacy files; refuses source/target collisions    |
+| `env sync <dev\|stg\|prod> [--check]`              | Reorder from examples and preserve registered values     |
+| `env snapshot\|backup\|restore\|diff\|list\|clean` | Manage encryption-key-preserving local copies            |
+| `env push <stg\|prod>`                             | Validate and push GitHub variables/secrets               |
+| `env pull <stg\|prod>`                             | Pull variables and report secret presence                |
+
+`env migrate` requires the target because legacy unsuffixed files did not reveal
+whether they belonged to dev or prod. Run `env sync` after migration; it moves
+known shared keys, refuses unknown/conflicting values without printing them, and
+then `env validate` checks the result.
+
+## Compose environments
+
+| Selector | Project       | Files                                | Published host ports                                        |
+| -------- | ------------- | ------------------------------------ | ----------------------------------------------------------- |
+| `dev`    | `niibot-dev`  | `compose.yaml` + `compose.dev.yaml`  | API 8000, DB 5432, Twitch 4344, Discord 8080, InstaFix 3002 |
+| `stg`    | `niibot-stg`  | `compose.yaml` + `compose.stg.yaml`  | API 18001 only                                              |
+| `prod`   | `niibot-prod` | `compose.yaml` + `compose.prod.yaml` | API 18000 only                                              |
+
+All published ports bind to `127.0.0.1`. Database commands for stg/prod must run
+inside the matching Compose network.
+
+## Internal-only entries
+
+- `scripts/ci/paths.py`: CI changed-path classifier.
+- `scripts/env/write_ci.sh`: deploy-time env writer.
+- `backend/scripts/runtime/migrate.sh`: one-time runtime-data migration.
 
 ## Adding a command
 
-1. Write `scripts/<name>.py` with `build_parser()` + `run(args) -> int` + a
-   `if __name__ == "__main__": raise SystemExit(main())` block.
-2. Use helpers from `backend/scripts/_lib.py` (`load_env`, `db_conn`/`db_pool`,
-   `add_env_arg`, `confirm`, `utf8_stdio`) — don't re-roll `load_dotenv` / `sys.path`.
-3. Register a subparser + `_run_py("<name>")` handler in `backend/scripts/nb.py`.
-4. Add a row to the table above.
+1. Add `backend/scripts/<domain>/<verb>.py` with `build_parser()` and `run(args)`.
+2. Reuse helpers from `backend/scripts/_lib.py`.
+3. Register the command in `backend/scripts/nb.py`.
+4. Add dispatcher and behavior tests.

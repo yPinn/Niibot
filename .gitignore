@@ -13,6 +13,8 @@
 **/.env*
 shared.env
 **/shared.env
+shared.*.env
+**/shared.*.env
 # GitHub Secrets/Variables upload files (contain real credentials)
 .github/secrets/*.env
 .github/variables/*.env
@@ -50,6 +52,9 @@ venv/
 env/
 ENV/
 .venv
+!scripts/env/
+!scripts/env/*.py
+!scripts/env/*.sh
 
 # Type Checking & Linting
 .mypy_cache/
@@ -102,7 +107,7 @@ logs/
 *.sqlite
 *.sqlite3
 
-# PostgreSQL data directories (bind mounts from docker-compose)
+# PostgreSQL bind mounts
 data/postgres/
 data/staging/postgres/
 

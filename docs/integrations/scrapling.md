@@ -34,7 +34,7 @@ Instagram／Threads，但目前只實作 Threads 端點。
 
 ## 部署現況
 
-這個服務**目前不在 `docker-compose.yml` 也不在 CI 部署流程中**：
+這個服務**目前不在 `compose.yaml` 也不在 CI 部署流程中**：
 
 - 有 `backend/scrapling/Dockerfile`（uv + `playwright install chromium`）與 `uv.lock`。
 - dependabot 有監控 `/backend/scrapling` 的相依套件。

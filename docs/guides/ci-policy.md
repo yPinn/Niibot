@@ -66,7 +66,7 @@ coverage instrumentation 在每個小 commit 重複執行，又保留 staging de
 
 ## 變更分類契約
 
-分類由 [`scripts/ci_changed_paths.py`](../../scripts/ci_changed_paths.py) 管理並以 table-driven tests 固定：
+分類由 [`scripts/ci/paths.py`](../../scripts/ci/paths.py) 管理並以 table-driven tests 固定：
 
 - `frontend/**` 只要求 Frontend。
 - `backend/**` 只要求 Backend；migration、shared 與 auth 自然包含在此範圍。

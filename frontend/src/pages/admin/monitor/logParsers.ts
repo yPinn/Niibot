@@ -1,14 +1,9 @@
 import AnsiToHtml from 'ansi-to-html'
 
-import type { LogContainer, LogLevel } from '@/api/admin'
+import type { LogLevel } from '@/api/admin'
 
-export const DEFAULT_CONTAINERS: LogContainer[] = [
-  { name: 'nb-api', label: 'API', running: false },
-  { name: 'nb-twitch', label: 'Twitch', running: false },
-  { name: 'nb-discord', label: 'Discord', running: false },
-  { name: 'nb-pg', label: 'Postgres', running: false },
-  { name: 'nb-instafix', label: 'Instafix', running: false },
-]
+export const isApiContainer = (name: string): boolean =>
+  /^niibot-(?:dev|stg|prod)-api-\d+$/.test(name)
 
 // ── ANSI (only `source: 'raw'` records still carry escape codes) ──────────────
 

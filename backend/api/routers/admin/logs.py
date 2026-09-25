@@ -22,23 +22,22 @@ router = APIRouter()
 
 _DOCKER_SOCKET = "/var/run/docker.sock"
 
-# Per-environment container name suffix. Prod and staging share the docker host,
-# so the staging API must NOT query bare names like "nb-api" — those resolve to
-# prod containers. docker-compose.staging.yml suffixes every service with "-stg".
-_CONTAINER_SUFFIX_BY_ENV = {"staging": "-stg"}
-
-_CONTAINER_BASES = [
-    ("nb-api", "API Server"),
-    ("nb-twitch", "Twitch Bot"),
-    ("nb-discord", "Discord Bot"),
-    ("nb-pg", "PostgreSQL"),
-    ("nb-instafix", "Instafix"),
+_PROJECT_ENV = {"development": "dev", "staging": "stg", "production": "prod"}
+_CONTAINER_SERVICES = [
+    ("api", "API Server"),
+    ("twitch-bot", "Twitch Bot"),
+    ("discord-bot", "Discord Bot"),
+    ("postgres", "PostgreSQL"),
+    ("instafix", "Instafix"),
 ]
 
 
 def _known_containers() -> list[dict[str, str]]:
-    suffix = _CONTAINER_SUFFIX_BY_ENV.get(get_settings().environment, "")
-    return [{"name": f"{base}{suffix}", "label": label} for base, label in _CONTAINER_BASES]
+    env = _PROJECT_ENV[get_settings().environment]
+    return [
+        {"name": f"niibot-{env}-{service}-1", "label": label}
+        for service, label in _CONTAINER_SERVICES
+    ]
 
 
 def _allowed_containers() -> set[str]:

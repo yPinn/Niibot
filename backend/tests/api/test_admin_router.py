@@ -1204,25 +1204,23 @@ class TestListLogContainers:
         assert all(c["running"] is False for c in data)
         assert len(data) == 5  # api, twitch, discord, pg, instafix
 
-    def test_dev_environment_uses_bare_container_names(self, monkeypatch):
+    def test_dev_environment_uses_dev_project_names(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "development")
         get_settings.cache_clear()
         with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         names = [c["name"] for c in r.json()]
-        assert "nb-api" in names
-        assert "nb-api-stg" not in names
+        assert "niibot-dev-api-1" in names
+        assert "niibot-stg-api-1" not in names
 
-    def test_staging_environment_uses_stg_suffix(self, monkeypatch):
-        """Staging API shares the docker host with prod, so it must NOT query
-        bare names — those would return prod container status."""
+    def test_staging_environment_uses_stg_project_names(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "staging")
         get_settings.cache_clear()
         with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         names = [c["name"] for c in r.json()]
-        assert "nb-api-stg" in names
-        assert "nb-api" not in names
+        assert "niibot-stg-api-1" in names
+        assert "niibot-prod-api-1" not in names
 
 
 # ── GET /api/admin/logs/{container} ─────────────────────────────────────────
@@ -1239,14 +1237,13 @@ class TestGetContainerLogs:
             "routers.admin.logs.aiohttp.UnixConnector",
             side_effect=Exception("no socket"),
         ):
-            r = _make_client().get("/api/admin/logs/nb-api")
+            r = _make_client().get("/api/admin/logs/niibot-dev-api-1")
         assert r.status_code == 503
 
     def test_staging_rejects_prod_container_name(self, monkeypatch):
-        """In staging, querying bare 'nb-api' must 400 — it's not in the allow list."""
         monkeypatch.setenv("ENVIRONMENT", "staging")
         get_settings.cache_clear()
-        r = _make_client().get("/api/admin/logs/nb-api")
+        r = _make_client().get("/api/admin/logs/niibot-prod-api-1")
         assert r.status_code == 400
 
 
