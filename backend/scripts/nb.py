@@ -118,6 +118,36 @@ def _run_twitch_invite(args: argparse.Namespace) -> int:
     return _sh("bash", "scripts/stack.sh", args.env, "exec", passthrough=command)
 
 
+def _run_discord(args: argparse.Namespace) -> int:
+    if args.env == "dev":
+        return _call("scripts.discord_ops.commands", args)
+
+    action = args.dc_action
+    if action in {"sync", "rm"}:
+        scope = "global" if args.force_global or not args.guild else f"guild {args.guild}"
+        prompt = f"{action} Discord commands in {args.env} ({scope})?"
+        if not confirm(prompt, assume_yes=args.yes):
+            return 1
+
+    command = [
+        "discord-bot",
+        "python",
+        "-m",
+        "scripts.discord_ops.commands",
+        action,
+        "--env",
+        args.env,
+    ]
+    if args.guild:
+        command.extend(("--guild", args.guild))
+    if args.force_global:
+        command.append("--global")
+    if action in {"sync", "rm"}:
+        command.append("--yes")
+
+    return _sh("bash", "scripts/stack.sh", args.env, "exec", passthrough=command)
+
+
 def _run_badges(args: argparse.Namespace) -> int:
     load_env(args.env)
     return _sh(sys.executable, "scripts/assets/badges.py", passthrough=args.rest)
@@ -244,7 +274,7 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--guild", metavar="ID", help="override DISCORD_GUILD_ID")
         p.add_argument("--global", dest="force_global", action="store_true", help="force global")
         p.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
-        p.set_defaults(_handler=_run_py("scripts.discord_ops.commands"), dc_action=name)
+        p.set_defaults(_handler=_run_discord, dc_action=name)
 
     # check-in ----------------------------------------------------------------
     checkin = groups.add_parser("checkin", help="check-in maintenance").add_subparsers(

@@ -121,16 +121,63 @@ class TestDispatch:
 
         assert exc.value.code == 2
 
-    def test_discord_sync_sets_dc_action(self, monkeypatch):
+    def test_discord_dev_sync_runs_locally(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(nb, "_call", lambda mod, a: (seen.update(mod=mod, args=a), 0)[1])
 
-        nb.main(["discord", "sync", "--env", "prod", "-y"])
+        nb.main(["discord", "sync", "--env", "dev", "-y"])
 
         assert seen["mod"] == "scripts.discord_ops.commands"
         assert seen["args"].dc_action == "sync"
-        assert seen["args"].env == "prod"
+        assert seen["args"].env == "dev"
         assert seen["args"].yes is True
+
+    @pytest.mark.parametrize("env", ["stg", "prod"])
+    @pytest.mark.parametrize("action", ["ls", "diff", "sync", "rm"])
+    def test_discord_deployed_commands_run_in_target_container(self, monkeypatch, env, action):
+        calls = []
+        monkeypatch.setattr(nb, "confirm", lambda _prompt, assume_yes=False: True)
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        nb.main(["discord", action, "--env", env, "--guild", "123"])
+
+        parts, passthrough = calls[0]
+        assert parts == ("bash", "scripts/stack.sh", env, "exec")
+        assert passthrough == [
+            "discord-bot",
+            "python",
+            "-m",
+            "scripts.discord_ops.commands",
+            action,
+            "--env",
+            env,
+            "--guild",
+            "123",
+            *(["--yes"] if action in {"sync", "rm"} else []),
+        ]
+
+    @pytest.mark.parametrize("action", ["sync", "rm"])
+    def test_discord_deployed_mutation_requires_host_confirmation(self, monkeypatch, action):
+        calls = []
+        monkeypatch.setattr(nb, "confirm", lambda _prompt, assume_yes=False: False)
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        assert nb.main(["discord", action, "--env", "prod"]) == 1
+        assert calls == []
+
+    def test_discord_deployed_global_flag_is_forwarded(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        nb.main(["discord", "diff", "--env", "prod", "--global"])
+
+        assert calls[0][1][-1] == "--global"
 
     @pytest.mark.parametrize("action", ["preview", "build"])
     def test_collection_assets_dispatches_catalog_action(self, monkeypatch, action):

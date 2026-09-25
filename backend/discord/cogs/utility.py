@@ -107,7 +107,6 @@ _ADMIN_CATEGORY = _Category(
     [
         _Cmd("/log set <頻道>", "設定日誌記錄頻道"),
         _Cmd("/log unset", "取消日誌記錄頻道設定"),
-        _Cmd("/rate", "查看 Discord API 速率限制統計"),
         _Cmd("/food delete <分類>", "刪除整個餐點分類"),
         _Cmd("/bday init", "初始化伺服器的生日功能"),
     ],

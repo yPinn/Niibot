@@ -87,7 +87,7 @@ App 憑證走對應環境的 shared env。
 | 變數                     | 說明                                 |
 | ------------------------ | ------------------------------------ |
 | `API_URL`                | API 公開 URL                         |
-| `DISCORD_PUBLIC_KEY`     | 選用：Discord interaction public key |
+| `DISCORD_PUBLIC_KEY`     | 選用：Discord application public key |
 | `JWT_ALGORITHM`          | JWT 簽章演算法                       |
 | `JWT_EXPIRE_DAYS`        | JWT 有效天數                         |
 | `JWT_SECRET_KEY`         | JWT 簽章金鑰                         |
@@ -116,10 +116,8 @@ App 憑證走對應環境的 shared env。
 | `DISCORD_ACTIVITY_TYPE` | Discord activity 類型       |
 | `DISCORD_ACTIVITY_URL`  | 選用：Discord streaming URL |
 | `DISCORD_BOT_TOKEN`     | Discord bot token           |
-| `DISCORD_DESCRIPTION`   | 選用：Discord bot 簡介      |
 | `DISCORD_GUILD_ID`      | 選用：Discord 測試 guild ID |
 | `DISCORD_STATUS`        | Discord bot 狀態            |
-| `DISCORD_SYNC_COMMANDS` | 選用：同步 Discord 指令     |
 | `INSTAGRAM_SESSION_ID`  | 選用：Instagram sessionid   |
 | `PORT`                  | Discord health port         |
 | `SCRAPLING_HOST`        | 選用：Scrapling host        |
@@ -140,14 +138,14 @@ App 憑證走對應環境的 shared env。
 
 本機 dev 從 `.env.dev` 注入。Cloudflare Pages 另需設定 `API_BACKEND`（Cloudflare Tunnel 後端位址）。
 
-| 變數                          | 說明                        |
-| ----------------------------- | --------------------------- |
-| `VITE_API_URL`                | 本機 API proxy URL          |
-| `VITE_BOT_USERNAME`           | Twitch Bot 登入名稱         |
-| `VITE_DISCORD_BOT_INVITE_URL` | 選用：Discord Bot OAuth URL |
-| `VITE_DISCORD_COMMUNITY_URL`  | Discord 社群邀請 URL        |
-| `VITE_ENVIRONMENT`            | 選用：前端部署環境          |
-| `VITE_SUPPORT_ECPAY_URL`      | 選用：ECPay 贊助 URL        |
+| 變數                          | 說明                          |
+| ----------------------------- | ----------------------------- |
+| `VITE_API_URL`                | 本機 API proxy URL            |
+| `VITE_BOT_USERNAME`           | Twitch Bot 登入名稱           |
+| `VITE_DISCORD_BOT_INVITE_URL` | 選用：Discord Bot Install URL |
+| `VITE_DISCORD_COMMUNITY_URL`  | Discord 社群邀請 URL          |
+| `VITE_ENVIRONMENT`            | 選用：前端部署環境            |
+| `VITE_SUPPORT_ECPAY_URL`      | 選用：ECPay 贊助 URL          |
 
 <!-- env:end -->
 

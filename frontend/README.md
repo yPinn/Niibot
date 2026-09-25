@@ -35,7 +35,7 @@ npm run dev     # 啟動開發伺服器（localhost:3000）
 VITE_API_URL=http://localhost:8000  # 後端代理目標（預設 localhost:8000）
 VITE_BOT_USERNAME=niibot_           # Bot 帳號名，抑制自身的「授予 Mod」提示
 VITE_DISCORD_COMMUNITY_URL=         # Discord 社群邀請連結（側欄／說明橫幅／條款頁）
-VITE_DISCORD_BOT_INVITE_URL=        # 把 Bot 加入自己伺服器的 OAuth 連結
+VITE_DISCORD_BOT_INVITE_URL=        # 把 Bot 加入自己伺服器的 Discord Install Link
 VITE_SUPPORT_ECPAY_URL=             # 贊助頁 ECPay 連結
 VITE_ENVIRONMENT=                   # 部署環境：production 鎖定 WIP 頁面；staging/dev 不鎖
 ```

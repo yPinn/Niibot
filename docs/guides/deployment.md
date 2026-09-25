@@ -5,6 +5,7 @@
 Cloudflare Pages Functions 的額度、`_routes.json`、Fail mode 與常駐 Overlay
 request budget 見 [cloudflare-pages.md](cloudflare-pages.md)。
 GitHub Actions 的共用額度、事件矩陣與安全節流規則見 [ci-policy.md](ci-policy.md)。
+Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.md](discord.md)。
 
 ## 分支與環境
 

@@ -25,6 +25,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY shared/ ./shared/
 COPY discord/ ./discord/
+COPY scripts/ ./scripts/
 COPY data/ ./data/
 RUN mkdir -p /app/runtime
 

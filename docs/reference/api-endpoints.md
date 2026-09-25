@@ -32,7 +32,7 @@ router 標記為「（無獨立頁面）」。
 | `/api/donate`                    | `donation_router`            | 贊助結帳（ECPay／OPay／NewebPay／PayPal）、webhook                                 | `/donate/:username`                                                |
 | `/api/payment-configs`           | `payment_config_router`      | 金流平台設定                                                                       | （無獨立頁面，設定子面板）                                         |
 | `/api/bots`                      | `bots_router`                | Bot 狀態查詢                                                                       | （無獨立頁面，狀態小工具）                                         |
-| `/api/discord`                   | `discord_webhook_router`     | Discord 互動 webhook（slash command 簽章驗證）                                     | `/discord`                                                         |
+| `/api/discord`                   | `discord_webhook_router`     | 選用：Discord Webhook Events 簽章驗證與接收                                        | `/discord`                                                         |
 | `/api/client-errors`             | `client_errors_router`       | 前端 client-side 錯誤回報與查詢                                                    | 併入 `/admin/monitor`                                              |
 | `/api/releases`                  | `releases_router`            | 版本資訊查詢（`git describe`）                                                     | `/docs/releases`                                                   |
 | `/api/admin`                     | `admin_router`               | 管理員工具（限 Owner）；聚合 `routers/admin/` 下 `logs`／`db`／`modules` 子 router | `/admin`、`/admin/monitor`、`/admin/modules`                       |

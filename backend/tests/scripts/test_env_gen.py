@@ -100,7 +100,6 @@ def test_public_identifiers_are_github_variables() -> None:
         "CONDUIT_ID",
         "NIGHTBOT_CLIENT_ID",
         "DISCORD_PUBLIC_KEY",
-        "DISCORD_DESCRIPTION",
     }
 
     for key in public:
@@ -142,6 +141,7 @@ def test_optional_runtime_values_are_commented_until_enabled() -> None:
         assert f"# {key}=" in shared
         assert f"\n{key}=" not in shared
     assert "# DISCORD_ACTIVITY_NAME=" in discord
+    assert "DISCORD_SYNC_COMMANDS" not in discord
     assert "# THREADS_SESSION_ID=" in scrapling
     assert "# VITE_DISCORD_BOT_INVITE_URL=" in frontend
     assert "# VITE_SUPPORT_ECPAY_URL=" in frontend
@@ -162,7 +162,7 @@ def test_github_examples_comment_conditional_values_but_keep_required_values_act
     assert "PAYMENT_ENCRYPTION_KEY=" in prod_secrets
     assert "# DEPLOY_WEBHOOK_URL=" in prod_secrets
     assert "# DISCORD_ACTIVITY_NAME=尖尖哇嘎奈..." in prod_variables
-    assert "# DISCORD_DESCRIPTION=" in prod_variables
+    assert "DISCORD_DESCRIPTION" not in prod_variables
 
 
 def test_manifest_declares_all_or_none_configuration_groups() -> None:

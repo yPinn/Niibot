@@ -21,6 +21,7 @@
 | [development.md](guides/development.md)                                       | 本機把服務跑起來：env 範本、`uv`、`npm`、Docker Compose profiles |
 | [deployment.md](guides/deployment.md)                                         | 三環境 Compose overlay、CI/CD 密鑰同步、`staging.sh`、版本標記   |
 | [environment.md](guides/environment.md)                                       | 所有環境變數檔案的唯一總表                                       |
+| [discord.md](guides/discord.md)                                               | Discord prod／nonprod Portal、權限、指令發布與 rate limit        |
 | [checkin-photocard-artist-brief.md](guides/checkin-photocard-artist-brief.md) | Check-in 小卡常態繪師合作用尺寸、構圖與交稿說明                  |
 | [artwork-commission-messages.md](guides/artwork-commission-messages.md)       | 原畫委託的分階段詢問、用途揭露與授權確認文字                     |
 

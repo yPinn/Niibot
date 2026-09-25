@@ -33,7 +33,7 @@ for _p in (str(BASE_DIR), str(BACKEND_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from core import COGS_DIR, RateLimitMonitor  # noqa: E402
+from core import COGS_DIR  # noqa: E402
 
 _SUBCOMMAND_TYPES = (
     discord.AppCommandOptionType.subcommand,
@@ -106,9 +106,8 @@ def _flatten_registered(cmds: list) -> set[str]:
 class _Runner(commands.Bot):
     """Minimal bot that performs one command-management action then exits.
 
-    Provides the ``rate_limiter`` / ``db_pool`` attributes some cogs read at load
-    time, so ``sync``/``diff`` can load the full cog set without a database or
-    gateway.
+    Provides the ``db_pool`` attribute some cogs read at load time, so
+    ``sync``/``diff`` can load the full cog set without a database or gateway.
     """
 
     def __init__(self, action: str, guild_id: str | None) -> None:
@@ -116,8 +115,7 @@ class _Runner(commands.Bot):
         self.action = action
         self.guild_id = guild_id
         self.exit_code = 0
-        # Shims so every cog loads identically to production (no DB needed).
-        self.rate_limiter = RateLimitMonitor(self)
+        # Shim so every cog loads identically to production (no DB needed).
         self.db_pool = None
 
     async def setup_hook(self) -> None:
@@ -188,17 +186,22 @@ class _Runner(commands.Bot):
 
     async def _rm(self) -> None:
         global_cmds, guild_cmds = await self._fetch()
-        if not global_cmds and not guild_cmds:
-            print("\nNo commands to clear.")
-            return
-        self._display(global_cmds, guild_cmds)
-        print(f"\nClearing {len(global_cmds) + len(guild_cmds)} commands...")
-        self.tree.clear_commands(guild=None)
-        await self.tree.sync()
         guild = self._guild_obj()
+        registered = guild_cmds if guild else global_cmds
+        scope = f"guild {self.guild_id}" if guild else "global"
+        if not registered:
+            print(f"\nNo {scope} commands to clear.")
+            return
+
+        print(f"\n{scope.title()} ({len(registered)}):")
+        for cmd in registered:
+            print(f"  /{cmd.name:<15} </{cmd.name}:{cmd.id}>")
+        print(f"\nClearing {len(registered)} commands...")
+        self.tree.clear_commands(guild=guild)
         if guild:
-            self.tree.clear_commands(guild=guild)
             await self.tree.sync(guild=guild)
+        else:
+            await self.tree.sync()
         print("Done.")
 
     async def _sync(self) -> None:
@@ -211,7 +214,7 @@ class _Runner(commands.Bot):
             print(f"\nSynced {len(synced)} commands to guild {self.guild_id}.")
         else:
             synced = await self.tree.sync()
-            print(f"\nSynced {len(synced)} commands globally (propagation up to ~1h).")
+            print(f"\nSynced {len(synced)} commands globally (Discord read-repair enabled).")
 
     async def _diff(self) -> None:
         if not await self._load_tree():
@@ -270,7 +273,7 @@ def _confirm(action: str, guild_id: str | None, assume_yes: bool) -> bool:
     if assume_yes:
         return True
     if action == "rm":
-        target = "global" + (f" + guild {guild_id}" if guild_id else "")
+        target = f"guild {guild_id}" if guild_id else "global"
         prompt = f"Clear ALL commands ({target})?"
     else:  # sync
         prompt = f"Sync command tree to {f'guild {guild_id}' if guild_id else 'global'}?"
