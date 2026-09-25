@@ -46,6 +46,8 @@ from urllib.parse import urlencode
 
 import aiohttp
 
+from shared.read_through_cache import CacheLoad, LoopLocalReadThroughCache
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _UA = (
@@ -53,6 +55,11 @@ _UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 _TIMEOUT = aiohttp.ClientTimeout(total=6)
+_POSITIVE_TTL_SECONDS = 120.0
+_NEGATIVE_TTL_SECONDS = 30.0
+_video_data_cache: LoopLocalReadThroughCache[str, dict[str, Any] | None] = (
+    LoopLocalReadThroughCache(max_entries=1_024)
+)
 
 _VIEW_URL = "https://api.bilibili.com/x/web-interface/view"
 _WBI_VIEW_URL = "https://api.bilibili.com/x/web-interface/wbi/view"
@@ -80,6 +87,7 @@ _TERMINAL_CODES = frozenset({-400, -403, -404, 62002, 62004, 62012})
 _INITIAL_STATE_RE = re.compile(r"window\.__INITIAL_STATE__\s*=\s*")
 
 _cred_lock = asyncio.Lock()
+_wbi_lock = asyncio.Lock()
 _buvid3: str | None = None
 _b_nut: str | None = None
 _bili_ticket: str = ""
@@ -165,22 +173,25 @@ async def _ensure_mixin_key(session: aiohttp.ClientSession) -> str:
     global _wbi_mixin_key, _wbi_mixin_key_ts
     if _wbi_mixin_key and time.time() < _wbi_mixin_key_ts + _WBI_KEY_TTL:
         return _wbi_mixin_key
-    try:
-        async with session.get(
-            _NAV_URL, headers=await _web_headers(session, referer="https://www.bilibili.com/")
-        ) as resp:
-            body = await resp.json(content_type=None)
-        wbi_img = (body.get("data") or {}).get("wbi_img") or {}
-        img, sub = _key_from_url(wbi_img.get("img_url")), _key_from_url(wbi_img.get("sub_url"))
-        if not (img and sub):
-            LOGGER.warning("[Bilibili] nav response had no wbi_img keys")
+    async with _wbi_lock:
+        if _wbi_mixin_key and time.time() < _wbi_mixin_key_ts + _WBI_KEY_TTL:
             return _wbi_mixin_key
-        _wbi_mixin_key = _mixin_key(img, sub)
-        _wbi_mixin_key_ts = time.time()
-        return _wbi_mixin_key
-    except Exception as exc:
-        LOGGER.warning("[Bilibili] nav/wbi key fetch failed: %s", type(exc).__name__)
-        return _wbi_mixin_key
+        try:
+            async with session.get(
+                _NAV_URL, headers=await _web_headers(session, referer="https://www.bilibili.com/")
+            ) as resp:
+                body = await resp.json(content_type=None)
+            wbi_img = (body.get("data") or {}).get("wbi_img") or {}
+            img, sub = _key_from_url(wbi_img.get("img_url")), _key_from_url(wbi_img.get("sub_url"))
+            if not (img and sub):
+                LOGGER.warning("[Bilibili] nav response had no wbi_img keys")
+                return _wbi_mixin_key
+            _wbi_mixin_key = _mixin_key(img, sub)
+            _wbi_mixin_key_ts = time.time()
+            return _wbi_mixin_key
+        except Exception as exc:
+            LOGGER.warning("[Bilibili] nav/wbi key fetch failed: %s", type(exc).__name__)
+            return _wbi_mixin_key
 
 
 async def _cookie_value(session: aiohttp.ClientSession) -> str:
@@ -309,6 +320,16 @@ async def fetch_bilibili_video_data(
     scrape. Returns ``None`` if every tier is blocked or the video is genuinely
     unavailable — callers must treat that as "metadata unknown", not "reject".
     """
+
+    async def load() -> CacheLoad[dict[str, Any] | None]:
+        return await _load_bilibili_video_data(bvid, session=session)
+
+    return await _video_data_cache.get_or_load(bvid, load)
+
+
+async def _load_bilibili_video_data(
+    bvid: str, *, session: aiohttp.ClientSession | None
+) -> CacheLoad[dict[str, Any] | None]:
     own = session is None
     s = session or aiohttp.ClientSession()
     try:
@@ -316,25 +337,28 @@ async def fetch_bilibili_video_data(
 
         data, terminal = await _try_view(s, bvid, headers)
         if data is not None:
-            return data
+            return CacheLoad.cached(data, ttl=_POSITIVE_TTL_SECONDS)
         if terminal:
-            return None
+            return CacheLoad.cached(None, ttl=_NEGATIVE_TTL_SECONDS)
 
         mixin_key = await _ensure_mixin_key(s)
         if mixin_key:
             signed = sign_wbi({"bvid": bvid, "platform": "web"}, mixin_key)
             data, terminal = await _try_view(s, bvid, headers, signed_query=signed)
             if data is not None:
-                return data
+                return CacheLoad.cached(data, ttl=_POSITIVE_TTL_SECONDS)
             if terminal:
-                return None
+                return CacheLoad.cached(None, ttl=_NEGATIVE_TTL_SECONDS)
 
-        return await _try_webpage(s, bvid, headers)
+        data = await _try_webpage(s, bvid, headers)
+        if data is not None:
+            return CacheLoad.cached(data, ttl=_POSITIVE_TTL_SECONDS)
+        return CacheLoad.uncached(None)
     except Exception as exc:
         LOGGER.warning(
             "[Bilibili] fetch_bilibili_video_data failed for %s: %s", bvid, type(exc).__name__
         )
-        return None
+        return CacheLoad.uncached(None)
     finally:
         if own:
             await s.close()

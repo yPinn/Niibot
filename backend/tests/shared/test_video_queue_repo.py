@@ -1636,6 +1636,17 @@ class TestFetchYtInfo:
 
         assert result == YouTubeInfo()
 
+    async def test_empty_items_uses_short_negative_cache(self):
+        from unittest.mock import patch
+
+        session = _yt_resp({"items": []})
+        with patch("aiohttp.ClientSession", return_value=session):
+            first = await fetch_yt_info("negative001", api_key="fake_key")
+            second = await fetch_yt_info("negative001", api_key="fake_key")
+
+        assert first == second == YouTubeInfo()
+        assert session.get.call_count == 1
+
     async def test_network_error_is_fail_open(self):
         from unittest.mock import AsyncMock, patch
 
@@ -1650,6 +1661,23 @@ class TestFetchYtInfo:
             result = await fetch_yt_info("dQw4w9WgXcQ", api_key="fake_key")
 
         assert result == YouTubeInfo()
+
+    async def test_transient_status_is_not_cached(self):
+        from unittest.mock import AsyncMock, patch
+
+        mock_resp = MagicMock()
+        mock_resp.status = 503
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.get = MagicMock(return_value=mock_resp)
+        session.close = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            await fetch_yt_info("transient01", api_key="fake_key")
+            await fetch_yt_info("transient01", api_key="fake_key")
+
+        assert session.get.call_count == 2
 
     async def test_ok_video_is_playable_with_metadata(self):
         from unittest.mock import patch
@@ -1676,6 +1704,28 @@ class TestFetchYtInfo:
         assert result.view_count == 4321
         assert result.playable is True
         assert result.unplayable_reason is None
+
+    async def test_success_is_cached_by_video_id(self):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {"title": "Cached", "thumbnails": {}},
+                    "contentDetails": {"duration": "PT1M", "contentRating": {}},
+                    "statistics": {"viewCount": "10"},
+                    "status": {"embeddable": True},
+                }
+            ]
+        }
+        session = _yt_resp(payload)
+        with patch("aiohttp.ClientSession", return_value=session):
+            first = await fetch_yt_info("cachevideo1", api_key="fake_key")
+            second = await fetch_yt_info("cachevideo1", api_key="fake_key")
+
+        assert first == second
+        assert first.title == "Cached"
+        assert session.get.call_count == 1
 
     @pytest.mark.parametrize(
         ("status", "content_rating", "expected"),

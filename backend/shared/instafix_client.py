@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse, urlunsplit
 
 import aiohttp
 
+from shared.read_through_cache import CacheLoad, LoopLocalReadThroughCache
 from shared.safe_urls import (
     allowed_redirect_target,
     find_allowed_http_url,
@@ -421,6 +422,13 @@ class InstagramReelInfo:
     is_video: bool | None = None
 
 
+_METADATA_TTL_SECONDS = 30.0
+_reel_info_cache: LoopLocalReadThroughCache[
+    tuple[str, str],
+    InstagramReelInfo,
+] = LoopLocalReadThroughCache(max_entries=1_024)
+
+
 async def _resolve_instafix_redirect(
     instafix_host: str,
     path: str,
@@ -518,6 +526,18 @@ async def fetch_instagram_reel_info(
     requester waits on), unlike ``fetch_instagram_reel_source()``'s
     play-time-only resolve of the same video redirect.
     """
+
+    async def load() -> CacheLoad[InstagramReelInfo]:
+        return await _load_instagram_reel_info(shortcode, instafix_host, session)
+
+    return await _reel_info_cache.get_or_load((instafix_host, shortcode), load)
+
+
+async def _load_instagram_reel_info(
+    shortcode: str,
+    instafix_host: str,
+    session: aiohttp.ClientSession | None,
+) -> CacheLoad[InstagramReelInfo]:
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
@@ -545,7 +565,7 @@ async def fetch_instagram_reel_info(
                     type(exc).__name__,
                 )
         if html is None:
-            return InstagramReelInfo(None, None, None)
+            return CacheLoad.uncached(InstagramReelInfo(None, None, None))
 
         og = _parse_og(html)
         title = _extract_display_title(og)
@@ -571,14 +591,17 @@ async def fetch_instagram_reel_info(
         if is_vertical is None:
             is_vertical = True
 
-        return InstagramReelInfo(
-            title=title,
-            thumbnail_url=thumbnail_url,
-            duration_seconds=duration_seconds,
-            is_vertical=is_vertical,
-            creator_id=handle,
-            creator_name=handle,
-            is_video=is_video,
+        return CacheLoad.cached(
+            InstagramReelInfo(
+                title=title,
+                thumbnail_url=thumbnail_url,
+                duration_seconds=duration_seconds,
+                is_vertical=is_vertical,
+                creator_id=handle,
+                creator_name=handle,
+                is_video=is_video,
+            ),
+            ttl=_METADATA_TTL_SECONDS,
         )
     finally:
         if _own_session:

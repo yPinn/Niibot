@@ -423,6 +423,26 @@ def _og_html(title: str, image_path: str) -> str:
 
 @pytest.mark.asyncio
 class TestFetchInstagramReelInfo:
+    async def test_metadata_is_single_flight_cached_but_source_is_not(self):
+        session = _FakeSession(
+            {
+                "/reel/Ccache123/": lambda: _FakeResp(text_body=_og_html("@alice", "")),
+                "/videos/Ccache123/1": lambda: _FakeResp(
+                    status=302,
+                    headers={"Location": "https://cdn.example/video.mp4?sig=abc"},
+                ),
+            }
+        )
+
+        first = await ic.fetch_instagram_reel_info("Ccache123", _HOST, session=session)
+        second = await ic.fetch_instagram_reel_info("Ccache123", _HOST, session=session)
+        await ic.fetch_instagram_reel_source("Ccache123", _HOST, session=session)
+        await ic.fetch_instagram_reel_source("Ccache123", _HOST, session=session)
+
+        assert first == second
+        assert sum("/reel/Ccache123/" in url for url, _ in session.calls) == 1
+        assert sum("/videos/Ccache123/1" in url for url, _ in session.calls) == 3
+
     async def test_title_thumbnail_and_duration_resolved(self):
         session = _FakeSession(
             {

@@ -7,6 +7,7 @@ including the fail-open behaviour every caller depends on.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import time
@@ -61,6 +62,44 @@ def test_bili_ticket_hexsign_is_hmac_sha256():
 def test_key_from_url_takes_basename_without_ext():
     assert bc._key_from_url("https://i0.hdslb.com/bfs/wbi/abc123.png") == "abc123"
     assert bc._key_from_url(None) == ""
+
+
+@pytest.mark.asyncio
+async def test_concurrent_wbi_key_misses_share_one_nav_request():
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class _BlockingNav(_FakeResp):
+        async def json(self, content_type=None):
+            started.set()
+            await release.wait()
+            return await super().json(content_type)
+
+    bc._bili_ticket = "cached-ticket"
+    bc._bili_ticket_exp = time.time() + 10_000
+    session = _FakeSession(
+        {
+            "/x/web-interface/nav": lambda: _BlockingNav(
+                json_body={
+                    "data": {
+                        "wbi_img": {
+                            "img_url": f"https://i0.hdslb.com/{_REF_IMG_KEY}.png",
+                            "sub_url": f"https://i0.hdslb.com/{_REF_SUB_KEY}.png",
+                        }
+                    }
+                }
+            )
+        }
+    )
+
+    first = asyncio.create_task(bc._ensure_mixin_key(session))
+    await started.wait()
+    second = asyncio.create_task(bc._ensure_mixin_key(session))
+    await asyncio.sleep(0)
+    assert session.count("/x/web-interface/nav") == 1
+
+    release.set()
+    assert await first == await second == _REF_MIXIN_KEY
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +276,43 @@ class TestFetchBilibiliVideoData:
         assert data is None
         assert session.count("wbi/view") == 0
         assert session.count("www.bilibili.com/video/") == 0
+
+    async def test_terminal_code_uses_short_negative_cache(self):
+        def _gone():
+            return _FakeResp(json_body={"code": -404, "message": "gone", "data": None})
+
+        session = _FakeSession({"/x/web-interface/view": _gone, "GenWebTicket": _ticket})
+        with patch("aiohttp.ClientSession", return_value=session):
+            first = await bc.fetch_bilibili_video_data("BVnegative1")
+            second = await bc.fetch_bilibili_video_data("BVnegative1")
+
+        assert first is second is None
+        assert session.count("/x/web-interface/view") == 1
+
+    async def test_success_is_cached_by_bvid(self):
+        session = _FakeSession({"/x/web-interface/view": _view_ok, "GenWebTicket": _ticket})
+        with patch("aiohttp.ClientSession", return_value=session):
+            first = await bc.fetch_bilibili_video_data("BVcached001")
+            second = await bc.fetch_bilibili_video_data("BVcached001")
+
+        assert first == second
+        assert session.count("/x/web-interface/view") == 1
+
+    async def test_risk_control_miss_is_not_cached(self):
+        session = _FakeSession(
+            {
+                "/x/web-interface/wbi/view": _blocked_412,
+                "/x/web-interface/view": _blocked_412,
+                "/x/web-interface/nav": _nav_keys,
+                "GenWebTicket": _ticket,
+                "www.bilibili.com/video/": _blocked_412,
+            }
+        )
+        with patch("aiohttp.ClientSession", return_value=session):
+            await bc.fetch_bilibili_video_data("BVblocked01")
+            await bc.fetch_bilibili_video_data("BVblocked01")
+
+        assert session.count("/x/web-interface/view") == 2
 
     async def test_credentials_are_cached_across_calls(self):
         session = _FakeSession(
