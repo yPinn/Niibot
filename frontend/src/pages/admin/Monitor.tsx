@@ -4,6 +4,7 @@ import {
   getClientErrorGroups,
   getContainerLogs,
   getLogContainers,
+  type LogContainer,
   type LogRecord,
 } from '@/api/admin'
 import { PageMain } from '@/components/layout/PageMain'
@@ -32,8 +33,8 @@ import { formatStartedAt, formatUptime } from '@/lib/format'
 import { ClientErrorsPanel } from './monitor/ClientErrorsPanel'
 import { DbConsole } from './monitor/DbConsole'
 import {
-  DEFAULT_CONTAINERS,
   formatLogTime,
+  isApiContainer,
   LEVEL_FILTER_OPTS,
   type LevelFilter,
   levelPillClass,
@@ -68,7 +69,7 @@ export default function AdminMonitor() {
   const { guard, newToken } = useAbortableFetch()
 
   // ── Logs state ──────────────────────────────────────────────────────────────
-  const [containers, setContainers] = useState(DEFAULT_CONTAINERS)
+  const [containers, setContainers] = useState<LogContainer[]>([])
   const [selected, setSelected] = useState('__status__')
   const tail = 200
   const followRef = useRef(true)
@@ -172,12 +173,11 @@ export default function AdminMonitor() {
     setIsFollowing(true)
   }, [])
 
-  /** From the Errors tab: open the API container log filtered to one request id.
-   *  request_id is bound by the API's request-context middleware, so nb-api is
-   *  where the matching structured lines live. */
+  /** Open the matching API log from the Errors tab. */
   const traceRequestId = useCallback(
     (requestId: string) => {
-      const api = containers.find(c => c.name.startsWith('nb-api')) ?? containers[0]
+      const api = containers.find(c => isApiContainer(c.name))
+      if (!api) return
       setSelected(api.name)
       setLevelFilter('ALL')
       setSearch(requestId)

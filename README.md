@@ -10,14 +10,14 @@ Niibot/
 │   ├── api/         # FastAPI — Twitch OAuth + JWT、Dashboard API
 │   ├── twitch/      # TwitchIO 3 Bot + EventSub + pg_notify 即時設定重載
 │   ├── discord/     # discord.py 2 Bot（Cogs 模組架構）
-│   ├── scrapling/   # 選用：Threads 抓取 sidecar（不在 docker-compose）
+│   ├── scrapling/   # 選用：Threads 抓取 sidecar（不在 Compose）
 │   ├── shared/      # 共用 DB、Cache、Repositories、Migrations
 │   ├── scripts/     # DB 管理、OAuth token 工具
 │   └── data/        # 靜態資料（運勢、塔羅、AI 知識包等）
 ├── frontend/        # React 19 + Vite + Tailwind CSS 4
 │   └── functions/   # Cloudflare Pages Functions（/api 反向代理）
 ├── docs/            # 架構、操作指南、參考文件
-├── scripts/         # env 檔管理、staging 管理
+├── scripts/         # env、CI、assets 與 Compose 工具
 └── data/            # 本機 Docker volume 與備份（不提交）
 ```
 
@@ -37,7 +37,7 @@ Niibot/
 ## 快速開始
 
 ```bash
-npm run nb -- env init        # 複製所有 .env 範本（-f 強制覆蓋）
+npm run nb -- env init dev    # 建立明確的本機 env 檔（-f 強制覆蓋）
 ```
 
 所有 dev/ops 腳本統一入口：`npm run nb -- <group> <command>`（`npm run nb -- --help`），

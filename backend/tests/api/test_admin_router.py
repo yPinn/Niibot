@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -72,6 +73,13 @@ def _make_client(
     if mock_admission is not None:
         app.dependency_overrides[get_admission_service] = lambda: mock_admission
     return TestClient(app, raise_server_exceptions=False)
+
+
+def _set_deployed_environment(monkeypatch: pytest.MonkeyPatch, environment: str) -> None:
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setenv("TWITCH_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("PAYMENT_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
 
 
 def _make_pool(*, fetchrow=None, fetch=None, fetchval=None, execute=None) -> MagicMock:
@@ -1204,25 +1212,23 @@ class TestListLogContainers:
         assert all(c["running"] is False for c in data)
         assert len(data) == 5  # api, twitch, discord, pg, instafix
 
-    def test_dev_environment_uses_bare_container_names(self, monkeypatch):
+    def test_dev_environment_uses_dev_project_names(self, monkeypatch):
         monkeypatch.setenv("ENVIRONMENT", "development")
         get_settings.cache_clear()
         with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
         names = [c["name"] for c in r.json()]
-        assert "nb-api" in names
-        assert "nb-api-stg" not in names
+        assert "niibot-dev-api-1" in names
+        assert "niibot-stg-api-1" not in names
 
-    def test_staging_environment_uses_stg_suffix(self, monkeypatch):
-        """Staging API shares the docker host with prod, so it must NOT query
-        bare names — those would return prod container status."""
-        monkeypatch.setenv("ENVIRONMENT", "staging")
-        get_settings.cache_clear()
+    def test_staging_environment_uses_stg_project_names(self, monkeypatch):
+        _set_deployed_environment(monkeypatch, "staging")
         with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
+        assert r.status_code == 200
         names = [c["name"] for c in r.json()]
-        assert "nb-api-stg" in names
-        assert "nb-api" not in names
+        assert "niibot-stg-api-1" in names
+        assert "niibot-prod-api-1" not in names
 
 
 # ── GET /api/admin/logs/{container} ─────────────────────────────────────────
@@ -1239,14 +1245,12 @@ class TestGetContainerLogs:
             "routers.admin.logs.aiohttp.UnixConnector",
             side_effect=Exception("no socket"),
         ):
-            r = _make_client().get("/api/admin/logs/nb-api")
+            r = _make_client().get("/api/admin/logs/niibot-dev-api-1")
         assert r.status_code == 503
 
     def test_staging_rejects_prod_container_name(self, monkeypatch):
-        """In staging, querying bare 'nb-api' must 400 — it's not in the allow list."""
-        monkeypatch.setenv("ENVIRONMENT", "staging")
-        get_settings.cache_clear()
-        r = _make_client().get("/api/admin/logs/nb-api")
+        _set_deployed_environment(monkeypatch, "staging")
+        r = _make_client().get("/api/admin/logs/niibot-prod-api-1")
         assert r.status_code == 400
 
 

@@ -52,7 +52,7 @@ function EventDetail({
         {event.request_id && (
           <button
             onClick={() => onTraceRequestId(event.request_id!)}
-            title="在 nb-api log 中追蹤此請求"
+            title="在 API log 中追蹤此請求"
             className="flex items-center gap-1 rounded bg-muted-foreground/10 px-1.5 text-status-info hover:bg-muted-foreground/20"
           >
             <Icon icon="fa-solid fa-arrow-right-to-bracket" size="xs" />

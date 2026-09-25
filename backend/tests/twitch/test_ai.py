@@ -449,6 +449,13 @@ class TestShortTermMemory:
             "budget_evictions": 4,
             "oversized_turn_rejections": 5,
         }
+        assert health["capacity_guard"] == {
+            "mode": "partitioned-local",
+            "runtime": "twitch",
+            "max_replicas": 1,
+            "distributed": False,
+            "shared_provider_accounts": True,
+        }
         assert gauges == {"sessions": 3, "chars": 500}
 
     @pytest.mark.asyncio

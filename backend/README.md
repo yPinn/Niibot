@@ -71,12 +71,12 @@ Frontend ──HTTP──▶ API (8000)
 - **快取**：`AsyncTTLCache`（程序內）+ `pg_notify`（跨程序即時失效）
 - **錯誤告警**：ERROR 以上 log 推送至 Discord webhook
 
-| 服務                 | Port   |
-| -------------------- | ------ |
-| API                  | `8000` |
-| Twitch Bot health    | `4344` |
-| Discord Bot health   | `8080` |
-| PostgreSQL（Docker） | `5433` |
+| 服務                   | Port   |
+| ---------------------- | ------ |
+| API                    | `8000` |
+| Twitch Bot health      | `4344` |
+| Discord Bot health     | `8080` |
+| PostgreSQL（dev host） | `5432` |
 
 ## 開發
 
@@ -94,9 +94,10 @@ uv run mypy .              # 型別檢查
 ```
 
 環境變數對照見 [docs/guides/environment.md](../docs/guides/environment.md)。
-本機開發可建 `shared.env.local`（gitignored）覆蓋 `shared.env`。
+本機開發可建 `shared.dev.local.env`（gitignored）覆蓋 `shared.dev.env`；服務層可用
+`.env.dev.local` 覆蓋 `.env.dev`。
 
-DB migration 手動執行：`npm run nb -- db migrate`
+回到 repo root 後手動執行 DB migration：`npm run nb -- db migrate`
 （Docker 環境下由 `migrate` 容器自動執行）。所有 dev/ops 腳本統一入口見
 [scripts/README.md](../scripts/README.md)。
 

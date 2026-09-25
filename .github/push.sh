@@ -5,7 +5,7 @@
 #
 # Usage:
 #   bash .github/push.sh prod
-#   bash .github/push.sh staging
+#   bash .github/push.sh stg
 #
 # One-time setup:
 #   brew install gh  |  winget install GitHub.cli
@@ -14,19 +14,23 @@
 # Working files (copy from .example, fill in, never commit):
 #   .github/secrets/base.env       .github/variables/base.env
 #   .github/secrets/prod.env       .github/variables/prod.env
-#   .github/secrets/staging.env    .github/variables/staging.env
+#   .github/secrets/stg.env        .github/variables/stg.env
 set -euo pipefail
+umask 077
 export PYTHONUTF8=1
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV="${1:-}"
+TEMP_FILES=()
+trap 'rm -f -- "${TEMP_FILES[@]}"' EXIT
 
-if [[ -z "$ENV" || ( "$ENV" != "prod" && "$ENV" != "staging" ) ]]; then
-  echo "Usage: bash .github/push.sh [prod|staging]"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET="${1:-}"
+
+if [[ -z "$TARGET" || ( "$TARGET" != "prod" && "$TARGET" != "stg" ) ]]; then
+  echo "Usage: bash .github/push.sh [prod|stg]"
   exit 1
 fi
 
-GH_ENV="$( [[ "$ENV" == "prod" ]] && echo "production" || echo "staging" )"
+GH_ENV="$( [[ "$TARGET" == "prod" ]] && echo "production" || echo "staging" )"
 
 # Resolve python binary — test actual execution to skip Windows Store aliases
 PYTHON=""
@@ -34,6 +38,7 @@ for cmd in python3 python; do
   if "$cmd" -c "import sys" 2>/dev/null; then PYTHON="$cmd"; break; fi
 done
 [[ -z "$PYTHON" ]] && { echo "ERROR: python not found (tried python3, python)"; exit 1; }
+"$PYTHON" "$SCRIPT_DIR/../scripts/env/gen.py" --check >/dev/null
 
 if ! command -v gh &>/dev/null; then
   echo "ERROR: gh CLI not found  (brew install gh | winget install GitHub.cli)"
@@ -47,6 +52,9 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || {
 
 printf "%s  →  %s\n\n" "$REPO" "$GH_ENV"
 
+# Validate structure, required values, and all-or-none groups before any mutation.
+"$PYTHON" "$SCRIPT_DIR/../scripts/env/check.py" "gh-$TARGET" >/dev/null
+
 # Push secrets from file, skipping empty values
 push_secrets() {
   local file="$1"; shift; local env_flags=("$@")
@@ -59,6 +67,7 @@ push_secrets() {
 
   local tmp
   tmp=$(mktemp)
+  TEMP_FILES+=("$tmp")
   while IFS='=' read -r key value || [[ -n "$key" ]]; do
     key="${key%$'\r'}"; value="${value%$'\r'}"   # strip Windows CRLF
     [[ -z "${key// }" || "${key:0:1}" == "#" ]] && continue
@@ -132,15 +141,15 @@ printf "── variables ──────────────────�
 printf "base\n"
 push_vars "$SCRIPT_DIR/variables/base.env"
 printf "\n"
-printf "%s\n" "$ENV"
-push_vars "$SCRIPT_DIR/variables/$ENV.env" --env "$GH_ENV"
+printf "%s\n" "$TARGET"
+push_vars "$SCRIPT_DIR/variables/$TARGET.env" --env "$GH_ENV"
 
 printf "\n── secrets ─────────────────────────────────────────────\n\n"
 printf "base\n"
 push_secrets "$SCRIPT_DIR/secrets/base.env"
 printf "\n"
-printf "%s\n" "$ENV"
-push_secrets "$SCRIPT_DIR/secrets/$ENV.env" --env "$GH_ENV"
+printf "%s\n" "$TARGET"
+push_secrets "$SCRIPT_DIR/secrets/$TARGET.env" --env "$GH_ENV"
 printf "\n"
 
 printf "→  https://github.com/%s/settings/secrets/actions\n" "$REPO"

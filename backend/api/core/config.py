@@ -1,31 +1,26 @@
 """Application configuration using Pydantic Settings"""
 
-from functools import lru_cache
-from pathlib import Path
+from __future__ import annotations
 
-from pydantic import AliasChoices, Field, field_validator
+from functools import lru_cache
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings, dev_env_files
 
 __all__ = ["DATA_DIR", "RUNTIME_DIR", "Settings", "get_settings"]
 
 
 class Settings(BaseServiceSettings):
     model_config = SettingsConfigDict(
-        # Order mirrors docker-compose.yml: shared.env first, api/.env overrides.
-        # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
-        env_file=(
-            Path(__file__).parent.parent.parent / "shared.env",
-            Path(__file__).parent.parent.parent / "shared.env.local",
-            Path(__file__).parent.parent / ".env",
-        ),
+        env_file=dev_env_files("api"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
 
-    # Twitch OAuth — reads TWITCH_CLIENT_ID/SECRET from shared.env via alias
+    # Twitch OAuth accepts legacy short aliases during migration.
     client_id: str = Field(..., validation_alias=AliasChoices("client_id", "twitch_client_id"))
     client_secret: str = Field(
         ..., validation_alias=AliasChoices("client_secret", "twitch_client_secret")
@@ -85,6 +80,25 @@ class Settings(BaseServiceSettings):
         if v not in allowed:
             raise ValueError(f"jwt_algorithm must be one of {sorted(allowed)}, got '{v}'")
         return v
+
+    @field_validator("payment_encryption_key")
+    @classmethod
+    def validate_payment_encryption_key(cls, v: str) -> str:
+        if not v:
+            return v
+        try:
+            from cryptography.fernet import Fernet
+
+            Fernet(v.encode())
+        except Exception as exc:
+            raise ValueError("PAYMENT_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        return v
+
+    @model_validator(mode="after")
+    def require_payment_encryption_in_deployed_runtime(self) -> Settings:
+        if not self.is_development and not self.payment_encryption_key:
+            raise ValueError("PAYMENT_ENCRYPTION_KEY is required outside development")
+        return self
 
     @property
     def cors_origins(self) -> list[str]:

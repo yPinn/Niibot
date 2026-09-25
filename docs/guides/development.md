@@ -5,16 +5,17 @@
 ## 1. 準備 env 檔
 
 ```bash
-npm run nb -- env init        # 複製所有 *.env.example → *.env（已存在者略過）
-npm run nb -- env init -f     # 強制覆蓋
+npm run nb -- env init dev       # 建立 .env.dev 與各服務 .env.dev
+npm run nb -- env init dev -f    # 強制覆蓋並保留既有 token encryption key
 ```
 
-`env init` 會在 `backend/shared.env` 缺少或留空時，自動生成
+`env init` 會在 `backend/shared.dev.env` 缺少或留空時，自動生成
 `TWITCH_TOKEN_ENCRYPTION_KEY`；既有有效 key 不會被輪替。接著填入其餘 secrets。
 欄位對照見 [environment.md](environment.md)。
 
 `nb env` 其他子命令：`snapshot` / `backup`（快照到 `data/`）、
-`restore <日期|檔案>`、`diff`、`list`、`clean`、`gen` / `check`（從 registry 生成）。
+`restore <日期|檔案>`、`diff`、`list`、`clean`、`gen` / `check`（從 registry 生成），
+以及 `validate dev`（只檢查 key 與順序，不輸出值）。
 所有 dev/ops 腳本統一入口見 [scripts/README.md](../../scripts/README.md)
 （`npm run nb -- --help`）。
 
@@ -43,7 +44,7 @@ npm install
 npm run dev                      # 開發伺服器 :3000（代理 /api 到 :8000）
 ```
 
-Postgres 可只開容器：`npm run dev:db`（背景啟動，對外 `:5433`）。
+Postgres 可只開容器：`npm run dev:db`（背景啟動，僅綁 `127.0.0.1:5432`）。
 
 ### Settings 最小服務組合
 
@@ -60,18 +61,19 @@ npm run dev:fe    # frontend :3000
 
 ## 2b. 全部走 Docker Compose
 
-所有 `npm run dev:*` 都疊 `docker-compose.yml` + `docker-compose.dev.yml`，
-dev overlay 會把每個服務的埠對外。
+後端 `dev:*` 指令都經 `dev:compose` 疊加 `compose.yaml` + `compose.dev.yaml`，
+固定使用 `niibot-dev` project；`dev:fe` 則直接啟動 Vite。dev overlay 會把每個服務的埠對外。
 
-| 指令                  | 內容                        |
-| --------------------- | --------------------------- |
-| `npm run dev:api`     | API + DB + Instafix         |
-| `npm run dev:twitch`  | Twitch bot + DB             |
-| `npm run dev:discord` | Discord bot + DB + Instafix |
-| `npm run dev:bots`    | 兩個 bot + DB + Instafix    |
-| `npm run dev:full`    | 全部                        |
-| `npm run dev:db`      | 只開 DB（背景）             |
-| `npm run dev:down`    | 停止全部                    |
+| 指令                       | 內容                        |
+| -------------------------- | --------------------------- |
+| `npm run dev:api`          | API + DB + Instafix         |
+| `npm run dev:twitch`       | Twitch bot + DB             |
+| `npm run dev:discord`      | Discord bot + DB + Instafix |
+| `npm run dev:bots`         | 兩個 bot + DB + Instafix    |
+| `npm run dev:full`         | 全部                        |
+| `npm run dev:db`           | 只開 DB（背景）             |
+| `npm run dev:down`         | 停止全部                    |
+| `npm run dev:compose -- …` | 直接傳遞 dev Compose 參數   |
 
 底層等同 `docker compose --profile <name> up --build`。啟動時 `migrate` 容器會自動跑 DB migration。
 

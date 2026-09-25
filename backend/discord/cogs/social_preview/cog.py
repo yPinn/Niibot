@@ -27,7 +27,7 @@ import io
 import logging
 import re
 import time
-from urllib.parse import quote_plus, unquote
+from urllib.parse import quote_plus, unquote, urlsplit
 
 import discord
 import httpx
@@ -35,6 +35,7 @@ from discord.ext import commands
 
 from core import EmbedFactory, get_settings
 from shared.bilibili_client import bilibili_web_headers, fetch_bilibili_video_data
+from shared.http_egress import HostEgressClient
 from shared.twitch_egress import TwitchEgressCoordinator, credential_bucket_key
 
 from ._embeds import (
@@ -104,9 +105,11 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):  # type: ignore[call
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._embed = EmbedFactory.default()
-        self._http = httpx.AsyncClient(
-            timeout=HTTP_TIMEOUT,
-            headers={"User-Agent": _UA},
+        self._http = HostEgressClient(
+            httpx.AsyncClient(
+                timeout=HTTP_TIMEOUT,
+                headers={"User-Agent": _UA},
+            )
         )
         self._twitch_egress = TwitchEgressCoordinator()
         self._twitch_token: str | None = None
@@ -856,7 +859,15 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):  # type: ignore[call
                     chunks.append(chunk)
             return b"".join(chunks)
         except Exception as exc:
-            LOGGER.debug("CDN download failed for %s: %s", cdn_url, exc)
+            try:
+                cdn_host = urlsplit(cdn_url).hostname or "<invalid-host>"
+            except ValueError:
+                cdn_host = "<invalid-host>"
+            LOGGER.debug(
+                "CDN download failed for host %s: %s",
+                cdn_host,
+                type(exc).__name__,
+            )
             return None
 
     async def _probe_instagram_items(

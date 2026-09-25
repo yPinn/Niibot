@@ -57,6 +57,10 @@ class TftCog(commands.Cog):
         self._cache: dict[str, Any] | None = None
         self._cache_time = 0.0
         self._client = httpx.AsyncClient(timeout=10.0)
+        self._request_lock = asyncio.Lock()
+        self._leaderboard_lock = asyncio.Lock()
+        self._clock = time.monotonic
+        self._sleep = asyncio.sleep
 
         self._user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -86,68 +90,62 @@ class TftCog(commands.Cog):
 
     async def get_leaderboard_data(self) -> dict[str, Any] | None:
         """獲取 TW 排行榜數據（30 秒快取）"""
-        now = time.time()
-
-        if self._cache and (now - self._cache_time) < 30:
+        if self._cache is not None and (self._clock() - self._cache_time) < 30:
             LOGGER.debug("Using cached leaderboard data")
             return self._cache
 
-        if now - self._last_request < 3:
-            LOGGER.debug("Rate limited, using cache")
-            return self._cache
+        async with self._leaderboard_lock:
+            if self._cache is not None and (self._clock() - self._cache_time) < 30:
+                return self._cache
+            try:
+                response = await self._tactics_get("https://tactics.tools/leaderboards/tw")
 
-        try:
-            await asyncio.sleep(random.uniform(0.5, 1.5))
+                if response.status_code != 200:
+                    LOGGER.warning("HTTP %s, using cache", response.status_code)
+                    return self._cache
 
-            response = await self._client.get(
-                "https://tactics.tools/leaderboards/tw",
-                headers=self._make_headers(),
-            )
+                match = re.search(
+                    r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
+                    response.text,
+                    re.DOTALL,
+                )
+                if not match:
+                    LOGGER.error("Data element not found")
+                    return self._cache
 
-            if response.status_code != 200:
-                LOGGER.warning(f"HTTP {response.status_code}, using cache")
+                data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
+
+                self._cache = data
+                self._cache_time = self._clock()
+
+                LOGGER.info("Fetched leaderboard - %d players", len(data.get("entries", [])))
+                return data
+
+            except Exception as exc:
+                LOGGER.error("Leaderboard fetch failed: %s", exc)
                 return self._cache
 
-            match = re.search(
-                r'<script id="__NEXT_DATA__" type="application/json">(.+?)</script>',
-                response.text,
-                re.DOTALL,
-            )
-            if not match:
-                LOGGER.error("Data element not found")
-                return self._cache
-
-            data: dict[str, Any] = json.loads(match.group(1))["props"]["pageProps"]["data"]
-
-            self._cache = data
-            self._cache_time = now
-            self._last_request = now
-
-            LOGGER.info(f"Fetched leaderboard - {len(data.get('entries', []))} players")
-            return data
-
-        except Exception as e:
-            LOGGER.error(f"Leaderboard fetch failed: {e}")
-            return self._cache
+    async def _tactics_get(self, url: str) -> httpx.Response:
+        """Serialize and space every Tactics.tools request by at least three seconds."""
+        async with self._request_lock:
+            delay = max(0.0, self._last_request + 3.0 - self._clock())
+            if delay > 0:
+                await self._sleep(delay)
+            jitter = random.uniform(0.5, 1.5)
+            if jitter > 0:
+                await self._sleep(jitter)
+            self._last_request = self._clock()
+            return await self._client.get(url, headers=self._make_headers())
 
     async def _fetch_player_data(self, username: str, tag: str) -> dict[str, Any] | None:
         """實際執行玩家資料爬取"""
-        now = time.time()
-        if now - self._last_request < 3:
-            await asyncio.sleep(3 - (now - self._last_request))
-
         try:
-            await asyncio.sleep(random.uniform(0.5, 1.5))
-
             url = (
                 f"https://tactics.tools/player/tw/{quote(username, safe='')}/{quote(tag, safe='')}"
             )
             LOGGER.info(f"Fetching player: {username}#{tag}")
 
-            response = await self._client.get(
-                url,
-                headers=self._make_headers(),
-            )
+            response = await self._tactics_get(url)
 
             if response.status_code != 200:
                 LOGGER.warning(f"Player page HTTP {response.status_code}")
@@ -201,8 +199,6 @@ class TftCog(commands.Cog):
                 if timestamp:
                     last_match_time = timestamp
 
-            self._last_request = time.time()
-
             return {
                 "summonerName": page_props.get("playerName", username),
                 "tier": tier,
@@ -232,7 +228,7 @@ class TftCog(commands.Cog):
 
             if age_hours > 24:
                 LOGGER.info(f"Data is {age_hours:.1f} hours old, re-fetching after 3s...")
-                await asyncio.sleep(3)
+                await self._sleep(3)
                 fresh_data = await self._fetch_player_data(username, tag)
                 if fresh_data:
                     return fresh_data

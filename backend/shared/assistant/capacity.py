@@ -8,13 +8,58 @@ import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Literal
 
 from shared.assistant.contracts import ProviderRequest
 from shared.assistant.providers.registry import ProviderKind
 
 _PROTOCOL_TOKENS_PER_MESSAGE: Final = 4
 _PROTOCOL_TOKENS_PER_REQUEST: Final = 2
+CAPACITY_DEPLOYMENT_MODE: Final = "partitioned-local"
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAccountCeiling:
+    """Externally enforced provider/model account ceiling used by contracts."""
+
+    requests_per_minute: int | None = None
+    tokens_per_minute: int | None = None
+    requests_per_day: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CapacityDeploymentGuard:
+    """Declare the topology under which local quota partitions are safe."""
+
+    runtime: Literal["twitch", "discord"]
+    mode: str = CAPACITY_DEPLOYMENT_MODE
+    max_replicas: int = 1
+    distributed: bool = False
+    shared_provider_accounts: bool = True
+
+    def health_payload(self) -> dict[str, object]:
+        return {
+            "mode": self.mode,
+            "runtime": self.runtime,
+            "max_replicas": self.max_replicas,
+            "distributed": self.distributed,
+            "shared_provider_accounts": self.shared_provider_accounts,
+        }
+
+
+def capacity_deployment_guard(
+    runtime: Literal["twitch", "discord"],
+) -> CapacityDeploymentGuard:
+    return CapacityDeploymentGuard(runtime=runtime)
+
+
+def provider_account_ceilings() -> dict[ProviderKind, ProviderAccountCeiling]:
+    """Return the ceilings that the static Twitch/Discord split must fit."""
+    return {
+        ProviderKind.GROQ: ProviderAccountCeiling(30, 8_000, 1_000),
+        ProviderKind.GROQ_SECONDARY: ProviderAccountCeiling(30, 8_000, 1_000),
+        ProviderKind.OPENROUTER: ProviderAccountCeiling(20, None, 1_000),
+    }
 
 
 @dataclass(frozen=True, slots=True)

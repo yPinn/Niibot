@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, staging]
+    # staging is the single tested release-candidate branch. main only
+    # receives a promotion after this exact tree has passed CI and staging.
+    branches: [staging]
   pull_request:
-    branches: [main, staging]
+    # Validate changes before they enter staging. The later staging -> main
+    # promotion deliberately reuses the staging result instead of rerunning.
+    branches: [staging]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_call:
   workflow_dispatch:
@@ -12,9 +16,8 @@ on:
 permissions:
   contents: read
 
-# Only supersede stale commits for the same pull request. Pushes to protected
-# branches use the unique run id so a staging validation/deploy is never
-# interrupted by a newer push.
+# Only supersede stale commits for the same pull request. Staging pushes use
+# the unique run id so validation/deploy is never interrupted by a newer push.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -45,7 +48,7 @@ jobs:
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
       - name: Verify env registry
-        run: uv run --no-project python scripts/gen_env.py --check
+        run: uv run --no-project python scripts/env/gen.py --check
 
       - name: Classify CI scope
         id: scope
@@ -62,10 +65,10 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request" ]; then
             git diff --name-only "$BASE_SHA...$HEAD_SHA" \
-              | python3 scripts/ci_changed_paths.py "${args[@]}" \
+              | python3 scripts/ci/paths.py "${args[@]}" \
               | tee -a "$GITHUB_OUTPUT"
           else
-            python3 scripts/ci_changed_paths.py "${args[@]}" </dev/null \
+            python3 scripts/ci/paths.py "${args[@]}" </dev/null \
               | tee -a "$GITHUB_OUTPUT"
           fi
 
@@ -175,7 +178,7 @@ jobs:
         run: uv run mypy .
 
       - name: Migrate test database
-        run: uv run python scripts/db_migrate.py
+        run: uv run python -m scripts.db.migrate
 
       - name: Run tests
         env:

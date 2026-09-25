@@ -22,7 +22,7 @@
 ## 目標
 
 1. 實況主可從 Settings 產生 Bot OAuth 邀請 URL，讓另一個 Twitch 帳號授予 `BOT_SCOPES`。
-2. OAuth callback 直接安全更新後台 token，取代 `backend/scripts/twitch_oauth.py --role bot` 的本機作業。
+2. OAuth callback 直接安全更新後台 token，取代 `nb twitch oauth --role bot` 的本機作業。
 3. 每個租戶只看得到 system-default Niibot 與自己取得授權的 Bot 帳號。
 4. 每個頻道可獨立選擇 sender；A 的選擇、token 更新或失敗不得影響 C 的選擇。
 5. Dashboard 人員權限維持兩級：Tenant Owner 與 MOD／編輯者。

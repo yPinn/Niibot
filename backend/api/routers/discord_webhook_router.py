@@ -12,13 +12,14 @@ Supported event types:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 
 from core.config import get_settings
 
@@ -26,9 +27,8 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/discord", tags=["discord-webhook"])
 
-# Discord webhook event payload types
-_PING = 1
-_EVENT = 0
+_PING = 0
+_EVENT = 1
 
 
 def _verify_signature(public_key_hex: str, signature_hex: str, timestamp: str, body: bytes) -> bool:
@@ -41,7 +41,7 @@ def _verify_signature(public_key_hex: str, signature_hex: str, timestamp: str, b
 
 
 @router.post("/webhook")
-async def discord_webhook(request: Request) -> JSONResponse:
+async def discord_webhook(request: Request) -> Response:
     """Receive and verify Discord Application Webhook Events."""
     settings = get_settings()
 
@@ -60,21 +60,34 @@ async def discord_webhook(request: Request) -> JSONResponse:
     if not _verify_signature(settings.discord_public_key, signature, timestamp, body):
         raise HTTPException(status_code=401, detail="Invalid request signature")
 
-    payload: dict[str, Any] = await request.json()
-    payload_type: int = payload.get("type", -1)
+    try:
+        payload: Any = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
 
-    # Discord sends a PING on first setup — must respond with type 1 to confirm the endpoint
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
+
+    payload_type = payload.get("type")
+
     if payload_type == _PING:
         LOGGER.info("Discord webhook PING received — endpoint verified")
-        return JSONResponse({"type": 1})
+        return Response(status_code=204, media_type="application/json")
 
     if payload_type == _EVENT:
-        event: dict[str, Any] = payload.get("event", {})
-        event_type: str = event.get("type", "UNKNOWN")
-        data: dict[str, Any] = event.get("data", {})
-        _dispatch_event(event_type, data)
+        event = payload.get("event")
+        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
+            raise HTTPException(status_code=400, detail="Invalid event payload")
 
-    return JSONResponse({"ok": True})
+        data = event.get("data", {})
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid event data")
+
+        event_type = event["type"]
+        _dispatch_event(event_type, data)
+        return Response(status_code=204, media_type="application/json")
+
+    raise HTTPException(status_code=400, detail="Unsupported webhook type")
 
 
 def _dispatch_event(event_type: str, data: dict[str, Any]) -> None:

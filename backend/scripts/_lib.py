@@ -1,8 +1,4 @@
-"""Shared helpers for backend/scripts/* — env loading, DB, arg-parsing, IO.
-
-`nb` and every standalone script use these so the env-file load order, staging
-selection, DB connection and confirmation prompts stay identical everywhere.
-"""
+"""Shared CLI helpers for env loading, database access, and prompts."""
 
 from __future__ import annotations
 
@@ -12,6 +8,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from urllib.parse import urlparse
 
 import asyncpg
 from dotenv import load_dotenv
@@ -20,6 +17,9 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BACKEND_DIR.parent
 
 _SERVICE_DIRS = {"api", "twitch", "discord", "scrapling"}
+ENV_CHOICES = ("dev", "stg", "prod")
+_RUNTIME_NAMES = {"dev": "development", "stg": "staging", "prod": "production"}
+_ENV_SELECTORS = {runtime: env for env, runtime in _RUNTIME_NAMES.items()}
 
 
 def ensure_backend_on_path() -> None:
@@ -39,46 +39,60 @@ def utf8_stdio() -> None:
 
 
 def add_env_arg(parser: argparse.ArgumentParser) -> None:
-    """Add `--env {prod,staging}` (default prod)."""
+    """Add the safe-by-default environment selector."""
+    default = _ENV_SELECTORS.get(os.getenv("ENVIRONMENT", "").lower(), "dev")
     parser.add_argument(
-        "--env", choices=("prod", "staging"), default="prod", help="env file set (default: prod)"
+        "--env",
+        choices=ENV_CHOICES,
+        default=default,
+        help=f"environment file set (default: {default})",
     )
 
 
-def load_env(env: str = "prod", *, service: str | None = None) -> None:
-    """Load env files into os.environ (env vars beat pydantic's env_file).
+def _check_runtime_match(env: str) -> bool:
+    """Return whether this is a container after validating its runtime label."""
+    runtime = os.getenv("ENVIRONMENT", "").lower()
+    selected = _ENV_SELECTORS.get(runtime)
+    is_container = os.getenv("NIIBOT_RUNTIME_CONTEXT") == "container"
+    if selected is not None and selected != env:
+        raise SystemExit(f"selected environment {env!r} does not match runtime {runtime!r}")
+    if is_container and selected is None:
+        raise SystemExit(
+            "container runtime ENVIRONMENT must be development, staging, or production"
+        )
+    return is_container
 
-    Order — later overrides earlier:
-        shared[.staging].env  ->  shared[.staging].env.local  ->  <service>/.env[.staging]
 
-    The `.local` and service files are optional; naming matches scripts/env.sh.
+def load_env(env: str = "dev", *, service: str | None = None) -> None:
+    """Load one explicit env set; injected container variables take precedence."""
+    if env not in ENV_CHOICES:
+        raise ValueError(f"env must be one of {ENV_CHOICES}, got {env!r}")
+    if service is not None and service not in _SERVICE_DIRS:
+        raise ValueError(f"unknown service {service!r}; expected {sorted(_SERVICE_DIRS)}")
+    if _check_runtime_match(env):
+        return
 
-    A missing base file is fatal for local CLI use, but tolerated when the config
-    is already in the environment — containers / CI inject it as real env vars
-    (compose `env_file:` / `environment:`), never as a file inside the image.
-    """
-    if env not in ("prod", "staging"):
-        raise ValueError(f"env must be 'prod' or 'staging', got {env!r}")
-
-    suffix = "" if env == "prod" else ".staging"
-    shared = BACKEND_DIR / f"shared{suffix}.env"
+    shared = BACKEND_DIR / f"shared.{env}.env"
     if not shared.exists():
         if os.getenv("DATABASE_URL"):
-            print(f"note: {shared.name} absent — using existing environment", file=sys.stderr)
+            print(f"note: {shared.name} absent; using process environment", file=sys.stderr)
             return
-        raise FileNotFoundError(f"{shared} not found — run `npm run nb -- env init`")
+        raise FileNotFoundError(f"{shared} not found — run `npm run nb -- env init {env}`")
 
     load_dotenv(shared, encoding="utf-8")
-    shared_local = BACKEND_DIR / f"shared{suffix}.env.local"
-    if shared_local.exists():
-        load_dotenv(shared_local, encoding="utf-8", override=True)
+    if env == "dev":
+        shared_local = BACKEND_DIR / "shared.dev.local.env"
+        if shared_local.exists():
+            load_dotenv(shared_local, encoding="utf-8", override=True)
 
     if service:
-        if service not in _SERVICE_DIRS:
-            raise ValueError(f"unknown service {service!r}; expected {sorted(_SERVICE_DIRS)}")
-        svc = BACKEND_DIR / service / (".env" if env == "prod" else ".env.staging")
+        svc = BACKEND_DIR / service / f".env.{env}"
         if svc.exists():
             load_dotenv(svc, encoding="utf-8", override=True)
+        if env == "dev":
+            svc_local = BACKEND_DIR / service / ".env.dev.local"
+            if svc_local.exists():
+                load_dotenv(svc_local, encoding="utf-8", override=True)
 
 
 def database_url() -> str:
@@ -88,13 +102,34 @@ def database_url() -> str:
     return url
 
 
+def require_db_context(env: str) -> None:
+    """Keep deployed databases reachable only from their Compose network."""
+    if _check_runtime_match(env):
+        return
+    if env != "dev":
+        raise SystemExit(
+            f"{env} database commands must run in the matching container; "
+            f"use `npm run nb -- stack {env} migrate` or `stack {env} exec`."
+        )
+
+
+def require_dev_database(url: str) -> None:
+    """Refuse dev-only mutation tools unless the database is local."""
+    is_container = _check_runtime_match("dev")
+    host = (urlparse(url).hostname or "").lower()
+    allowed = {"postgres"} if is_container else {"localhost", "127.0.0.1", "::1"}
+    if host not in allowed:
+        raise SystemExit(f"dev mutation requires a local dev database, got host {host!r}")
+
+
 # ── db ───────────────────────────────────────────────────────────────────────
 
 
 @contextlib.asynccontextmanager
-async def db_conn(env: str = "prod") -> AsyncIterator[asyncpg.Connection]:
+async def db_conn(env: str = "dev") -> AsyncIterator[asyncpg.Connection]:
     """Yield a single asyncpg connection; loads env first, closes on exit."""
     load_env(env)
+    require_db_context(env)
     conn = await asyncpg.connect(database_url(), statement_cache_size=0)
     try:
         yield conn
@@ -103,9 +138,10 @@ async def db_conn(env: str = "prod") -> AsyncIterator[asyncpg.Connection]:
 
 
 @contextlib.asynccontextmanager
-async def db_pool(env: str = "prod", *, max_size: int = 4) -> AsyncIterator[asyncpg.Pool]:
+async def db_pool(env: str = "dev", *, max_size: int = 4) -> AsyncIterator[asyncpg.Pool]:
     """Yield an asyncpg pool; loads env first, closes on exit."""
     load_env(env)
+    require_db_context(env)
     pool = await asyncpg.create_pool(
         database_url(), min_size=1, max_size=max_size, statement_cache_size=0
     )

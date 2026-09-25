@@ -145,17 +145,23 @@ Gemini 或 OpenRouter。等待者以不含 prompt／viewer 的 platform + channe
 
 | Runtime | Groq local envelope                | Gemini local envelope | OpenRouter local envelope |
 | ------- | ---------------------------------- | --------------------- | ------------------------- |
-| Twitch  | 20 RPM／5,600 TPM／700 rolling RPD | —                     | 12 RPM／650 rolling RPD   |
-| Discord | 4 RPM／1,600 TPM／100 rolling RPD  | 4 RPM                 | 4 RPM／150 rolling RPD    |
+| Twitch  | 22 RPM／6,000 TPM／780 rolling RPD | —                     | 13 RPM／750 rolling RPD   |
+| Discord | 5 RPM／1,700 TPM／120 rolling RPD  | 4 RPM                 | 4 RPM／150 rolling RPD    |
 
 queue 有固定上限，Twitch 最多等 150ms、Discord 最多等 500ms；容量仍不足就把該 provider 視為本地 429，直接走既有
 fallback。這不會開啟 provider circuit，因為不是外部服務故障；真正的 429 仍依 `retry-after` 與 circuit 規則處理。
 本地 admission 不在 request path 睡到下一個一分鐘窗口，也不縮短單次回答的 token 上限。
 
-這一版是 process-local，適用目前單一 Twitch process + 單一 Discord process，兩者以靜態 allocation 避免合計超額。
-若未來任一 runtime 水平擴展成多 replica，必須先改為 Redis／資料庫等 distributed limiter，不能讓每個 replica
-各自複製同一份額度。程序重啟也會重置本地 rolling counters，因此 RPD 是降低意外耗盡風險的保守閘門，不是 provider
-帳務的 durable 精準計量；真正餘額與限額仍以 provider console／response headers 為準。
+這一版的 deployment mode 明確標記為 `partitioned-local`：只適用單一 Twitch process + 單一 Discord process，兩者以
+靜態 allocation 避免合計超額。production Compose 以固定 `container_name` 保持兩個 runtime 各一份，contract test 也會在
+加入 `replicas:` 時失敗。健康度的 `capacity_guard` 固定輸出 `max_replicas=1`、`distributed=false` 與
+`shared_provider_accounts=true`，避免 operator 把 local counters 誤判為跨程序協調。
+
+若未來任一 runtime 水平擴展成多 replica，這是 architecture gate：部署前必須先改為 PostgreSQL／Redis distributed
+reservation，不能讓每個 replica 各自複製同一份額度。prod／staging 若共用 provider account，應優先拆成不同 provider
+project/key 並設定 provider-side cap；單一環境的資料庫 limiter 無法協調另一個隔離資料庫。程序重啟也會重置本地 rolling
+counters，因此 RPD 是降低意外耗盡風險的保守閘門，不是 provider 帳務的 durable 精準計量；真正餘額與限額仍以
+provider console／response headers 為準。
 
 ## Fallback 與 circuit breaker
 
@@ -181,8 +187,9 @@ open circuit 冷卻後只允許一個 half-open probe。所有第三方例外在
 
 bot `/status` 的 `ai_model` 與 `ai_status` 直接取自已載入的 harness registry，而非重新推測環境變數。
 `ai_status.providers` 顯示註冊狀態，`ai_status.circuits` 顯示運行期故障狀態，`ai_status.capacity` 顯示各
-provider/model 的 minute requests／tokens、rolling daily requests、queue depth 與上限，`ai_status.memory` 只顯示
-聚合容量；全部都不包含 secret、prompt、知識內容、viewer key 或聊天訊息。
+provider/model 的 minute requests／tokens、rolling daily requests、queue depth 與上限，`ai_status.capacity_guard`
+顯示目前只允許單 replica 的部署契約，`ai_status.memory` 只顯示聚合容量；全部都不包含 secret、prompt、知識內容、
+viewer key 或聊天訊息。
 
 結構化 log 只記錄 request id、outcome、provider/model、attempt/fallback 數、latency 與 provider 回傳的 token usage。
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import discord
 import pytest
 from discord.cogs.social_preview import _embeds as embeds_mod
@@ -169,6 +171,23 @@ class TestOGParser:
 
 class TestCogOnMessage:
     @pytest.mark.asyncio
+    async def test_cdn_failure_log_redacts_signed_query(
+        self,
+        cog: SocialPreviewCog,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        signed_url = "https://media.example/video.mp4?token=top-secret&expires=123"
+        cog._http.stream.side_effect = RuntimeError(f"request failed: {signed_url}")
+
+        with caplog.at_level(logging.DEBUG):
+            result = await cog._download_cdn_bytes(signed_url)
+
+        assert result is None
+        assert "media.example" in caplog.text
+        assert "top-secret" not in caplog.text
+        assert "expires=123" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_ignores_bot_messages(self, cog: SocialPreviewCog) -> None:
         msg = _make_message("https://www.instagram.com/p/Abc123/")
         msg.author.bot = True
@@ -187,3 +206,10 @@ class TestCogOnMessage:
         msg = _make_message("hello world, no links here")
         await cog.on_message(msg)
         cog._http.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unload_closes_http_and_twitch_egress(self, cog: SocialPreviewCog) -> None:
+        await cog.cog_unload()
+
+        cog._http.aclose.assert_awaited_once()
+        cog._twitch_egress.close.assert_awaited_once()

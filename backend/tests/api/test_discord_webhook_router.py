@@ -177,15 +177,16 @@ class TestDiscordWebhookEndpoint:
     def _post(
         self,
         client: TestClient,
-        payload: dict,
+        payload: dict | None,
         *,
         private_key: Ed25519PrivateKey | None = None,
         pub_hex: str = "",
         timestamp: str = "1234567890",
         bad_sig: bool = False,
         missing_sig: bool = False,
+        raw_body: bytes | None = None,
     ):
-        body = json.dumps(payload).encode()
+        body = raw_body if raw_body is not None else json.dumps(payload).encode()
         if missing_sig:
             headers = {}
         elif bad_sig or private_key is None:
@@ -230,22 +231,23 @@ class TestDiscordWebhookEndpoint:
             r = self._post(client, {"type": 1}, private_key=private_key, bad_sig=True)
         assert r.status_code == 401
 
-    def test_ping_returns_type_1(self):
+    def test_ping_returns_empty_204(self):
         private_key, pub_hex = _gen_keypair()
         client = _make_client()
         with patch(
             "routers.discord_webhook_router.get_settings",
             return_value=type("S", (), {"discord_public_key": pub_hex})(),
         ):
-            r = self._post(client, {"type": 1}, private_key=private_key, pub_hex=pub_hex)
-        assert r.status_code == 200
-        assert r.json()["type"] == 1
+            r = self._post(client, {"type": 0}, private_key=private_key, pub_hex=pub_hex)
+        assert r.status_code == 204
+        assert r.content == b""
+        assert r.headers["content-type"] == "application/json"
 
-    def test_event_type_returns_ok(self):
+    def test_event_returns_empty_204(self):
         private_key, pub_hex = _gen_keypair()
         client = _make_client()
         payload = {
-            "type": 0,
+            "type": 1,
             "event": {
                 "type": "APPLICATION_AUTHORIZED",
                 "data": {
@@ -259,10 +261,11 @@ class TestDiscordWebhookEndpoint:
             return_value=type("S", (), {"discord_public_key": pub_hex})(),
         ):
             r = self._post(client, payload, private_key=private_key, pub_hex=pub_hex)
-        assert r.status_code == 200
-        assert r.json()["ok"] is True
+        assert r.status_code == 204
+        assert r.content == b""
+        assert r.headers["content-type"] == "application/json"
 
-    def test_unknown_payload_type_returns_ok(self):
+    def test_unknown_payload_type_returns_400(self):
         private_key, pub_hex = _gen_keypair()
         client = _make_client()
         with patch(
@@ -270,5 +273,35 @@ class TestDiscordWebhookEndpoint:
             return_value=type("S", (), {"discord_public_key": pub_hex})(),
         ):
             r = self._post(client, {"type": 99}, private_key=private_key, pub_hex=pub_hex)
-        assert r.status_code == 200
-        assert r.json()["ok"] is True
+        assert r.status_code == 400
+
+    def test_invalid_event_envelope_returns_400(self):
+        private_key, pub_hex = _gen_keypair()
+        client = _make_client()
+        with patch(
+            "routers.discord_webhook_router.get_settings",
+            return_value=type("S", (), {"discord_public_key": pub_hex})(),
+        ):
+            r = self._post(
+                client,
+                {"type": 1, "event": "not-an-object"},
+                private_key=private_key,
+                pub_hex=pub_hex,
+            )
+        assert r.status_code == 400
+
+    def test_invalid_json_returns_400_after_signature_verification(self):
+        private_key, pub_hex = _gen_keypair()
+        client = _make_client()
+        with patch(
+            "routers.discord_webhook_router.get_settings",
+            return_value=type("S", (), {"discord_public_key": pub_hex})(),
+        ):
+            r = self._post(
+                client,
+                None,
+                private_key=private_key,
+                pub_hex=pub_hex,
+                raw_body=b"not-json",
+            )
+        assert r.status_code == 400

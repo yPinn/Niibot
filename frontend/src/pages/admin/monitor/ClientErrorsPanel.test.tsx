@@ -75,7 +75,7 @@ describe('ClientErrorsPanel', () => {
     const onTrace = vi.fn()
     render(<ClientErrorsPanel onTraceRequestId={onTrace} />)
     fireEvent.click(await screen.findByText('Cannot read properties of undefined'))
-    fireEvent.click(await screen.findByTitle('在 nb-api log 中追蹤此請求'))
+    fireEvent.click(await screen.findByTitle('在 API log 中追蹤此請求'))
     expect(onTrace).toHaveBeenCalledWith('req-abc')
   })
 

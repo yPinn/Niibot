@@ -14,7 +14,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PORT=3001
 RUN playwright install chromium --with-deps
-COPY scrapling/main.py scrapling/stealth.js ./
+COPY scrapling/main.py scrapling/stealth.js scrapling/browser_admission.py ./
 COPY shared/discord_webhook_handler.py ./
 EXPOSE 3001
 CMD ["python", "main.py"]

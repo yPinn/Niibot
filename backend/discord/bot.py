@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -11,15 +10,9 @@ _backend_dir = str(Path(__file__).resolve().parent.parent)
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-# Load .env files before any config imports.
-# Order mirrors docker-compose.yml: shared.env first, then service-specific .env.
-# Service-specific values override shared ones when keys overlap.
-from dotenv import load_dotenv  # noqa: E402
+from shared.config_base import load_dev_env  # noqa: E402
 
-_discord_dir = Path(__file__).parent
-load_dotenv(dotenv_path=_discord_dir.parent / "shared.env", encoding="utf-8")
-load_dotenv(dotenv_path=_discord_dir.parent / "shared.env.local", encoding="utf-8", override=True)
-load_dotenv(dotenv_path=_discord_dir / ".env", encoding="utf-8", override=True)
+load_dev_env("discord")
 
 import asyncpg  # noqa: E402
 import discord  # noqa: E402
@@ -29,7 +22,6 @@ from core import (  # noqa: E402
     COGS_DIR,
     BotConfig,
     HealthCheckServer,
-    RateLimitMonitor,
     close_session,
     get_settings,
     setup_logging,
@@ -57,10 +49,8 @@ class NiibotClient(commands.Bot):
         )
 
         self.initial_extensions: list[str] = self._get_extensions()
-        self.rate_limiter = RateLimitMonitor(self)
         self._db_manager: DatabaseManager | None = None
         self.db_pool: asyncpg.Pool | None = None
-        self._commands_synced: bool = False
         self._heartbeat_task: asyncio.Task | None = None
 
     async def setup_database(self, max_retries: int = 5, retry_delay: float = 5.0) -> None:
@@ -108,8 +98,6 @@ class NiibotClient(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Called when the bot is starting up"""
-        await self.rate_limiter.start_monitoring()
-
         loaded = []
         failed = []
 
@@ -151,61 +139,10 @@ class NiibotClient(commands.Bot):
             except Exception:
                 pass
 
-        guild_id = os.getenv("DISCORD_GUILD_ID")
-        if guild_id:
-            self._sync_guild_id = guild_id
-
         LOGGER.info("Connecting to Discord...")
 
-    async def _sync_commands(self) -> None:
-        """Sync slash commands (runs once after first on_ready)"""
-        sync_commands = os.getenv("DISCORD_SYNC_COMMANDS", "false").lower() == "true"
-        if not sync_commands:
-            LOGGER.info("Skipping command sync (DISCORD_SYNC_COMMANDS=false)")
-            self._commands_synced = True
-            return
-
-        try:
-            LOGGER.info("Syncing slash commands...")
-            guild_id = getattr(self, "_sync_guild_id", None)
-
-            if guild_id:
-                guild = discord.Object(id=int(guild_id))
-                self.tree.copy_global_to(guild=guild)
-                synced = await self.tree.sync(guild=guild)
-                LOGGER.info(f"Synced {len(synced)} commands to test guild")
-            else:
-                synced = await self.tree.sync()
-                LOGGER.info(f"Synced {len(synced)} commands globally")
-
-            self._commands_synced = True
-
-        except discord.HTTPException as e:
-            LOGGER.error(f"Command sync failed (HTTP {e.status}): {e.text}")
-            if e.status == 429:
-                LOGGER.warning("Command sync hit 429, will retry on next reconnect")
-            else:
-                self._commands_synced = True
-        except Exception as e:
-            LOGGER.error(f"Command sync error: {e}")
-            self._commands_synced = True
-
     async def on_ready(self) -> None:
-        """Fired when the bot is connected and ready.
-
-        All Discord API calls are wrapped in try/except to prevent 429
-        responses from crashing the entire on_ready handler.
-        """
-        # Sync commands (first on_ready only, skip on reconnect)
-        if not self._commands_synced:
-            # Delay briefly after gateway connect to avoid immediate 429
-            await asyncio.sleep(5)
-            await self._sync_commands()
-
-        if hasattr(self, "_sync_guild_id"):
-            guild_obj = self.get_guild(int(self._sync_guild_id))
-            if guild_obj:
-                LOGGER.info(f"Test guild: {guild_obj.name} (ID: {self._sync_guild_id})")
+        """Log readiness and apply presence without mutating application metadata."""
 
         if not self.owner_id:
             try:
@@ -224,20 +161,6 @@ class NiibotClient(commands.Bot):
             await self.change_presence(status=status, activity=activity)
         except Exception as e:
             LOGGER.warning(f"Failed to set bot presence: {e}")
-
-        description = get_settings().discord_description
-        if description:
-            try:
-                await self.http.edit_application_info(
-                    reason=None, payload={"description": description[:400]}
-                )
-                LOGGER.info(
-                    f"Bot description set: {description[:40]}{'...' if len(description) > 40 else ''}"
-                )
-            except Exception as e:
-                LOGGER.warning(f"Failed to set bot description: {e}")
-        else:
-            LOGGER.debug("DISCORD_DESCRIPTION not set, skipping description update")
 
         if self.user is None:
             LOGGER.error("Bot user is None")

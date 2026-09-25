@@ -167,7 +167,7 @@ draw audit 均由資料庫約束不可原地修改，後續評級或機率調整
 
 ### 歷史簽到補卡
 
-`backend/scripts/backfill_checkin_collections.py` 只補缺少 `viewer_card_draws` 的既有成功簽到，固定使用已發布的
+`nb checkin backfill` 只補缺少 `viewer_card_draws` 的既有成功簽到，固定使用已發布的
 `official-all` revision 1，不讀取日後可能改變的 channel active pool 或 system fallback pointer。卡片選擇以
 版本化 seed 加上 channel、viewer、簽到日期與 check-in id 產生 deterministic entropy；重跑不會換卡，也不建立
 歷史 `community_overlay_events`。

@@ -6,17 +6,23 @@ import logging
 
 import httpx
 from fastapi import APIRouter
-from pydantic import BaseModel
 
 from core.config import get_settings
+from services.github_releases import (
+    GithubRelease,
+    GitHubReleasesAuthError,
+    GitHubReleasesClient,
+    GitHubReleasesNotFoundError,
+    GitHubReleasesTimeoutError,
+    GitHubReleasesUpstreamError,
+)
 from shared.errors import NotFoundError, UpstreamError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/releases", tags=["releases"])
 
-_GITHUB_REPO = "yPinn/Niibot"
-_GITHUB_API_URL = f"https://api.github.com/repos/{_GITHUB_REPO}/releases"
+_releases_client = GitHubReleasesClient(httpx.AsyncClient(timeout=10.0))
 
 
 class ReleasesNotFoundError(NotFoundError):
@@ -35,37 +41,23 @@ class ReleasesTimeoutError(UpstreamError):
     user_message = "版本資訊載入逾時，請稍後再試"
 
 
-class GithubRelease(BaseModel):
-    id: int
-    tag_name: str
-    name: str | None = None
-    body: str | None = None
-    published_at: str
-    prerelease: bool
-    draft: bool
+async def close_releases_http_client() -> None:
+    """Close the shared GitHub client during application shutdown."""
+    await _releases_client.aclose()
 
 
 @router.get("", response_model=list[GithubRelease])
 async def get_releases() -> list[GithubRelease]:
-    """Proxy GitHub releases for the private repo, injecting a server-side PAT."""
+    """Return cached GitHub releases, injecting the server-side PAT upstream."""
     settings = get_settings()
-
-    headers: dict[str, str] = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if settings.releases_github_token:
-        headers["Authorization"] = f"Bearer {settings.releases_github_token}"
-
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{_GITHUB_API_URL}?per_page=30", headers=headers)
-    except httpx.TimeoutException as exc:
+        return await _releases_client.get_releases(settings.releases_github_token)
+    except GitHubReleasesNotFoundError as exc:
+        raise ReleasesNotFoundError() from exc
+    except GitHubReleasesTimeoutError as exc:
         raise ReleasesTimeoutError() from exc
-
-    if response.status_code == 404:
-        raise ReleasesNotFoundError()
-    if not response.is_success:
-        raise ReleasesUpstreamError(context={"github_status": response.status_code})
-
-    return [GithubRelease(**r) for r in response.json() if not r.get("draft")]
+    except GitHubReleasesAuthError as exc:
+        raise ReleasesUpstreamError(context={"github_status": 401}) from exc
+    except GitHubReleasesUpstreamError as exc:
+        context = {"github_status": exc.status_code} if exc.status_code is not None else None
+        raise ReleasesUpstreamError(context=context) from exc

@@ -10,7 +10,7 @@ import discord
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
-from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings
+from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings, dev_env_files
 
 __all__ = ["DATA_DIR", "RUNTIME_DIR", "BotConfig", "DiscordBotSettings", "get_settings"]
 
@@ -36,13 +36,7 @@ class DiscordBotSettings(BaseServiceSettings):
     """Discord bot settings"""
 
     model_config = SettingsConfigDict(
-        # Order mirrors docker-compose.yml: shared.env first, discord/.env overrides.
-        # shared.env.local (gitignored) overrides shared.env for local dev (e.g. localhost DB).
-        env_file=(
-            Path(__file__).parent.parent.parent / "shared.env",
-            Path(__file__).parent.parent.parent / "shared.env.local",
-            Path(__file__).parent.parent / ".env",
-        ),
+        env_file=dev_env_files("discord"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -61,24 +55,13 @@ class DiscordBotSettings(BaseServiceSettings):
     # Presence
     discord_status: str = Field(default="online", description="Bot status")
     discord_activity_type: str = Field(
-        default="", description="Activity type (playing/listening/watching/competing/streaming)"
+        default="playing",
+        description="Activity type (playing/listening/watching/competing/streaming)",
     )
     discord_activity_name: str = Field(default="", description="Activity name")
     discord_activity_url: str = Field(
         default="", description="Streaming URL (twitch.tv only, required for streaming type)"
     )
-    discord_description: str = Field(
-        default="",
-        description="Bot description shown in profile (PATCH /applications/@me, max 400 chars)",
-    )
-
-    # Rate Limit Monitor
-    rate_limit_enabled: bool = Field(default=True, description="Enable rate limit monitoring")
-    rate_limit_warning_threshold: float = Field(default=0.7, description="Warning threshold (0–1)")
-    rate_limit_critical_threshold: float = Field(
-        default=0.9, description="Critical threshold (0–1)"
-    )
-
     # Instagram (Social Preview) — instafix_host now lives on BaseServiceSettings
     instagram_session_id: str = Field(
         default="", description="Instagram session cookie for profile embeds"

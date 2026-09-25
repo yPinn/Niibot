@@ -1,13 +1,18 @@
 """Bounded assistant harness shared by chat platforms."""
 
 from shared.assistant.capacity import (
+    CAPACITY_DEPLOYMENT_MODE,
     AdmissionDecision,
+    CapacityDeploymentGuard,
     CapacityLease,
+    ProviderAccountCeiling,
     ProviderBudgetPolicy,
     ProviderCapacityController,
     ProviderCapacitySnapshot,
+    capacity_deployment_guard,
     discord_free_tier_budgets,
     estimate_request_tokens,
+    provider_account_ceilings,
     twitch_free_tier_budgets,
 )
 from shared.assistant.contracts import (
@@ -57,6 +62,7 @@ from shared.assistant.scope import (
 )
 
 __all__ = [
+    "CAPACITY_DEPLOYMENT_MODE",
     "AdmissionDecision",
     "AssistantOutcome",
     "AssistantMode",
@@ -69,6 +75,7 @@ __all__ = [
     "AttemptRecord",
     "BoundedAssistantRouter",
     "BoundedConversationMemoryStore",
+    "CapacityDeploymentGuard",
     "CapacityLease",
     "CircuitState",
     "ConversationKey",
@@ -84,6 +91,7 @@ __all__ = [
     "OutputPolicy",
     "OutputProcessor",
     "ProviderCompletion",
+    "ProviderAccountCeiling",
     "ProviderBudgetPolicy",
     "ProviderCapacityController",
     "ProviderCapacitySnapshot",
@@ -98,9 +106,11 @@ __all__ = [
     "RouterPolicy",
     "TokenUsage",
     "build_assistant_harness",
+    "capacity_deployment_guard",
     "discord_free_tier_budgets",
     "estimate_request_tokens",
     "primary_model_label",
+    "provider_account_ceilings",
     "twitch_free_tier_budgets",
     "ASSISTANT_SCOPE_CHANGED_CHANNEL",
 ]

@@ -5,6 +5,18 @@ from pathlib import Path
 _ROOT = Path(__file__).parents[3]
 
 
+def test_ci_runs_only_before_or_on_the_staging_release_candidate() -> None:
+    workflow = (_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    triggers = workflow.split("permissions:", maxsplit=1)[0]
+    branch_filters = [
+        line.strip() for line in triggers.splitlines() if line.strip().startswith("branches:")
+    ]
+
+    assert "  push:" in triggers
+    assert "  pull_request:" in triggers
+    assert branch_filters == ["branches: [staging]", "branches: [staging]"]
+
+
 def test_staging_auto_deploy_forces_its_api_to_the_current_branch_head() -> None:
     workflow = (_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     deploy_job = workflow.split("  deploy-staging:", maxsplit=1)[1]

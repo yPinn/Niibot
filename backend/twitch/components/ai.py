@@ -25,6 +25,7 @@ from shared.assistant import (
     PromptBudget,
     RouterPolicy,
     build_assistant_harness,
+    capacity_deployment_guard,
     twitch_free_tier_budgets,
 )
 from shared.assistant.providers.registry import ProviderConfig, ProviderKind
@@ -198,6 +199,7 @@ class AIComponent(BotComponent):
         registry = self.harness.registry
         memory = self.memory_store.stats()
         return {
+            "capacity_guard": capacity_deployment_guard("twitch").health_payload(),
             "providers": [
                 {
                     "provider": registration.kind.value,

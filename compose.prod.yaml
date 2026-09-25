@@ -1,0 +1,27 @@
+# Production publishes only the loopback API used by the tunnel.
+
+services:
+  migrate:
+    image: nb-api-prod
+
+  twitch-bot:
+    image: nb-twitch-prod
+    volumes:
+      - ./backend/runtime:/app/runtime
+
+  discord-bot:
+    image: nb-discord-prod
+    volumes:
+      - ./backend/runtime:/app/runtime
+
+  api:
+    image: nb-api-prod
+    ports:
+      - "127.0.0.1:18000:8000"
+    volumes:
+      - ./backend/runtime:/app/runtime
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres:
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data

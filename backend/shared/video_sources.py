@@ -40,6 +40,7 @@ import aiohttp
 
 from shared.bilibili_client import fetch_bilibili_video_data
 from shared.instafix_client import fetch_instagram_reel_info, resolve_instagram_url
+from shared.read_through_cache import CacheLoad, LoopLocalReadThroughCache
 from shared.safe_urls import (
     allowed_redirect_target,
     find_allowed_http_url,
@@ -67,6 +68,10 @@ _YOUTUBE_HOSTS = frozenset(
 _VIDEO_ID_RE = re.compile(r"[A-Za-z0-9_-]{11}")
 
 _ISO8601_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+
+_YOUTUBE_POSITIVE_TTL_SECONDS = 120.0
+_YOUTUBE_NEGATIVE_TTL_SECONDS = 30.0
+_youtube_info_cache: LoopLocalReadThroughCache[str, YouTubeInfo]
 
 # Playability reasons the OBS overlay cannot recover from — the iframe either
 # refuses to embed or silently shows an error, and the queue only advances once
@@ -216,6 +221,18 @@ async def fetch_yt_info(
     if not api_key:
         return YouTubeInfo()
 
+    async def load() -> CacheLoad[YouTubeInfo]:
+        return await _load_yt_info(video_id, api_key, session)
+
+    return await _youtube_info_cache.get_or_load(video_id, load)
+
+
+async def _load_yt_info(
+    video_id: str,
+    api_key: str,
+    session: aiohttp.ClientSession | None,
+) -> CacheLoad[YouTubeInfo]:
+
     url = "https://www.googleapis.com/youtube/v3/videos"
     # Pass api_key via params dict so it never appears as a literal URL string
     # (prevents accidental key exposure in logs, traces, or error messages).
@@ -230,11 +247,14 @@ async def fetch_yt_info(
         async with _session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
                 LOGGER.info("[YouTube API] Unexpected status %s for %s", resp.status, video_id)
-                return YouTubeInfo()
+                return CacheLoad.uncached(YouTubeInfo())
             data = await resp.json()
             items = data.get("items", [])
             if not items:
-                return YouTubeInfo()  # video not found / private
+                return CacheLoad.cached(
+                    YouTubeInfo(),
+                    ttl=_YOUTUBE_NEGATIVE_TTL_SECONDS,
+                )  # video not found / private
             item = items[0]
             snippet: dict = item.get("snippet", {})
             title: str | None = snippet.get("title")
@@ -251,25 +271,31 @@ async def fetch_yt_info(
             )
             thumb = thumbnails.get("medium") or thumbnails.get("high") or thumbnails.get("default")
             reason = _assess_yt_playability(item)
-            return YouTubeInfo(
-                title=title,
-                duration_seconds=duration_seconds or None,
-                view_count=view_count,
-                is_vertical=is_vertical,
-                playable=reason is None,
-                unplayable_reason=reason,
-                thumbnail_url=_https(thumb.get("url")) if isinstance(thumb, dict) else None,
-                creator_id=channel_id,
-                creator_name=channel_title,
+            return CacheLoad.cached(
+                YouTubeInfo(
+                    title=title,
+                    duration_seconds=duration_seconds or None,
+                    view_count=view_count,
+                    is_vertical=is_vertical,
+                    playable=reason is None,
+                    unplayable_reason=reason,
+                    thumbnail_url=_https(thumb.get("url")) if isinstance(thumb, dict) else None,
+                    creator_id=channel_id,
+                    creator_name=channel_title,
+                ),
+                ttl=_YOUTUBE_POSITIVE_TTL_SECONDS,
             )
     except Exception as exc:
         LOGGER.warning(
             "[YouTube API] fetch_yt_info failed for %s: %s", video_id, type(exc).__name__
         )
-        return YouTubeInfo()
+        return CacheLoad.uncached(YouTubeInfo())
     finally:
         if _own_session:
             await _session.close()
+
+
+_youtube_info_cache = LoopLocalReadThroughCache(max_entries=1_024)
 
 
 # ---------------------------------------------------------------------------

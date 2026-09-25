@@ -198,7 +198,7 @@ ECPAY_RETURN_URL=https://新URL.ngrok-free.app/ecpay/notify
 
 ```bash
 # Docker Compose 環境中，ngrok 需要在宿主機運行，指向宿主機 IP：port
-# 或在 docker-compose.yml 中加入 ngrok 容器：
+# 或在 compose.yaml 中加入 ngrok 容器：
 
 services:
   ngrok:

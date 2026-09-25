@@ -13,7 +13,6 @@ class TestResolveDbSsl:
         assert resolve_db_ssl("postgresql://u:p@127.0.0.1/db") == "prefer"
 
     def test_container_host_prefers_ssl(self):
-        assert resolve_db_ssl("postgresql://u:p@nb-pg:5432/db") == "prefer"
         assert resolve_db_ssl("postgresql://u:p@postgres/db") == "prefer"
 
     def test_remote_host_requires_ssl(self):

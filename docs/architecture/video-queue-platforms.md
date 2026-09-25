@@ -148,7 +148,7 @@ with the `?t=` parser.
 ## Instagram Reel (`instagram.com/reel/{shortcode}`)
 
 Resolves through the same self-hosted **InstaFix** proxy the Discord bot's
-social-preview cog already runs (`docker-compose.yml`'s `instafix` service —
+social-preview cog already runs (`compose.yaml`'s `instafix` service —
 see `docs/integrations/instafix.md`), via a new, deliberately minimal
 `shared/instafix_client.py`. This is **not** the same code path as the
 Discord cog's Instagram handling: that implementation also does
