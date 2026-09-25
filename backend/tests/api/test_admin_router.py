@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -72,6 +73,13 @@ def _make_client(
     if mock_admission is not None:
         app.dependency_overrides[get_admission_service] = lambda: mock_admission
     return TestClient(app, raise_server_exceptions=False)
+
+
+def _set_deployed_environment(monkeypatch: pytest.MonkeyPatch, environment: str) -> None:
+    monkeypatch.setenv("ENVIRONMENT", environment)
+    monkeypatch.setenv("TWITCH_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("PAYMENT_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
 
 
 def _make_pool(*, fetchrow=None, fetch=None, fetchval=None, execute=None) -> MagicMock:
@@ -1214,10 +1222,10 @@ class TestListLogContainers:
         assert "niibot-stg-api-1" not in names
 
     def test_staging_environment_uses_stg_project_names(self, monkeypatch):
-        monkeypatch.setenv("ENVIRONMENT", "staging")
-        get_settings.cache_clear()
+        _set_deployed_environment(monkeypatch, "staging")
         with patch("routers.admin.logs.aiohttp.UnixConnector", side_effect=Exception("no socket")):
             r = _make_client().get("/api/admin/logs/containers")
+        assert r.status_code == 200
         names = [c["name"] for c in r.json()]
         assert "niibot-stg-api-1" in names
         assert "niibot-prod-api-1" not in names
@@ -1241,8 +1249,7 @@ class TestGetContainerLogs:
         assert r.status_code == 503
 
     def test_staging_rejects_prod_container_name(self, monkeypatch):
-        monkeypatch.setenv("ENVIRONMENT", "staging")
-        get_settings.cache_clear()
+        _set_deployed_environment(monkeypatch, "staging")
         r = _make_client().get("/api/admin/logs/niibot-prod-api-1")
         assert r.status_code == 400
 
