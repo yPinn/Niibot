@@ -97,6 +97,23 @@ def test_provider_order_prioritizes_groq_over_gemini() -> None:
     )
 
 
+def test_health_exposes_local_single_replica_capacity_guard() -> None:
+    cog = _cog()
+    cog.harness.registry = None
+    cog.harness.provider_health.return_value = ()
+    cog.harness.provider_capacity.return_value = ()
+
+    health = cog.ai_health()
+
+    assert health["capacity_guard"] == {
+        "mode": "partitioned-local",
+        "runtime": "discord",
+        "max_replicas": 1,
+        "distributed": False,
+        "shared_provider_accounts": True,
+    }
+
+
 @pytest.mark.asyncio
 async def test_question_is_compiled_as_final_user_input() -> None:
     cog = _cog()

@@ -18,6 +18,7 @@ from shared.assistant import (
     PromptBudget,
     RouterPolicy,
     build_assistant_harness,
+    capacity_deployment_guard,
     discord_free_tier_budgets,
 )
 from shared.assistant.providers.registry import ProviderConfig, ProviderKind
@@ -93,6 +94,7 @@ class AICog(commands.Cog):
     def ai_health(self) -> dict:
         registry = self.harness.registry
         return {
+            "capacity_guard": capacity_deployment_guard("discord").health_payload(),
             "providers": [
                 {
                     "provider": registration.kind.value,

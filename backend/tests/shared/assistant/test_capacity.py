@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 from shared.assistant.capacity import (
+    CAPACITY_DEPLOYMENT_MODE,
     ProviderBudgetPolicy,
     ProviderCapacityController,
+    capacity_deployment_guard,
+    discord_free_tier_budgets,
     estimate_request_tokens,
+    provider_account_ceilings,
+    twitch_free_tier_budgets,
 )
 from shared.assistant.contracts import (
     MessageRole,
     ProviderMessage,
     ProviderRequest,
 )
+from shared.assistant.providers.registry import ProviderKind
 
 
 def _request(*, max_output_tokens: int = 100) -> ProviderRequest:
@@ -47,6 +54,49 @@ def test_token_estimate_includes_messages_output_and_protocol_overhead() -> None
 
     assert estimate > request.max_output_tokens
     assert estimate < sum(len(message.content) for message in request.messages) + 120
+
+
+def test_partitioned_runtime_budgets_fit_shared_provider_ceilings() -> None:
+    twitch = twitch_free_tier_budgets()
+    discord = discord_free_tier_budgets()
+
+    for provider, ceiling in provider_account_ceilings().items():
+        policies = [budget for budgets in (twitch, discord) if (budget := budgets.get(provider))]
+        for field in ("requests_per_minute", "tokens_per_minute", "requests_per_day"):
+            provider_limit = getattr(ceiling, field)
+            if provider_limit is None:
+                continue
+            allocated = sum(getattr(policy, field) or 0 for policy in policies)
+            assert allocated <= provider_limit, (provider, field, allocated, provider_limit)
+
+    assert (
+        sum(budgets[ProviderKind.GROQ].requests_per_minute for budgets in (twitch, discord)) == 27
+    )
+    assert (
+        sum(budgets[ProviderKind.OPENROUTER].requests_per_day for budgets in (twitch, discord))
+        == 900
+    )
+
+
+def test_capacity_deployment_guard_declares_single_replica_boundary() -> None:
+    for runtime in ("twitch", "discord"):
+        guard = capacity_deployment_guard(runtime)
+        assert guard.mode == CAPACITY_DEPLOYMENT_MODE == "partitioned-local"
+        assert guard.runtime == runtime
+        assert guard.max_replicas == 1
+        assert guard.distributed is False
+        assert guard.shared_provider_accounts is True
+
+
+def test_production_compose_keeps_ai_runtimes_unscaled() -> None:
+    repo_root = Path(__file__).resolve().parents[4]
+    base_compose = (repo_root / "docker-compose.yml").read_text(encoding="utf-8")
+    prod_compose = (repo_root / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert "container_name: nb-twitch" in base_compose
+    assert "container_name: nb-discord" in base_compose
+    assert "replicas:" not in base_compose
+    assert "replicas:" not in prod_compose
 
 
 @pytest.mark.asyncio
