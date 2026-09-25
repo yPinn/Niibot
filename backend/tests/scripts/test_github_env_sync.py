@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
@@ -10,6 +11,10 @@ import pytest
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[3]
+CI_SPEC = importlib.util.spec_from_file_location("env_ci", ROOT / "scripts" / "env" / "ci.py")
+assert CI_SPEC is not None and CI_SPEC.loader is not None
+ci = importlib.util.module_from_spec(CI_SPEC)
+CI_SPEC.loader.exec_module(ci)
 
 
 def _show_vars_program() -> str:
@@ -18,9 +23,10 @@ def _show_vars_program() -> str:
     return script.split(marker, 1)[1].split("\nPYEOF", 1)[0]
 
 
-def _write_ci_program() -> str:
-    script = (ROOT / "scripts/env/write_ci.sh").read_text(encoding="utf-8")
-    return script.split("python3 - <<'PYEOF'\n", 1)[1].split("\nPYEOF", 1)[0]
+def _show_secrets_program() -> str:
+    script = (ROOT / ".github/pull.sh").read_text(encoding="utf-8")
+    marker = '$PYTHON - "$tmp" "$example_file" <<\'PYEOF\'\n'
+    return script.split(marker, 1)[1].split("\nPYEOF", 1)[0]
 
 
 def _run_show_vars(monkeypatch, data: list[dict[str, str]], output: Path, example: Path) -> None:
@@ -28,6 +34,24 @@ def _run_show_vars(monkeypatch, data: list[dict[str, str]], output: Path, exampl
     source.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["show_vars", str(source), str(output), str(example)])
     exec(compile(_show_vars_program(), "pull.sh:show_vars", "exec"), {"__name__": "__main__"})
+
+
+def _run_show_secrets(
+    monkeypatch,
+    env_data: list[dict[str, str]],
+    base_data: list[dict[str, str]],
+    example: Path,
+) -> None:
+    source = example.with_suffix(".json")
+    source.write_text(
+        f"{json.dumps(env_data)}\n{json.dumps(base_data)}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys, "argv", ["show_secrets", str(source), str(example)])
+    exec(
+        compile(_show_secrets_program(), "pull.sh:show_secrets", "exec"),
+        {"__name__": "__main__"},
+    )
 
 
 def test_pull_preserves_example_structure_and_marks_missing_values(
@@ -48,7 +72,8 @@ def test_pull_preserves_example_structure_and_marks_missing_values(
     )
 
     assert output.read_text(encoding="utf-8") == (
-        "# ── App\nAPI_URL=https://example.invalid\nENVIRONMENT=\n\n# ── extra\nEXTRA=kept\n"
+        "# ── App\nAPI_URL=https://example.invalid\nENVIRONMENT=production\n\n"
+        "# ── extra\nEXTRA=kept\n"
     )
     stdout = capsys.readouterr().out
     assert "miss" in stdout
@@ -70,6 +95,37 @@ def test_pull_rejects_multiline_variables(tmp_path: Path, monkeypatch) -> None:
 
     assert exc_info.value.code == 1
     assert not output.exists()
+
+
+def test_pull_keeps_missing_optional_variables_commented(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    example = tmp_path / "vars.env.example"
+    example.write_text("# OPTIONAL_MODEL=default\nREQUIRED_VALUE=\n", encoding="utf-8")
+    output = tmp_path / "vars.env"
+
+    _run_show_vars(
+        monkeypatch,
+        [{"name": "REQUIRED_VALUE", "value": "configured"}],
+        output,
+        example,
+    )
+
+    assert output.read_text(encoding="utf-8") == (
+        "# OPTIONAL_MODEL=default\nREQUIRED_VALUE=configured\n"
+    )
+    assert "OPTIONAL_MODEL" not in capsys.readouterr().out
+
+
+def test_pull_does_not_report_missing_optional_secrets(tmp_path: Path, monkeypatch, capsys) -> None:
+    example = tmp_path / "secrets.env.example"
+    example.write_text("REQUIRED_SECRET=\n# OPTIONAL_SECRET=\n", encoding="utf-8")
+
+    _run_show_secrets(monkeypatch, [], [], example)
+
+    output = capsys.readouterr().out
+    assert "REQUIRED_SECRET" in output
+    assert "OPTIONAL_SECRET" not in output
 
 
 def test_ci_writer_quotes_values_and_url_encodes_database_credentials(
@@ -100,7 +156,7 @@ def test_ci_writer_quotes_values_and_url_encodes_database_credentials(
     monkeypatch.setenv("DEPLOY_ENVIRONMENT", "production")
     monkeypatch.delenv("DRY_RUN", raising=False)
 
-    exec(compile(_write_ci_program(), "write_ci.sh", "exec"), {"__name__": "__main__"})
+    assert ci.main() == 0
 
     assert (tmp_path / ".env.prod").read_text(encoding="utf-8").splitlines() == [
         "POSTGRES_USER='user'",
@@ -128,9 +184,27 @@ def test_ci_writer_requires_public_deploy_variables(tmp_path: Path, monkeypatch,
     monkeypatch.setenv("DEPLOY_ENVIRONMENT", "staging")
     monkeypatch.delenv("DRY_RUN", raising=False)
 
-    with pytest.raises(SystemExit) as exc_info:
-        exec(compile(_write_ci_program(), "write_ci.sh", "exec"), {"__name__": "__main__"})
-
-    assert exc_info.value.code == 1
+    assert ci.main() == 1
     assert "missing required GitHub Variables: FRONTEND_URL" in capsys.readouterr().err
     assert not (tmp_path / ".env.stg").exists()
+
+
+def test_ci_writer_dry_run_never_prints_values(tmp_path: Path, monkeypatch, capsys) -> None:
+    manifest = {
+        "required_secrets": [],
+        "required_variables": [],
+        "ci": {"SAMPLE": {"file": "shared", "source": "secret:SAMPLE"}},
+    }
+    (tmp_path / "env.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setenv("SECRETS_JSON", json.dumps({"SAMPLE": "super-secret-value"}))
+    monkeypatch.setenv("VARS_JSON", "{}")
+    monkeypatch.setenv("PROJECT_DIR", str(tmp_path))
+    monkeypatch.setenv("DEPLOY_ENVIRONMENT", "staging")
+    monkeypatch.setenv("DRY_RUN", "1")
+
+    assert ci.main() == 0
+
+    output = capsys.readouterr().out
+    assert "backend/shared.stg.env" in output
+    assert "super-secret-value" not in output
+    assert not (tmp_path / "backend/shared.stg.env").exists()

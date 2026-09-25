@@ -130,7 +130,7 @@ class BaseServiceSettings(BaseSettings):
         return v
 
     @model_validator(mode="after")
-    def require_twitch_token_encryption_in_production(self) -> BaseServiceSettings:
-        if self.is_production and not self.twitch_token_encryption_key:
-            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required in production")
+    def require_twitch_token_encryption_in_deployed_runtime(self) -> BaseServiceSettings:
+        if not self.is_development and not self.twitch_token_encryption_key:
+            raise ValueError("TWITCH_TOKEN_ENCRYPTION_KEY is required outside development")
         return self

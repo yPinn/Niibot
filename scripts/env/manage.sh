@@ -45,7 +45,7 @@ fi
 _env_path() {
   local template="$1" env="$2"
   case "$template" in
-    frontend/*) if [[ "$env" == "dev" ]]; then echo "$template"; fi ;;
+    frontend/*) if [[ "$env" == "dev" ]]; then echo "${template}.dev"; fi ;;
     .env) echo ".env.$env" ;;
     backend/shared.env) echo "backend/shared.$env.env" ;;
     *) echo "${template%.env}.env.$env" ;;

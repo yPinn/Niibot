@@ -34,7 +34,7 @@ _ENV_CMDS: dict[str, str] = {
     "validate": "validate one live env set against generated examples",
     "init": "create one explicit env set from templates (default: dev)",
     "migrate": "rename legacy env files into one explicit env set",
-    "sync": "reorder one runtime set and preserve registered values",
+    "sync": "reorder runtime or GitHub env files and preserve known values",
     "snapshot": "snapshot live env files to data/env/YYYYMMDD/",
     "backup": "snapshot + compress to data/env-YYYYMMDD.tar.gz",
     "restore": "restore from a snapshot or .tar.gz (-f overwrites)",
@@ -56,6 +56,7 @@ _STACK_CMDS: dict[str, str] = {
     "migrate": "run migrations as a one-shot container",
     "exec": "run a command inside an environment container",
     "config": "validate Compose without printing resolved env values",
+    "compose": "pass raw arguments through the environment guard",
 }
 
 

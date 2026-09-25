@@ -1,8 +1,10 @@
 """Application configuration using Pydantic Settings"""
 
+from __future__ import annotations
+
 from functools import lru_cache
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from shared.config_base import DATA_DIR, RUNTIME_DIR, BaseServiceSettings, dev_env_files
@@ -78,6 +80,25 @@ class Settings(BaseServiceSettings):
         if v not in allowed:
             raise ValueError(f"jwt_algorithm must be one of {sorted(allowed)}, got '{v}'")
         return v
+
+    @field_validator("payment_encryption_key")
+    @classmethod
+    def validate_payment_encryption_key(cls, v: str) -> str:
+        if not v:
+            return v
+        try:
+            from cryptography.fernet import Fernet
+
+            Fernet(v.encode())
+        except Exception as exc:
+            raise ValueError("PAYMENT_ENCRYPTION_KEY must be a valid Fernet key") from exc
+        return v
+
+    @model_validator(mode="after")
+    def require_payment_encryption_in_deployed_runtime(self) -> Settings:
+        if not self.is_development and not self.payment_encryption_key:
+            raise ValueError("PAYMENT_ENCRYPTION_KEY is required outside development")
+        return self
 
     @property
     def cors_origins(self) -> list[str]:

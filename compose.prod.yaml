@@ -3,25 +3,16 @@
 services:
   migrate:
     image: nb-api-prod
-    env_file:
-      - ./backend/shared.prod.env
-      - ./backend/api/.env.prod
 
   twitch-bot:
     image: nb-twitch-prod
     volumes:
       - ./backend/runtime:/app/runtime
-    env_file:
-      - ./backend/shared.prod.env
-      - ./backend/twitch/.env.prod
 
   discord-bot:
     image: nb-discord-prod
     volumes:
       - ./backend/runtime:/app/runtime
-    env_file:
-      - ./backend/shared.prod.env
-      - ./backend/discord/.env.prod
 
   api:
     image: nb-api-prod
@@ -30,9 +21,6 @@ services:
     volumes:
       - ./backend/runtime:/app/runtime
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    env_file:
-      - ./backend/shared.prod.env
-      - ./backend/api/.env.prod
 
   postgres:
     volumes:

@@ -66,6 +66,16 @@ def test_production_configuration_requires_twitch_token_encryption_key():
         )
 
 
+def test_staging_configuration_requires_twitch_token_encryption_key():
+    with pytest.raises(ValidationError, match="TWITCH_TOKEN_ENCRYPTION_KEY"):
+        BaseServiceSettings(
+            database_url="postgresql://user:pass@localhost/db",
+            environment="staging",
+            twitch_token_encryption_key="",
+            _env_file=None,
+        )
+
+
 def test_development_configuration_allows_bounded_plaintext_backfill_window():
     settings = BaseServiceSettings(
         database_url="postgresql://user:pass@localhost/db",

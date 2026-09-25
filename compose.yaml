@@ -2,6 +2,18 @@ x-db-env: &db-env
   DATABASE_URL: ${DOCKER_DATABASE_URL:?DOCKER_DATABASE_URL must be set in the selected root env file}
   NIIBOT_RUNTIME_CONTEXT: container
 
+x-api-env: &api-env
+  - "./backend/shared.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}.env"
+  - "./backend/api/.env.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}"
+
+x-twitch-env: &twitch-env
+  - "./backend/shared.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}.env"
+  - "./backend/twitch/.env.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}"
+
+x-discord-env: &discord-env
+  - "./backend/shared.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}.env"
+  - "./backend/discord/.env.${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}"
+
 # Containers use service DNS; host processes use localhost defaults.
 x-api-svc-urls: &api-svc-urls
   TWITCH_BOT_URL: http://twitch-bot:4344
@@ -63,6 +75,7 @@ services:
         condition: service_healthy
     environment:
       <<: *db-env
+    env_file: *api-env
 
   instafix:
     image: ghcr.io/wikidepia/instafix:main
@@ -103,6 +116,7 @@ services:
         ]
     environment:
       <<: *db-env
+    env_file: *twitch-env
 
   discord-bot:
     image: nb-discord
@@ -135,6 +149,7 @@ services:
         ]
     environment:
       <<: *db-env
+    env_file: *discord-env
 
   api:
     image: nb-api
@@ -170,6 +185,7 @@ services:
         ]
     environment:
       <<: [*db-env, *api-svc-urls]
+    env_file: *api-env
 
 networks:
   nb-network:

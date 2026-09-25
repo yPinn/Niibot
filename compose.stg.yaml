@@ -3,25 +3,16 @@
 services:
   migrate:
     image: nb-api-stg
-    env_file:
-      - ./backend/shared.stg.env
-      - ./backend/api/.env.stg
 
   twitch-bot:
     image: nb-twitch-stg
     volumes:
       - ./data/staging/runtime:/app/runtime
-    env_file:
-      - ./backend/shared.stg.env
-      - ./backend/twitch/.env.stg
 
   discord-bot:
     image: nb-discord-stg
     volumes:
       - ./data/staging/runtime:/app/runtime
-    env_file:
-      - ./backend/shared.stg.env
-      - ./backend/discord/.env.stg
 
   api:
     image: nb-api-stg
@@ -30,9 +21,6 @@ services:
     volumes:
       - ./data/staging/runtime:/app/runtime
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    env_file:
-      - ./backend/shared.stg.env
-      - ./backend/api/.env.stg
 
   postgres:
     volumes:

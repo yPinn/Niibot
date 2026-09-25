@@ -13,6 +13,8 @@ case "$TARGET" in
   *) echo "usage: stack.sh <dev|stg|prod> <command> [args]" >&2; exit 2 ;;
 esac
 
+export NIIBOT_ENV="$TARGET"
+
 ENV_FILE="$ROOT/.env.$TARGET"
 [[ -f "$ENV_FILE" ]] || { echo "error: $ENV_FILE not found" >&2; exit 1; }
 
@@ -66,8 +68,11 @@ case "$CMD" in
   config)
     "${DC[@]}" config --quiet
     ;;
+  compose)
+    "${DC[@]}" "$@"
+    ;;
   *)
-    echo "usage: stack.sh <dev|stg|prod> <up|down|reset|build|logs|ps|restart|migrate|exec|config> [args]" >&2
+    echo "usage: stack.sh <dev|stg|prod> <up|down|reset|build|logs|ps|restart|migrate|exec|config|compose> [args]" >&2
     exit 2
     ;;
 esac

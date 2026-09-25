@@ -61,19 +61,19 @@ npm run dev:fe    # frontend :3000
 
 ## 2b. 全部走 Docker Compose
 
-所有 `npm run dev:*` 都疊 `compose.yaml` + `compose.dev.yaml`，固定使用
-`niibot-dev` project，
-dev overlay 會把每個服務的埠對外。
+後端 `dev:*` 指令都經 `dev:compose` 疊加 `compose.yaml` + `compose.dev.yaml`，
+固定使用 `niibot-dev` project；`dev:fe` 則直接啟動 Vite。dev overlay 會把每個服務的埠對外。
 
-| 指令                  | 內容                        |
-| --------------------- | --------------------------- |
-| `npm run dev:api`     | API + DB + Instafix         |
-| `npm run dev:twitch`  | Twitch bot + DB             |
-| `npm run dev:discord` | Discord bot + DB + Instafix |
-| `npm run dev:bots`    | 兩個 bot + DB + Instafix    |
-| `npm run dev:full`    | 全部                        |
-| `npm run dev:db`      | 只開 DB（背景）             |
-| `npm run dev:down`    | 停止全部                    |
+| 指令                       | 內容                        |
+| -------------------------- | --------------------------- |
+| `npm run dev:api`          | API + DB + Instafix         |
+| `npm run dev:twitch`       | Twitch bot + DB             |
+| `npm run dev:discord`      | Discord bot + DB + Instafix |
+| `npm run dev:bots`         | 兩個 bot + DB + Instafix    |
+| `npm run dev:full`         | 全部                        |
+| `npm run dev:db`           | 只開 DB（背景）             |
+| `npm run dev:down`         | 停止全部                    |
+| `npm run dev:compose -- …` | 直接傳遞 dev Compose 參數   |
 
 底層等同 `docker compose --profile <name> up --build`。啟動時 `migrate` 容器會自動跑 DB migration。
 

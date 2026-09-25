@@ -56,6 +56,7 @@ jobs:
             production)
               {
                 echo "ENV_ALIAS=prod"
+                echo "NIIBOT_ENV=prod"
                 echo "COMPOSE_ENV_FILE=compose.prod.yaml"
                 echo "COMPOSE_PROJECT=niibot-prod"
                 echo "IMAGE_SUFFIX=-prod"
@@ -72,6 +73,7 @@ jobs:
             staging)
               {
                 echo "ENV_ALIAS=stg"
+                echo "NIIBOT_ENV=stg"
                 echo "COMPOSE_ENV_FILE=compose.stg.yaml"
                 echo "COMPOSE_PROJECT=niibot-stg"
                 echo "IMAGE_SUFFIX=-stg"
@@ -173,7 +175,7 @@ jobs:
               # api/discord/twitch all build from ./backend with the root
               # pyproject.toml + uv.lock (see api/Dockerfile), so a change to
               # those shared dependency files must rebuild all three.
-              PATTERN="^backend/shared/|^backend/uv\.lock$|^backend/pyproject\.toml$|^compose\.yaml$|^${COMPOSE_CHANGE_PATTERN}$|^env\.registry\.toml$|^env\.manifest\.json$|^scripts/env/write_ci\.sh$"
+              PATTERN="^backend/shared/|^backend/uv\.lock$|^backend/pyproject\.toml$|^compose\.yaml$|^${COMPOSE_CHANGE_PATTERN}$|^env\.registry\.toml$|^env\.manifest\.json$|^scripts/env/ci\.py$|^scripts/env/write_ci\.sh$"
 
               if echo "$CHANGED" | grep -qE "$PATTERN"; then
                 eligible api     && api=true     || true

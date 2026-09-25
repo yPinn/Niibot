@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --mode dev",
     "preview": "vite preview",
     "build": "npm run assets:tarot:check && npm run fa:subset && tsc -b && vite build",
     "assets:tarot:check": "node scripts/validate-tarot-assets.mjs",

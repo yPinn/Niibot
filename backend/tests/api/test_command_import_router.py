@@ -105,7 +105,9 @@ async def _no_lifespan(app: FastAPI):
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings():
+def _reset_settings(monkeypatch):
+    monkeypatch.setenv("NIGHTBOT_CLIENT_ID", "")
+    monkeypatch.setenv("NIGHTBOT_CLIENT_SECRET", "")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

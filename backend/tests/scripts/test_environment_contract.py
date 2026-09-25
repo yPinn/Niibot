@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -47,19 +48,25 @@ def test_host_port_matrix_is_explicit_and_loopback_only() -> None:
             assert "ports" not in services.get(name, {})
 
 
-def test_overlays_use_matching_env_files() -> None:
-    expected = {
-        "dev": ("./backend/shared.dev.env", ".env.dev"),
-        "stg": ("./backend/shared.stg.env", ".env.stg"),
-        "prod": ("./backend/shared.prod.env", ".env.prod"),
-    }
-    for env, (shared, service) in expected.items():
-        services = _compose(f"compose.{env}.yaml")["services"]
-        assert services["api"]["env_file"] == [shared, f"./backend/api/{service}"]
-        assert services["twitch-bot"]["env_file"] == [
-            shared,
-            f"./backend/twitch/{service}",
-        ]
+def test_base_compose_binds_service_env_files_to_one_selector() -> None:
+    services = _compose("compose.yaml")["services"]
+    selector = "${NIIBOT_ENV:?NIIBOT_ENV must be set by scripts/stack.sh}"
+    shared = f"./backend/shared.{selector}.env"
+
+    assert services["migrate"]["env_file"] == [shared, f"./backend/api/.env.{selector}"]
+    assert services["api"]["env_file"] == [shared, f"./backend/api/.env.{selector}"]
+    assert services["twitch-bot"]["env_file"] == [
+        shared,
+        f"./backend/twitch/.env.{selector}",
+    ]
+    assert services["discord-bot"]["env_file"] == [
+        shared,
+        f"./backend/discord/.env.{selector}",
+    ]
+
+    for env in ("dev", "stg", "prod"):
+        overlay = _compose(f"compose.{env}.yaml")["services"]
+        assert all("env_file" not in service for service in overlay.values())
 
 
 def test_overlays_use_environment_scoped_images() -> None:
@@ -75,12 +82,70 @@ def test_stack_wrapper_uses_explicit_project_and_env_file() -> None:
     script = (ROOT / "scripts" / "stack.sh").read_text(encoding="utf-8")
 
     assert 'PROJECT="niibot-$TARGET"' in script
+    assert 'export NIIBOT_ENV="$TARGET"' in script
     assert '--env-file "$ENV_FILE"' in script
     assert '-f "$ROOT/compose.yaml"' in script
     assert '-f "$ROOT/compose.$TARGET.yaml"' in script
     assert "config --quiet" in script
+    assert 'compose)\n    "${DC[@]}" "$@"' in script
     assert 'rm -rf -- "$ROOT/data/staging/postgres"' in script
     assert "prod reset is disabled" in script
+
+
+def test_dev_compose_commands_use_the_stack_wrapper() -> None:
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    scripts = package["scripts"]
+
+    assert list(scripts) == [
+        "prepare",
+        "dev:fe",
+        "dev:api",
+        "dev:twitch",
+        "dev:discord",
+        "dev:bots",
+        "dev:full",
+        "dev:db",
+        "dev:down",
+        "dev:compose",
+        "lint",
+        "typecheck",
+        "test",
+        "format",
+        "fix",
+        "nb",
+        "env:gen",
+        "env:check",
+    ]
+    assert scripts["dev:compose"] == "npm run nb -- stack dev compose"
+    assert "_dc" not in scripts
+    for name in ("api", "twitch", "discord", "bots", "full", "db", "down"):
+        assert "npm run dev:compose --" in scripts[f"dev:{name}"]
+
+
+def test_frontend_dev_loads_the_suffixed_environment_file() -> None:
+    package = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+
+    assert package["scripts"]["dev"] == "vite --mode dev"
+
+
+def test_live_env_files_are_excluded_from_git_and_build_contexts() -> None:
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    dockerignore = (ROOT / "backend/.dockerignore").read_text(encoding="utf-8").splitlines()
+
+    for pattern in (
+        ".env*",
+        "**/.env*",
+        "shared.*.env",
+        "**/shared.*.env",
+        ".github/secrets/*.env",
+        ".github/variables/*.env",
+        "data/env/",
+    ):
+        assert pattern in gitignore
+    for pattern in ("!.env.example", "!**/.env.example", "!**/shared.env.example"):
+        assert pattern in gitignore
+    for pattern in (".env*", "**/.env*", "shared.env", "shared.*.env"):
+        assert pattern in dockerignore
 
 
 def test_script_tree_uses_domain_directories_and_short_names() -> None:
@@ -143,6 +208,7 @@ def test_env_migration_requires_an_explicit_target() -> None:
 
     assert "migrate <dev|stg|prod>" in script
     assert 'local env="${1:-}"' in script
+    assert 'frontend/*) if [[ "$env" == "dev" ]]; then echo "${template}.dev"; fi ;;' in script
     assert "mapfile" not in script
 
 
@@ -150,7 +216,9 @@ def test_github_sync_validates_structure_and_reports_scope_drift() -> None:
     push = (ROOT / ".github/push.sh").read_text(encoding="utf-8")
     pull = (ROOT / ".github/pull.sh").read_text(encoding="utf-8")
 
-    assert "scripts/env/check.py" in push
+    assert 'scripts/env/check.py" "gh-$TARGET"' in push
+    assert 're.compile(r"^(#\\s*)?([A-Z][A-Z0-9_]*)=(.*)$")' in pull
+    assert "keys, required = [], []" in pull
     assert "base-only" in pull
     assert "trap 'rm -f -- \"${TEMP_FILES[@]}\"' EXIT" in push
 
@@ -163,6 +231,8 @@ def test_deploy_checks_private_services_via_compose_health() -> None:
     assert "localhost:8080" not in workflow
     assert "niibot-prod" in workflow
     assert "niibot-stg" in workflow
+    assert 'echo "NIIBOT_ENV=prod"' in workflow
+    assert 'echo "NIIBOT_ENV=stg"' in workflow
     assert "${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} build" in workflow
     assert "${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} pull instafix" in workflow
     assert "LEGACY_CONTAINER_PATTERN" in workflow
@@ -170,6 +240,7 @@ def test_deploy_checks_private_services_via_compose_health() -> None:
     for path_pattern in (
         r"^env\.registry\.toml$",
         r"^env\.manifest\.json$",
+        r"^scripts/env/ci\.py$",
         r"^scripts/env/write_ci\.sh$",
     ):
         assert path_pattern in workflow

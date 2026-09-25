@@ -48,23 +48,27 @@ under root `scripts/`.
 
 `env.registry.toml` is the source of truth for runtime and GitHub examples.
 
-| Command                                            | Purpose                                                  |
-| -------------------------------------------------- | -------------------------------------------------------- |
-| `env gen`                                          | Generate examples, manifest, and the env docs table      |
-| `env check`                                        | Check generated-file drift                               |
-| `env validate <dev\|stg\|prod\|gh-stg\|gh-prod>`   | Check live key sets and ordering without printing values |
-| `env print KEY`                                    | Show one registry entry                                  |
-| `env init [dev\|stg\|prod] [-f]`                   | Create one explicit runtime set; defaults to dev         |
-| `env migrate <dev\|stg\|prod>`                     | Rename legacy files; refuses source/target collisions    |
-| `env sync <dev\|stg\|prod> [--check]`              | Reorder from examples and preserve registered values     |
-| `env snapshot\|backup\|restore\|diff\|list\|clean` | Manage encryption-key-preserving local copies            |
-| `env push <stg\|prod>`                             | Validate and push GitHub variables/secrets               |
-| `env pull <stg\|prod>`                             | Pull variables and report secret presence                |
+| Command                                            | Purpose                                               |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| `env gen`                                          | Generate examples, manifest, and the env docs table   |
+| `env check`                                        | Check generated-file drift                            |
+| `env validate <dev\|stg\|prod\|gh-stg\|gh-prod>`   | Check structure, required values, and complete groups |
+| `env print KEY`                                    | Show one registry entry                               |
+| `env init [dev\|stg\|prod] [-f]`                   | Create one explicit runtime set; defaults to dev      |
+| `env migrate <dev\|stg\|prod>`                     | Rename legacy files; refuses source/target collisions |
+| `env sync <dev\|stg\|prod\|gh> [--check]`          | Reorder local files and preserve known values         |
+| `env sync dev --from-stg`                          | Copy declared nonprod identities into local dev       |
+| `env snapshot\|backup\|restore\|diff\|list\|clean` | Manage encryption-key-preserving local copies         |
+| `env push <stg\|prod>`                             | Validate and push GitHub variables/secrets            |
+| `env pull <stg\|prod>`                             | Pull variables and report secret presence             |
 
 `env migrate` requires the target because legacy unsuffixed files did not reveal
 whether they belonged to dev or prod. Run `env sync` after migration; it moves
 known shared keys, refuses unknown/conflicting values without printing them, and
-then `env validate` checks the result.
+then `env validate` checks the result. `env sync gh` migrates all six local
+GitHub files together; remove obsolete keys only after a snapshot with
+`--drop-unknown`. `env sync dev --from-stg` overlays only registry entries marked
+`nonprod_shared`; database, JWT, and encryption values remain dev-only.
 
 ## Compose environments
 
@@ -75,12 +79,14 @@ then `env validate` checks the result.
 | `prod`   | `niibot-prod` | `compose.yaml` + `compose.prod.yaml` | API 18000 only                                              |
 
 All published ports bind to `127.0.0.1`. Database commands for stg/prod must run
-inside the matching Compose network.
+inside the matching Compose network. Use `nb stack` or the npm dev commands;
+the wrapper binds `NIIBOT_ENV`, the root env file, overlay, and service env files
+to the same selector. Direct Compose calls fail when that selector is absent.
 
 ## Internal-only entries
 
 - `scripts/ci/paths.py`: CI changed-path classifier.
-- `scripts/env/write_ci.sh`: deploy-time env writer.
+- `scripts/env/ci.py`: tested deploy env renderer; `write_ci.sh` is its CI wrapper.
 - `backend/scripts/runtime/migrate.sh`: one-time runtime-data migration.
 
 ## Adding a command

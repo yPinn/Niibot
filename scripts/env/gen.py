@@ -13,11 +13,10 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[2]
 REGISTRY = ROOT / "env.registry.toml"
@@ -37,7 +36,7 @@ RUNTIME_FILES: dict[str, tuple[str, list[str], str]] = {
     "shared": (
         "backend/shared.env.example",
         ["Shared backend env template."],
-        "api、twitch-bot、discord-bot 三服務共用。至少設一組 AI key；空的自動跳過。",
+        "api、twitch-bot、discord-bot 三服務共用。需要 AI 功能時，完整設定至少一組 provider。",
     ),
     "api": (
         "backend/api/.env.example",
@@ -61,8 +60,8 @@ RUNTIME_FILES: dict[str, tuple[str, list[str], str]] = {
     ),
     "frontend": (
         "frontend/.env.example",
-        ["Frontend (Vite) — build-time only."],
-        "build 時注入。Cloudflare Pages 另需在專案設定加 `API_BACKEND`（後端位址，由 Cloudflare Tunnel 提供）。",
+        ["Frontend (Vite) — dev uses .env.dev; deploy via platform env."],
+        "本機 dev 從 `.env.dev` 注入。Cloudflare Pages 另需設定 `API_BACKEND`（Cloudflare Tunnel 後端位址）。",
     ),
 }
 
@@ -109,7 +108,7 @@ GITHUB_META: dict[str, tuple[str, str, list[str]]] = {
     ),
 }
 
-# The deploy workflow reads env.manifest.json via scripts/env/write_ci.sh —
+# The deploy workflow reads env.manifest.json via scripts/env/ci.py —
 # it no longer enumerates env keys, so there is nothing here to check against it.
 
 
@@ -126,6 +125,9 @@ class Var:
     required: bool = False
     sensitive: bool = True
     name: str = ""
+    group: str = ""
+    activates_group: bool = False
+    nonprod_shared: bool = False
     ci: dict = field(default_factory=dict)
     ci_example: dict = field(default_factory=dict)
 
@@ -174,6 +176,9 @@ def load_registry() -> tuple[list[Var], dict]:
             required=bool(raw.get("required", False)),
             sensitive=bool(raw.get("sensitive", True)),
             name=raw.get("name", ""),
+            group=raw.get("group", ""),
+            activates_group=bool(raw.get("activates_group", False)),
+            nonprod_shared=bool(raw.get("nonprod_shared", False)),
             ci=raw.get("ci", {}),
             ci_example=raw.get("ci_example", {}),
         )
@@ -182,24 +187,18 @@ def load_registry() -> tuple[list[Var], dict]:
         seen.add(v.key)
         unknown_scopes = set(v.scopes) - set(RUNTIME_FILES)
         if unknown_scopes:
-            sys.exit(
-                f"registry error: {v.key} has unknown scopes {sorted(unknown_scopes)}"
-            )
+            sys.exit(f"registry error: {v.key} has unknown scopes {sorted(unknown_scopes)}")
         if v.section not in section_order:
             sys.exit(f"registry error: {v.key} has unknown section {v.section!r}")
         for scope in v.scopes:
             identity = (scope, v.env_name)
             if identity in scoped_names:
-                sys.exit(
-                    f"registry error: duplicate env name {v.env_name!r} in {scope}"
-                )
+                sys.exit(f"registry error: duplicate env name {v.env_name!r} in {scope}")
             scoped_names.add(identity)
         if v.ci_managed:
             source_kind = v.ci_source.partition(":")[0]
             if source_kind not in {"secret", "var", "derived"}:
-                sys.exit(
-                    f"registry error: {v.key} has invalid CI source {v.ci_source!r}"
-                )
+                sys.exit(f"registry error: {v.key} has invalid CI source {v.ci_source!r}")
             if v.ci_file and v.ci_file not in {
                 "root",
                 "shared",
@@ -214,12 +213,23 @@ def load_registry() -> tuple[list[Var], dict]:
                 sys.exit(f"registry error: {v.key} is a secret but sensitive=false")
             if source_kind == "var" and v.sensitive:
                 sys.exit(f"registry error: {v.key} is a variable but sensitive=true")
+        if v.nonprod_shared and (not v.ci_managed or v.ci_scope != "env"):
+            sys.exit(f"registry error: {v.key} nonprod_shared requires env-scoped CI")
         unknown_examples = set(v.ci_example) - {"base", "prod", "staging"}
         if unknown_examples:
-            sys.exit(
-                f"registry error: {v.key} has unknown CI examples {sorted(unknown_examples)}"
-            )
+            sys.exit(f"registry error: {v.key} has unknown CI examples {sorted(unknown_examples)}")
         vars_.append(v)
+    groups: dict[str, list[Var]] = {}
+    for variable in vars_:
+        if variable.group:
+            groups.setdefault(variable.group, []).append(variable)
+    for name, members in groups.items():
+        if len(members) < 2:
+            sys.exit(f"registry error: group {name!r} must have at least two members")
+        if not any(member.activates_group for member in members):
+            sys.exit(f"registry error: group {name!r} has no activator")
+        if any(not member.ci_managed for member in members):
+            sys.exit(f"registry error: group {name!r} contains a non-CI variable")
     return vars_, meta
 
 
@@ -315,24 +325,30 @@ def build_manifest(vars_: list[Var]) -> dict:
         # var: sources pass GitHub Variables straight through; an unset one would
         # write an empty value, so carry the registry default as a fallback
         # (was `${{ vars.X || 'default' }}` in the old heredoc).
-        if v.ci_source.startswith("var:") and not v.ci_conditional and v.default:
+        if v.ci_source.startswith("var:") and v.default:
             entry["default"] = v.default
         ci[v.env_name] = entry
+
+    groups: dict[str, dict[str, list[str]]] = {}
+    for v in vars_:
+        if not v.group:
+            continue
+        group = groups.setdefault(v.group, {"members": [], "activators": []})
+        group["members"].append(v.env_name)
+        if v.activates_group:
+            group["activators"].append(v.env_name)
 
     return {
         "_generated_by": "scripts/env/gen.py",
         "runtime_files": files,
         "required_secrets": sorted(
-            {
-                v.env_name
-                for v in vars_
-                if v.required and v.ci_source.startswith("secret:")
-            }
+            {v.env_name for v in vars_ if v.required and v.ci_source.startswith("secret:")}
         ),
         "required_variables": sorted(
             {v.env_name for v in vars_ if v.required and v.ci_source.startswith("var:")}
         ),
         "ci": ci,
+        "ci_groups": groups,
         "github_example_keys": _gh_keys(vars_),
     }
 
@@ -372,7 +388,8 @@ def render_github_example(target: str, vars_: list[Var], meta: dict) -> str:
                 val = v.ci_example.get(env, "")
             else:
                 val = v.default
-            lines.append(f"{v.env_name}={val}")
+            prefix = "# " if v.ci_conditional else ""
+            lines.append(f"{prefix}{v.env_name}={val}")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -395,14 +412,11 @@ def _display_width(value: str) -> int:
 
 
 def _render_markdown_table(rows: list[tuple[str, str]]) -> list[str]:
-    widths = [
-        max(3, max(_display_width(row[column]) for row in rows)) for column in range(2)
-    ]
+    widths = [max(3, max(_display_width(row[column]) for row in rows)) for column in range(2)]
 
     def render_row(row: tuple[str, str]) -> str:
         cells = [
-            value + " " * (widths[index] - _display_width(value))
-            for index, value in enumerate(row)
+            value + " " * (widths[index] - _display_width(value)) for index, value in enumerate(row)
         ]
         return f"| {cells[0]} | {cells[1]} |"
 
@@ -450,9 +464,7 @@ def generated_outputs() -> dict[Path, str]:
         out[ROOT / rel] = render_runtime_example(scope, vars_, meta)
     for target, rel in GITHUB_FILES.items():
         out[ROOT / rel] = render_github_example(target, vars_, meta)
-    out[MANIFEST] = (
-        json.dumps(build_manifest(vars_), indent=2, ensure_ascii=False) + "\n"
-    )
+    out[MANIFEST] = json.dumps(build_manifest(vars_), indent=2, ensure_ascii=False) + "\n"
     return out
 
 
@@ -468,10 +480,7 @@ def splice_docs(vars_: list[Var]) -> str | None:
         post = "\n".join(lines[ends[-1] + 1 :])
         return (pre + "\n" + block + "\n" + post).rstrip() + "\n"
     return (
-        DOCS.read_text(encoding="utf-8").rstrip()
-        + "\n\n## 變數對照（自動產生）\n\n"
-        + block
-        + "\n"
+        DOCS.read_text(encoding="utf-8").rstrip() + "\n\n## 變數對照（自動產生）\n\n" + block + "\n"
     )
 
 
@@ -503,7 +512,7 @@ def cmd_check() -> int:
         drift.append(str(DOCS.relative_to(ROOT)) + " (env block)")
 
     # .github/*.env.example are fully generated too (compared above via generated_outputs).
-    # _deploy.yml reads env.manifest.json via scripts/env/write_ci.sh — it holds no
+    # _deploy.yml reads env.manifest.json via scripts/env/ci.py — it holds no
     # generated key list, so there is nothing to diff it against here.
 
     if drift:
@@ -534,9 +543,7 @@ def cmd_print(key: str) -> int:
                 f"files       {', '.join(RUNTIME_FILES[s][0].replace('.example', '') for s in v.scopes)}"
             )
             print(f"section     {v.section}")
-            print(
-                f"sensitive   {v.sensitive}  ({'secret' if v.sensitive else 'variable'})"
-            )
+            print(f"sensitive   {v.sensitive}  ({'secret' if v.sensitive else 'variable'})")
             print(f"required    {v.required}")
             if v.ci_managed:
                 print(

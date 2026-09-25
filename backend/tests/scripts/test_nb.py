@@ -179,3 +179,15 @@ class TestDispatch:
         parts, passthrough = calls[0]
         assert parts == ("bash", "scripts/stack.sh", "stg", "logs")
         assert passthrough == ["api"]
+
+    def test_stack_compose_passes_raw_dev_arguments_through_guard(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        nb.main(["stack", "dev", "compose", "--profile", "api", "config"])
+
+        parts, passthrough = calls[0]
+        assert parts == ("bash", "scripts/stack.sh", "dev", "compose")
+        assert passthrough == ["--profile", "api", "config"]

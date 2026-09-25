@@ -55,7 +55,8 @@ class DiscordBotSettings(BaseServiceSettings):
     # Presence
     discord_status: str = Field(default="online", description="Bot status")
     discord_activity_type: str = Field(
-        default="", description="Activity type (playing/listening/watching/competing/streaming)"
+        default="playing",
+        description="Activity type (playing/listening/watching/competing/streaming)",
     )
     discord_activity_name: str = Field(default="", description="Activity name")
     discord_activity_url: str = Field(

@@ -17,8 +17,8 @@ GitHub Actions 的共用額度、事件矩陣與安全節流規則見 [ci-policy
 - `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
 - `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
   路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
-- runner 上的 env 檔由 `scripts/env/write_ci.sh` 依 `env.manifest.json` 寫出
-  （來源 GitHub Secrets／Variables）。
+- runner 上的 env 檔由 `scripts/env/ci.py` 依 `env.manifest.json` 解析 GitHub
+  Secrets／Variables；`scripts/env/write_ci.sh` 是最小化的 workflow wrapper。
 
 一般流程：`feature/xxx` ──PR──▶ `staging` ──完整 CI／coverage／deploy／QA──▶ PR ──▶ `main`。
 `staging → main` promotion PR 與 merge 後 main push 不重跑相同 CI；main 不接受其他來源或 direct push。

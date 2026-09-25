@@ -55,7 +55,7 @@ show_vars() {
   TEMP_FILES+=("$tmp")
   printf '%s' "$json" > "$tmp"
   $PYTHON - "$tmp" "$outfile" "$example" <<'PYEOF'
-import json, sys, textwrap
+import json, re, sys, textwrap
 
 with open(sys.argv[1], encoding="utf-8") as f:
     data = json.load(f)
@@ -79,20 +79,23 @@ if example_file:
         example_lines = []
 
     if example_lines:
-        all_ex, groups, current = [], {}, "variables"
+        assignment = re.compile(r"^(#\s*)?([A-Z][A-Z0-9_]*)=(.*)$")
+        all_ex, required_ex, groups, current = [], [], {}, "variables"
         for line in example_lines:
             stripped = line.strip()
             if stripped.startswith("# ──") or stripped.startswith("#──"):
                 current = stripped.strip("#─ ").strip()
-            if "=" in stripped and not stripped.startswith("#"):
-                key = stripped.split("=", 1)[0].strip()
-                if key:
-                    all_ex.append(key)
-                    value = vals.get(key, "")
-                    file_lines.append(f"{key}={value}")
-                    if value:
-                        groups.setdefault(current, []).append((key, value))
-                    continue
+            match = assignment.match(stripped)
+            if match:
+                key = match.group(2)
+                all_ex.append(key)
+                if match.group(1) is None:
+                    required_ex.append(key)
+                value = vals.get(key, "")
+                file_lines.append(f"{key}={value}" if key in vals else line)
+                if value:
+                    groups.setdefault(current, []).append((key, value))
+                continue
             file_lines.append(line)
 
         extra_ks = sorted(k for k in vals if k not in set(all_ex))
@@ -114,7 +117,7 @@ if example_file:
             for k in extra_ks:
                 file_lines.append(f"{k}={vals[k]}")
 
-        missing = [key for key in all_ex if key not in vals]
+        missing = [key for key in required_ex if key not in vals]
         if missing:
             wrapped = textwrap.wrap("  ".join(missing), width=60)
             for index, part in enumerate(wrapped):
@@ -142,24 +145,30 @@ PYEOF
 # Usage: show_secrets <env_json> <base_json> <example_file>
 show_secrets() {
   local env_json="$1" base_json="$2" example_file="$3"
-  local expected_keys
-  expected_keys=$(grep -E '^[A-Z][A-Z0-9_]*=' "$example_file" | sed 's/=.*//' | tr '\n' ' ' || true)
-
   local tmp; tmp=$(mktemp)
   TEMP_FILES+=("$tmp")
-  printf '%s\n%s\n%s\n' "$expected_keys" "$env_json" "$base_json" > "$tmp"
-  $PYTHON - "$tmp" <<'PYEOF'
-import json, sys, textwrap
+  printf '%s\n%s\n' "$env_json" "$base_json" > "$tmp"
+  $PYTHON - "$tmp" "$example_file" <<'PYEOF'
+import json, re, sys, textwrap
 
 with open(sys.argv[1], encoding="utf-8") as f:
-    lines = f.read().split("\n", 2)
-keys     = lines[0].split()
-env_set  = {i["name"] for i in json.loads(lines[1])}
-base_set = {i["name"] for i in json.loads(lines[2])}
+    env_set  = {i["name"] for i in json.loads(f.readline())}
+    base_set = {i["name"] for i in json.loads(f.readline())}
+
+assignment = re.compile(r"^(#\s*)?([A-Z][A-Z0-9_]*)=(.*)$")
+keys, required = [], []
+with open(sys.argv[2], encoding="utf-8") as f:
+    for line in f:
+        match = assignment.match(line.strip())
+        if not match:
+            continue
+        keys.append(match.group(2))
+        if match.group(1) is None:
+            required.append(match.group(2))
 
 expected  = set(keys)
-missing   = [k for k in keys if k not in env_set and k not in base_set]
-inherited = [k for k in keys if k not in env_set and k in base_set]
+missing   = [k for k in required if k not in env_set and k not in base_set]
+inherited = [k for k in required if k not in env_set and k in base_set]
 extra     = sorted(env_set - expected)
 
 if not missing and not inherited and not extra:

@@ -52,13 +52,8 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null) || {
 
 printf "%s  →  %s\n\n" "$REPO" "$GH_ENV"
 
-# Abort before the first GitHub mutation if a local file drifted from its template.
-for kind in variables secrets; do
-  for scope in base "$TARGET"; do
-    "$PYTHON" "$SCRIPT_DIR/../scripts/env/check.py" \
-      "$SCRIPT_DIR/$kind/$scope.env" "$SCRIPT_DIR/$kind/$scope.env.example" >/dev/null
-  done
-done
+# Validate structure, required values, and all-or-none groups before any mutation.
+"$PYTHON" "$SCRIPT_DIR/../scripts/env/check.py" "gh-$TARGET" >/dev/null
 
 # Push secrets from file, skipping empty values
 push_secrets() {
