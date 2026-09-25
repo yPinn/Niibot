@@ -81,6 +81,46 @@ class TestDispatch:
         assert seen["mod"] == "scripts.twitch_ops.diag"
         assert seen["args"].tw_action == "tokens"
 
+    @pytest.mark.parametrize("env", ["stg", "prod"])
+    def test_twitch_invite_runs_in_target_api_container(self, monkeypatch, env):
+        calls = []
+        monkeypatch.setattr(nb, "confirm", lambda _prompt, assume_yes=False: True)
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        nb.main(["twitch", "invite", env])
+
+        parts, passthrough = calls[0]
+        assert parts == ("bash", "scripts/stack.sh", env, "exec")
+        expected = [
+            "api",
+            "python",
+            "-m",
+            "scripts.twitch_ops.invite",
+            "--env",
+            env,
+        ]
+        if env == "prod":
+            expected.append("--yes")
+        assert passthrough == expected
+
+    def test_twitch_prod_invite_requires_confirmation(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(nb, "confirm", lambda _prompt, assume_yes=False: False)
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        assert nb.main(["twitch", "invite", "prod"]) == 1
+        assert calls == []
+
+    def test_twitch_invite_rejects_dev(self):
+        with pytest.raises(SystemExit) as exc:
+            nb.main(["twitch", "invite", "dev"])
+
+        assert exc.value.code == 2
+
     def test_discord_sync_sets_dc_action(self, monkeypatch):
         seen = {}
         monkeypatch.setattr(nb, "_call", lambda mod, a: (seen.update(mod=mod, args=a), 0)[1])

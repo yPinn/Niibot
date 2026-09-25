@@ -19,7 +19,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _lib import ENV_CHOICES, REPO_ROOT, add_env_arg, ensure_backend_on_path, load_env, utf8_stdio
+from _lib import (
+    ENV_CHOICES,
+    REPO_ROOT,
+    add_env_arg,
+    confirm,
+    ensure_backend_on_path,
+    load_env,
+    utf8_stdio,
+)
 
 utf8_stdio()  # covers every lazy-imported script; standalone scripts call it themselves
 
@@ -90,6 +98,24 @@ def _run_env(args: argparse.Namespace) -> int:
 
 def _run_stack(args: argparse.Namespace) -> int:
     return _sh("bash", "scripts/stack.sh", args.env, args.cmd, passthrough=args.rest)
+
+
+def _run_twitch_invite(args: argparse.Namespace) -> int:
+    if args.env == "prod" and not confirm(
+        "Create a one-time system Bot invite in production?", assume_yes=args.yes
+    ):
+        return 1
+    command = [
+        "api",
+        "python",
+        "-m",
+        "scripts.twitch_ops.invite",
+        "--env",
+        args.env,
+    ]
+    if args.env == "prod":
+        command.append("--yes")
+    return _sh("bash", "scripts/stack.sh", args.env, "exec", passthrough=command)
 
 
 def _run_badges(args: argparse.Namespace) -> int:
@@ -173,6 +199,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", choices=("bot", "broadcaster"))
     p.add_argument("--env", choices=("dev",))
     p.set_defaults(_handler=_run_py("scripts.twitch_ops.oauth"))
+    p = tw.add_parser("invite", help="create a deployed system Bot reset invite")
+    p.add_argument("env", choices=("stg", "prod"))
+    p.add_argument("-y", "--yes", action="store_true", help="skip production confirmation")
+    p.set_defaults(_handler=_run_twitch_invite)
     for name, helptext in (
         ("tokens", "list stored tokens + scopes"),
         ("emotes", "bot emote access per channel"),

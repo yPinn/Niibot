@@ -6,7 +6,7 @@ import hashlib
 import logging
 from datetime import datetime
 from typing import Literal
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
@@ -28,6 +28,7 @@ from services.bot_account_service import (
     BotAccountService,
     BotAccountSummary,
     BotInviteCreated,
+    build_bot_invite_url,
 )
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from services.tenant_service import TenantContext
@@ -188,13 +189,9 @@ def _account_response(
 
 
 def _invite_response(created: BotInviteCreated, settings: Settings) -> BotInviteCreateResponse:
-    public_url = (
-        f"{settings.frontend_url}/bot-invite/{quote(created.public_token, safe='')}?"
-        f"{urlencode({'nonce': created.state_nonce})}"
-    )
     return BotInviteCreateResponse(
         invite_id=created.id,
-        public_url=public_url,
+        public_url=build_bot_invite_url(settings.frontend_url, created),
         expires_at=created.expires_at.isoformat(),
     )
 

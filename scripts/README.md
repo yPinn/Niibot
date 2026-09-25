@@ -29,6 +29,7 @@ avoid shadowing the runtime `twitch` package and third-party `discord` package.
 | `db clear [-y]`                                               | Clear dev analytics/session data               | `python -m scripts.db.clear`                      |
 | `db backup [--env …]`                                         | Dump PostgreSQL through Compose                | `bash backend/scripts/db/backup.sh <env>`         |
 | `twitch oauth --env dev`                                      | Run local OAuth callback                       | `python -m scripts.twitch_ops.oauth`              |
+| `twitch invite <stg\|prod> [-y]`                              | Create deployed system Bot reset invite        | `python -m scripts.twitch_ops.invite`             |
 | `twitch tokens\|emotes [--env …]`                             | Diagnose stored Twitch access                  | `python -m scripts.twitch_ops.diag <action>`      |
 | `twitch credentials [--dry-run] [--repair-missing-envelopes]` | Encrypt or repair credentials                  | `python -m scripts.twitch_ops.credentials`        |
 | `twitch backfill-sessions`                                    | Backfill sessions from VODs                    | `python -m scripts.twitch_ops.backfill_sessions`  |
@@ -82,6 +83,13 @@ All published ports bind to `127.0.0.1`. Database commands for stg/prod must run
 inside the matching Compose network. Use `nb stack` or the npm dev commands;
 the wrapper binds `NIIBOT_ENV`, the root env file, overlay, and service env files
 to the same selector. Direct Compose calls fail when that selector is absent.
+
+`twitch oauth --env dev` is the only localhost callback flow. On the host that
+runs the target stack, use `twitch invite stg` or `twitch invite prod`; the
+command executes in that environment's API container and prints a 30-minute
+public invite URL plus its expiry. Production asks for confirmation. The owner
+must have signed in to that environment once, and the invite URL is a bearer
+capability—do not post it in logs or chat.
 
 ## Internal-only entries
 

@@ -111,8 +111,18 @@ curl -fsS http://127.0.0.1:18000/health
    ```
 
 5. 確認輸出 `remaining=0`，再依序重啟 API 與 Twitch bot。不可刪除舊 key；key rotation 需另做逐列 re-encrypt migration。
-6. 由 `/admin` 建立 Niibot reset invite，使用指定 `BOT_ID` 帳號完成授權；callback 成功後 runtime 透過
-   `bot_token_updated` 即時換 token。stg/prod 不使用本機 OAuth script，統一走後台授權流程。
+6. 先以 owner Twitch 帳號登入該環境一次，再由 `/admin` 建立 Niibot reset invite，或在運行目標
+   Compose project 的 host 執行：
+
+   ```bash
+   npm run nb -- twitch invite stg
+   npm run nb -- twitch invite prod
+   ```
+
+   命令只在所選 API container 內連線該環境 DB，輸出 30 分鐘有效的 invite URL 與到期時間；prod 會再次確認。
+   將連結交給操作者並以指定 `BOT_ID` 帳號完成授權。invite URL 本身是一次性 bearer capability，不要寫入
+   log 或貼到公開頻道。callback 成功後 runtime 透過 `bot_token_updated` 即時換 token。
+   stg/prod 不使用本機 OAuth script；`npm run nb -- twitch oauth --env dev` 只供 localhost 開發。
 
 若 Twitch runtime 回報 `Encrypted Twitch token is missing the v1 envelope`，代表至少一列資料標成
 `encryption_version=1`，內容卻被舊 writer 以明文覆寫。先停止 restart loop、備份資料庫，再於持有同一份

@@ -9,6 +9,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
+from urllib.parse import quote, urlencode
 from uuid import uuid4
 
 import asyncpg
@@ -112,6 +113,12 @@ class BotMissingScopesError(InvalidInputError):
 
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def build_bot_invite_url(frontend_url: str, created: BotInviteCreated) -> str:
+    token = quote(created.public_token, safe="")
+    query = urlencode({"nonce": created.state_nonce})
+    return f"{frontend_url.rstrip('/')}/bot-invite/{token}?{query}"
 
 
 class BotAccountService:
