@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -60,8 +61,11 @@ class _StubMixin(_NotifyMixin):
         self.sessions = MagicMock()
         self.sessions.ensure_session = AsyncMock(return_value=None)
         self._bot_is_mod: set[str] = set()
+        self._bot_not_mod: set[str] = set()
         self._needs_reauth: set[str] = set()
         self._mod_check_pending: set[str] = set()
+        self._mod_checked_at: dict[str, float] = {}
+        self._channel_locks: dict[str, asyncio.Lock] = {}
         self._check_bot_mod_status = AsyncMock()
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
@@ -86,6 +90,12 @@ class _StubMixin(_NotifyMixin):
 
     def _ch(self, cid: str) -> str:
         return self.subs.ch(cid)
+
+    def _channel_lock(self, channel_id: str) -> asyncio.Lock:
+        lock = self._channel_locks.get(channel_id)
+        if lock is None:
+            lock = self._channel_locks[channel_id] = asyncio.Lock()
+        return lock
 
 
 def _payload(channel_id: str, *, enabled: bool) -> str:
@@ -255,12 +265,17 @@ class TestHandleChannelToggleDisable:
 
     async def test_disable_discards_bot_is_mod(self):
         mixin = _StubMixin()
+        # DB truth now drives the branch (see _reconcile_channel_toggle) —
+        # the payload's `enabled` is only used for the mismatch log.
+        mixin.channels.get_channel = AsyncMock(return_value=SimpleNamespace(enabled=False))
         component = MagicMock()
         mixin._components["components.ai"] = component
         mixin.subs._subscribed = {"ch1"}
         mixin._bot_is_mod = {"ch1"}
+        mixin._bot_not_mod = {"ch1"}
         mixin._needs_reauth = {"ch1"}
         mixin._mod_check_pending = {"ch1"}
+        mixin._mod_checked_at = {"ch1": 123.0}
         mixin.subs._names = {"ch1"}
 
         await mixin._handle_channel_toggle(
@@ -268,6 +283,8 @@ class TestHandleChannelToggleDisable:
         )
 
         assert "ch1" not in mixin._bot_is_mod
+        assert "ch1" not in mixin._bot_not_mod
+        assert "ch1" not in mixin._mod_checked_at
         assert "ch1" not in mixin._needs_reauth
         assert "ch1" not in mixin._mod_check_pending
         assert "ch1" not in mixin.subs._names
@@ -281,6 +298,7 @@ class TestHandleChannelToggleDisable:
         EventSub subscription status, and leaving it would leak across
         disable/re-enable churn for the life of the process."""
         mixin = _StubMixin()
+        mixin.channels.get_channel = AsyncMock(return_value=SimpleNamespace(enabled=False))
         mixin.subs._subscribed = set()
         mixin._bot_is_mod = {"ch1"}
         mixin._needs_reauth = {"ch1"}
@@ -423,6 +441,126 @@ class TestHandleChannelToggleEnable:
         )
 
         assert "ch3" not in mixin._needs_reauth
+
+
+# ---------------------------------------------------------------------------
+# _handle_channel_toggle — per-channel lock serialization
+#
+# Reproduces the 2026-09-29 puffsla incident: a DISABLE notification whose
+# unsubscribe is slow (real Twitch API calls), immediately followed by an
+# ENABLE notification for the same channel. Without the lock, the enable
+# handler's is_subscribed() read raced the in-flight unsubscribe, saw "still
+# subscribed", skipped its own subscribe — then the disable finished last and
+# tore the subscription down, leaving the channel unsubscribed opposite of
+# the last real intent.
+# ---------------------------------------------------------------------------
+
+
+class TestChannelToggleLockSerialization:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_toggle_payload_mismatched_with_db_uses_db(self):
+        """A stale/reordered payload must not override the current DB state."""
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"ch1"}
+        # Payload says DISABLE, but by the time this notification is actually
+        # processed the DB already says enabled again.
+        mixin.channels.get_channel = AsyncMock(return_value=SimpleNamespace(enabled=True))
+
+        await mixin._handle_channel_toggle(
+            None, None, "channel_toggle", _payload("ch1", enabled=False)
+        )
+
+        mixin.subs.unsubscribe.assert_not_awaited()
+
+    async def test_concurrent_disable_then_enable_converges_on_subscribe(self):
+        """The lock serializes the two handlers; DB-truth reconciliation means
+        the enable handler (running after disable fully completes) always
+        re-subscribes rather than trusting a stale is_subscribed() read."""
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"ch1"}
+        release_unsubscribe = asyncio.Event()
+
+        async def _slow_unsubscribe(channel_id):
+            await release_unsubscribe.wait()
+            mixin.subs._subscribed.discard(channel_id)
+
+        mixin.subs.unsubscribe = AsyncMock(side_effect=_slow_unsubscribe)
+        # First read (disable, real state at the time): disabled.
+        # Second read (enable, queued behind the lock): re-enabled.
+        mixin.channels.get_channel = AsyncMock(
+            side_effect=[
+                SimpleNamespace(enabled=False),
+                SimpleNamespace(enabled=True),
+            ]
+        )
+
+        disable_task = asyncio.create_task(
+            mixin._handle_channel_toggle(
+                None, None, "channel_toggle", _payload("ch1", enabled=False)
+            )
+        )
+        await asyncio.sleep(0)  # let disable acquire the lock and block in unsubscribe
+        enable_task = asyncio.create_task(
+            mixin._handle_channel_toggle(
+                None, None, "channel_toggle", _payload("ch1", enabled=True)
+            )
+        )
+        await asyncio.sleep(0)  # enable must now be waiting on the lock, not racing ahead
+
+        release_unsubscribe.set()
+        await asyncio.gather(disable_task, enable_task)
+
+        mixin.subs.unsubscribe.assert_awaited_once_with("ch1")
+        mixin.subs.subscribe.assert_awaited_once_with("ch1")
+
+    async def test_toggle_and_token_reauth_serialize_without_deadlock(self):
+        """channel_toggle and token_reauth share the same per-channel lock —
+        confirms they neither interleave nor deadlock for the same channel."""
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"ch1"}
+        mixin.channels.get_channel = AsyncMock(return_value=SimpleNamespace(enabled=True))
+        mixin.channels.get_token = AsyncMock(return_value=None)  # short-circuit reauth's body
+        order: list[str] = []
+
+        real_toggle = mixin._reconcile_channel_toggle
+
+        async def _tracked_toggle(channel_id, *, notified_enabled):
+            order.append("toggle-start")
+            await asyncio.sleep(0)
+            await real_toggle(channel_id, notified_enabled=notified_enabled)
+            order.append("toggle-end")
+
+        mixin._reconcile_channel_toggle = _tracked_toggle
+
+        real_new_token_locked = mixin._handle_new_token_locked
+
+        async def _tracked_new_token_locked(user_id):
+            order.append("reauth-start")
+            await asyncio.sleep(0)
+            await real_new_token_locked(user_id)
+            order.append("reauth-end")
+
+        mixin._handle_new_token_locked = _tracked_new_token_locked
+
+        reauth_payload = json.dumps(
+            {"user_id": "ch1", "credential_revision": 1, "scopes_changed": False}
+        )
+
+        await asyncio.wait_for(
+            asyncio.gather(
+                mixin._handle_channel_toggle(
+                    None, None, "channel_toggle", _payload("ch1", enabled=True)
+                ),
+                mixin._handle_token_reauth(None, None, "token_reauth", reauth_payload),
+            ),
+            timeout=2,
+        )
+
+        assert order in (
+            ["toggle-start", "toggle-end", "reauth-start", "reauth-end"],
+            ["reauth-start", "reauth-end", "toggle-start", "toggle-end"],
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +710,39 @@ class TestHandleNewTokenAdmissionGate:
         )
         mixin.subs.subscribe.assert_awaited_once_with("u1")
 
+    async def test_already_subscribed_and_not_mod_triggers_recheck(self):
+        """A second new_token/reauth notification for an already-subscribed,
+        not-yet-confirmed-mod channel (e.g. the same broadcaster re-authorizing
+        minutes later, scopes unchanged) still gets a mod recheck — this path
+        previously fell through the `if not is_subscribed` branch and never
+        checked mod status again until the next token refresh."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"u1"}  # already subscribed
+        mixin._bot_is_mod = set()  # not yet confirmed mod
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin.subs.subscribe.assert_not_awaited()
+        mixin._check_bot_mod_status.assert_awaited_once_with("u1")
+
+    async def test_already_subscribed_and_already_mod_skips_recheck(self):
+        """Already subscribed and already confirmed mod → no redundant check."""
+        from shared.twitch_scopes import BROADCASTER_SCOPES
+
+        mixin = _StubMixin()
+        mixin.subs._subscribed = {"u1"}
+        mixin._bot_is_mod = {"u1"}
+        mixin.add_token = AsyncMock(return_value=_make_user_info("alice", BROADCASTER_SCOPES))
+        mixin.add_channel_to_db = AsyncMock()
+
+        await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        mixin._check_bot_mod_status.assert_not_awaited()
+
     async def test_rate_limited_runtime_reload_does_not_mark_credential_invalid(self):
         from twitchio.exceptions import HTTPException, InvalidTokenException
 
@@ -684,7 +855,7 @@ class TestHandleTokenReauth:
     async def test_scope_change_reconciles_subscriptions_before_hot_reload(self):
         mixin = _StubMixin()
         mixin.subs._subscribed = {"u1"}
-        mixin._handle_new_token = AsyncMock()
+        mixin._handle_new_token_locked = AsyncMock()
         payload = json.dumps(
             {
                 "user_id": "u1",
@@ -698,12 +869,12 @@ class TestHandleTokenReauth:
             await mixin._handle_token_reauth(None, None, "token_reauth", payload)
 
         mixin.subs.unsubscribe.assert_awaited_once_with("u1")
-        mixin._handle_new_token.assert_awaited_once_with(None, None, "token_reauth", payload)
+        mixin._handle_new_token_locked.assert_awaited_once_with("u1")
 
     async def test_same_scope_refresh_does_not_recreate_subscriptions(self):
         mixin = _StubMixin()
         mixin.subs._subscribed = {"u1"}
-        mixin._handle_new_token = AsyncMock()
+        mixin._handle_new_token_locked = AsyncMock()
         payload = json.dumps(
             {
                 "user_id": "u1",
@@ -721,7 +892,7 @@ class TestHandleTokenReauth:
     async def test_same_revision_runtime_refresh_notification_is_deduplicated(self):
         mixin = _StubMixin()
         mixin._runtime_credential_revisions = {"u1": 8}
-        mixin._handle_new_token = AsyncMock()
+        mixin._handle_new_token_locked = AsyncMock()
         payload = json.dumps(
             {
                 "user_id": "u1",
@@ -734,7 +905,7 @@ class TestHandleTokenReauth:
         with patch("shared.repositories.channel._token_cache"):
             await mixin._handle_token_reauth(None, None, "token_reauth", payload)
 
-        mixin._handle_new_token.assert_not_awaited()
+        mixin._handle_new_token_locked.assert_not_awaited()
 
 
 class TestHandleBotTokenUpdated:
@@ -818,8 +989,11 @@ def mod_bot():
         b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._client_id = "test-client-id"
         b._bot_is_mod = set()
+        b._bot_not_mod = set()
         b._needs_reauth = set()
         b._mod_check_pending = set()
+        b._mod_checked_at = {}
+        b._send_mod_request_message = AsyncMock()
         b.subs = SubscriptionManager(
             bot_id="bot-001",
             multi_subscribe=AsyncMock(),
@@ -852,6 +1026,8 @@ class TestCheckBotModStatus:
         assert "ch1" in mod_bot._bot_is_mod
 
     async def test_does_not_add_when_api_returns_empty_data(self, mod_bot):
+        """200 + empty data is a confirmed not-mod — added to _bot_not_mod and
+        notified once, since this is the first time it's been confirmed."""
         token_obj = MagicMock(token="tok")
         mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
         ctx = _make_httpx_ctx(200, {"data": []})
@@ -860,6 +1036,21 @@ class TestCheckBotModStatus:
             await mod_bot._check_bot_mod_status("ch1")
 
         assert "ch1" not in mod_bot._bot_is_mod
+        assert "ch1" in mod_bot._bot_not_mod
+        mod_bot._send_mod_request_message.assert_awaited_once_with("ch1")
+
+    async def test_repeat_empty_data_does_not_renotify(self, mod_bot):
+        """A second confirmation of not-mod stays silent — only
+        event_stream_online reminds again, once per stream."""
+        mod_bot._bot_not_mod = {"ch1"}
+        token_obj = MagicMock(token="tok")
+        mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
+        ctx = _make_httpx_ctx(200, {"data": []})
+
+        with patch("twitch.core.bot.httpx.AsyncClient", return_value=ctx):
+            await mod_bot._check_bot_mod_status("ch1")
+
+        mod_bot._send_mod_request_message.assert_not_awaited()
 
     async def test_unauthorized_token_sets_needs_reauth(self, mod_bot):
         """401 from Helix is credential-wide; MOD capability 403 is not."""
@@ -875,6 +1066,8 @@ class TestCheckBotModStatus:
         mod_bot._mark_reauth_required.assert_awaited_once_with("ch1", expected_revision=7)
 
     async def test_forbidden_mod_check_does_not_set_global_reauth(self, mod_bot):
+        """403 means status unknown, not "confirmed not mod" — must not land
+        in _bot_not_mod or trigger a mod-request notification either."""
         token_obj = MagicMock(token="tok")
         mod_bot.channels.get_token = AsyncMock(return_value=token_obj)
         ctx = _make_httpx_ctx(403, text="Forbidden")
@@ -883,8 +1076,10 @@ class TestCheckBotModStatus:
             await mod_bot._check_bot_mod_status("ch1")
 
         assert "ch1" not in mod_bot._bot_is_mod
+        assert "ch1" not in mod_bot._bot_not_mod
         assert "ch1" not in mod_bot._needs_reauth
         mod_bot._mark_reauth_required.assert_not_awaited()
+        mod_bot._send_mod_request_message.assert_not_awaited()
 
     async def test_rate_limited_mod_check_uses_reset_bucket_and_retries_once(self, mod_bot):
         token_obj = MagicMock(token="tok")

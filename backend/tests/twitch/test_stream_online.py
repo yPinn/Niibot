@@ -32,7 +32,7 @@ def _make_payload(channel_id: str = "123", broadcaster_name: str = "streamer"):
     return payload
 
 
-def _make_bot(*, needs_reauth: set[str] | None = None):
+def _make_bot(*, needs_reauth: set[str] | None = None, bot_not_mod: set[str] | None = None):
     with (
         patch("twitch.core.bot._MessageRouterMixin.__init__", return_value=None),
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
@@ -43,10 +43,15 @@ def _make_bot(*, needs_reauth: set[str] | None = None):
         b = Bot.__new__(Bot)
         b._bot_id = "999"
         b._needs_reauth = needs_reauth if needs_reauth is not None else set()
+        b._bot_not_mod = bot_not_mod if bot_not_mod is not None else set()
         b.sender_for = MagicMock(return_value="999")
         b.sessions = MagicMock()
         b.sessions.on_stream_online = AsyncMock()
         b.sessions.on_stream_offline = AsyncMock()
+        # Default: a no-op recheck that doesn't change mod state — individual
+        # tests override with a side_effect to simulate a real check's outcome.
+        b._check_bot_mod_status = AsyncMock()
+        b._send_mod_request_message = AsyncMock()
         return b
 
 
@@ -81,3 +86,61 @@ async def test_stream_offline_delegates_to_service():
     payload = _make_payload(channel_id="123")
     await bot.event_stream_offline(payload)
     bot.sessions.on_stream_offline.assert_awaited_once_with("123")
+
+
+# ---------------------------------------------------------------------------
+# Tests — mod status recheck + once-per-stream reminder
+# ---------------------------------------------------------------------------
+
+
+async def test_mod_status_rechecked_on_every_go_live():
+    """Going live is a natural once-per-stream recheck point (catches /mod
+    granted with no other trigger due)."""
+    bot = _make_bot()
+    payload = _make_payload(channel_id="123")
+
+    await bot.event_stream_online(payload)
+
+    bot._check_bot_mod_status.assert_awaited_once_with("123")
+
+
+async def test_mod_reminder_sent_when_still_not_mod_after_recheck():
+    """Was already confirmed not-mod, and stays not-mod after the go-live
+    recheck → remind once, since the broadcaster is presumably watching now."""
+    bot = _make_bot(bot_not_mod={"123"})
+    payload = _make_payload(channel_id="123")
+
+    await bot.event_stream_online(payload)
+
+    bot._send_mod_request_message.assert_awaited_once_with("123")
+
+
+async def test_no_mod_reminder_when_newly_confirmed_not_mod():
+    """A recheck that *newly* confirms not-mod already sent its own prompt
+    from inside _check_bot_mod_status — event_stream_online must not double-send."""
+    bot = _make_bot(bot_not_mod=set())
+
+    async def _newly_not_mod(channel_id):
+        bot._bot_not_mod.add(channel_id)
+
+    bot._check_bot_mod_status = AsyncMock(side_effect=_newly_not_mod)
+    payload = _make_payload(channel_id="123")
+
+    await bot.event_stream_online(payload)
+
+    bot._send_mod_request_message.assert_not_awaited()
+
+
+async def test_no_mod_reminder_when_recheck_confirms_mod():
+    """Was confirmed not-mod, but the go-live recheck now confirms mod → no reminder."""
+    bot = _make_bot(bot_not_mod={"123"})
+
+    async def _now_mod(channel_id):
+        bot._bot_not_mod.discard(channel_id)
+
+    bot._check_bot_mod_status = AsyncMock(side_effect=_now_mod)
+    payload = _make_payload(channel_id="123")
+
+    await bot.event_stream_online(payload)
+
+    bot._send_mod_request_message.assert_not_awaited()

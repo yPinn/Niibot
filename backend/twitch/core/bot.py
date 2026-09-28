@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from collections.abc import Coroutine
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -38,7 +40,7 @@ from shared.repositories.video_queue import VideoQueueRepository
 from shared.retry_utils import parse_retry_after
 from shared.twitch_egress import EgressPriority, TwitchEgressCoordinator
 from shared.twitch_scopes import TwitchCredential, required_core_scopes
-from utils.mod_guard import mod_guard_notifier
+from utils.mod_guard import build_mod_request_message
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -47,6 +49,10 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 # on every deploy instead of once per this window.
 _REAUTH_NOTIFY_COOLDOWN = timedelta(hours=12)
 _SUBSCRIPTION_RECONCILE_INTERVAL = 15 * 60
+# Chat-guard fallback: how stale a mod check may be before a chat message
+# (from a channel the bot still isn't confirmed mod in) triggers a background
+# recheck. Covers /mod being granted mid-stream with no other trigger due.
+_MOD_RECHECK_INTERVAL = 10 * 60
 _TOKEN_VALIDATION_MIN_INTERVAL = 1.0
 _TOKEN_VALIDATION_MAX_ATTEMPTS = 3
 
@@ -121,8 +127,22 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status
         self._bot_is_mod: set[str] = set()
+        # Channel IDs where the Helix moderator-list check has explicitly
+        # confirmed (200 + empty data) the bot is NOT a mod. A 401/403/error
+        # response leaves a channel out of both this and _bot_is_mod — status
+        # unknown, not "not mod" — so the guard never notifies from a check
+        # it can't actually trust.
+        self._bot_not_mod: set[str] = set()
         # Channel IDs where mod status check is in-flight (suppress guard notifications)
         self._mod_check_pending: set[str] = set()
+        # monotonic() timestamp of the last completed mod status check, per channel
+        self._mod_checked_at: dict[str, float] = {}
+        # Per-channel lock serializing channel_toggle / new_token / token_reauth
+        # NOTIFY handling — these arrive on independent LISTEN connections and
+        # asyncpg dispatches each as its own task, so without this a fast
+        # disable/enable or reauth pair can interleave and leave subscription
+        # state opposite of the last real intent (see _notify_mixin.py).
+        self._channel_locks: dict[str, asyncio.Lock] = {}
         # Bot's own login name (set during load_tokens)
         self._bot_login: str = ""
         # Consecutive EventSub websocket closes without an intervening welcome,
@@ -184,6 +204,34 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     def _ch(self, channel_id: str) -> str:
         """Return 'login(id)' when the name is known, otherwise just 'id'."""
         return self.subs.ch(channel_id)
+
+    def _channel_lock(self, channel_id: str) -> asyncio.Lock:
+        """Lazily create/return this channel's NOTIFY-handling lock.
+
+        Never removed — the dict is bounded by the number of channels ever
+        seen, same lifetime as e.g. `self.subs`'s per-channel bookkeeping.
+        Held across the whole NOTIFY handler body, including outbound Twitch
+        API calls, with no acquisition timeout: a hung call blocks that one
+        channel's further toggle/reauth processing until the request itself
+        times out. Accepted tradeoff — correctness for a low-frequency,
+        per-channel event beats throughput here.
+        """
+        lock = self._channel_locks.get(channel_id)
+        if lock is None:
+            lock = self._channel_locks[channel_id] = asyncio.Lock()
+        return lock
+
+    def _spawn_background(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task:
+        """Create a tracked fire-and-forget task.
+
+        `_background_tasks` holds a strong reference so the task can't be
+        garbage-collected mid-flight (asyncio only keeps a weak one), and the
+        done-callback discards it once finished.
+        """
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def _list_conduit_subscriptions(self) -> list[Any]:
         conduit_id = self.conduit_info.id
@@ -353,9 +401,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             self._periodic_cache_refresh(),
             self._periodic_subscription_reconcile(),
         ):
-            task = asyncio.create_task(coro)
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
+            self._spawn_background(coro)
 
         # Session recovery + verify + watch-time loops (owned by SessionService).
         self.sessions.start()
@@ -391,6 +437,19 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 LOGGER.exception(
                     "[%s] Failed to send reauth notification on stream online", self._ch(channel_id)
                 )
+
+        # Same idea for mod status: going live is a natural once-per-stream
+        # recheck point, catching a /mod grant that happened with no other
+        # trigger due (chat guard never notifies on its own — see
+        # _handle_broadcaster_message). _check_bot_mod_status sends the
+        # prompt itself the moment it *newly* confirms not-mod; if the
+        # channel was already confirmed not-mod before this call, that
+        # already happened earlier, so remind again now that the broadcaster
+        # is live and likely watching chat — mirrors the reauth reminder above.
+        was_already_not_mod = channel_id in self._bot_not_mod
+        await self._check_bot_mod_status(channel_id)
+        if was_already_not_mod and channel_id in self._bot_not_mod:
+            await self._send_mod_request_message(channel_id)
 
         await self.sessions.on_stream_online(channel_id)
 
@@ -521,10 +580,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self._token_refresh_buffer.append(user_id)
         if self._token_refresh_flush_task and not self._token_refresh_flush_task.done():
             self._token_refresh_flush_task.cancel()
-        task = asyncio.create_task(self._flush_token_refresh_log())
-        self._token_refresh_flush_task = task
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        self._token_refresh_flush_task = self._spawn_background(self._flush_token_refresh_log())
 
     async def _flush_token_refresh_log(self) -> None:
         try:
@@ -581,6 +637,8 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         # than "this channel's sender": in a shared-chat session, one tenant's
         # bot must not treat another tenant's bot as a regular chatter.
         if self.bots.is_bot_identity(chatter_id):
+            if chatter_id == self.sender_for(channel_id):
+                await self._sync_mod_status_from_badges(channel_id, payload.badges)
             return
 
         # Gate stays; the chat notification itself already fired once, at the
@@ -594,20 +652,17 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         )
 
         # Mod guard: block all functionality until bot has mod in this channel.
-        # Skip notification while the status check is still in-flight.
+        # Notification happens at _check_bot_mod_status's state-entry and once
+        # per stream on event_stream_online — mirrors the _needs_reauth gate
+        # just above, which is likewise silent here. This path only blocks;
+        # it opportunistically kicks off a background recheck when the last
+        # check is stale, to catch /mod granted mid-stream with no other
+        # trigger due before the next stream online.
         if channel_id not in self._bot_is_mod:
             if channel_id in self._mod_check_pending:
                 LOGGER.debug("[%s] Mod check in-flight, deferring guard", payload.broadcaster.name)
                 return
-            await mod_guard_notifier.notify(
-                broadcaster_login=payload.broadcaster.name or "",
-                channel_id=channel_id,
-                bot_login=self.bots.context(channel_id).sender_login,
-                send_fn=lambda msg: payload.broadcaster.send_message(
-                    message=msg,
-                    sender=self.sender_for(channel_id),
-                ),
-            )
+            self._maybe_schedule_mod_recheck(channel_id)
             return
 
         handled = await self._handle_custom_command(payload)
@@ -1243,8 +1298,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     async def _check_bot_mod_status(self, channel_id: str) -> None:
         """Check via Helix API if the bot is a moderator in the channel.
 
-        Populates _bot_is_mod on success. Logs a warning if the check fails
-        (missing scope, token error, etc.) and leaves the channel out of _bot_is_mod.
+        Populates _bot_is_mod on success. A 401/403/other-error response
+        leaves the channel out of both _bot_is_mod and _bot_not_mod — status
+        genuinely unknown, since we can't tell "not mod" from "can't check
+        right now" — so it never triggers a mod-request notification either.
         Callers must not send mod-guard notifications while this is in-flight;
         _mod_check_pending gates that suppression.
         """
@@ -1266,18 +1323,25 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             if resp.status_code == 200:
                 data = resp.json().get("data", [])
                 if data:
-                    was_mod = channel_id in self._bot_is_mod
-                    self._bot_is_mod.add(channel_id)
+                    newly_mod = self._confirm_mod(channel_id)
                     LOGGER.info("[%s] Bot confirmed mod", self._ch(channel_id))
-                    if not was_mod:
+                    if newly_mod:
                         # channel.follow needs the bot as moderator — (re)subscribe
                         # now that mod is confirmed (initial attempt 403s pre-mod).
                         await self.subs.resubscribe_follow(channel_id)
                 else:
+                    self._bot_is_mod.discard(channel_id)
+                    # Notify once at state-entry, same as _mark_reauth_required —
+                    # not on every check. A repeat confirmation (still not mod)
+                    # is reminded only from event_stream_online, once per stream.
+                    newly_confirmed = channel_id not in self._bot_not_mod
+                    self._bot_not_mod.add(channel_id)
                     LOGGER.info(
                         "[%s] Bot is NOT mod — chat features blocked until /mod is granted",
                         self._ch(channel_id),
                     )
+                    if newly_confirmed:
+                        await self._send_mod_request_message(channel_id)
             elif resp.status_code == 401:
                 # A rejected access token is credential-wide. Missing the
                 # moderator-list capability is a local feature lock instead.
@@ -1308,6 +1372,71 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             )
         finally:
             self._mod_check_pending.discard(channel_id)
+            self._mod_checked_at[channel_id] = time.monotonic()
+
+    def _maybe_schedule_mod_recheck(self, channel_id: str) -> None:
+        """Kick off a background mod-status recheck if the last one is stale.
+
+        Shared by every mod-guard call site (chat messages, channel-points
+        redemptions) so a channel wrongly stuck out of _bot_is_mod self-heals
+        from ordinary activity, without each site reimplementing the
+        staleness check or the fire-and-forget task bookkeeping. Assumes the
+        caller has already confirmed no check is in-flight.
+        """
+        last_checked = self._mod_checked_at.get(channel_id, 0.0)
+        if time.monotonic() - last_checked < _MOD_RECHECK_INTERVAL:
+            return
+        self._spawn_background(self._check_bot_mod_status(channel_id))
+
+    def _confirm_mod(self, channel_id: str) -> bool:
+        """Record a positive mod confirmation. Returns True iff this is a new
+        confirmation (channel wasn't already marked mod) — callers use that to
+        decide whether the channel.follow (re)subscribe and transition log are due.
+        """
+        was_mod = channel_id in self._bot_is_mod
+        self._bot_is_mod.add(channel_id)
+        self._bot_not_mod.discard(channel_id)
+        return not was_mod
+
+    async def _sync_mod_status_from_badges(
+        self, channel_id: str, badges: list[twitchio.ChatMessageBadge]
+    ) -> None:
+        """Passively confirm mod status from the bot's own chat message badges.
+
+        Zero API cost, and correct even when the Helix moderator-list check
+        403s (see _check_bot_mod_status) — the badge on the bot's own message
+        is ground truth. Only ever adds/removes _bot_is_mod: it doesn't touch
+        _bot_not_mod or send notifications, since one badge-less message from
+        the bot isn't by itself as strong a signal as an explicit API check.
+        """
+        is_mod = any(badge.set_id in ("moderator", "broadcaster") for badge in badges)
+        if is_mod:
+            if self._confirm_mod(channel_id):
+                LOGGER.info("[%s] Bot confirmed mod (via chat badge)", self._ch(channel_id))
+                await self.subs.resubscribe_follow(channel_id)
+        else:
+            self._bot_is_mod.discard(channel_id)
+
+    async def _send_mod_request_message(self, channel_id: str) -> None:
+        """Ask chat for /mod, mirroring _mark_reauth_required's send tail."""
+        from core.config import get_settings
+
+        if not get_settings().is_production:
+            return
+        try:
+            users = await self.fetch_users(ids=[channel_id])
+            if not users:
+                return
+            await users[0].send_message(
+                message=build_mod_request_message(
+                    users[0].name or self._ch(channel_id),
+                    self.bots.context(channel_id).sender_login,
+                ),
+                sender=self.sender_for(channel_id),
+            )
+            LOGGER.info("[%s] Mod request message sent", self._ch(channel_id))
+        except Exception:
+            LOGGER.exception("[%s] Failed to send mod request message", self._ch(channel_id))
 
     def memory_gauges(self) -> dict[str, int]:
         """Size of every bounded/unbounded in-process dict this bot holds,
@@ -1319,7 +1448,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         gauges: dict[str, int] = {
             "needs_reauth": len(self._needs_reauth),
             "bot_is_mod": len(self._bot_is_mod),
+            "bot_not_mod": len(self._bot_not_mod),
             "mod_check_pending": len(self._mod_check_pending),
+            "mod_checked_at": len(self._mod_checked_at),
+            "channel_locks": len(self._channel_locks),
             "shared_chat_sessions": len(self._shared_chat_sessions),
             "subscribed_channels": len(self.subs.subscribed),
             "subscription_names": self.subs.names_count,

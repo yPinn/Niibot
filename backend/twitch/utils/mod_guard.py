@@ -1,51 +1,12 @@
-"""Mod-status guard — blocks bot features until channel grants mod, with rate-limited prompt."""
+"""Mod-request message helper — asks chat for /mod once the bot is confirmed to lack it.
 
-from __future__ import annotations
-
-import logging
-from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
-
-from core.config import get_settings
-
-LOGGER: logging.Logger = logging.getLogger(__name__)
-
-_COOLDOWN = timedelta(hours=1)
+Notification is state-transition driven, not time-based: Bot._check_bot_mod_status
+sends the message exactly once, the moment a channel newly enters _bot_not_mod
+(see core/bot.py), plus a once-per-stream reminder on stream online — mirrors
+utils.reauth's build_reauth_message / _mark_reauth_required split. Chat-message
+handling only blocks silently and never sends from here directly.
+"""
 
 
-class ModGuardNotifier:
-    """Rate-limits 'bot needs mod' notifications to once per hour per channel."""
-
-    def __init__(self) -> None:
-        self._last_notified: dict[str, datetime] = {}
-
-    def _can_notify(self, channel_id: str) -> bool:
-        last = self._last_notified.get(channel_id)
-        return last is None or datetime.now(UTC) - last >= _COOLDOWN
-
-    async def notify(
-        self,
-        broadcaster_login: str,
-        channel_id: str,
-        bot_login: str,
-        send_fn: Callable[[str], Awaitable[object]],
-    ) -> bool:
-        """Send a /mod prompt if cooldown permits. Returns True if sent."""
-        if not get_settings().is_production:
-            LOGGER.debug(f"[{broadcaster_login}] Mod guard notification skipped (non-prod)")
-            return False
-        if not self._can_notify(channel_id):
-            return False
-        self._last_notified[channel_id] = datetime.now(UTC)
-        msg = (
-            f"@{broadcaster_login} 好想要那把酷酷的大劍喔，可以 /mod {bot_login} 給我一把嗎 GoldPLZ"
-        )
-        try:
-            await send_fn(msg)
-            LOGGER.info(f"[{broadcaster_login}] Mod guard notification sent")
-        except Exception:
-            LOGGER.exception(f"[{broadcaster_login}] Failed to send mod guard notification")
-        return True
-
-
-mod_guard_notifier = ModGuardNotifier()
+def build_mod_request_message(broadcaster_login: str, bot_login: str) -> str:
+    return f"@{broadcaster_login} 好想要那把酷酷的大劍喔，可以 /mod {bot_login} 給我一把嗎 GoldPLZ"
