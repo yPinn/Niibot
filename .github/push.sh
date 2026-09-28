@@ -59,6 +59,7 @@ printf "%s  →  %s\n\n" "$REPO" "$GH_ENV"
 push_secrets() {
   local file="$1"; shift; local env_flags=("$@")
   local pushed=0 skipped=0
+  local line key value
 
   if [[ ! -f "$file" ]]; then
     printf "  secrets   WARN: %s not found — copy from .example\n" "$(basename "$file")"
@@ -68,9 +69,11 @@ push_secrets() {
   local tmp
   tmp=$(mktemp)
   TEMP_FILES+=("$tmp")
-  while IFS='=' read -r key value || [[ -n "$key" ]]; do
-    key="${key%$'\r'}"; value="${value%$'\r'}"   # strip Windows CRLF
-    [[ -z "${key// }" || "${key:0:1}" == "#" ]] && continue
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"   # strip Windows CRLF
+    [[ -z "${line// }" || "${line:0:1}" == "#" ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
     if [[ -z "${value// }" ]]; then
       skipped=$((skipped + 1))
     else
@@ -93,6 +96,7 @@ push_vars() {
   local file="$1"; shift; local env_flags=("${@}")
   local new_count=0 updated=0 unchanged=0 skipped=0
   local new_keys=() updated_keys=()
+  local line key value
 
   if [[ ! -f "$file" ]]; then
     printf "  variables WARN: %s not found — copy from .example\n" "$(basename "$file")"
@@ -108,9 +112,11 @@ import json, sys
 for i in json.load(sys.stdin.buffer): print(f\"{i['name']}={i['value']}\")
 ")
 
-  while IFS='=' read -r key value || [[ -n "$key" ]]; do
-    key="${key%$'\r'}"; value="${value%$'\r'}"   # strip Windows CRLF
-    [[ -z "${key// }" || "${key:0:1}" == "#" ]] && continue
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"   # strip Windows CRLF
+    [[ -z "${line// }" || "${line:0:1}" == "#" ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
     if [[ -z "${value// }" ]]; then
       skipped=$((skipped + 1)); continue
     fi
