@@ -61,6 +61,56 @@ def test_rejects_invalid_existing_key_without_rotating_it(tmp_path: Path) -> Non
     assert env_file.read_text(encoding="utf-8") == original
 
 
+def test_explicit_rotation_replaces_existing_key_with_valid_distinct_key(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / "shared.env"
+    existing_key = Fernet.generate_key().decode()
+    env_file.write_text(
+        f"DATABASE_URL=postgresql://localhost/db\nTWITCH_TOKEN_ENCRYPTION_KEY={existing_key}\n",
+        encoding="utf-8",
+    )
+
+    ensure_local_env.rotate_twitch_token_encryption_key(env_file)
+
+    content = env_file.read_text(encoding="utf-8")
+    rotated_key = next(
+        line.split("=", 1)[1]
+        for line in content.splitlines()
+        if line.startswith("TWITCH_TOKEN_ENCRYPTION_KEY=")
+    )
+    Fernet(rotated_key.encode())
+    assert rotated_key != existing_key
+    assert "DATABASE_URL=postgresql://localhost/db" in content
+
+
+def test_explicit_rotation_requires_existing_assignment(tmp_path: Path) -> None:
+    env_file = tmp_path / "shared.env"
+    original = "DATABASE_URL=postgresql://localhost/db\n"
+    env_file.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="assignment is missing"):
+        ensure_local_env.rotate_twitch_token_encryption_key(env_file)
+
+    assert env_file.read_text(encoding="utf-8") == original
+
+
+def test_explicit_rotation_supports_relative_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    env_file = Path("shared.env")
+    existing_key = Fernet.generate_key().decode()
+    env_file.write_text(
+        f"TWITCH_TOKEN_ENCRYPTION_KEY={existing_key}\n",
+        encoding="utf-8",
+    )
+
+    ensure_local_env.rotate_twitch_token_encryption_key(env_file)
+
+    assert existing_key not in env_file.read_text(encoding="utf-8")
+
+
 def test_appends_assignment_when_older_env_file_does_not_have_it(tmp_path: Path) -> None:
     env_file = tmp_path / "shared.env"
     env_file.write_text("DATABASE_URL=postgresql://localhost/db\n", encoding="utf-8")

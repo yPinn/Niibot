@@ -17,6 +17,7 @@ _ENVIRONMENTS = ("development", "staging", "production")
 
 
 def _write_atomic(path: Path, content: str) -> None:
+    path = path.resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", dir=path.parent
@@ -82,6 +83,27 @@ def ensure_twitch_token_encryption_key(env_file: Path) -> bool:
     return True
 
 
+def rotate_twitch_token_encryption_key(env_file: Path) -> None:
+    """Replace one existing valid Fernet key without exposing either value."""
+    content = env_file.read_text(encoding="utf-8")
+    prefix = f"{_TOKEN_KEY}="
+    values = [
+        line.removeprefix(prefix).strip()
+        for line in content.splitlines()
+        if line.startswith(prefix)
+    ]
+    if not values:
+        raise ValueError(f"{_TOKEN_KEY} assignment is missing")
+    if len(values) > 1:
+        raise ValueError(f"{_TOKEN_KEY} is assigned more than once")
+    if not values[0]:
+        raise ValueError(f"{_TOKEN_KEY} is blank; initialize it instead of rotating")
+    _validate_fernet_key(values[0])
+
+    generated = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode()
+    _assign(env_file, _TOKEN_KEY, generated, required=True)
+
+
 def refresh_shared_env_preserving_key(example_file: Path, env_file: Path) -> None:
     """Refresh from the example while retaining a valid existing key."""
     existing = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
@@ -116,7 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("env_file", type=Path)
     parser.add_argument("--refresh-from", type=Path, metavar="EXAMPLE")
     parser.add_argument("--environment", choices=_ENVIRONMENTS)
-    parser.add_argument("--ensure-key", action="store_true")
+    key_action = parser.add_mutually_exclusive_group()
+    key_action.add_argument("--ensure-key", action="store_true")
+    key_action.add_argument("--rotate-key", action="store_true")
     return parser
 
 
@@ -129,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
             set_environment(args.env_file, args.environment)
         if args.ensure_key:
             ensure_twitch_token_encryption_key(args.env_file)
+        if args.rotate_key:
+            rotate_twitch_token_encryption_key(args.env_file)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
