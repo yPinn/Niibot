@@ -223,6 +223,15 @@ def test_github_sync_validates_structure_and_reports_scope_drift() -> None:
     assert "trap 'rm -f -- \"${TEMP_FILES[@]}\"' EXIT" in push
 
 
+def test_github_sync_preserves_equals_in_env_values() -> None:
+    push = (ROOT / ".github/push.sh").read_text(encoding="utf-8")
+
+    assert "while IFS= read -r line" in push
+    assert 'key="${line%%=*}"' in push
+    assert 'value="${line#*=}"' in push
+    assert "IFS='=' read -r key value" not in push
+
+
 def test_deploy_checks_private_services_via_compose_health() -> None:
     workflow = (ROOT / ".github" / "workflows" / "_deploy.yml").read_text(encoding="utf-8")
 
