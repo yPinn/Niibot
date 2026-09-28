@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -35,6 +37,12 @@ def _make_partial_user(user_id: str, name: str):
     return u
 
 
+def _make_badge(set_id: str):
+    badge = MagicMock()
+    badge.set_id = set_id
+    return badge
+
+
 def _make_payload(
     *,
     broadcaster_id: str = "123",
@@ -44,6 +52,7 @@ def _make_payload(
     text: str = "hello",
     source_broadcaster=None,
     reply=None,
+    badges=None,
 ):
     """Build a minimal ChatMessage-like mock."""
     payload = MagicMock()
@@ -54,6 +63,7 @@ def _make_payload(
     payload.source_broadcaster = source_broadcaster
     payload.reply = reply
     payload.id = "msg-001"
+    payload.badges = badges if badges is not None else []
     return payload
 
 
@@ -80,11 +90,14 @@ def bot():
         b.bots = BotAccountResolver(MagicMock(), system_bot_id="bot-001")
         b._needs_reauth = set()
         b._bot_is_mod = {"123"}
+        b._bot_not_mod = set()
         b._mod_check_pending = set()
+        b._mod_checked_at = {}
         b._bot_login = "niibot_test"
         b.bots.set_system_bot_login("niibot_test")
         b._handle_custom_command = AsyncMock(return_value=False)
         b._handle_message_trigger = AsyncMock(return_value=False)
+        b._check_bot_mod_status = AsyncMock()
         b._background_tasks = set()
         return b
 
@@ -169,26 +182,110 @@ async def test_bot_own_message_is_ignored(bot):
 
 
 # ---------------------------------------------------------------------------
+# Tests — passive mod-badge sync from the bot's own messages
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_own_message_with_moderator_badge_confirms_mod(bot):
+    """The bot's own message carrying a moderator badge is ground truth —
+    zero API cost, and correct even when the Helix check 403s."""
+    bot._bot_is_mod = set()  # not yet confirmed via the API check
+    bot.subs.resubscribe_follow = AsyncMock()
+    payload = _make_payload(
+        chatter_id="bot-001",
+        source_broadcaster=None,
+        text="anything",
+        badges=[_make_badge("moderator")],
+    )
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+
+    assert "123" in bot._bot_is_mod
+    bot.subs.resubscribe_follow.assert_awaited_once_with("123")
+
+
+@pytest.mark.asyncio
+async def test_own_message_without_moderator_badge_clears_mod(bot):
+    """No moderator/broadcaster badge on the bot's own message → drop the
+    stale confirmed-mod flag."""
+    assert "123" in bot._bot_is_mod  # fixture default
+    payload = _make_payload(
+        chatter_id="bot-001", source_broadcaster=None, text="anything", badges=[]
+    )
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+
+    assert "123" not in bot._bot_is_mod
+
+
+@pytest.mark.asyncio
+async def test_other_bot_identity_message_does_not_sync_mod_status(bot):
+    """A shared-chat partner's bot is a bot identity too, but not this
+    channel's own sender — its badges say nothing about our mod status."""
+    bot._bot_is_mod = set()
+    bot.sender_for = MagicMock(return_value="some-other-bot")
+    payload = _make_payload(
+        chatter_id="bot-001",
+        source_broadcaster=None,
+        text="anything",
+        badges=[_make_badge("moderator")],
+    )
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+
+    assert "123" not in bot._bot_is_mod
+
+
+# ---------------------------------------------------------------------------
 # Tests — mod guard
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_message_blocked_when_bot_not_mod(bot):
-    """All command routing is skipped and mod_guard_notifier fires when bot lacks mod."""
+    """All command routing is skipped, and a stale check schedules a background recheck."""
     bot._bot_is_mod = set()  # bot has no mod in any channel
     payload = _make_payload(source_broadcaster=None, text="!hello")
 
-    with (
-        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock,
-        patch("twitch.core.bot.mod_guard_notifier") as mock_notifier,
-    ):
-        mock_notifier.notify = AsyncMock(return_value=True)
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock:
         await bot.event_message(payload)
+        await asyncio.sleep(0)  # let the scheduled background task run
 
-    mock_notifier.notify.assert_awaited_once()
+    bot._check_bot_mod_status.assert_awaited_once_with("123")
     bot._handle_custom_command.assert_not_called()
     super_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_message_blocked_skips_recheck_when_recently_checked(bot):
+    """No background recheck is scheduled while the last check is still fresh."""
+    bot._bot_is_mod = set()
+    bot._mod_checked_at["123"] = time.monotonic()
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+        await asyncio.sleep(0)
+
+    bot._check_bot_mod_status.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_message_blocked_skips_recheck_while_pending(bot):
+    """No duplicate recheck is scheduled while one is already in-flight."""
+    bot._bot_is_mod = set()
+    bot._mod_check_pending.add("123")
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
+        await bot.event_message(payload)
+        await asyncio.sleep(0)
+
+    bot._check_bot_mod_status.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -216,33 +313,28 @@ async def test_reauth_gate_blocks_processing_silently(bot):
     bot._needs_reauth = {"123"}
     payload = _make_payload(source_broadcaster=None, text="!hello")
 
-    with (
-        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock,
-        patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
-    ):
-        mock_mod_guard.notify = AsyncMock(return_value=True)
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()) as super_mock:
         await bot.event_message(payload)
+        await asyncio.sleep(0)
 
-    mock_mod_guard.notify.assert_not_called()
+    bot._check_bot_mod_status.assert_not_awaited()
     bot._handle_custom_command.assert_not_called()
     super_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_reauth_gate_takes_priority_over_mod_guard(bot):
-    """When channel needs reauth AND bot lacks mod, the reauth gate wins — mod guard stays silent."""
+    """When channel needs reauth AND bot lacks mod, the reauth gate wins — no
+    mod recheck is scheduled either."""
     bot._needs_reauth = {"123"}
     bot._bot_is_mod = set()  # bot also not mod
     payload = _make_payload(source_broadcaster=None, text="!hello")
 
-    with (
-        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()),
-        patch("twitch.core.bot.mod_guard_notifier") as mock_mod_guard,
-    ):
-        mock_mod_guard.notify = AsyncMock(return_value=True)
+    with patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()):
         await bot.event_message(payload)
+        await asyncio.sleep(0)
 
-    mock_mod_guard.notify.assert_not_called()
+    bot._check_bot_mod_status.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +357,9 @@ def _make_bot_for_mod_check():
         b._client_id = "client-abc"
         b._needs_reauth = set()
         b._bot_is_mod = set()
+        b._bot_not_mod = set()
         b._mod_check_pending = set()
+        b._mod_checked_at = {}
         b.subs = _make_subs()
         b.egress = MagicMock()
         b.egress.acquire_helix = AsyncMock()
@@ -275,6 +369,7 @@ def _make_bot_for_mod_check():
             b._needs_reauth.add(user_id)
 
         b._mark_reauth_required = AsyncMock(side_effect=_mark_reauth_required)
+        b._send_mod_request_message = AsyncMock()
         token = MagicMock()
         token.token = "tok"
         token.credential_revision = 7
@@ -296,12 +391,14 @@ async def test_mod_check_200_with_data_adds_to_bot_is_mod():
         await b._check_bot_mod_status("123")
 
     assert "123" in b._bot_is_mod
+    assert "123" not in b._bot_not_mod
     assert "123" not in b._needs_reauth
+    assert "123" in b._mod_checked_at
 
 
 @pytest.mark.asyncio
 async def test_mod_check_200_empty_data_leaves_not_mod():
-    """200 response with empty data → channel stays out of _bot_is_mod."""
+    """200 response with empty data → channel added to _bot_not_mod and notified once."""
     b = _make_bot_for_mod_check()
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 200
@@ -312,7 +409,27 @@ async def test_mod_check_200_empty_data_leaves_not_mod():
         await b._check_bot_mod_status("123")
 
     assert "123" not in b._bot_is_mod
+    assert "123" in b._bot_not_mod
     assert "123" not in b._needs_reauth
+    b._send_mod_request_message.assert_awaited_once_with("123")
+
+
+@pytest.mark.asyncio
+async def test_mod_check_200_empty_data_again_does_not_renotify():
+    """A repeat confirmation of not-mod does not send a second prompt — only
+    event_stream_online reminds again, once per stream."""
+    b = _make_bot_for_mod_check()
+    b._bot_not_mod = {"123"}  # already confirmed not-mod from an earlier check
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"data": []}
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client_cls.return_value.__aenter__.return_value.get = AsyncMock(return_value=resp)
+        await b._check_bot_mod_status("123")
+
+    assert "123" in b._bot_not_mod
+    b._send_mod_request_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -329,12 +446,14 @@ async def test_mod_check_401_marks_needs_reauth():
 
     assert "123" in b._needs_reauth
     assert "123" not in b._bot_is_mod
+    assert "123" not in b._bot_not_mod
     b._mark_reauth_required.assert_awaited_once_with("123", expected_revision=7)
 
 
 @pytest.mark.asyncio
 async def test_mod_check_403_locks_mod_capability_without_global_reauth():
-    """Missing moderator-list permission must not disable unrelated bot features."""
+    """Missing moderator-list permission must not disable unrelated bot features,
+    and must not be mistaken for a confirmed not-mod (status is unknown, not "no")."""
     b = _make_bot_for_mod_check()
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = 403
@@ -346,7 +465,9 @@ async def test_mod_check_403_locks_mod_capability_without_global_reauth():
 
     assert "123" not in b._needs_reauth
     assert "123" not in b._bot_is_mod
+    assert "123" not in b._bot_not_mod
     b._mark_reauth_required.assert_not_awaited()
+    b._send_mod_request_message.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -425,7 +546,6 @@ async def test_token_refresh_skips_mod_check_when_already_mod():
 @pytest.mark.asyncio
 async def test_token_refresh_batches_burst_into_single_log_line(caplog):
     """Multiple refreshes within the debounce window produce one summary INFO line."""
-    import asyncio
     import logging
 
     b = _make_bot_for_token_refresh()

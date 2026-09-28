@@ -83,7 +83,9 @@ def bot():
             needs_reauth=b._needs_reauth,
         )
         b._bot_is_mod = set()
+        b._bot_not_mod = set()
         b._mod_check_pending = set()
+        b._mod_checked_at = {}
         b._token_refresh_buffer = []
         b._token_refresh_flush_task = None
         b._runtime_credential_revisions = {}

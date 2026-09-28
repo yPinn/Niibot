@@ -31,6 +31,7 @@ class _NotifyMixin:
     if TYPE_CHECKING:
         # Defined on Bot; declared here so mypy resolves the mixin's calls.
         def _ch(self, channel_id: str) -> str: ...
+        def _channel_lock(self, channel_id: str) -> asyncio.Lock: ...
 
     async def _seed_and_warm_channel(self, channel_id: str) -> int:
         """Seed redemption + event config defaults and warm the command cache
@@ -58,79 +59,101 @@ class _NotifyMixin:
 
             data = json.loads(payload)
             channel_id = data["channel_id"]
-            enabled = data["enabled"]
 
             if channel_id == self._bot_id:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[NOTIFY] Ignoring toggle for bot's own channel: {channel_id}")
                 return
 
-            LOGGER.info(
-                f"[NOTIFY] Processing channel toggle: "
-                f"{self._ch(channel_id)} -> {'ENABLE' if enabled else 'DISABLE'}"  # type: ignore[attr-defined]
-            )
-
-            if enabled:
-                if not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
-                    result = await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
-                    if not result.converged:
-                        LOGGER.warning(
-                            "[NOTIFY] EventSub reconcile incomplete for %s: %s",
-                            self._ch(channel_id),
-                            result.errors,
-                        )
-                        return
-                    await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
-
-                    # Scope check: mod check catches expired tokens (401/403) but a valid
-                    # token with missing scopes would pass mod check and never enter
-                    # _needs_reauth. Read stored scopes from DB as a safety net.
-                    if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
-                        token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
-                        if token_obj and token_obj.scopes:
-                            from shared.twitch_scopes import missing_broadcaster_core_scopes
-
-                            if missing_broadcaster_core_scopes(token_obj.scopes.split()):
-                                await self._mark_reauth_required(
-                                    channel_id,
-                                    expected_revision=token_obj.credential_revision,
-                                )
-                                LOGGER.warning(
-                                    f"[NOTIFY] {self._ch(channel_id)} missing broadcaster scopes"  # type: ignore[attr-defined]
-                                    " after channel toggle — marking for reauth"
-                                )
-
-                    count = await self._seed_and_warm_channel(channel_id)
-                    LOGGER.info(
-                        f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}"
-                    )
-                    await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
-                    LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
-                else:
-                    LOGGER.info(
-                        f"[NOTIFY] Channel {self._ch(channel_id)} already subscribed, skipping"
-                    )  # type: ignore[attr-defined]
-            else:
-                if self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
-                    await self.subs.unsubscribe(channel_id)  # type: ignore[attr-defined]
-                    LOGGER.info(
-                        f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}"
-                    )  # type: ignore[attr-defined]
-                else:
-                    LOGGER.info(f"[NOTIFY] Channel {self._ch(channel_id)} not subscribed, skipping")  # type: ignore[attr-defined]
-
-                # Drop all per-channel in-memory state, not just subscription
-                # bookkeeping — otherwise churny tenants (disable/re-enable,
-                # or many short-lived channels) leak entries across the
-                # process lifetime with nothing to signal it (see
-                # shared/gauges.py for the counters that would show this).
-                self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
-                self._needs_reauth.discard(channel_id)  # type: ignore[attr-defined]
-                self._mod_check_pending.discard(channel_id)  # type: ignore[attr-defined]
-                self.subs.forget(channel_id)  # type: ignore[attr-defined]
-                self._clear_component_channel_memory(channel_id)
-
+            async with self._channel_lock(channel_id):  # type: ignore[attr-defined]
+                await self._reconcile_channel_toggle(channel_id, notified_enabled=data["enabled"])
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
+
+    async def _reconcile_channel_toggle(self, channel_id: str, *, notified_enabled: bool) -> None:
+        """Body of channel_toggle handling, run while holding this channel's lock.
+
+        Re-reads `channels.enabled` from DB instead of trusting the NOTIFY
+        payload. `channel_toggle` / `new_token` / `token_reauth` arrive on
+        three independent LISTEN connections and asyncpg dispatches each as
+        its own task, so a fast disable-then-enable pair can otherwise
+        interleave: without the lock, the enable handler's `is_subscribed()`
+        read races the disable handler's in-flight unsubscribe, sees "still
+        subscribed", skips its own subscribe, and then the disable finishes
+        last — leaving the channel unsubscribed opposite of the final intent.
+        Serializing on this lock closes that window; re-reading the DB here
+        (instead of acting on whichever `enabled` this particular
+        notification carried) means the last handler to run always converges
+        on the real current state even if notifications arrived out of order.
+        """
+        channel = await self.channels.get_channel(channel_id)  # type: ignore[attr-defined]
+        enabled = bool(channel and channel.enabled)
+        if enabled != notified_enabled:
+            LOGGER.info(
+                f"[NOTIFY] {self._ch(channel_id)} toggle payload said "  # type: ignore[attr-defined]
+                f"{'ENABLE' if notified_enabled else 'DISABLE'} but DB now says "
+                f"{'ENABLE' if enabled else 'DISABLE'} — using DB"
+            )
+
+        LOGGER.info(
+            f"[NOTIFY] Processing channel toggle: "
+            f"{self._ch(channel_id)} -> {'ENABLE' if enabled else 'DISABLE'}"  # type: ignore[attr-defined]
+        )
+
+        if enabled:
+            if not self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                result = await self.subs.subscribe(channel_id)  # type: ignore[attr-defined]
+                if not result.converged:
+                    LOGGER.warning(
+                        "[NOTIFY] EventSub reconcile incomplete for %s: %s",
+                        self._ch(channel_id),
+                        result.errors,
+                    )
+                    return
+                await self._check_bot_mod_status(channel_id)  # type: ignore[attr-defined]
+
+                # Scope check: mod check catches expired tokens (401/403) but a valid
+                # token with missing scopes would pass mod check and never enter
+                # _needs_reauth. Read stored scopes from DB as a safety net.
+                if channel_id not in self._needs_reauth:  # type: ignore[attr-defined]
+                    token_obj = await self.channels.get_token(channel_id)  # type: ignore[attr-defined]
+                    if token_obj and token_obj.scopes:
+                        from shared.twitch_scopes import missing_broadcaster_core_scopes
+
+                        if missing_broadcaster_core_scopes(token_obj.scopes.split()):
+                            await self._mark_reauth_required(
+                                channel_id,
+                                expected_revision=token_obj.credential_revision,
+                            )
+                            LOGGER.warning(
+                                f"[NOTIFY] {self._ch(channel_id)} missing broadcaster scopes"  # type: ignore[attr-defined]
+                                " after channel toggle — marking for reauth"
+                            )
+
+                count = await self._seed_and_warm_channel(channel_id)
+                LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(channel_id)}")
+                await self._send_welcome_message(channel_id)  # type: ignore[attr-defined]
+                LOGGER.info(f"[NOTIFY] Instantly subscribed to channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
+            else:
+                LOGGER.info(f"[NOTIFY] Channel {self._ch(channel_id)} already subscribed, skipping")  # type: ignore[attr-defined]
+        else:
+            if self.subs.is_subscribed(channel_id):  # type: ignore[attr-defined]
+                await self.subs.unsubscribe(channel_id)  # type: ignore[attr-defined]
+                LOGGER.info(f"[NOTIFY] Instantly unsubscribed from channel: {self._ch(channel_id)}")  # type: ignore[attr-defined]
+            else:
+                LOGGER.info(f"[NOTIFY] Channel {self._ch(channel_id)} not subscribed, skipping")  # type: ignore[attr-defined]
+
+            # Drop all per-channel in-memory state, not just subscription
+            # bookkeeping — otherwise churny tenants (disable/re-enable,
+            # or many short-lived channels) leak entries across the
+            # process lifetime with nothing to signal it (see
+            # shared/gauges.py for the counters that would show this).
+            self._bot_is_mod.discard(channel_id)  # type: ignore[attr-defined]
+            self._bot_not_mod.discard(channel_id)  # type: ignore[attr-defined]
+            self._mod_checked_at.pop(channel_id, None)  # type: ignore[attr-defined]
+            self._needs_reauth.discard(channel_id)  # type: ignore[attr-defined]
+            self._mod_check_pending.discard(channel_id)  # type: ignore[attr-defined]
+            self.subs.forget(channel_id)  # type: ignore[attr-defined]
+            self._clear_component_channel_memory(channel_id)
 
     async def _mark_reauth_required(
         self, user_id: str, *, expected_revision: int | None = None
@@ -221,106 +244,124 @@ class _NotifyMixin:
         try:
             data = json.loads(payload)
             user_id = data["user_id"]
-            LOGGER.info(
-                f"[NOTIFY] Received new token notification for user_id: {self._ch(user_id)}"
-            )  # type: ignore[attr-defined]
 
             if user_id == self._bot_id:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[NOTIFY] Ignoring new token for bot's own account: {user_id}")
                 return
 
-            token_obj = await self.channels.get_token(user_id)  # type: ignore[attr-defined]
-            if not token_obj:
-                LOGGER.warning(f"[NOTIFY] Token not found for user_id: {self._ch(user_id)}")  # type: ignore[attr-defined]
-                return
+            async with self._channel_lock(user_id):  # type: ignore[attr-defined]
+                await self._handle_new_token_locked(user_id)
+        except Exception as e:
+            LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
 
-            try:
-                user_info = await self.add_token(  # type: ignore[attr-defined]
-                    token_obj.token,
-                    token_obj.refresh,
-                    persist=False,
-                    expected_user_id=user_id,
-                    expected_token_type="broadcaster",
-                    expected_revision=token_obj.credential_revision,
-                )
-                LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
+    async def _handle_new_token_locked(self, user_id: str) -> None:
+        """Body of new-token loading, run while holding this channel's lock.
 
-                from shared.twitch_scopes import missing_broadcaster_core_scopes
+        Callers: `_handle_new_token` (acquires the lock itself) and
+        `_handle_token_reauth` (already holds it) — the latter must call
+        this directly, never `_handle_new_token`, since `asyncio.Lock` isn't
+        reentrant and re-acquiring it from the same task would deadlock.
+        """
+        LOGGER.info(f"[NOTIFY] Received new token notification for user_id: {self._ch(user_id)}")  # type: ignore[attr-defined]
 
-                missing = missing_broadcaster_core_scopes(user_info.scopes)
-                if missing:
-                    LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
-                    await self._mark_reauth_required(
-                        user_id,
-                        expected_revision=token_obj.credential_revision,
-                    )
-                else:
-                    was_reauth = user_id in self._needs_reauth  # type: ignore[attr-defined]
-                    self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
-                    if was_reauth:
-                        await self._send_reauth_restored_message(user_id, user_info.login or "")  # type: ignore[attr-defined]
-                        # Re-verify mod status: _bot_is_mod may be empty if the token was
-                        # already expired at startup (mod check returned 401 before now).
-                        await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
+        token_obj = await self.channels.get_token(user_id)  # type: ignore[attr-defined]
+        if not token_obj:
+            LOGGER.warning(f"[NOTIFY] Token not found for user_id: {self._ch(user_id)}")  # type: ignore[attr-defined]
+            return
 
-                await self.add_channel_to_db(user_id, user_info.login or "unknown")  # type: ignore[attr-defined]
+        try:
+            user_info = await self.add_token(  # type: ignore[attr-defined]
+                token_obj.token,
+                token_obj.refresh,
+                persist=False,
+                expected_user_id=user_id,
+                expected_token_type="broadcaster",
+                expected_revision=token_obj.credential_revision,
+            )
+            LOGGER.info(f"[NOTIFY] Loaded token for new user: {user_info.login} ({user_id})")
 
-                # Admission gate: only join channels whose owner is approved.
-                # channels.enabled is driven by memberships.status (migration
-                # 084); a pending/suspended owner has enabled=FALSE, so we load
-                # the token but do not subscribe. Approval flips enabled, which
-                # fires channel_toggle → _handle_channel_toggle subscribes then.
-                channel = await self.channels.get_channel(user_id)  # type: ignore[attr-defined]
-                if not channel or not channel.enabled:
-                    LOGGER.info(
-                        f"[NOTIFY] Channel {self._ch(user_id)} not enabled "  # type: ignore[attr-defined]
-                        "(awaiting admission) — token loaded, not subscribing"
-                    )
-                    return
+            from shared.twitch_scopes import missing_broadcaster_core_scopes
 
-                if not self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
-                    result = await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
-                    if not result.converged:
-                        LOGGER.warning(
-                            "[NOTIFY] EventSub reconcile incomplete for %s: %s",
-                            self._ch(user_id),
-                            result.errors,
-                        )
-                        return
-                    await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
-
-                    count = await self._seed_and_warm_channel(user_id)
-                    LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}")
-
-                    try:
-                        await self.sessions.ensure_session(user_id)  # type: ignore[attr-defined]
-                    except Exception as e:
-                        LOGGER.warning(f"[NOTIFY] Failed to check live status for {user_id}: {e}")
-
-                    LOGGER.info(f"[NOTIFY] Instantly subscribed to new channel: {user_id}")
-
-            except twitchio.exceptions.InvalidTokenException as e:
-                if e.status in {408, 425, 429} or e.status >= 500:
-                    LOGGER.warning(
-                        "[NOTIFY] Token reload temporarily unavailable for %s (HTTP %s); "
-                        "API reconciliation will retry",
-                        user_id,
-                        e.status,
-                    )
-                    return
-                LOGGER.warning(
-                    "[NOTIFY] Invalid Twitch credential for new user %s (HTTP %s); "
-                    "marking reauthorization required",
-                    user_id,
-                    e.status,
-                )
+            mod_rechecked = False
+            missing = missing_broadcaster_core_scopes(user_info.scopes)
+            if missing:
+                LOGGER.warning(f"[NOTIFY] {user_info.login} missing scopes: {missing}")
                 await self._mark_reauth_required(
                     user_id,
                     expected_revision=token_obj.credential_revision,
                 )
+            else:
+                was_reauth = user_id in self._needs_reauth  # type: ignore[attr-defined]
+                self._needs_reauth.discard(user_id)  # type: ignore[attr-defined]
+                if was_reauth:
+                    await self._send_reauth_restored_message(user_id, user_info.login or "")  # type: ignore[attr-defined]
+                    # Re-verify mod status: _bot_is_mod may be empty if the token was
+                    # already expired at startup (mod check returned 401 before now).
+                    await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
+                    mod_rechecked = True
 
-        except Exception as e:
-            LOGGER.exception(f"[NOTIFY] Error handling new token notification: {e}")
+            await self.add_channel_to_db(user_id, user_info.login or "unknown")  # type: ignore[attr-defined]
+
+            # Admission gate: only join channels whose owner is approved.
+            # channels.enabled is driven by memberships.status (migration
+            # 084); a pending/suspended owner has enabled=FALSE, so we load
+            # the token but do not subscribe. Approval flips enabled, which
+            # fires channel_toggle → _handle_channel_toggle subscribes then.
+            channel = await self.channels.get_channel(user_id)  # type: ignore[attr-defined]
+            if not channel or not channel.enabled:
+                LOGGER.info(
+                    f"[NOTIFY] Channel {self._ch(user_id)} not enabled "  # type: ignore[attr-defined]
+                    "(awaiting admission) — token loaded, not subscribing"
+                )
+                return
+
+            if not self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
+                result = await self.subs.subscribe(user_id)  # type: ignore[attr-defined]
+                if not result.converged:
+                    LOGGER.warning(
+                        "[NOTIFY] EventSub reconcile incomplete for %s: %s",
+                        self._ch(user_id),
+                        result.errors,
+                    )
+                    return
+                await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
+
+                count = await self._seed_and_warm_channel(user_id)
+                LOGGER.info(f"[NOTIFY] Warmed cache: {count} configs for {self._ch(user_id)}")
+
+                try:
+                    await self.sessions.ensure_session(user_id)  # type: ignore[attr-defined]
+                except Exception as e:
+                    LOGGER.warning(f"[NOTIFY] Failed to check live status for {user_id}: {e}")
+
+                LOGGER.info(f"[NOTIFY] Instantly subscribed to new channel: {user_id}")
+            elif not mod_rechecked and user_id not in self._bot_is_mod:  # type: ignore[attr-defined]
+                # Already subscribed and the was_reauth branch above didn't
+                # already recheck (e.g. a second reauth minutes after the
+                # first, with scopes unchanged): still worth a mod recheck
+                # since this path otherwise never verifies it again until the
+                # next token refresh or stream-online.
+                await self._check_bot_mod_status(user_id)  # type: ignore[attr-defined]
+
+        except twitchio.exceptions.InvalidTokenException as e:
+            if e.status in {408, 425, 429} or e.status >= 500:
+                LOGGER.warning(
+                    "[NOTIFY] Token reload temporarily unavailable for %s (HTTP %s); "
+                    "API reconciliation will retry",
+                    user_id,
+                    e.status,
+                )
+                return
+            LOGGER.warning(
+                "[NOTIFY] Invalid Twitch credential for new user %s (HTTP %s); "
+                "marking reauthorization required",
+                user_id,
+                e.status,
+            )
+            await self._mark_reauth_required(
+                user_id,
+                expected_revision=token_obj.credential_revision,
+            )
 
     async def _handle_token_reauth(self, connection, pid, channel, payload) -> None:
         """Bust the in-process token cache after a broadcaster re-authorizes."""
@@ -334,38 +375,43 @@ class _NotifyMixin:
 
             _token_cache.invalidate(f"token:{user_id}:broadcaster")
 
-            if data.get("disconnected"):
-                # Credential row is gone — the same transaction's
-                # channels.enabled = FALSE already fires channel_toggle,
-                # which owns unsubscribe and per-channel state cleanup.
+            # Shares _handle_new_token's per-channel lock so this can't
+            # interleave with a concurrent channel_toggle for the same
+            # channel; calls the locked body directly (never _handle_new_token
+            # itself) since asyncio.Lock isn't reentrant.
+            async with self._channel_lock(user_id):  # type: ignore[attr-defined]
+                if data.get("disconnected"):
+                    # Credential row is gone — the same transaction's
+                    # channels.enabled = FALSE already fires channel_toggle,
+                    # which owns unsubscribe and per-channel state cleanup.
+                    LOGGER.info(
+                        f"[NOTIFY] token_reauth for {self._ch(user_id)} — disconnected, cache busted only"  # type: ignore[attr-defined]
+                    )
+                    return
+
+                notified_revision = data.get("credential_revision")
+                runtime_revision = getattr(self, "_runtime_credential_revisions", {}).get(user_id)
+                if (
+                    notified_revision is not None
+                    and runtime_revision == notified_revision
+                    and not data.get("scopes_changed")
+                    and not data.get("reauth_cleared")
+                ):
+                    LOGGER.debug(
+                        "[NOTIFY] token_reauth for %s revision %s already active; skipping reload",
+                        self._ch(user_id),
+                        notified_revision,
+                    )
+                    return
+
+                if (
+                    data.get("scopes_changed") or data.get("reauth_cleared")
+                ) and self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
+                    await self.subs.unsubscribe(user_id)  # type: ignore[attr-defined]
                 LOGGER.info(
-                    f"[NOTIFY] token_reauth for {self._ch(user_id)} — disconnected, cache busted only"  # type: ignore[attr-defined]
+                    f"[NOTIFY] token_reauth for {self._ch(user_id)} — cache busted, re-checking"  # type: ignore[attr-defined]
                 )
-                return
-
-            notified_revision = data.get("credential_revision")
-            runtime_revision = getattr(self, "_runtime_credential_revisions", {}).get(user_id)
-            if (
-                notified_revision is not None
-                and runtime_revision == notified_revision
-                and not data.get("scopes_changed")
-                and not data.get("reauth_cleared")
-            ):
-                LOGGER.debug(
-                    "[NOTIFY] token_reauth for %s revision %s already active; skipping reload",
-                    self._ch(user_id),
-                    notified_revision,
-                )
-                return
-
-            if (
-                data.get("scopes_changed") or data.get("reauth_cleared")
-            ) and self.subs.is_subscribed(user_id):  # type: ignore[attr-defined]
-                await self.subs.unsubscribe(user_id)  # type: ignore[attr-defined]
-            LOGGER.info(
-                f"[NOTIFY] token_reauth for {self._ch(user_id)} — cache busted, re-checking"  # type: ignore[attr-defined]
-            )
-            await self._handle_new_token(connection, pid, channel, payload)
+                await self._handle_new_token_locked(user_id)
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling token_reauth: {e}")
 

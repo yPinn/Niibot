@@ -40,7 +40,6 @@ from shared.video_sources import (
     unplayable_message,
 )
 from utils.event_render import mention_vars, render_template
-from utils.mod_guard import mod_guard_notifier
 from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
@@ -149,12 +148,11 @@ class ChannelPointsComponent(commands.Component):
                 LOGGER.debug("[%s] Redemption deferred: mod check in-flight", channel_name)
                 return
             LOGGER.debug("[%s] Redemption skipped: bot not mod", channel_name)
-            await mod_guard_notifier.notify(
-                broadcaster_login=channel_name or "",
-                channel_id=channel_id,
-                bot_login=self.bot.bots.context(channel_id).sender_login,
-                send_fn=lambda msg: self._reply(payload.broadcaster, msg),
-            )
+            # Notification lives entirely in Bot._check_bot_mod_status /
+            # event_stream_online now (state-entry + once-per-stream, mirrors
+            # _needs_reauth) — this path only blocks and opportunistically
+            # triggers a background recheck when the last one is stale.
+            self.bot._maybe_schedule_mod_recheck(channel_id)  # type: ignore[attr-defined]
             return
 
         await self._handle_redemption(payload)
