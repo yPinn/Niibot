@@ -11,7 +11,7 @@ router 標記為「（無獨立頁面）」。
 | -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `/api/auth`                      | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 | `/login`、`/activate`                                              |
 | `/api/tenants`                   | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           | （無獨立頁面，跨頁共用）                                           |
-| `/api/tenants/.../bot-accounts`  | `bot_accounts_router`        | Bot／實況主授權狀態、Owner invite、重查、移除與解除                                | Settings、`/bot-invite/:publicToken`、`/bot-auth/result`           |
+| `/api/tenants/.../bot-accounts`  | `bot_accounts_router`        | Bot／實況主授權狀態、Owner invite、sender 選擇、重查、移除與解除                   | Settings、`/bot-invite/:publicToken`、`/bot-auth/result`           |
 | `/api/tenants/.../roleplay-sets` | `roleplay_router`            | 租戶私有角色設定集的草稿、發布、啟用與封存                                         | （尚無頁面）                                                       |
 | `/api/public/bot-invites`        | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          | 同上                                                               |
 | `/api/channels`                  | `channels_router`            | 監控頻道管理、Bot 啟停                                                             | Overview（`/`）                                                    |
@@ -89,7 +89,12 @@ router 標記為「（無獨立頁面）」。
   `X-Niibot-Action: bot-account-management`。
 - `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/reauthorize-invite`：Owner-only、expected-account reset。
 - `GET /api/tenants/{channel_id}/bot-accounts/invites/{invite_id}`：Owner-only status polling，不回 capability secret。
-- `GET/POST /api/public/bot-invites/{public_token}`：safe consent summary／decline；nonce 放 query。
+- `GET /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD 讀取 desired／active／ack 狀態。
+- `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD 切換已核准 sender；需
+  `X-Niibot-Action: bot-account-management`。同一 Twitch identity 已作為 Niibot broadcaster 時回
+  `409 BOT_SELECTION.SAME_IDENTITY_UNSUPPORTED`，不允許雙角色進入 TwitchIO 的單一 user-ID credential slot。
+- `GET /api/public/bot-invites/{public_token}`：safe consent summary；nonce 放 query。
+- `POST /api/public/bot-invites/{public_token}/decline`：拒絕一次性 invite；nonce 放 query。
 - `GET /api/auth/twitch/bot/callback`：不建立 User、session、membership 或 tenant。
 - `GET /api/auth/twitch/collaborator/oauth|callback`：identity-only collaborator session。
 - `POST /api/admin/bot-accounts/system-default/reset-invite`：system owner-only Niibot token reset。
@@ -98,8 +103,10 @@ router 標記為「（無獨立頁面）」。
 - `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only；停用頻道、撤銷 Owner sessions 並解除 token，
   但保留設定與歷史紀錄。
 
-授權檢查與解除 mutation 使用 `X-Niibot-Action: twitch-authorization-management`。仍在 Phase 4–5：`/members` manual MOD grants、
-`/collaboration-settings` 與 Twitch MOD sync。既有 private feature routers 尚未全數遷移到 `{channel_id}` path。
+Invite／reauthorize／selection mutation 使用 `X-Niibot-Action: bot-account-management`；授權檢查與解除 mutation
+使用 `X-Niibot-Action: twitch-authorization-management`。Public invite GET／decline／callback 回應均為 `no-store`、
+`no-referrer`、`noindex`。仍在 Phase 4–5：`/members` manual MOD grants、`/collaboration-settings` 與 Twitch MOD sync。
+既有 private feature routers 尚未全數遷移到 `{channel_id}` path。
 
 ## Canon Role-play authoring API
 

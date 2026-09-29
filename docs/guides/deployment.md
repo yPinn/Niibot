@@ -168,7 +168,9 @@ curl -fsS http://127.0.0.1:18000/health
 
    命令只在所選 API container 內連線該環境 DB，輸出 30 分鐘有效的 invite URL 與到期時間；prod 會再次確認。
    將連結交給操作者並以指定 `BOT_ID` 帳號完成授權。invite URL 本身是一次性 bearer capability，不要寫入
-   log 或貼到公開頻道。callback 成功後 runtime 透過 `bot_token_updated` 即時換 token。
+   log 或貼到公開頻道。callback 成功後 runtime 透過 `bot_token_updated` 即時換 token；通知 channels 共用一條
+   reconnecting LISTEN connection，斷線重連會觸發 catch-up，另有 60–75 秒 jitter metadata reconcile 修補漏訊息。
+   `NOTIFY` 不是 durable queue，部署時必須連同 migration 138 與 151 套用，不能只更新 application image。
    stg/prod 不使用本機 OAuth script；`npm run nb -- twitch oauth --env dev` 只供 localhost 開發。
 
 若 Twitch runtime 回報 `Encrypted Twitch token is missing the v1 envelope`，代表至少一列資料標成
@@ -186,7 +188,8 @@ npm run nb -- stack prod exec api python -m scripts.twitch_ops.credentials \
 encryption key；若 repair 因 Fernet 驗證失敗而停止，應先確認部署載入的是原 key。
 
 Rollback：Phase 2 schema 是 expand-only，可先關閉前端入口並回滾 application；不要回滾已加密資料欄位或換掉 key。
-在同一 Twitch identity 同時作 broadcaster 與 Bot 前，授權 scopes 必須符合 union-scope 契約。
+目前不支援同一 Twitch identity 同時作 broadcaster 與 Bot；兩種 OAuth 寫入與 selection 都會在 identity advisory
+lock 內 fail closed。只有完成 canonical union CredentialBroker 與 refresh／concurrency 驗證後，才能解除這項限制。
 
 ## Stack 管理
 

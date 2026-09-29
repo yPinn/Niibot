@@ -1,19 +1,21 @@
 # Bot Accounts、租戶協作與 Twitch MOD 同步
 
-> 狀態：**Phase 0–3 與 Twitch 授權生命週期已實作；Phase 4–6 仍為目標架構**（2026-09-20）。
+> 狀態：**Phase 0–3 與 Twitch 授權生命週期已實作；Phase 4–6 仍為目標架構**（2026-09-29）。
 > 本文件承接現行 [Admission & Tenancy Model](admission-and-tenancy.md)，定義 Bot OAuth 邀請、
 > 租戶私有 Bot 帳號、per-tenant sender、Owner／MOD Dashboard 與可選 Twitch MOD 同步。
 
 ## 目前已交付的邊界
 
 - Phase 0：`tokens.encryption_version`、Fernet envelope、bounded backfill、`identity_id ON DELETE SET NULL`，
-  以及 TwitchIO 同 identity token store spike；同一 identity 的 broadcaster／Bot credential 採 scope union 契約。
+  以及 TwitchIO 同 identity token store spike。TwitchIO 仍以 user ID 作單一 runtime credential key；canonical
+  union credential 尚未完成前，sender selection 明確拒絕 broadcaster／Bot 同一 identity。
 - Phase 1：identity-only collaborator login、server-resolved tenant list、Owner／MOD capability、
   `TenantContext` 與 workspace selector foundation。
 - Phase 2：`bot_accounts`、`channel_bot_accounts`、一次性 OAuth invite、tenant audit、Owner Settings card、
   public consent/result page、Admin Niibot reset 與 `bot_token_updated` runtime hot reload。
 - Phase 3：per-tenant desired／active sender selection、runtime hot reload、切換失敗保留舊 sender，以及
-  active／desired Bot 的 unlink 409 guard。
+  active／desired Bot 的 unlink 409 guard。PostgreSQL `NOTIFY` 只負責低延遲喚醒；listener 每次重連後會
+  立即做 durable catch-up，runtime 另以帶 jitter 的週期 metadata reconcile 修補漏訊息與跨 instance 漂移。
 - 授權生命週期：Bot 與 broadcaster token 的定期／手動檢查、refresh、健康狀態、Owner unlink／disconnect、
   server-side session 撤銷與明確失效時的安全 fallback。
 - 尚未交付：manual MOD invite source model、Twitch MOD sync、完整 private API tenant-path migration，以及 RLS
@@ -46,11 +48,15 @@
   金流、capability key 與安全/audit 保持 Owner-only。這維持 Nightbot 的低操作成本，同時縮小 credential 外洩面。
 - Twitch MOD 自動同步只作可選的 grant source，預設關閉；它補足 Nightbot 需要逐一加入 manager 的操作成本，但不
   取代手動 grant，也不把 Twitch 的聊天角色永久複製成 Niibot 身分。
-- 截至本規劃日，未找到可公開核實的 Chiwabot 官方權限／帳號委派文件；因此不把未驗證的 Chiwabot 行為寫成
-  security invariant。若取得其實際畫面、API 或文件，再以同一 identity／tenant／credential／runtime 四層模型比較。
+- ChiwaBots 的公開流程要求頻道主先指定子帳號、子帳號本人接受，再由頻道主從下拉選單啟用；其帳號文件也把
+  「頻道角色」與「允許該頻道用我的帳號當 Bot」分開，後者可按頻道撤回並回退官方 Bot。Niibot 採用同樣的
+  明確選擇與安全 fallback，但 public invite 不要求 provider 建立 Dashboard 帳號；v1 的 provider 自助撤回仍是
+  Twitch Connections 的 app-global revoke，不宣稱具備 ChiwaBots 的單頻道 portal。
 
 參考：[Nightbot Managers](https://docs.nightbot.tv/control-panel/managers)、
-[Nightbot Commands](https://docs.nightbot.tv/control-panel/commands)。
+[Nightbot Commands](https://docs.nightbot.tv/control-panel/commands)、
+[ChiwaBots 自訂 Bot 流程](https://forum.chiwabots.com/posts/6a2034511d8bba85789d6774)、
+[ChiwaBots 帳號與頻道同意](https://chiwabots.com/docs/account/)。
 
 ## 已確認的產品決策
 
@@ -93,6 +99,38 @@ Bot credential 與 broadcaster credential 仍是不同用途、不同 scope 的 
 - 這些操作保留 tenant 設定、角色設定與歷史紀錄。永久刪除帳號／歷史資料是獨立、高風險流程，不與解除授權混用。
 - 上游 revoke 暫時失敗不會還原本地解除結果；重新授權會建立新的 token 狀態。
 
+### 帳號、credential 與頻道同意的正規化邊界
+
+- `bot_accounts` 對 Twitch user B 只有一列；`tokens (B, 'bot')` 只有一份 canonical credential。
+- A 與 C 是否可使用 B，由兩列獨立的 `channel_bot_accounts (A, B)`／`(C, B)` 表示；selection 與移除也各自
+  channel-scoped。任何路徑都不應為每個 tenant 複製 B 的 access／refresh token。
+- A、C 各自仍須取得 B 的明示同意。現行 v1 以各自的一次性 OAuth invite 作身分證明，因此第二個頻道仍會讓
+  B 走一次 Twitch OAuth，callback 會安全更新同一份 canonical credential，而不是建立第二份 token。
+- 不能在拿到新的 OAuth token 後丟棄它並沿用舊 token：同一 app/user grant 的 refresh-token 輪替語意可能讓舊
+  credential 失效。真正的「只新增頻道 grant、不重做 OAuth」需要獨立的 Bot provider session／portal。
+- Provider portal 必須以 B 的獨立、可撤銷 session 證明身分，逐邀請明確接受，且不得因此建立 tenant membership
+  或 Dashboard 權限。此 trust model、session revoke 與跨裝置登入尚未交付，應以獨立 migration/API security
+  review 實作；在此之前維持 OAuth proof，不由 A／C 代替 B 同意。
+- TwitchIO runtime 目前以 user ID 作單一 credential slot，因此同一 identity 不能同時作 broadcaster 與 Bot。
+  兩種 OAuth 寫入與 sender selection 共用 identity advisory lock 並 fail closed；公開邀請、登入失敗頁與 Settings
+  都提示改用不同帳號。只有完成 canonical union CredentialBroker 與真實 Twitch 驗證後才能解除此限制。
+
+共用 credential 的影響也是全域的：Twitch revoke、reauth、scope 變更與 rate-limit budget 會影響所有已授權使用
+B 的頻道；單一 tenant unlink 只移除自己的 mapping，最後一個 mapping 才清除 canonical credential。
+
+### Runtime credential 收斂
+
+PostgreSQL NOTIFY 只負責低延遲 wake-up，不作 durable queue。Runtime 以不含 secret 的
+`(user_id, token_type, credential_revision)` metadata 作 canonical generation：
+
+- refresh dispatch 先捕捉固定的 credential role + revision；selection 改變後不得重新推斷 token type。
+- runtime 的通知 channels 共用一條 reconnecting LISTEN connection；每次連線／重連以 coalesced request 執行
+  catch-up，另以 60–75 秒 jitter metadata scan 修補遺失 NOTIFY 與 transient reload。
+- 同 revision 去重；invalidated／requires-reauth／deleted row 從 runtime 移除；只有 drift 才解密並驗證 token。
+- selection 與 metadata reconcile 共用 process-global lock ordering，避免跨頻道 resolver snapshot／discard 互相覆蓋。
+- API due-validation claim 帶 revision + lease timestamp；exception fallback 以兩者 CAS，舊 worker 不得覆寫新 OAuth
+  健康狀態。
+
 ## 剩餘缺口與已完成基礎
 
 ### Collaborator 登入基礎已完成，grant source 尚待 Phase 4–5
@@ -121,10 +159,12 @@ session；pending external identity grant 的 materialize 仍待 `channel_member
 
 因此 `channel_members` 只能作 effective projection，授權來源必須另表保存。
 
-### Runtime 仍是單一 `_bot_id`
+### Per-tenant sender runtime 已完成，實帳號 smoke 仍是 release gate
 
-目前 chat sender、moderator API、EventSub condition、self-message suppression、mod cache、followers／chatters
-查詢都使用全域 `_bot_id`。前端加 dropdown 並不能真正做到 per-tenant sender。
+Channel-scoped resolver 已套用 chat sender、moderator API、EventSub condition、self-message suppression、mod cache
+與 followers／chatters 查詢。切換由 desired／active version state machine 驅動；runtime 完成 token、完整 scopes、
+Twitch MOD 與必要 EventSub preflight 後才 ack。沒有可安全使用的 staging Bot credential 時，只能以 unit／integration
+證明 orchestration，不能把真實 Twitch 切換標為已 smoke。
 
 ### RLS 尚未生效
 
@@ -326,15 +366,18 @@ Audit、error、URL、PG NOTIFY payload 永遠不包含 access／refresh token �
 - `POST /api/tenants/{channel_id}/bot-accounts/invites`：Owner-only，201。
 - `GET /api/tenants/{channel_id}/bot-accounts/invites/{id}`：Owner-only status polling。
 - `GET /api/public/bot-invites/{public_token}`：public safe consent summary。
+- `POST /api/public/bot-invites/{public_token}/decline`：public one-time decline。
 - `GET /api/auth/twitch/bot/callback`：public OAuth callback。
 - `DELETE /api/tenants/{channel_id}/bot-accounts/{bot_id}`：Owner-only；active／desired 時回 409。
+- `GET /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD，讀 desired／active／ack 安全狀態。
 - `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD，寫 desired + version。
 - `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
 - `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only，立即重查。
 - `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only，停用服務、撤銷 Owner session 並解除 token。
 
-所有授權檢查與解除 mutation 都要求 `X-Niibot-Action: twitch-authorization-management`；GET summary 不要求
-action header。Owner dependency 與 tenant isolation 在 server 執行，不能只依賴前端隱藏按鈕。
+Invite／reauthorize／selection mutation 要求 `X-Niibot-Action: bot-account-management`；授權檢查與解除 mutation
+要求 `X-Niibot-Action: twitch-authorization-management`。GET summary 不要求 action header。Owner dependency 與
+tenant isolation 在 server 執行，不能只依賴前端隱藏按鈕。
 
 ### Collaboration
 
@@ -392,6 +435,18 @@ action header。Owner dependency 與 tenant isolation 在 server 執行，不能
 6. 失敗保留舊 active，寫 `failed + safe error code`。
 7. Restart 依 active 恢復，並重試未完成 desired；絕不直接採用 failed desired。
 
+### Selection 操作狀態與安全錯誤
+
+- `active`：`active_bot_user_id` 已由 runtime ack，可顯示「目前使用」。
+- `switching`：`desired_bot_user_id` 只是要求值；UI 必須明示完成前仍使用 active sender。
+- `failed`：active sender 不變；同一 desired 可重試，或另選 sender 產生新 version。
+- `bot_authorization_required`／`bot_scope_required`：由 Owner 重新授權目標 Bot。
+- `bot_not_moderator`：先在 Twitch 將目標 Bot 設為該頻道 MOD。
+- `broadcaster_authorization_required`／`broadcaster_scope_required`：由 Owner 更新實況主授權。
+- `provider_unavailable`／`eventsub_unavailable`／`runtime_unavailable`：保留舊 sender，稍後重試並查 runtime log。
+
+這些 code 是有限 allowlist；上游 response、token、OAuth state/code 與 exception message 不進 DB、NOTIFY 或前端。
+
 ### EventSub 拆分
 
 現有 catalog 混合兩類 subscription，必須拆成：
@@ -418,8 +473,9 @@ subscription 失敗時整個切換失敗，不能因其他 subscription 成功�
 ### TwitchIO 前置 spike
 
 同一 Twitch user ID 可能同時有 broadcaster 與 Bot token。DB 可保存兩列不代表 TwitchIO runtime 能同時選對
-兩種 token。Phase 0 spike 已確認 TwitchIO token store 以 user ID 為 credential key，因此同 identity 走
-union-scope 契約；Phase 3 sender selection 必須在寫入 desired selection 前強制驗證 union scopes，不能靜默覆寫。
+兩種 token。Phase 0 spike 已確認 TwitchIO token store 以 user ID 為 credential key；目前 sender selection 在任何
+provider 檢查或 desired-state 寫入前 fail-closed。日後若要解除限制，必須先完成 canonical union credential、scope
+union、refresh source 與真實 Twitch／PostgreSQL concurrency 驗證，不能只因 DB 有兩列就宣稱支援。
 
 ## Frontend
 
@@ -534,9 +590,8 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 - **Go/no-go：** callback原子性、replay防護、token加密與名單隔離通過。
 
 實作結果：migration 100–102、owner/public/admin API、callback transaction、Settings/public UI 與 system Bot hot reload
-已完成；本機 PostgreSQL migration smoke、完整 backend/frontend suites、lint、typecheck 與 production build 均已驗證，
-細節記錄於 `tasks/todo.md` Review。
-真正 per-tenant sender 尚未啟用，因此自訂 credential 在 Phase 2 只登錄，不會進入全域 TwitchIO token store。
+已完成。Bot identity 與 token 各自 canonical 保存一份；每個頻道的 consent／使用權則保存在獨立 mapping。
+同一 Bot 可供多個已獲同意的頻道使用，但 Twitch 全域撤權、reauth 與 rate limit 仍是共享 blast radius。
 
 ### Phase 3 — Per-tenant sender
 
@@ -545,8 +600,13 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 - 遷移所有 send/mod API call sites。
 - **Go/no-go：** 切換失敗保留舊 active；A 切換不影響 C。
 
-實作結果：desired／active/version contract、channel-scoped resolver、切換通知與 restart reconcile 已完成；授權生命週期
-再補上 active／desired unlink guard、credential 明確失效時 fallback 與 channel-scoped runtime reload。
+實作結果：GET／PUT selection contract、tenant mapping + full-scope + MOD preflight、serialized desired/version write、
+channel-scoped token load、create-before-delete EventSub reconcile、version-guarded ack／rollback、restart recovery 與
+Settings 單一選擇器均已完成。授權生命週期另具 active／desired unlink guard、credential 明確失效 fallback 與
+channel-scoped runtime reload。Refresh 寫回以觸發當下的 role + revision 為 CAS 身分，避免切換期間寫錯 token；
+validation lease 也以 revision + lease timestamp 做 CAS。Runtime 除 listener hot reload 外，另具 reconnect catch-up
+與 60 秒加 jitter 的 non-secret metadata reconcile；只有 revision 漂移才讀取並解密 credential。真實 Twitch
+OAuth／MOD／EventSub smoke 仍是 release gate。
 
 ### Phase 4 — Manual MOD Dashboard
 
@@ -575,7 +635,8 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 - Identity：Bot callback不建 User；collaborator callback不建 channel/token/membership。
 - Credential：DB ciphertext、refresh、key rotation、invalid token、scope diff、零 mapping清除。
 - Tenant：A/C mapping隔離、ID enumeration、Owner/MOD矩陣、membership locked、tenant suspended。
-- Runtime：hot reload、failed desired、restart、old/new event dedup、same-user dual token、automatic fallback。
+- Runtime：hot reload、漏訊息／重連 catch-up、failed desired、restart、old/new event dedup、同 identity 雙角色拒絕、
+  automatic fallback。
 - Collaboration：manual + sync union、未登入 pending identity、login materialize、跨 tenant revoke。
 - Sync：authoritative empty、partial page failure、API outage、scope revoke、15 分鐘 reconcile、1 小時 expiry。
 - Secrets：payment、Bot credential、Overlay key只限 Owner；logs／audit／notify皆redacted。
@@ -585,20 +646,23 @@ Owner-only card 未載入資料前不得先呼叫對應 API；後端仍需完整
 
 ## 待確認細項（建議預設）
 
-| #   | 細項                              | 建議預設                                                              |
-| --- | --------------------------------- | --------------------------------------------------------------------- |
-| D1  | MOD 是否可啟停 Bot                | 可以；視為營運操作                                                    |
-| D2  | MOD 是否可切換已核准 sender       | 可以；不能 invite、reauthorize、unlink                                |
-| D3  | Private Dashboard URL             | `/dashboard/{channel_id}/...`，舊路由redirect                         |
-| D4  | Manual MOD invite期限             | 7 天、一次性、Owner可撤銷                                             |
-| D5  | Bot OAuth invite期限              | 30 分鐘、一次性；同 tenant最多5筆pending                              |
-| D6  | Twitch MOD reconcile              | 每15分鐘；grant有效1小時；明確scope/token失效立即fail closed          |
-| D7  | 個別 Twitch MOD例外               | v1不提供deny list；需要例外就關閉sync並用manual invite                |
-| D8  | 主動unlink active Bot             | 回409，要求先切回Niibot；非預期失效才自動fallback                     |
-| D9  | Bot provider自助撤回              | v1先用Twitch Connections全域撤權；tenant-specific portal列後續        |
-| D10 | 同一identity同時是broadcaster+Bot | Phase 0 spike後決定 CredentialBroker或union-scope，不允許未驗證地上線 |
-| D11 | DB role字串                       | 內部暫留 `manager`，UI統一顯示「MOD／編輯者」                         |
-| D12 | RLS                               | MOD production rollout前必須完成staging逐表enable與rollback drill     |
+| #   | 細項                              | 建議預設                                                          |
+| --- | --------------------------------- | ----------------------------------------------------------------- |
+| D1  | MOD 是否可啟停 Bot                | 可以；視為營運操作                                                |
+| D2  | MOD 是否可切換已核准 sender       | 可以；不能 invite、reauthorize、unlink                            |
+| D3  | Private Dashboard URL             | `/dashboard/{channel_id}/...`，舊路由redirect                     |
+| D4  | Manual MOD invite期限             | 7 天、一次性、Owner可撤銷                                         |
+| D5  | Bot OAuth invite期限              | 30 分鐘、一次性；同 tenant最多5筆pending                          |
+| D6  | Twitch MOD reconcile              | 每15分鐘；grant有效1小時；明確scope/token失效立即fail closed      |
+| D7  | 個別 Twitch MOD例外               | v1不提供deny list；需要例外就關閉sync並用manual invite            |
+| D8  | 主動unlink active Bot             | 回409，要求先切回Niibot；非預期失效才自動fallback                 |
+| D9  | Bot provider自助撤回              | v1先用Twitch Connections全域撤權；tenant-specific portal列後續    |
+| D10 | 同一identity同時是broadcaster+Bot | 現行 fail closed；完成前不開放                                    |
+| D11 | DB role字串                       | 內部暫留 `manager`，UI統一顯示「MOD／編輯者」                     |
+| D12 | RLS                               | MOD production rollout前必須完成staging逐表enable與rollback drill |
+
+D10 的 OAuth 寫入與 selection 共用 identity advisory lock；只有完成可驗證的 union CredentialBroker 後，
+才能解除雙角色限制。
 
 ## Twitch 官方依據
 
