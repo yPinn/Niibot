@@ -111,6 +111,11 @@ class BotMissingScopesError(InvalidInputError):
     user_message = "Bot 權限不完整，請重新授權"
 
 
+class BotCredentialRoleConflictError(ConflictError):
+    code = "BOT_ACCOUNT.ROLE_CONFLICT"
+    user_message = "這個 Twitch 帳號已作為實況主使用，請改用另一個 Bot 帳號"
+
+
 def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
@@ -355,6 +360,24 @@ class BotAccountService:
                     raise BotInviteWrongAccountError(
                         context={"expected_bot_user_id": expected_bot_user_id}
                     )
+
+                await conn.fetchval(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    f"twitch-runtime-identity:{platform_user_id}",
+                )
+                has_broadcaster_credential = await conn.fetchval(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                          FROM tokens
+                         WHERE user_id = $1
+                           AND token_type = 'broadcaster'
+                    )
+                    """,
+                    platform_user_id,
+                )
+                if has_broadcaster_credential is True:
+                    raise BotCredentialRoleConflictError()
 
                 encrypted_access, encryption_version = encrypt_twitch_token(
                     access_token, token_encryption_key

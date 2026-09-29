@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, call, patch
 
 import pytest
 
+from shared.models.channel import TokenRuntimeMetadata
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -88,8 +90,9 @@ def bot():
         b._mod_checked_at = {}
         b._token_refresh_buffer = []
         b._token_refresh_flush_task = None
-        b._runtime_credential_revisions = {}
-        b._pending_refresh_revisions = {}
+        b._runtime_credential_sources = {}
+        b._pending_refresh_sources = {}
+        b._bot_selection_reconcile_lock = asyncio.Lock()
         b.egress = MagicMock()
         b.egress.acquire_helix = AsyncMock()
         b.egress.acquire_chat = AsyncMock()
@@ -138,7 +141,7 @@ class TestSubscriptionBootstrap:
         )
         bot.channels.get_token = AsyncMock(side_effect=AssertionError("must not decrypt token"))
 
-        result = await Bot._eventsub_scope_context(bot, "ch1")
+        result = await Bot._eventsub_scope_context(bot, "ch1", "bot-custom")
 
         assert result == (
             {"channel:read:redemptions", "channel:read:subscriptions"},
@@ -148,7 +151,7 @@ class TestSubscriptionBootstrap:
         bot.channels.get_token.assert_not_awaited()
         assert bot.channels.get_token_scopes.await_args_list == [
             call("ch1", "broadcaster"),
-            call("bot-001", "bot"),
+            call("bot-custom", "bot"),
         ]
 
     async def test_reconcile_enabled_subscriptions_uses_one_global_diff(self, bot):
@@ -190,12 +193,14 @@ class TestSubscriptionBootstrap:
         )
         bot._check_bot_mod_status = AsyncMock()
         bot._seed_and_warm_channel = AsyncMock(return_value=1)
+        bot._resume_bot_selections = AsyncMock()
         bot._mod_check_pending = set()
 
         with patch("twitch.core.bot.asyncio.sleep", new=AsyncMock()):
             await Bot._bootstrap_channels(bot)
 
         bot._check_bot_mod_status.assert_awaited_once_with("ch1")
+        bot._resume_bot_selections.assert_awaited_once_with()
         assert "ch2" not in bot._mod_check_pending
 
     async def test_periodic_reconcile_retries_after_transient_failure(self, bot):
@@ -222,8 +227,33 @@ class TestSubscriptionBootstrap:
 
 @pytest.mark.asyncio
 class TestEventTokenRefreshed:
+    async def test_uses_captured_bot_source_after_selection_state_changes(self, bot):
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._pending_refresh_sources[("u1", "new_tok")] = RuntimeCredentialSource(
+            token_type="bot",
+            revision=7,
+        )
+        # The account is no longer selected by the time TwitchIO dispatches the
+        # refresh event.  Persistence must still target the row that produced
+        # the refresh, not infer a new role from current selection state.
+        assert "u1" not in bot.bots.relevant_bot_ids()
+
+        await bot.event_token_refreshed(_make_token_refreshed_payload("u1", "new_tok", "new_ref"))
+
+        bot.channels.rotate_token_if_revision.assert_awaited_once_with(
+            "u1",
+            "new_tok",
+            "new_ref",
+            scopes=None,
+            token_type="bot",
+            expected_revision=7,
+        )
+
     async def test_persists_token_and_scopes(self, bot):
-        bot._pending_refresh_revisions[("u1", "new_tok")] = 7
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._pending_refresh_sources[("u1", "new_tok")] = RuntimeCredentialSource("broadcaster", 7)
         payload = _make_token_refreshed_payload(
             user_id="u1",
             token="new_tok",
@@ -241,7 +271,7 @@ class TestEventTokenRefreshed:
             token_type="broadcaster",
             expected_revision=7,
         )
-        assert bot._runtime_credential_revisions["u1"] == 8
+        assert bot._runtime_credential_sources["u1"] == RuntimeCredentialSource("broadcaster", 8)
 
     async def test_skips_when_no_user_id(self, bot):
         payload = _make_token_refreshed_payload(user_id="", token="tok", refresh_token="ref")
@@ -251,7 +281,9 @@ class TestEventTokenRefreshed:
         bot.channels.rotate_token_if_revision.assert_not_awaited()
 
     async def test_persists_with_none_scopes_when_scopes_empty(self, bot):
-        bot._pending_refresh_revisions[("u1", "tok")] = 7
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._pending_refresh_sources[("u1", "tok")] = RuntimeCredentialSource("broadcaster", 7)
         payload = _make_token_refreshed_payload(
             user_id="u1", token="tok", refresh_token="ref", scopes=[]
         )
@@ -268,7 +300,9 @@ class TestEventTokenRefreshed:
         )
 
     async def test_persists_multiple_scopes_space_separated(self, bot):
-        bot._pending_refresh_revisions[("u1", "tok")] = 7
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._pending_refresh_sources[("u1", "tok")] = RuntimeCredentialSource("broadcaster", 7)
         payload = _make_token_refreshed_payload(
             user_id="u1",
             token="tok",
@@ -291,8 +325,11 @@ class TestEventTokenRefreshed:
         bot.channels.rotate_token_if_revision.assert_not_awaited()
 
     async def test_stale_refresh_cannot_overwrite_a_newer_database_revision(self, bot):
-        bot._pending_refresh_revisions[("u1", "new_tok")] = 7
-        bot._runtime_credential_revisions["u1"] = 7
+        from twitch.core.bot import RuntimeCredentialSource
+
+        source = RuntimeCredentialSource("broadcaster", 7)
+        bot._pending_refresh_sources[("u1", "new_tok")] = source
+        bot._runtime_credential_sources["u1"] = source
         bot.channels.rotate_token_if_revision.return_value = False
         bot.remove_token = AsyncMock()
         with patch(
@@ -304,7 +341,7 @@ class TestEventTokenRefreshed:
                 _make_token_refreshed_payload("u1", "new_tok", "new_ref")
             )
 
-        assert "u1" not in bot._runtime_credential_revisions
+        assert "u1" not in bot._runtime_credential_sources
         bot.remove_token.assert_awaited_once_with("u1")
 
 
@@ -405,15 +442,18 @@ class TestAddToken:
         bot.egress.defer_chat.assert_called_once_with("bot-1", "channel-1", 5.0)
 
     async def test_refresh_dispatch_captures_the_source_credential_revision(self, bot):
+        from twitch.core.bot import RuntimeCredentialSource
+
         original_dispatch = MagicMock()
         bot._http = SimpleNamespace(_dispatch_event=original_dispatch)
-        bot._runtime_credential_revisions["u1"] = 7
+        source = RuntimeCredentialSource("bot", 7)
+        bot._runtime_credential_sources["u1"] = source
         payload = SimpleNamespace(access_token="new-token")
 
         bot._install_twitchio_refresh_revision_capture()
         bot._http._dispatch_event("u1", payload)
 
-        assert bot._pending_refresh_revisions[("u1", "new-token")] == 7
+        assert bot._pending_refresh_sources[("u1", "new-token")] == source
         original_dispatch.assert_called_once_with("u1", payload)
 
     async def test_persists_current_token_not_stale_args(self, bot):
@@ -520,7 +560,87 @@ class TestAddToken:
         bot.channels.record_token_validation.assert_awaited_once_with(
             "u1", "broadcaster", expected_revision=7, connection=validation_conn
         )
-        assert bot._runtime_credential_revisions["u1"] == 7
+        from twitch.core.bot import RuntimeCredentialSource
+
+        assert bot._runtime_credential_sources["u1"] == RuntimeCredentialSource("broadcaster", 7)
+
+    async def test_transient_reload_restores_previous_source_for_future_retry(self, bot):
+        from twitch.core.bot import RuntimeCredentialSource
+
+        previous = RuntimeCredentialSource("broadcaster", 6)
+        bot._runtime_credential_sources["u1"] = previous
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        cm.__aexit__ = AsyncMock(return_value=None)
+        bot.channels.token_validation_lock.return_value = cm
+        bot.channels.defer_token_validation = AsyncMock(return_value=True)
+        bot._validate_runtime_token = AsyncMock(side_effect=RuntimeError("temporary outage"))
+
+        with pytest.raises(RuntimeError, match="temporary outage"):
+            await bot.add_token(
+                "tok",
+                "ref",
+                persist=False,
+                expected_user_id="u1",
+                expected_token_type="broadcaster",
+                expected_revision=7,
+            )
+
+        assert bot._runtime_credential_sources["u1"] == previous
+
+
+@pytest.mark.asyncio
+class TestRuntimeCredentialReconcile:
+    async def test_listener_catch_up_requests_are_coalesced(self, bot):
+        bot._runtime_credential_reconcile_requested = asyncio.Event()
+        bot._spawn_background = MagicMock()
+
+        await bot._schedule_runtime_credential_reconcile()
+        await bot._schedule_runtime_credential_reconcile()
+
+        assert bot._runtime_credential_reconcile_requested.is_set()
+        bot._spawn_background.assert_not_called()
+
+    async def test_repairs_revision_drift_and_discards_rows_no_longer_eligible(self, bot):
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._credential_reconcile_lock = asyncio.Lock()
+        bot.bots = MagicMock()
+        bot.bots.relevant_bot_ids.return_value = {"bot-1"}
+        metadata = [
+            TokenRuntimeMetadata("bot-1", "bot", 8),
+            TokenRuntimeMetadata("channel-1", "broadcaster", 3),
+        ]
+        bot.channels.list_runtime_token_metadata = AsyncMock(return_value=metadata)
+        bot._runtime_credential_sources = {
+            "bot-1": RuntimeCredentialSource("bot", 7),
+            "channel-1": RuntimeCredentialSource("broadcaster", 3),
+            "deleted-1": RuntimeCredentialSource("broadcaster", 2),
+        }
+        bot._reload_runtime_credential = AsyncMock()
+        bot._discard_runtime_token = AsyncMock()
+
+        await bot._reconcile_runtime_credentials()
+
+        bot._reload_runtime_credential.assert_awaited_once_with(metadata[0])
+        bot._discard_runtime_token.assert_awaited_once_with("deleted-1")
+
+    async def test_does_not_reload_an_already_active_revision(self, bot):
+        from twitch.core.bot import RuntimeCredentialSource
+
+        bot._credential_reconcile_lock = asyncio.Lock()
+        bot.bots = MagicMock()
+        bot.bots.relevant_bot_ids.return_value = set()
+        metadata = [TokenRuntimeMetadata("channel-1", "broadcaster", 3)]
+        bot.channels.list_runtime_token_metadata = AsyncMock(return_value=metadata)
+        bot._runtime_credential_sources = {"channel-1": RuntimeCredentialSource("broadcaster", 3)}
+        bot._reload_runtime_credential = AsyncMock()
+        bot._discard_runtime_token = AsyncMock()
+
+        await bot._reconcile_runtime_credentials()
+
+        bot._reload_runtime_credential.assert_not_awaited()
+        bot._discard_runtime_token.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +682,10 @@ class TestLoadTokens:
         with caplog.at_level(logging.WARNING):
             await load_bot.load_tokens()
 
-        load_bot.channels.list_tokens.assert_awaited_once_with(skip_invalid_envelopes=True)
+        load_bot.channels.list_tokens.assert_awaited_once_with(
+            skip_invalid_envelopes=True,
+            runtime_eligible_only=True,
+        )
         load_bot.add_token.assert_awaited_once_with(
             "tok",
             "ref",

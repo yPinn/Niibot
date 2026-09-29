@@ -58,4 +58,18 @@ describe('LoginForm', () => {
     expect(screen.getByText('依需求加入排隊、直播畫面與 Discord 工具')).toBeInTheDocument()
     expect(screen.getByText('會前往 Twitch 完成登入，再回到 Niibot。')).toBeInTheDocument()
   })
+
+  it('explains when the account is already reserved as a bot identity', async () => {
+    render(
+      <MemoryRouter initialEntries={['/login?error=bot_account_role_conflict']}>
+        <LoginForm />
+      </MemoryRouter>
+    )
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('登入失敗', {
+        description: '這個 Twitch 帳號已作為 Bot 使用，請改用另一個帳號登入頻道',
+      })
+    )
+  })
 })

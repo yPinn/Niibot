@@ -162,6 +162,18 @@ class TestCustomToCustomRedirect:
 
 class TestBuiltinFallthrough:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("reserved", ["cmd", "ai", "xhc", "commands", "指令"])
+    async def test_legacy_reserved_custom_names_fail_closed_before_lookup(self, reserved: str):
+        router = _Router({reserved: make_config(reserved, "shadowed")})
+        payload = make_payload(f"!{reserved}")
+
+        handled = await router._handle_custom_command(payload)
+
+        assert handled is False
+        router.command_configs.find_by_name_or_alias.assert_not_awaited()
+        payload.broadcaster.send_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_redirect_to_builtin_falls_through_with_rewritten_text(self):
         router = _Router({"推": make_config("推", "!so $(query)")})
         payload = make_payload("!推 someone")

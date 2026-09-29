@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from core.dependencies import (
     get_bot_account_service,
+    get_bot_selection_service,
     get_current_user_id,
     get_twitch_api,
     get_twitch_authorization_service,
@@ -44,6 +45,7 @@ from services.twitch_authorization_service import (
     CredentialHealth,
     TwitchCapabilitySnapshot,
 )
+from shared.repositories.bot_selection import BotSelectionState
 from shared.twitch_scopes import BOT_CORE_SCOPES, BOT_SCOPES, BROADCASTER_CORE_SCOPES
 
 _NOW = datetime.now(UTC)
@@ -55,6 +57,7 @@ def _client(
     service: MagicMock,
     twitch: MagicMock | None = None,
     authorization: MagicMock | None = None,
+    selection: MagicMock | None = None,
 ) -> TestClient:
     app = FastAPI()
     register_exception_handlers(app)
@@ -64,6 +67,7 @@ def _client(
     app.dependency_overrides[get_twitch_authorization_service] = lambda: (
         authorization or MagicMock()
     )
+    app.dependency_overrides[get_bot_selection_service] = lambda: selection or MagicMock()
     app.dependency_overrides[require_tenant_owner] = lambda: TenantContext(
         channel_id="channel-a", user_id=_USER_ID, role="owner"
     )
@@ -73,6 +77,95 @@ def _client(
     app.dependency_overrides[require_owner] = lambda: "channel-a"
     app.dependency_overrides[get_current_user_id] = lambda: _USER_ID
     return TestClient(app, raise_server_exceptions=False)
+
+
+def _selection_state(**overrides) -> BotSelectionState:
+    values = {
+        "channel_id": "channel-a",
+        "desired_bot_user_id": "bot-b",
+        "active_bot_user_id": "niibot",
+        "selection_version": 2,
+        "acked_version": 1,
+        "status": "switching",
+        "last_error_code": None,
+    }
+    values.update(overrides)
+    return BotSelectionState(**values)
+
+
+def test_manager_reads_safe_bot_selection_state():
+    selection = MagicMock()
+    selection.get_selection = AsyncMock(return_value=_selection_state())
+
+    response = _client(MagicMock(), selection=selection).get(
+        "/api/tenants/channel-a/bot-account-selection"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "desired_bot_user_id": "bot-b",
+        "active_bot_user_id": "niibot",
+        "selection_version": 2,
+        "acked_version": 1,
+        "status": "switching",
+        "error_code": None,
+    }
+    selection.get_selection.assert_awaited_once_with("channel-a")
+
+
+def test_manager_requests_custom_bot_selection_with_explicit_action_header():
+    selection = MagicMock()
+    selection.request_selection = AsyncMock(return_value=_selection_state())
+
+    response = _client(MagicMock(), selection=selection).put(
+        "/api/tenants/channel-a/bot-account-selection",
+        headers={"X-Niibot-Action": "bot-account-management"},
+        json={"bot_user_id": "bot-b"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "switching"
+    selection.request_selection.assert_awaited_once_with(
+        channel_id="channel-a",
+        bot_user_id="bot-b",
+        actor_user_id=_USER_ID,
+    )
+
+
+def test_manager_can_return_to_system_bot_with_null_selection():
+    selection = MagicMock()
+    selection.request_selection = AsyncMock(
+        return_value=_selection_state(
+            desired_bot_user_id=None,
+            active_bot_user_id="bot-b",
+        )
+    )
+
+    response = _client(MagicMock(), selection=selection).put(
+        "/api/tenants/channel-a/bot-account-selection",
+        headers={"X-Niibot-Action": "bot-account-management"},
+        json={"bot_user_id": None},
+    )
+
+    assert response.status_code == 200
+    selection.request_selection.assert_awaited_once_with(
+        channel_id="channel-a",
+        bot_user_id=None,
+        actor_user_id=_USER_ID,
+    )
+
+
+def test_selection_mutation_rejects_missing_action_header():
+    selection = MagicMock()
+    selection.request_selection = AsyncMock()
+
+    response = _client(MagicMock(), selection=selection).put(
+        "/api/tenants/channel-a/bot-account-selection",
+        json={"bot_user_id": "bot-b"},
+    )
+
+    assert response.status_code == 422
+    selection.request_selection.assert_not_awaited()
 
 
 def test_owner_creates_shareable_invite_url_without_exposing_credentials():
@@ -171,6 +264,9 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     response = _client(service, twitch).get(f"/api/public/bot-invites/opaque?nonce={_STATE_NONCE}")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow"
     assert response.json() == {
         "channel_name": "alice",
         "display_name": "Alice",
@@ -191,6 +287,19 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     )
     assert decoded["uid"] == f"11111111-2222-3333-4444-555555555555.{_STATE_NONCE}"
     assert "opaque" not in decoded["uid"]
+
+
+def test_public_decline_response_disables_storage_referrers_and_indexing():
+    service = MagicMock()
+    service.decline_invite = AsyncMock()
+
+    response = _client(service).post(f"/api/public/bot-invites/opaque/decline?nonce={_STATE_NONCE}")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow"
+    service.decline_invite.assert_awaited_once_with(public_token="opaque", state_nonce=_STATE_NONCE)
 
 
 def test_tenant_bot_list_combines_only_system_default_and_explicit_mappings():
@@ -309,6 +418,9 @@ def test_bot_callback_updates_registry_but_never_creates_a_dashboard_session():
     )
 
     assert response.status_code in {302, 303, 307}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-robots-tag"] == "noindex, nofollow"
     assert response.headers["location"].endswith("/bot-auth/result?status=success")
     assert "set-cookie" not in response.headers
     service.authorize_invite.assert_awaited_once_with(

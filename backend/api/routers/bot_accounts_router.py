@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from core.config import Settings, get_settings
 from core.dependencies import (
     get_bot_account_service,
+    get_bot_selection_service,
     get_current_user_id,
     get_twitch_api,
     get_twitch_authorization_service,
@@ -30,6 +31,7 @@ from services.bot_account_service import (
     BotInviteCreated,
     build_bot_invite_url,
 )
+from services.bot_selection_service import BotSelectionService
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from services.tenant_service import TenantContext
 from services.twitch_api import TwitchAPIClient
@@ -50,6 +52,7 @@ _public_invite_limiter = RateLimiter(max_calls=60, period=60.0)
 _callback_limiter = RateLimiter(max_calls=30, period=60.0)
 _authorization_check_limiter = RateLimiter(max_calls=10, period=60.0)
 _authorization_remove_limiter = RateLimiter(max_calls=5, period=60.0)
+_selection_limiter = RateLimiter(max_calls=10, period=60.0)
 _BOT_CALLBACK_PATH = "/api/auth/twitch/bot/callback"
 _PROVIDER_OAUTH_ERROR_REASONS = {
     "access_denied": "authorization_denied",
@@ -58,6 +61,19 @@ _PROVIDER_OAUTH_ERROR_REASONS = {
     "server_error": "provider_unavailable",
     "temporarily_unavailable": "provider_unavailable",
 }
+_SENSITIVE_RESPONSE_HEADERS = {
+    "Cache-Control": "no-store",
+    "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow",
+}
+
+
+def _set_sensitive_response_headers(response: Response) -> None:
+    response.headers.update(_SENSITIVE_RESPONSE_HEADERS)
+
+
+def _sensitive_redirect(url: str) -> RedirectResponse:
+    return RedirectResponse(url, headers=_SENSITIVE_RESPONSE_HEADERS)
 
 
 class BotInviteCreateResponse(BaseModel):
@@ -105,6 +121,19 @@ class BotAccountListResponse(BaseModel):
     accounts: list[BotAccountResponse]
 
 
+class BotSelectionRequest(BaseModel):
+    bot_user_id: str | None = None
+
+
+class BotSelectionResponse(BaseModel):
+    desired_bot_user_id: str | None
+    active_bot_user_id: str | None
+    selection_version: int
+    acked_version: int
+    status: Literal["active", "switching", "failed"]
+    error_code: str | None
+
+
 class BotInviteStatusResponse(BaseModel):
     invite_id: str
     status: str
@@ -146,6 +175,17 @@ class TwitchCapabilitySnapshotResponse(BaseModel):
     bot_status: AuthorizationStatus
     bot_user_id: str
     capabilities: list[CapabilityHealthResponse]
+
+
+def _selection_response(state) -> BotSelectionResponse:
+    return BotSelectionResponse(
+        desired_bot_user_id=state.desired_bot_user_id,
+        active_bot_user_id=state.active_bot_user_id,
+        selection_version=state.selection_version,
+        acked_version=state.acked_version,
+        status=state.status,
+        error_code=state.last_error_code,
+    )
 
 
 def _request_ip(request: Request) -> str:
@@ -236,6 +276,41 @@ async def list_tenant_bot_accounts(
         _account_response(account, is_system_default=False) for account in custom_accounts
     )
     return BotAccountListResponse(accounts=accounts)
+
+
+@router.get(
+    "/api/tenants/{channel_id}/bot-account-selection",
+    response_model=BotSelectionResponse,
+)
+async def get_bot_account_selection(
+    channel_id: str,
+    _tenant: TenantContext = Depends(require_tenant_access),
+    selection: BotSelectionService = Depends(get_bot_selection_service),
+) -> BotSelectionResponse:
+    return _selection_response(await selection.get_selection(channel_id))
+
+
+@router.put(
+    "/api/tenants/{channel_id}/bot-account-selection",
+    response_model=BotSelectionResponse,
+)
+async def update_bot_account_selection(
+    channel_id: str,
+    body: BotSelectionRequest,
+    request: Request,
+    _action: Literal["bot-account-management"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_tenant_access),
+    selection: BotSelectionService = Depends(get_bot_selection_service),
+) -> BotSelectionResponse:
+    _selection_limiter.require(
+        f"bot-selection:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+    )
+    state = await selection.request_selection(
+        channel_id=channel_id,
+        bot_user_id=body.bot_user_id,
+        actor_user_id=tenant.user_id,
+    )
+    return _selection_response(state)
 
 
 def _health_response(health: CredentialHealth) -> AuthorizationHealthResponse:
@@ -501,12 +576,14 @@ async def get_bot_invite_status(
 async def get_public_bot_invite(
     public_token: str,
     request: Request,
+    response: Response,
     nonce: str = Query(min_length=16, max_length=128),
     service: BotAccountService = Depends(get_bot_account_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     settings: Settings = Depends(get_settings),
 ) -> PublicBotInviteResponse:
     """Return the minimal consent-page contract for the invite holder."""
+    _set_sensitive_response_headers(response)
     _public_invite_limiter.require(f"{_request_ip(request)}:{_capability_rate_key(public_token)}")
     invite = await service.get_public_invite(
         public_token=public_token,
@@ -542,9 +619,11 @@ async def get_public_bot_invite(
 async def decline_public_bot_invite(
     public_token: str,
     request: Request,
+    response: Response,
     nonce: str = Query(min_length=16, max_length=128),
     service: BotAccountService = Depends(get_bot_account_service),
 ) -> DeclineResponse:
+    _set_sensitive_response_headers(response)
     _public_invite_limiter.require(
         f"decline:{_request_ip(request)}:{_capability_rate_key(public_token)}"
     )
@@ -568,22 +647,22 @@ async def bot_oauth_callback(
     if error or not code:
         reason = _provider_oauth_failure_reason(error)
         LOGGER.warning("Bot OAuth callback rejected before code exchange: reason=%s", reason)
-        return RedirectResponse(_result_redirect(settings, status_value="error", reason=reason))
+        return _sensitive_redirect(_result_redirect(settings, status_value="error", reason=reason))
 
     decoded_state = decode_oauth_state(state, secret=settings.jwt_secret_key)
     capability = decoded_state.get("uid")
     if decoded_state.get("mode") != "bot_authorization" or not isinstance(capability, str):
-        return RedirectResponse(
+        return _sensitive_redirect(
             _result_redirect(settings, status_value="error", reason="invalid_state")
         )
     try:
         invite_id, state_nonce = capability.split(".", 1)
     except ValueError:
-        return RedirectResponse(
+        return _sensitive_redirect(
             _result_redirect(settings, status_value="error", reason="invalid_state")
         )
     if not invite_id or not state_nonce:
-        return RedirectResponse(
+        return _sensitive_redirect(
             _result_redirect(settings, status_value="error", reason="invalid_state")
         )
 
@@ -592,14 +671,14 @@ async def bot_oauth_callback(
         redirect_path=_BOT_CALLBACK_PATH,
     )
     if not success or not token_data:
-        return RedirectResponse(
+        return _sensitive_redirect(
             _result_redirect(settings, status_value="error", reason="token_exchange_failed")
         )
 
     platform_user_id = token_data["user_id"]
     user_info = await twitch_api.get_user_info(platform_user_id)
     if not user_info:
-        return RedirectResponse(
+        return _sensitive_redirect(
             _result_redirect(settings, status_value="error", reason="identity_unavailable")
         )
 
@@ -623,12 +702,12 @@ async def bot_oauth_callback(
         )
     except AppError as exc:
         reason = exc.code.lower().replace(".", "_")
-        return RedirectResponse(_result_redirect(settings, status_value="error", reason=reason))
+        return _sensitive_redirect(_result_redirect(settings, status_value="error", reason=reason))
     except Exception as exc:
         LOGGER.error(
             "Bot OAuth callback failed after token exchange: exception_type=%s",
             type(exc).__name__,
         )
-        return RedirectResponse(error_url)
+        return _sensitive_redirect(error_url)
 
-    return RedirectResponse(_result_redirect(settings, status_value="success"))
+    return _sensitive_redirect(_result_redirect(settings, status_value="success"))

@@ -59,6 +59,8 @@ export const API_ENDPOINTS = {
       join(`/api/tenants/${encodeURIComponent(channelId)}/active-roleplay`),
     botAccounts: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts`),
+    botAccountSelection: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/bot-account-selection`),
     botInvites: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/invites`),
     botInviteStatus: (channelId: string, inviteId: string) =>
@@ -131,6 +133,8 @@ export const API_ENDPOINTS = {
   },
   commandImport: {
     sources: join('/api/commands/import/sources'),
+    csvPreview: join('/api/commands/import/csv/preview'),
+    csvExport: join('/api/commands/import/csv/export'),
     streamelementsPreview: join('/api/commands/import/streamelements/preview'),
     nightbotOauth: join('/api/commands/import/nightbot/oauth'),
     preview: (importId: string) => join(`/api/commands/import/preview/${importId}`),

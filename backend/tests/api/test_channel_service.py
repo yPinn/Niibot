@@ -7,6 +7,7 @@ import pytest
 
 from services.channel_service import ChannelService
 from services.twitch_authorization_service import CredentialHealth
+from shared.repositories.channel import TwitchCredentialRoleConflictError
 from shared.twitch_scopes import BROADCASTER_CORE_SCOPES
 
 
@@ -56,3 +57,12 @@ async def test_get_token_with_refresh_does_not_return_invalid_credential() -> No
 
     assert token is None
     service.repo.get_token.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_save_token_propagates_runtime_role_conflict() -> None:
+    service = ChannelService(MagicMock())
+    service.repo.upsert_token = AsyncMock(side_effect=TwitchCredentialRoleConflictError())
+
+    with pytest.raises(TwitchCredentialRoleConflictError):
+        await service.save_token("bot-1", "access", "refresh", "bot_one")

@@ -33,6 +33,7 @@ from services.admission_service import MembershipLockedError
 from services.oauth_service import decode_oauth_state, encode_oauth_state
 from shared.errors import AccessDeniedError, AppError, NotFoundError, RateLimitedError
 from shared.repositories.activation_code import ActivationCodeRepository
+from shared.repositories.channel import TwitchCredentialRoleConflictError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -332,6 +333,8 @@ async def twitch_oauth_callback(
         session_version = await pool.fetchval(
             "SELECT session_version FROM users WHERE id = $1::uuid", user_id
         )
+    except TwitchCredentialRoleConflictError:
+        return RedirectResponse(url=f"{error_redirect}?error=bot_account_role_conflict")
     except Exception as e:
         LOGGER.error(f"DB error during Twitch OAuth for {username}: {type(e).__name__}: {e}")
         return RedirectResponse(url=f"{error_redirect}?error=db_timeout")

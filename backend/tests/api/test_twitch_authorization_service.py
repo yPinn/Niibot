@@ -16,6 +16,7 @@ from api.services.twitch_api import (
 )
 from api.services.twitch_authorization_service import (
     BotAccountInUseError,
+    CredentialValidationClaim,
     SystemBotProtectedError,
     TwitchAuthorizationService,
     TwitchCredentialInvalidError,
@@ -333,7 +334,10 @@ async def test_provider_outage_does_not_hide_an_existing_reauthorization_require
 async def test_background_reconciliation_defers_unexpected_failures_to_avoid_starvation():
     conn = AsyncMock()
     service = _service(conn, MagicMock())
-    service.claim_due_credentials = AsyncMock(return_value=[("bot-1", "bot")])  # type: ignore[attr-defined,method-assign]
+    lease_until = datetime(2026, 9, 29, 9, 5, tzinfo=UTC)
+    service.claim_due_credentials = AsyncMock(  # type: ignore[attr-defined,method-assign]
+        return_value=[CredentialValidationClaim("bot-1", "bot", 7, lease_until)]
+    )
     service.check_credential = AsyncMock(side_effect=RuntimeError("bad ciphertext"))  # type: ignore[method-assign]
 
     checked = await service.check_due_credentials(limit=25)
@@ -342,15 +346,23 @@ async def test_background_reconciliation_defers_unexpected_failures_to_avoid_sta
     deferred = next(
         call.args for call in conn.execute.await_args_list if "next_validation_at" in call.args[0]
     )
-    assert deferred[1:] == ("bot-1", "bot")
+    assert deferred[1:] == ("bot-1", "bot", 7, lease_until)
+    assert "credential_revision = $3" in deferred[0]
+    assert "next_validation_at = $4" in deferred[0]
+    assert "requires_reauth = FALSE" in deferred[0]
+    assert "invalidated_at IS NULL" in deferred[0]
 
 
 @pytest.mark.asyncio
 async def test_background_reconciliation_validates_only_runtime_core_scopes():
     conn = AsyncMock()
     service = _service(conn, MagicMock())
+    lease_until = datetime(2026, 9, 29, 9, 5, tzinfo=UTC)
     service.claim_due_credentials = AsyncMock(  # type: ignore[attr-defined,method-assign]
-        return_value=[("bot-1", "bot"), ("channel-1", "broadcaster")]
+        return_value=[
+            CredentialValidationClaim("bot-1", "bot", 7, lease_until),
+            CredentialValidationClaim("channel-1", "broadcaster", 4, lease_until),
+        ]
     )
     service.check_credential = AsyncMock()  # type: ignore[method-assign]
 
@@ -369,14 +381,29 @@ async def test_background_reconciliation_validates_only_runtime_core_scopes():
 async def test_due_credentials_are_atomically_claimed_across_replicas():
     conn = AsyncMock()
     conn.fetch.return_value = [
-        {"user_id": "bot-1", "token_type": "bot"},
-        {"user_id": "channel-1", "token_type": "broadcaster"},
+        {
+            "user_id": "bot-1",
+            "token_type": "bot",
+            "credential_revision": 7,
+            "lease_until": datetime(2026, 9, 29, 9, 5, tzinfo=UTC),
+        },
+        {
+            "user_id": "channel-1",
+            "token_type": "broadcaster",
+            "credential_revision": 4,
+            "lease_until": datetime(2026, 9, 29, 9, 6, tzinfo=UTC),
+        },
     ]
     service = _service(conn, MagicMock())
 
     claimed = await service.claim_due_credentials(limit=2)
 
-    assert claimed == [("bot-1", "bot"), ("channel-1", "broadcaster")]
+    assert claimed == [
+        CredentialValidationClaim("bot-1", "bot", 7, datetime(2026, 9, 29, 9, 5, tzinfo=UTC)),
+        CredentialValidationClaim(
+            "channel-1", "broadcaster", 4, datetime(2026, 9, 29, 9, 6, tzinfo=UTC)
+        ),
+    ]
     sql, limit = conn.fetch.await_args.args
     assert limit == 2
     assert "FOR UPDATE SKIP LOCKED" in sql
@@ -384,6 +411,8 @@ async def test_due_credentials_are_atomically_claimed_across_replicas():
     assert "next_validation_at <= NOW()" in sql
     assert "UPDATE tokens" in sql
     assert "INTERVAL '5 minutes'" in sql
+    assert "credential_revision" in sql
+    assert "lease_until" in sql
 
 
 @pytest.mark.asyncio

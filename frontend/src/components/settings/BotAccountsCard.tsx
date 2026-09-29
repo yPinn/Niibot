@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import {
   type BotAccount,
+  type BotAccountSelection,
   type BotInviteCreated,
   type BroadcasterAuthorization,
   checkBotAuthorization,
@@ -10,11 +11,13 @@ import {
   createBotInvite,
   createBotReauthorizationInvite,
   disconnectBroadcasterAuthorization,
+  getBotAccountSelection,
   getBotInviteStatus,
   getBroadcasterAuthorization,
   listBotAccounts,
   type TwitchAuthorizationStatus,
   unlinkBotAccount,
+  updateBotAccountSelection,
 } from '@/api/botAccounts'
 import { openTwitchOAuth } from '@/api/twitchOAuth'
 import { Icon, Spinner } from '@/components/primitives'
@@ -35,6 +38,11 @@ import {
   CardHeader,
   CardTitle,
   Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Skeleton,
   Tooltip,
   TooltipContent,
@@ -44,6 +52,8 @@ import { useTenant } from '@/contexts/TenantContext'
 import { toastApiError } from '@/lib/toast-error'
 
 type ConfirmationTarget = { kind: 'bot'; account: BotAccount } | { kind: 'broadcaster' } | null
+
+const SYSTEM_SELECTION = '__system__'
 
 const STATUS_COPY: Record<
   TwitchAuthorizationStatus,
@@ -104,14 +114,34 @@ function lastCheckedText(value: string | null): string {
   }).format(date)}`
 }
 
+function selectionErrorCopy(errorCode: string | null, desiredName: string): string {
+  if (errorCode === 'bot_not_moderator') {
+    return `請先在 Twitch 將 ${desiredName} 設為 MOD，再重試。`
+  }
+  if (errorCode === 'bot_authorization_required' || errorCode === 'bot_scope_required') {
+    return `請由頻道擁有者重新授權 ${desiredName}，再重試。`
+  }
+  if (
+    errorCode === 'broadcaster_authorization_required' ||
+    errorCode === 'broadcaster_scope_required'
+  ) {
+    return '請由頻道擁有者更新實況主授權，再重試。'
+  }
+  return '請稍後再試；若持續失敗，請檢查 Twitch 授權與 MOD 設定。'
+}
+
 export function BotAccountsCard() {
   const { activeTenant } = useTenant()
   const [accounts, setAccounts] = useState<BotAccount[]>([])
   const [broadcaster, setBroadcaster] = useState<BroadcasterAuthorization | null>(null)
+  const [selection, setSelection] = useState<BotAccountSelection | null>(null)
+  const [selectionChoice, setSelectionChoice] = useState(SYSTEM_SELECTION)
   const [accountsLoading, setAccountsLoading] = useState(false)
   const [broadcasterLoading, setBroadcasterLoading] = useState(false)
+  const [selectionLoading, setSelectionLoading] = useState(false)
   const [accountsLoadFailed, setAccountsLoadFailed] = useState(false)
   const [broadcasterLoadFailed, setBroadcasterLoadFailed] = useState(false)
+  const [selectionLoadFailed, setSelectionLoadFailed] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [invite, setInvite] = useState<BotInviteCreated | null>(null)
   const [inviteStatus, setInviteStatus] = useState<
@@ -120,6 +150,7 @@ export function BotAccountsCard() {
   const [confirmation, setConfirmation] = useState<ConfirmationTarget>(null)
   const [channelConfirmation, setChannelConfirmation] = useState('')
   const canManage = activeTenant?.capabilities.includes('manage_bot_accounts') ?? false
+  const canSwitch = activeTenant?.capabilities.includes('switch_bot') ?? false
 
   const loadAccounts = useCallback(async () => {
     if (!activeTenant) return
@@ -147,9 +178,24 @@ export function BotAccountsCard() {
     }
   }, [activeTenant])
 
+  const loadSelection = useCallback(async () => {
+    if (!activeTenant) return
+    setSelectionLoading(true)
+    setSelectionLoadFailed(false)
+    try {
+      const next = await getBotAccountSelection(activeTenant.channel_id)
+      setSelection(next)
+      setSelectionChoice(next.desired_bot_user_id ?? SYSTEM_SELECTION)
+    } catch {
+      setSelectionLoadFailed(true)
+    } finally {
+      setSelectionLoading(false)
+    }
+  }, [activeTenant])
+
   const loadAuthorizations = useCallback(
-    async () => Promise.allSettled([loadAccounts(), loadBroadcaster()]),
-    [loadAccounts, loadBroadcaster]
+    async () => Promise.allSettled([loadAccounts(), loadBroadcaster(), loadSelection()]),
+    [loadAccounts, loadBroadcaster, loadSelection]
   )
 
   useEffect(() => {
@@ -172,6 +218,22 @@ export function BotAccountsCard() {
     return () => window.clearInterval(intervalId)
   }, [activeTenant, invite, inviteStatus, loadAuthorizations])
 
+  useEffect(() => {
+    if (!activeTenant || selection?.status !== 'switching') return
+    const poll = async () => {
+      try {
+        const next = await getBotAccountSelection(activeTenant.channel_id)
+        setSelection(next)
+        setSelectionChoice(next.desired_bot_user_id ?? SYSTEM_SELECTION)
+        if (next.status !== 'switching') await loadAccounts()
+      } catch {
+        // A later poll or manual retry can recover from a transient read failure.
+      }
+    }
+    const intervalId = window.setInterval(() => void poll(), 2500)
+    return () => window.clearInterval(intervalId)
+  }, [activeTenant, loadAccounts, selection?.status])
+
   const createInvite = async () => {
     if (!activeTenant) return
     setBusyAction('create-invite')
@@ -181,6 +243,25 @@ export function BotAccountsCard() {
       setInviteStatus('pending')
     } catch (error) {
       toastApiError(error, '建立 Bot 邀請失敗')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const applySelection = async () => {
+    if (!activeTenant || !selection) return
+    const botUserId = selectionChoice === SYSTEM_SELECTION ? null : selectionChoice
+    setBusyAction('switch-bot')
+    try {
+      const next = await updateBotAccountSelection(activeTenant.channel_id, botUserId)
+      setSelection(next)
+      setSelectionChoice(next.desired_bot_user_id ?? SYSTEM_SELECTION)
+      if (next.status === 'active') {
+        await loadAccounts()
+        toast.success('聊天室發言帳號已更新')
+      }
+    } catch (error) {
+      toastApiError(error, '切換發言帳號失敗')
     } finally {
       setBusyAction(null)
     }
@@ -304,6 +385,22 @@ export function BotAccountsCard() {
     confirmation?.kind === 'broadcaster' &&
     channelConfirmation.trim().toLowerCase() === broadcaster?.channel_name.toLowerCase()
 
+  const systemAccount = accounts.find(account => account.is_system_default)
+  const accountName = (botUserId: string | null) => {
+    if (botUserId === null) return systemAccount?.display_name ?? 'Niibot 系統帳號'
+    return (
+      accounts.find(account => account.platform_user_id === botUserId)?.display_name ?? '已選帳號'
+    )
+  }
+  const selectedBotUserId = selectionChoice === SYSTEM_SELECTION ? null : selectionChoice
+  const selectionUnchanged = selection?.desired_bot_user_id === selectedBotUserId
+  const selectionActionDisabled =
+    busyAction !== null ||
+    selectionLoading ||
+    !selection ||
+    selection.status === 'switching' ||
+    (selectionUnchanged && selection.status !== 'failed')
+
   return (
     <Card>
       <CardHeader>
@@ -311,7 +408,7 @@ export function BotAccountsCard() {
           <Icon icon="fa-brands fa-twitch" size="sm" wrapperClassName="text-muted-foreground" />
           <CardTitle>Twitch 帳號與授權</CardTitle>
         </div>
-        <CardDescription>管理 Twitch 實況主與聊天室發言帳號。</CardDescription>
+        <CardDescription>檢查 Twitch 授權，並選擇聊天室發言帳號。</CardDescription>
       </CardHeader>
 
       <CardContent className="space-y-section">
@@ -321,7 +418,7 @@ export function BotAccountsCard() {
               實況主帳號
             </h3>
             <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
-              管理頻道與 Dashboard；解除後 Niibot 將停止服務。
+              解除後，Niibot 會停止這個頻道的服務。
             </p>
           </div>
 
@@ -402,9 +499,106 @@ export function BotAccountsCard() {
               聊天室發言帳號
             </h3>
             <p className="mt-1 max-w-[70ch] text-sub text-muted-foreground">
-              Niibot 會選用其中一個帳號在聊天室發言。
+              切換完成前會繼續使用目前帳號，不會中斷服務。
             </p>
           </div>
+
+          {canSwitch &&
+            (selectionLoading ? (
+              <Skeleton className="h-28 w-full" />
+            ) : selectionLoadFailed ? (
+              <div
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-section text-sub text-muted-foreground"
+              >
+                <span>發言帳號選擇載入失敗。</span>
+                <IconAction
+                  label="重新載入發言帳號選擇"
+                  tooltip="重新載入"
+                  icon="fa-solid fa-rotate"
+                  onClick={() => void loadSelection()}
+                />
+              </div>
+            ) : selection ? (
+              <div className="space-y-3 rounded-lg bg-muted/45 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-label font-medium">聊天室發言帳號</label>
+                    <Select
+                      value={selectionChoice}
+                      onValueChange={setSelectionChoice}
+                      disabled={busyAction !== null || selection.status === 'switching'}
+                    >
+                      <SelectTrigger aria-label="聊天室發言帳號" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts.map(account => {
+                          const sameIdentity = account.platform_user_id === activeTenant?.channel_id
+                          const authorizationUnavailable =
+                            account.authorization_status !== 'valid' || account.requires_reauth
+                          return (
+                            <SelectItem
+                              key={account.platform_user_id}
+                              value={
+                                account.is_system_default
+                                  ? SYSTEM_SELECTION
+                                  : account.platform_user_id
+                              }
+                              disabled={sameIdentity || authorizationUnavailable}
+                            >
+                              {account.display_name}
+                              {sameIdentity
+                                ? '（不能使用頻道主帳號）'
+                                : authorizationUnavailable
+                                  ? '（需更新授權）'
+                                  : ''}
+                            </SelectItem>
+                          )
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    className="sm:self-end"
+                    aria-label="套用發言帳號"
+                    disabled={selectionActionDisabled}
+                    onClick={() => void applySelection()}
+                  >
+                    {busyAction === 'switch-bot' && <Spinner />}
+                    {selection.status === 'failed' && selectionUnchanged ? '重試切換' : '套用'}
+                  </Button>
+                </div>
+
+                <div role="status" aria-live="polite" className="text-sub text-muted-foreground">
+                  {selection.status === 'active' ? (
+                    <span>
+                      目前使用：
+                      <strong className="font-medium text-foreground">
+                        {accountName(selection.active_bot_user_id)}
+                      </strong>
+                    </span>
+                  ) : selection.status === 'switching' ? (
+                    <span>
+                      正在切換至{' '}
+                      <strong className="font-medium text-foreground">
+                        {accountName(selection.desired_bot_user_id)}
+                      </strong>
+                      ；完成前仍使用 {accountName(selection.active_bot_user_id)}。
+                    </span>
+                  ) : (
+                    <span>
+                      切換未完成，仍使用 {accountName(selection.active_bot_user_id)}。
+                      {selectionErrorCopy(
+                        selection.error_code,
+                        accountName(selection.desired_bot_user_id)
+                      )}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : null)}
 
           {accountsLoading ? (
             <div className="space-y-2">
@@ -451,7 +645,6 @@ export function BotAccountsCard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate font-medium">{account.display_name}</span>
                         {account.is_system_default && <Badge variant="secondary">系統管理</Badge>}
-                        {account.is_active && <Badge variant="outline">目前使用</Badge>}
                         <AuthorizationBadge status={account.authorization_status} />
                       </div>
                       <p className="truncate text-label text-muted-foreground">
@@ -515,7 +708,8 @@ export function BotAccountsCard() {
                   邀請其他發言帳號
                 </h3>
                 <p className="mt-1 text-sub text-muted-foreground">
-                  分享 30 分鐘有效的一次性連結。
+                  同一個 Bot 的憑證只保存一份；每個頻道仍需帳號本人同意。邀請連結只能使用一次，30
+                  分鐘後失效。
                 </p>
               </div>
               <Button size="sm" onClick={() => void createInvite()} disabled={busyAction !== null}>

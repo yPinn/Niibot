@@ -4,7 +4,7 @@
 -- LEFT JOIN and COALESCE rather than assume a row exists. The runtime writes
 -- back active_bot_user_id/acked_version itself once a switch completes, so
 -- change notification is sent explicitly by the API on desired-writes (see
--- bot_selection_service.py), not via a row trigger — a trigger would also
+-- shared/repositories/bot_selection.py), not via a row trigger — a trigger would also
 -- fire on the runtime's own confirmation write and loop back on itself.
 
 CREATE TABLE channel_bot_settings (

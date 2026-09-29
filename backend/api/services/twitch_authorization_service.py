@@ -49,6 +49,16 @@ class CredentialHealth:
 
 
 @dataclass(frozen=True)
+class CredentialValidationClaim:
+    """Generation-bound lease for one background credential validation."""
+
+    user_id: str
+    token_type: TokenType
+    credential_revision: int
+    lease_until: datetime
+
+
+@dataclass(frozen=True)
 class AuthorizationRemovalResult:
     credential_retained: bool
     upstream_revoke_confirmed: bool
@@ -604,7 +614,7 @@ class TwitchAuthorizationService:
                 result.append((str(row["user_id"]), "broadcaster"))
         return result
 
-    async def claim_due_credentials(self, *, limit: int = 1) -> list[tuple[str, TokenType]]:
+    async def claim_due_credentials(self, *, limit: int = 1) -> list[CredentialValidationClaim]:
         """Atomically lease due credentials across API replicas.
 
         The five-minute future timestamp is a crash lease.  Every terminal
@@ -632,21 +642,37 @@ class TwitchAuthorizationService:
                       FROM due
                      WHERE token.user_id = due.user_id
                        AND token.token_type = due.token_type
-                    RETURNING token.user_id, token.token_type
+                    RETURNING token.user_id, token.token_type,
+                              token.credential_revision,
+                              token.next_validation_at AS lease_until
                     """,
                     limit,
                 )
-        return self._credential_keys(rows)
+        claims: list[CredentialValidationClaim] = []
+        for row in rows:
+            raw_token_type = str(row["token_type"])
+            if raw_token_type not in {"bot", "broadcaster"}:
+                continue
+            token_type: TokenType = "bot" if raw_token_type == "bot" else "broadcaster"
+            claims.append(
+                CredentialValidationClaim(
+                    user_id=str(row["user_id"]),
+                    token_type=token_type,
+                    credential_revision=int(row["credential_revision"]),
+                    lease_until=row["lease_until"],
+                )
+            )
+        return claims
 
     async def check_due_credentials(self, *, limit: int = 1) -> int:
         require_twitch_token_encryption_key(self.token_encryption_key)
         due = await self.claim_due_credentials(limit=limit)
-        for user_id, token_type in due:
-            required = set(required_core_scopes(token_type))
+        for claim in due:
+            required = set(required_core_scopes(claim.token_type))
             try:
                 await self.check_credential(
-                    user_id=user_id,
-                    token_type=token_type,
+                    user_id=claim.user_id,
+                    token_type=claim.token_type,
                     required_scopes=required,
                     force=False,
                 )
@@ -655,7 +681,7 @@ class TwitchAuthorizationService:
             except Exception:
                 LOGGER.exception(
                     "Twitch credential reconciliation failed",
-                    extra={"user_id": user_id, "token_type": token_type},
+                    extra={"user_id": claim.user_id, "token_type": claim.token_type},
                 )
                 try:
                     async with self.pool.acquire() as conn:
@@ -670,14 +696,20 @@ class TwitchAuthorizationService:
                                        ELSE validation_error_code
                                    END
                              WHERE user_id = $1 AND token_type = $2
+                               AND credential_revision = $3
+                               AND next_validation_at = $4
+                               AND requires_reauth = FALSE
+                               AND invalidated_at IS NULL
                             """,
-                            user_id,
-                            token_type,
+                            claim.user_id,
+                            claim.token_type,
+                            claim.credential_revision,
+                            claim.lease_until,
                         )
                 except Exception:
                     LOGGER.exception(
                         "Failed to defer Twitch credential after reconciliation error",
-                        extra={"user_id": user_id, "token_type": token_type},
+                        extra={"user_id": claim.user_id, "token_type": claim.token_type},
                     )
         return len(due)
 

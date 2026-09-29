@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { FadeIn, Icon } from '@/components/primitives'
 import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useSensitivePageMetadata } from '@/hooks/useSensitivePageMetadata'
 
 type FailureCopy = {
   description: string
@@ -39,10 +40,15 @@ const FAILURE_COPY: Record<string, FailureCopy> = {
     description: 'Bot 權限未完整授予。',
     action: '請以新的授權連結重試並接受必要權限。',
   },
+  bot_account_role_conflict: {
+    description: '這個 Twitch 帳號已作為 Niibot 實況主使用。',
+    action: '請改用另一個 Bot 帳號。',
+  },
 }
 
 export default function BotAuthorizationResult() {
   useDocumentTitle('Bot 授權結果')
+  useSensitivePageMetadata()
   const [params] = useSearchParams()
   const succeeded = params.get('status') === 'success'
   const failure = FAILURE_COPY[params.get('reason') ?? ''] ?? DEFAULT_FAILURE
@@ -66,7 +72,7 @@ export default function BotAuthorizationResult() {
               {succeeded ? 'Bot 授權完成' : 'Bot 授權未完成'}
             </h1>
             <CardDescription className="max-w-[48ch] text-balance">
-              {succeeded ? '加密憑證已安全回傳給 Niibot。' : failure.description}
+              {succeeded ? '邀請人現在可以在自己的頻道選用這個 Bot 帳號。' : failure.description}
             </CardDescription>
           </CardHeader>
           <CardContent className="pb-card">

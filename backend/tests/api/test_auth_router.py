@@ -356,6 +356,7 @@ class TestTwitchOAuthCallbackSuccess:
         was_reconciled: bool = False,
         twitch_uid: str = _TWITCH_UID,
         session_lookup_error: Exception | None = None,
+        save_error: Exception | None = None,
     ):
         from services.oauth_service import encode_oauth_state
 
@@ -380,7 +381,10 @@ class TestTwitchOAuthCallbackSuccess:
         if session_lookup_error is not None:
             pool.fetchval.side_effect = session_lookup_error
         mock_channel_svc = MagicMock()
-        mock_channel_svc.save_token = AsyncMock(return_value=True)
+        mock_channel_svc.save_token = AsyncMock(
+            return_value=True,
+            side_effect=save_error,
+        )
 
         # IdentityService mock — find_or_link returns a result describing the
         # branch taken (fast / link / reconciled / fresh).
@@ -438,6 +442,16 @@ class TestTwitchOAuthCallbackSuccess:
         _, mock_channel_svc, *_ = self._run(scopes_value=None)
         _, kwargs = mock_channel_svc.save_token.call_args
         assert kwargs.get("scopes") is None
+
+    def test_runtime_role_conflict_redirects_with_actionable_error(self):
+        from shared.repositories.channel import TwitchCredentialRoleConflictError
+
+        response, *_ = self._run(
+            scopes_value="channel:bot",
+            save_error=TwitchCredentialRoleConflictError(),
+        )
+
+        assert "error=bot_account_role_conflict" in response.headers["location"]
 
     def test_reauth_does_not_create_pending(self):
         """Regression test for the ghost-pending-request bug.

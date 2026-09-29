@@ -251,10 +251,16 @@ class _NotifyMixin:
         try:
             data = json.loads(payload)
             user_id = data["user_id"]
+            if data.get("token_type", "broadcaster") != "broadcaster":
+                return
 
             if user_id == self._bot_id:  # type: ignore[attr-defined]
                 LOGGER.debug(f"[NOTIFY] Ignoring new token for bot's own account: {user_id}")
                 return
+
+            from shared.repositories.channel import _token_cache
+
+            _token_cache.invalidate(f"token:{user_id}:broadcaster")
 
             async with self._channel_lock(user_id):  # type: ignore[attr-defined]
                 await self._handle_new_token_locked(user_id)
@@ -397,7 +403,8 @@ class _NotifyMixin:
                     return
 
                 notified_revision = data.get("credential_revision")
-                runtime_revision = getattr(self, "_runtime_credential_revisions", {}).get(user_id)
+                runtime_source = getattr(self, "_runtime_credential_sources", {}).get(user_id)
+                runtime_revision = runtime_source.revision if runtime_source else None
                 if (
                     notified_revision is not None
                     and runtime_revision == notified_revision
@@ -466,17 +473,207 @@ class _NotifyMixin:
             LOGGER.exception("[NOTIFY] Bot credential hot reload failed")
 
     async def _handle_bot_selection_changed(self, connection, pid, channel, payload) -> None:
-        """Refresh sender routing after selection, fallback, or tenant unlink."""
+        """Converge a requested sender switch, fallback, or tenant unlink."""
         try:
             data = json.loads(payload)
             channel_id = data.get("channel_id")
-            if channel_id:
-                await self.bots.refresh(channel_id)  # type: ignore[attr-defined]
-            else:
-                await self.bots.load_all()  # type: ignore[attr-defined]
-            LOGGER.info("[NOTIFY] Bot sender selection refreshed")
+            async with self._bot_selection_reconcile_lock:  # type: ignore[attr-defined]
+                if channel_id:
+                    async with self._channel_lock(channel_id):  # type: ignore[attr-defined]
+                        state = await self.bot_selections.get(channel_id)  # type: ignore[attr-defined]
+                        if state.status == "switching":
+                            await self._apply_bot_selection(channel_id)
+                        else:
+                            before = self.bots.relevant_bot_ids()  # type: ignore[attr-defined]
+                            await self.bots.load_all()  # type: ignore[attr-defined]
+                            await self._discard_irrelevant_bot_tokens(before)
+                else:
+                    before = self.bots.relevant_bot_ids()  # type: ignore[attr-defined]
+                    await self.bots.load_all()  # type: ignore[attr-defined]
+                    await self._discard_irrelevant_bot_tokens(before)
+                    await self._reconcile_enabled_subscriptions()  # type: ignore[attr-defined]
+            LOGGER.info("[NOTIFY] Bot sender selection converged")
         except Exception:
-            LOGGER.exception("[NOTIFY] Bot sender selection refresh failed")
+            LOGGER.exception("[NOTIFY] Bot sender selection convergence failed")
+
+    async def _discard_irrelevant_bot_tokens(
+        self,
+        previous_ids: set[str] | frozenset[str],
+    ) -> None:
+        current = self.bots.relevant_bot_ids()  # type: ignore[attr-defined]
+        stale = sorted(set(previous_ids) - set(current) - {self._bot_id})  # type: ignore[attr-defined]
+        if stale:
+            await self._discard_runtime_token(*stale)  # type: ignore[attr-defined]
+
+    async def _selection_mod_preflight(self, channel_id: str, bot_user_id: str) -> str | None:
+        """Return a safe error code, or ``None`` when the candidate is a MOD."""
+        broadcaster_token = await self.channels.get_token(  # type: ignore[attr-defined]
+            channel_id,
+            "broadcaster",
+        )
+        if broadcaster_token is None:
+            return "broadcaster_authorization_required"
+        try:
+            response = await self._coordinated_helix_get(  # type: ignore[attr-defined]
+                "moderation/moderators",
+                token=broadcaster_token.token,
+                token_for=channel_id,
+                params={"broadcaster_id": channel_id, "user_id": bot_user_id},
+            )
+        except Exception:
+            return "provider_unavailable"
+        if response.status_code == 200:
+            return None if response.json().get("data") else "bot_not_moderator"
+        if response.status_code == 401:
+            return "broadcaster_authorization_required"
+        if response.status_code == 403:
+            return "broadcaster_scope_required"
+        return "provider_unavailable"
+
+    async def _fail_bot_selection(
+        self,
+        *,
+        state,
+        error_code: str,
+        loaded_ids: set[str],
+    ) -> None:
+        rollback_bot_id = state.active_bot_user_id or self._bot_id  # type: ignore[attr-defined]
+        try:
+            await self.subs.reconcile_sender(state.channel_id, rollback_bot_id)  # type: ignore[attr-defined]
+        except Exception:
+            LOGGER.warning(
+                "[NOTIFY] Bot sender rollback reconcile failed for %s",
+                self._ch(state.channel_id),
+            )
+        await self.bot_selections.mark_failed(  # type: ignore[attr-defined]
+            channel_id=state.channel_id,
+            selection_version=state.selection_version,
+            error_code=error_code,
+        )
+        await self.bots.load_all()  # type: ignore[attr-defined]
+        await self._discard_irrelevant_bot_tokens(loaded_ids)
+        LOGGER.warning(
+            "[NOTIFY] Bot sender switch failed for %s: %s",
+            self._ch(state.channel_id),
+            error_code,
+        )
+
+    async def _apply_bot_selection(self, channel_id: str) -> None:
+        """Apply the latest switching version while preserving the old sender on failure."""
+        from shared.twitch_scopes import BOT_SCOPES
+
+        state = await self.bot_selections.get(channel_id)  # type: ignore[attr-defined]
+        if state.status != "switching":
+            return
+
+        previous_ids = set(self.bots.relevant_bot_ids())  # type: ignore[attr-defined]
+        await self.bots.refresh(channel_id)  # type: ignore[attr-defined]
+        target_bot_id = state.desired_bot_user_id or self._bot_id  # type: ignore[attr-defined]
+        loaded_ids = previous_ids | {target_bot_id}
+
+        token_obj = await self.channels.get_token(target_bot_id, "bot")  # type: ignore[attr-defined]
+        if token_obj is None:
+            await self._fail_bot_selection(
+                state=state,
+                error_code="bot_authorization_required",
+                loaded_ids=loaded_ids,
+            )
+            return
+
+        try:
+            user_info = await self.add_token(  # type: ignore[attr-defined]
+                token_obj.token,
+                token_obj.refresh,
+                persist=False,
+                expected_user_id=target_bot_id,
+                expected_token_type="bot",
+                expected_revision=token_obj.credential_revision,
+            )
+        except twitchio.exceptions.InvalidTokenException as exc:
+            transient = exc.status in {408, 425, 429} or exc.status >= 500
+            await self._fail_bot_selection(
+                state=state,
+                error_code=("provider_unavailable" if transient else "bot_authorization_required"),
+                loaded_ids=loaded_ids,
+            )
+            return
+        except Exception:
+            await self._fail_bot_selection(
+                state=state,
+                error_code="runtime_unavailable",
+                loaded_ids=loaded_ids,
+            )
+            return
+
+        if not set(BOT_SCOPES).issubset(set(user_info.scopes or ())):
+            await self._fail_bot_selection(
+                state=state,
+                error_code="bot_scope_required",
+                loaded_ids=loaded_ids,
+            )
+            return
+
+        mod_error = await self._selection_mod_preflight(channel_id, target_bot_id)
+        if mod_error is not None:
+            await self._fail_bot_selection(
+                state=state,
+                error_code=mod_error,
+                loaded_ids=loaded_ids,
+            )
+            return
+
+        channel = await self.channels.get_channel(channel_id)  # type: ignore[attr-defined]
+        if channel is not None and channel.enabled:
+            result = await self.subs.reconcile_sender(channel_id, target_bot_id)  # type: ignore[attr-defined]
+            if not result.converged:
+                await self._fail_bot_selection(
+                    state=state,
+                    error_code="eventsub_unavailable",
+                    loaded_ids=loaded_ids,
+                )
+                return
+
+        acknowledged = await self.bot_selections.mark_active(  # type: ignore[attr-defined]
+            channel_id=channel_id,
+            selection_version=state.selection_version,
+            bot_user_id=state.desired_bot_user_id,
+        )
+        if not acknowledged:
+            # A newer API request won the version race while this network
+            # reconcile was in flight.  Restore the still-authoritative active
+            # identity immediately; the newer NOTIFY will then converge its
+            # own target without leaving chat bound to an unacknowledged bot.
+            rollback_bot_id = state.active_bot_user_id or self._bot_id  # type: ignore[attr-defined]
+            try:
+                await self.subs.reconcile_sender(channel_id, rollback_bot_id)  # type: ignore[attr-defined]
+            except Exception:
+                LOGGER.warning(
+                    "[NOTIFY] Stale Bot sender rollback failed for %s",
+                    self._ch(channel_id),
+                )
+        await self.bots.load_all()  # type: ignore[attr-defined]
+        await self._discard_irrelevant_bot_tokens(loaded_ids)
+        if not acknowledged:
+            LOGGER.info(
+                "[NOTIFY] Ignored stale Bot sender acknowledgement for %s version %d",
+                self._ch(channel_id),
+                state.selection_version,
+            )
+            return
+        self._bot_is_mod.add(channel_id)  # type: ignore[attr-defined]
+        self._bot_not_mod.discard(channel_id)  # type: ignore[attr-defined]
+        LOGGER.info(
+            "[NOTIFY] Bot sender switch active for %s version %d",
+            self._ch(channel_id),
+            state.selection_version,
+        )
+
+    async def _resume_bot_selections(self) -> None:
+        states = await self.bot_selections.list_switching()  # type: ignore[attr-defined]
+        async with self._bot_selection_reconcile_lock:  # type: ignore[attr-defined]
+            for state in states:
+                async with self._channel_lock(state.channel_id):  # type: ignore[attr-defined]
+                    await self._apply_bot_selection(state.channel_id)
 
     async def _handle_config_change(self, connection, pid, channel, payload) -> None:
         """Reload in-memory cache for the affected channel on config writes."""

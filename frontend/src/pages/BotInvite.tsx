@@ -17,6 +17,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
+import { useSensitivePageMetadata } from '@/hooks/useSensitivePageMetadata'
 import { formatDateTimeShort } from '@/lib/format'
 
 function terminalMessage(status: PublicBotInvite['status']) {
@@ -28,12 +29,12 @@ function terminalMessage(status: PublicBotInvite['status']) {
 /** 第一句：說明這封邀請要你做什麼。Twitch 授權頁不會交代這件事。 */
 function purposeIntro(purpose: PublicBotInvite['purpose'], name: string) {
   if (purpose === 'reauthorize') {
-    return `${name} 請你重新授權這個 Bot 帳號 —— 原本的 Twitch 憑證已失效或需要更新權限。`
+    return `${name} 請你重新授權這個 Bot 帳號，讓 Niibot 繼續在其頻道運作。`
   }
   if (purpose === 'system_default_reset') {
     return '請你重新授權 Niibot 的系統預設 Bot 帳號。'
   }
-  return `${name} 想在自己的頻道，用你的 Twitch 帳號當聊天機器人。`
+  return `${name} 邀請你讓 Niibot 以你的 Twitch 帳號，在其頻道擔任聊天機器人。`
 }
 
 /** 11 條 scope 收斂成給一般人看的白話。純顯示用，Twitch 會在下一頁列出精確權限。 */
@@ -50,6 +51,7 @@ const CAPABILITY_SUMMARY: { icon: string; text: string; caution?: boolean }[] = 
 
 export default function BotInvite() {
   useDocumentTitle('Bot 授權邀請')
+  useSensitivePageMetadata()
   const { publicToken = '' } = useParams()
   const [searchParams] = useSearchParams()
   const nonce = searchParams.get('nonce') ?? ''
@@ -106,12 +108,12 @@ export default function BotInvite() {
             </div>
             <h1 className="text-page-title font-bold">授權 Bot 帳號</h1>
             <CardDescription className="max-w-[48ch] text-balance">
-              有人邀請你，把 Twitch 帳號借給他的頻道當聊天機器人。看完再決定要不要前往 Twitch 授權。
+              確認邀請來源、使用範圍與權限後，再前往 Twitch 授權。
             </CardDescription>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-section pb-card">
-            {capabilityError || error ? (
+            {capabilityError || (error && !invite) ? (
               <Alert variant="destructive">
                 <AlertDescription>{capabilityError || error}</AlertDescription>
               </Alert>
@@ -125,6 +127,11 @@ export default function BotInvite() {
               </div>
             ) : (
               <>
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
                 <section
                   aria-labelledby="invite-channel"
                   className="bg-muted flex flex-col gap-element rounded-lg p-section sm:p-card"
@@ -182,27 +189,23 @@ export default function BotInvite() {
 
                 <section aria-labelledby="invite-boundaries" className="flex flex-col gap-element">
                   <h2 id="invite-boundaries" className="text-sub font-semibold">
-                    不會發生的事
+                    授權範圍與撤回
                   </h2>
                   <ul className="flex flex-col gap-element text-sub text-muted-foreground">
                     <li>· 不會建立 Niibot 帳號，也不會給你 Dashboard 後台權限</li>
                     <li>
-                      · 只在 <span className="font-mono">@{invite.channel_name}</span>{' '}
-                      生效；其他實況主看不到、也不能使用你的帳號
+                      · 這次同意只適用於 <span className="font-mono">@{invite.channel_name}</span>
+                      ；其他頻道必須另行取得你的同意
                     </li>
-                    <li>· 不會動到你自己的頻道</li>
                     <li>· 拿不到你的 Twitch 密碼；憑證加密保存，不會顯示給任何人</li>
-                  </ul>
-                </section>
-
-                <section aria-labelledby="invite-revoke" className="flex flex-col gap-element">
-                  <h2 id="invite-revoke" className="text-sub font-semibold">
-                    你隨時可以收回
-                  </h2>
-                  <ul className="flex flex-col gap-element text-sub text-muted-foreground">
-                    <li>· 這個連結一次性使用，{formatDateTimeShort(invite.expires_at)} 前有效</li>
-                    <li>· 之後可到 Twitch【設定 → 連線】隨時撤銷授權</li>
-                    <li>· 邀請人也可以隨時停止使用這個 Bot</li>
+                    <li className="text-status-warning">
+                      · 若這個帳號也用來登入自己的 Niibot 頻道，請改用另一個 Bot 帳號
+                    </li>
+                    <li>· 這個連結只能使用一次，{formatDateTimeShort(invite.expires_at)} 前有效</li>
+                    <li>
+                      · 可由邀請人停止本頻道使用；若在 Twitch【設定 → 連線】撤銷，會停止 Niibot
+                      對這個 Twitch 帳號的全部授權
+                    </li>
                   </ul>
                 </section>
 

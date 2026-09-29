@@ -15,13 +15,15 @@ os.environ.setdefault("OWNER_ID", "111")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from core._notify_mixin import _NotifyMixin
 from core.bot_resolver import BotAccountResolver
 from shared.assistant import AssistantMode, AssistantScopeChange
+from shared.repositories.bot_selection import BotSelectionState
+from shared.twitch_scopes import BOT_SCOPES
 
 # ---------------------------------------------------------------------------
 # Minimal concrete stub of _NotifyMixin
@@ -35,6 +37,7 @@ class _FakeSubs:
         self._subscribed: set[str] = set()
         self._names: set[str] = set()
         self.subscribe = AsyncMock(return_value=SimpleNamespace(converged=True, errors=()))
+        self.reconcile_sender = AsyncMock(return_value=SimpleNamespace(converged=True, errors=()))
         self.unsubscribe = AsyncMock()
 
     def is_subscribed(self, cid: str) -> bool:
@@ -66,7 +69,9 @@ class _StubMixin(_NotifyMixin):
         self._mod_check_pending: set[str] = set()
         self._mod_checked_at: dict[str, float] = {}
         self._channel_locks: dict[str, asyncio.Lock] = {}
+        self._bot_selection_reconcile_lock = asyncio.Lock()
         self._check_bot_mod_status = AsyncMock()
+        self._selection_mod_preflight = AsyncMock(return_value=None)
         self._reconcile_enabled_subscriptions = AsyncMock(return_value=([], {}))
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
@@ -87,6 +92,15 @@ class _StubMixin(_NotifyMixin):
         enabled_channel = MagicMock()
         enabled_channel.enabled = True
         self.channels.get_channel = AsyncMock(return_value=enabled_channel)
+        self.bot_selections = MagicMock()
+        self.bot_selections.get = AsyncMock()
+        self.bot_selections.list_switching = AsyncMock(return_value=[])
+        self.bot_selections.mark_active = AsyncMock(return_value=True)
+        self.bot_selections.mark_failed = AsyncMock(return_value=True)
+        self.add_token = AsyncMock(
+            return_value=SimpleNamespace(scopes=set(BOT_SCOPES), login="bot_b")
+        )
+        self._discard_runtime_token = AsyncMock()
         self._components: dict[str, object] = {}
 
     def _ch(self, cid: str) -> str:
@@ -237,17 +251,215 @@ class TestConfigChangeMemoryInvalidation:
 class TestBotSelectionChanged:
     pytestmark = pytest.mark.asyncio
 
-    async def test_refreshes_only_named_channel_when_payload_is_tenant_scoped(self) -> None:
+    @staticmethod
+    def _selection(**overrides) -> BotSelectionState:
+        values = {
+            "channel_id": "ch1",
+            "desired_bot_user_id": "bot-b",
+            "active_bot_user_id": None,
+            "selection_version": 3,
+            "acked_version": 2,
+            "status": "switching",
+            "last_error_code": None,
+        }
+        values.update(overrides)
+        return BotSelectionState(**values)
+
+    async def test_switch_loads_target_reconciles_eventsub_then_acks_active(self) -> None:
         mixin = _StubMixin()
         mixin.bots.refresh = AsyncMock()
         mixin.bots.load_all = AsyncMock()
+        mixin.bots.relevant_bot_ids = MagicMock(
+            side_effect=[frozenset({"bot-001"}), frozenset({"bot-001", "bot-b"})]
+        )
+        mixin.bot_selections.get.return_value = self._selection()
+        bot_token = SimpleNamespace(
+            token="bot-token",
+            refresh="bot-refresh",
+            credential_revision=4,
+        )
+        mixin.channels.get_token = AsyncMock(return_value=bot_token)
 
         await mixin._handle_bot_selection_changed(
-            None, None, "bot_selection_changed", json.dumps({"channel_id": "ch1"})
+            None,
+            None,
+            "bot_selection_changed",
+            json.dumps({"channel_id": "ch1", "selection_version": 3}),
         )
 
         mixin.bots.refresh.assert_awaited_once_with("ch1")
-        mixin.bots.load_all.assert_not_awaited()
+        mixin.add_token.assert_awaited_once_with(
+            "bot-token",
+            "bot-refresh",
+            persist=False,
+            expected_user_id="bot-b",
+            expected_token_type="bot",
+            expected_revision=4,
+        )
+        mixin._selection_mod_preflight.assert_awaited_once_with("ch1", "bot-b")
+        mixin.subs.reconcile_sender.assert_awaited_once_with("ch1", "bot-b")
+        mixin.bot_selections.mark_active.assert_awaited_once_with(
+            channel_id="ch1",
+            selection_version=3,
+            bot_user_id="bot-b",
+        )
+        mixin.bots.load_all.assert_awaited_once_with()
+
+    async def test_different_channels_share_one_global_selection_critical_section(self) -> None:
+        mixin = _StubMixin()
+        mixin.bot_selections.get.side_effect = [
+            self._selection(channel_id="ch1"),
+            self._selection(channel_id="ch2", selection_version=4),
+        ]
+        first_entered = asyncio.Event()
+        release_first = asyncio.Event()
+        active = 0
+        max_active = 0
+
+        async def apply(channel_id: str) -> None:
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            if channel_id == "ch1":
+                first_entered.set()
+                await release_first.wait()
+            active -= 1
+
+        mixin._apply_bot_selection = AsyncMock(side_effect=apply)
+        first = asyncio.create_task(
+            mixin._handle_bot_selection_changed(
+                None,
+                None,
+                "bot_selection_changed",
+                json.dumps({"channel_id": "ch1"}),
+            )
+        )
+        await first_entered.wait()
+        second = asyncio.create_task(
+            mixin._handle_bot_selection_changed(
+                None,
+                None,
+                "bot_selection_changed",
+                json.dumps({"channel_id": "ch2"}),
+            )
+        )
+        await asyncio.sleep(0)
+
+        assert mixin._apply_bot_selection.await_count == 1
+        assert max_active == 1
+
+        release_first.set()
+        await asyncio.gather(first, second)
+
+        assert mixin._apply_bot_selection.await_count == 2
+        assert max_active == 1
+
+    async def test_failed_candidate_preflight_keeps_old_sender_and_records_safe_code(self) -> None:
+        mixin = _StubMixin()
+        mixin.bots.refresh = AsyncMock()
+        mixin.bots.load_all = AsyncMock()
+        mixin.bots.relevant_bot_ids = MagicMock(return_value=frozenset({"bot-001", "bot-b"}))
+        mixin.bot_selections.get.return_value = self._selection()
+        mixin.channels.get_token = AsyncMock(
+            return_value=SimpleNamespace(
+                token="bot-token",
+                refresh="bot-refresh",
+                credential_revision=4,
+            )
+        )
+        mixin._selection_mod_preflight.return_value = "bot_not_moderator"
+
+        await mixin._handle_bot_selection_changed(
+            None,
+            None,
+            "bot_selection_changed",
+            json.dumps({"channel_id": "ch1", "selection_version": 3}),
+        )
+
+        mixin.subs.reconcile_sender.assert_awaited_once_with("ch1", "bot-001")
+        mixin.bot_selections.mark_failed.assert_awaited_once_with(
+            channel_id="ch1",
+            selection_version=3,
+            error_code="bot_not_moderator",
+        )
+        mixin.bot_selections.mark_active.assert_not_awaited()
+
+    async def test_eventsub_failure_rolls_back_to_old_sender_before_marking_failed(self) -> None:
+        mixin = _StubMixin()
+        mixin.bots.refresh = AsyncMock()
+        mixin.bots.load_all = AsyncMock()
+        mixin.bots.relevant_bot_ids = MagicMock(return_value=frozenset({"bot-001", "bot-b"}))
+        mixin.bot_selections.get.return_value = self._selection()
+        mixin.channels.get_token = AsyncMock(
+            return_value=SimpleNamespace(
+                token="bot-token",
+                refresh="bot-refresh",
+                credential_revision=4,
+            )
+        )
+        mixin.subs.reconcile_sender.side_effect = [
+            SimpleNamespace(converged=False, errors=("channel.chat.message:HTTP 500",)),
+            SimpleNamespace(converged=True, errors=()),
+        ]
+
+        await mixin._handle_bot_selection_changed(
+            None,
+            None,
+            "bot_selection_changed",
+            json.dumps({"channel_id": "ch1", "selection_version": 3}),
+        )
+
+        assert mixin.subs.reconcile_sender.await_args_list == [
+            call("ch1", "bot-b"),
+            call("ch1", "bot-001"),
+        ]
+        mixin.bot_selections.mark_failed.assert_awaited_once_with(
+            channel_id="ch1",
+            selection_version=3,
+            error_code="eventsub_unavailable",
+        )
+
+    async def test_stale_runtime_ack_restores_authoritative_active_sender(self) -> None:
+        mixin = _StubMixin()
+        mixin.bots.refresh = AsyncMock()
+        mixin.bots.load_all = AsyncMock()
+        mixin.bots.relevant_bot_ids = MagicMock(
+            return_value=frozenset({"bot-001", "bot-a", "bot-b"})
+        )
+        mixin.bot_selections.get.return_value = self._selection(active_bot_user_id="bot-a")
+        mixin.bot_selections.mark_active.return_value = False
+        mixin.channels.get_token = AsyncMock(
+            return_value=SimpleNamespace(
+                token="bot-token",
+                refresh="bot-refresh",
+                credential_revision=4,
+            )
+        )
+
+        await mixin._handle_bot_selection_changed(
+            None,
+            None,
+            "bot_selection_changed",
+            json.dumps({"channel_id": "ch1", "selection_version": 3}),
+        )
+
+        assert mixin.subs.reconcile_sender.await_args_list == [
+            call("ch1", "bot-b"),
+            call("ch1", "bot-a"),
+        ]
+        mixin.bot_selections.mark_failed.assert_not_awaited()
+
+    async def test_restart_resumes_only_switching_rows(self) -> None:
+        mixin = _StubMixin()
+        mixin.bot_selections.list_switching.return_value = [
+            self._selection(channel_id="ch1"),
+            self._selection(channel_id="ch2", selection_version=4),
+        ]
+        mixin._apply_bot_selection = AsyncMock()
+
+        await mixin._resume_bot_selections()
+
+        assert mixin._apply_bot_selection.await_args_list == [call("ch1"), call("ch2")]
 
     async def test_global_fallback_reload_refreshes_all_sender_routes(self) -> None:
         mixin = _StubMixin()
@@ -259,6 +471,7 @@ class TestBotSelectionChanged:
         )
 
         mixin.bots.load_all.assert_awaited_once_with()
+        mixin._reconcile_enabled_subscriptions.assert_awaited_once_with()
 
 
 class TestHandleChannelToggleDisable:
@@ -638,6 +851,14 @@ class TestHandleNewTokenReauthRestored:
 
         mixin._send_reauth_restored_message.assert_not_awaited()
 
+    async def test_invalidates_negative_broadcaster_cache_before_first_read(self):
+        mixin = _StubMixin()
+
+        with patch("shared.repositories.channel._token_cache") as token_cache:
+            await mixin._handle_new_token(None, None, "new_token", _new_token_payload("u1"))
+
+        token_cache.invalidate.assert_called_once_with("token:u1:broadcaster")
+
     async def test_no_restored_message_when_scopes_still_missing(self):
         """No restored message when new token still has missing scopes."""
         mixin = _StubMixin()
@@ -914,8 +1135,10 @@ class TestHandleTokenReauth:
         mixin.subs.unsubscribe.assert_not_awaited()
 
     async def test_same_revision_runtime_refresh_notification_is_deduplicated(self):
+        from twitch.core.bot import RuntimeCredentialSource
+
         mixin = _StubMixin()
-        mixin._runtime_credential_revisions = {"u1": 8}
+        mixin._runtime_credential_sources = {"u1": RuntimeCredentialSource("broadcaster", 8)}
         mixin._handle_new_token_locked = AsyncMock()
         payload = json.dumps(
             {

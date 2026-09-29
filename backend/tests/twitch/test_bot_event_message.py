@@ -482,7 +482,7 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
         patch("twitch.core.bot._NotifyMixin.__init__", return_value=None),
         patch("twitch.core.bot.commands.AutoBot.__init__", return_value=None),
     ):
-        from twitch.core.bot import Bot
+        from twitch.core.bot import Bot, RuntimeCredentialSource
 
         b = Bot.__new__(Bot)
         b._bot_id = "bot-001"
@@ -493,9 +493,10 @@ def _make_bot_for_token_refresh(needs_reauth: set[str] | None = None):
         b._token_refresh_buffer = []
         b._token_refresh_flush_task = None
         b._background_tasks = set()
-        b._runtime_credential_revisions = {}
-        b._pending_refresh_revisions = {
-            (user_id, "new-tok"): 1 for user_id in ("123", "u1", "u2", "u3")
+        b._runtime_credential_sources = {}
+        b._pending_refresh_sources = {
+            (user_id, "new-tok"): RuntimeCredentialSource("broadcaster", 1)
+            for user_id in ("123", "u1", "u2", "u3")
         }
         b.channels = MagicMock()
         b.channels.rotate_token_if_revision = AsyncMock(return_value=True)

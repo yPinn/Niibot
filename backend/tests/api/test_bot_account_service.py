@@ -10,6 +10,7 @@ import pytest
 from api.services.bot_account_service import (
     BotAccountNotFoundError,
     BotAccountService,
+    BotCredentialRoleConflictError,
     BotInviteExpiredError,
     BotInviteLimitError,
     BotInviteNotFoundError,
@@ -261,6 +262,33 @@ async def test_expected_account_cannot_be_substituted_in_callback():
             display_name="Attacker",
             avatar=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_bot_oauth_rejects_an_identity_with_a_broadcaster_credential():
+    conn = AsyncMock()
+    conn.transaction = MagicMock(return_value=_tx_cm())
+    conn.fetchrow.return_value = _invite_row()
+    conn.fetchval.return_value = True
+    service = BotAccountService(_pool_with(conn), token_encryption_key=_KEY)
+
+    with pytest.raises(BotCredentialRoleConflictError):
+        await service.authorize_invite(
+            invite_id=_invite_row()["id"],
+            state_nonce=_STATE_NONCE,
+            platform_user_id="bot-b",
+            access_token="access",
+            refresh_token="refresh",
+            scopes=set(BOT_SCOPES),
+            login="bot_b",
+            display_name="Bot B",
+            avatar=None,
+        )
+
+    assert any(
+        "twitch-runtime-identity:bot-b" in str(call.args) for call in conn.fetchval.await_args_list
+    )
+    assert all("INSERT INTO tokens" not in call.args[0] for call in conn.execute.await_args_list)
 
 
 @pytest.mark.asyncio

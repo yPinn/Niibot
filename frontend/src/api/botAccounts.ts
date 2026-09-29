@@ -78,6 +78,15 @@ export interface BotAccount {
   is_desired: boolean
 }
 
+export interface BotAccountSelection {
+  desired_bot_user_id: string | null
+  active_bot_user_id: string | null
+  selection_version: number
+  acked_version: number
+  status: 'active' | 'switching' | 'failed'
+  error_code: string | null
+}
+
 export interface BotInviteCreated {
   invite_id: string
   public_url: string
@@ -113,6 +122,27 @@ export async function listBotAccounts(channelId: string): Promise<BotAccount[]> 
   })
   const payload = await readJson<{ accounts: BotAccount[] }>(response, '載入 Bot 帳號失敗')
   return payload.accounts
+}
+
+export function getBotAccountSelection(channelId: string): Promise<BotAccountSelection> {
+  return apiFetch(API_ENDPOINTS.tenants.botAccountSelection(channelId), {
+    credentials: 'include',
+  }).then(response => readJson(response, '載入發言帳號選擇失敗'))
+}
+
+export function updateBotAccountSelection(
+  channelId: string,
+  botUserId: string | null
+): Promise<BotAccountSelection> {
+  return apiFetch(API_ENDPOINTS.tenants.botAccountSelection(channelId), {
+    method: 'PUT',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Niibot-Action': 'bot-account-management',
+    },
+    body: JSON.stringify({ bot_user_id: botUserId }),
+  }).then(response => readJson(response, '切換發言帳號失敗'))
 }
 
 export function createBotInvite(channelId: string): Promise<BotInviteCreated> {

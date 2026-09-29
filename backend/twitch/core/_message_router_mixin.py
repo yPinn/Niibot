@@ -15,6 +15,7 @@ import logging
 import twitchio
 
 from core.guards import has_role, is_on_cooldown, record_cooldown
+from shared.builtin_commands import COMMAND_RESERVED_NAMES
 from shared.trigger_matching import match_trigger
 from utils.substitution import substitute_variables as _substitute_variables
 
@@ -142,6 +143,11 @@ class _MessageRouterMixin:
 
         cmd_name = parts[0].lower()
         query = parts[1] if len(parts) > 1 else ""
+
+        # Custom commands run before TwitchIO's builtin dispatcher.  Never let
+        # legacy DB rows or aliases claim the shared builtin/runtime namespace.
+        if cmd_name in COMMAND_RESERVED_NAMES:
+            return False
 
         if cmd_name in visited:
             LOGGER.warning(f"[CMD] Redirect loop on !{cmd_name}, dropping: {visited}")

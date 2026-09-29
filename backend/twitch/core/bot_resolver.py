@@ -6,7 +6,7 @@ Phase 3 lets a tenant authorize and select a different Twitch account instead
 the READ side of that mapping — which account currently speaks for which
 channel. The write side (validating and initiating a switch) lives in the API
 process; this resolver only ever reads `channel_bot_settings`/`bot_accounts`
-and reacts to a `bot_selection_changed` notification (wired in a later PR).
+and reacts to the runtime's `bot_selection_changed` notification handler.
 
 A channel with no row, or a NULL `active_bot_user_id`, uses the system
 default — this is every channel until a switch actually ships, so lookups
@@ -109,7 +109,10 @@ class BotAccountResolver:
     # ------------------------------------------------------------------
 
     _SELECT_ONE = """
-        SELECT cbs.active_bot_user_id, cbs.desired_bot_user_id, cbs.selection_version,
+        SELECT cbs.active_bot_user_id,
+               CASE WHEN cbs.status = 'switching' THEN cbs.desired_bot_user_id END
+                   AS desired_bot_user_id,
+               cbs.selection_version,
                ab.login AS active_login, db.login AS desired_login
         FROM channel_bot_settings cbs
         LEFT JOIN bot_accounts ab ON ab.platform_user_id = cbs.active_bot_user_id
@@ -141,13 +144,16 @@ class BotAccountResolver:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT cbs.channel_id, cbs.active_bot_user_id, cbs.desired_bot_user_id,
+                SELECT cbs.channel_id, cbs.active_bot_user_id,
+                       CASE WHEN cbs.status = 'switching' THEN cbs.desired_bot_user_id END
+                           AS desired_bot_user_id,
                        cbs.selection_version,
                        ab.login AS active_login, db.login AS desired_login
                 FROM channel_bot_settings cbs
                 LEFT JOIN bot_accounts ab ON ab.platform_user_id = cbs.active_bot_user_id
                 LEFT JOIN bot_accounts db ON db.platform_user_id = cbs.desired_bot_user_id
-                WHERE cbs.active_bot_user_id IS NOT NULL OR cbs.desired_bot_user_id IS NOT NULL
+                WHERE cbs.active_bot_user_id IS NOT NULL
+                   OR (cbs.status = 'switching' AND cbs.desired_bot_user_id IS NOT NULL)
                 """
             )
         self._contexts = {}
@@ -159,7 +165,7 @@ class BotAccountResolver:
         )
 
     async def refresh(self, channel_id: str) -> BotExecutionContext:
-        """Reload one channel's row from DB — for the future `bot_selection_changed` handler."""
+        """Reload one channel after a versioned selection notification."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(self._SELECT_ONE, channel_id)
         if row is None:

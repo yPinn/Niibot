@@ -50,10 +50,13 @@ afterEach(() => vi.restoreAllMocks())
 describe('getBotModStatus', () => {
   it('returns ok result with data when response is ok', async () => {
     mockApiFetch.mockResolvedValue(
-      new Response(JSON.stringify({ is_moderator: true }), { status: 200 })
+      new Response(JSON.stringify({ bot_user_id: 'bot-123', is_moderator: true }), { status: 200 })
     )
     const result = await getBotModStatus()
-    expect(result).toEqual({ ok: true, data: { is_moderator: true } })
+    expect(result).toEqual({
+      ok: true,
+      data: { bot_user_id: 'bot-123', is_moderator: true },
+    })
   })
 
   it('returns error result with status when response is not ok', async () => {
@@ -81,6 +84,32 @@ describe('getBotModStatus', () => {
       'channels:bot-mod-status',
       expect.any(Function),
       expect.objectContaining({ ttl: 60_000 })
+    )
+  })
+
+  it('refreshes a cached status when it belongs to a different active bot', async () => {
+    mockApiFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ bot_user_id: 'old-bot', is_moderator: true }), {
+          status: 200,
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ bot_user_id: 'new-bot', is_moderator: false }), {
+          status: 200,
+        })
+      )
+
+    const result = await getBotModStatus('new-bot')
+
+    expect(result).toEqual({
+      ok: true,
+      data: { bot_user_id: 'new-bot', is_moderator: false },
+    })
+    expect(apiCache.fetch).toHaveBeenLastCalledWith(
+      'channels:bot-mod-status',
+      expect.any(Function),
+      expect.objectContaining({ forceRefresh: true })
     )
   })
 })

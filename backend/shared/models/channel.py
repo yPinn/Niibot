@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass
@@ -20,6 +21,15 @@ class Token:
     reauth_notified_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class TokenRuntimeMetadata:
+    """Non-secret generation metadata used to reconcile runtime credentials."""
+
+    user_id: str
+    token_type: Literal["bot", "broadcaster"]
+    credential_revision: int
 
 
 @dataclass

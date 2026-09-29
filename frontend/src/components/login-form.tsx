@@ -13,6 +13,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   db_not_ready: '伺服器資料庫尚未就緒，請稍後再試',
   db_timeout: '伺服器連線逾時，請稍後再試',
   save_token_failed: '登入資料儲存失敗，請稍後再試',
+  bot_account_role_conflict: '這個 Twitch 帳號已作為 Bot 使用，請改用另一個帳號登入頻道',
   no_code: '未收到授權碼，請重新登入',
   access_denied: '授權被拒絕',
 }
