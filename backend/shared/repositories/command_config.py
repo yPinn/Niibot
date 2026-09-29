@@ -26,6 +26,13 @@ class RewardAlreadyBoundError(ConflictError):
     user_message = "這個獎勵已經綁定其他功能了，請先解除該綁定再試一次"
 
 
+class CommandNamespaceConflictError(ConflictError):
+    """A custom command name or alias collides with this channel's namespace."""
+
+    code = "COMMAND.NAMESPACE_CONFLICT"
+    user_message = "這個指令名稱或別名已被使用，請換一個"
+
+
 # In-process caches — long TTL for memory-first reads. Freshness: `config_change`
 # pg_notify (both twitch and api processes listen) + a periodic full-clear
 # safety net (see shared/cache_invalidation.py and its callers).
@@ -103,6 +110,41 @@ def _fill_builtin_aliases(cfg: CommandConfig) -> CommandConfig:
         if default_aliases:
             return dataclasses.replace(cfg, aliases=default_aliases)
     return cfg
+
+
+def _insert_defaults(
+    command_name: str, command_type: str
+) -> tuple[bool, str | None, int | None, str]:
+    """Return safe defaults for a newly materialised command row.
+
+    Builtins normally exist only as virtual catalog entries.  The first toggle
+    or usage increment materialises one in PostgreSQL, so using the table's
+    generic defaults there would silently discard command-specific cooldowns
+    and roles.  Custom/unknown commands intentionally keep the neutral schema
+    defaults.
+    """
+    if command_type == "builtin" and command_name in BUILTIN_MAP:
+        defn = BUILTIN_MAP[command_name]
+        return (
+            defn.get("enabled", True),
+            defn.get("custom_response"),
+            defn.get("cooldown"),
+            defn.get("min_role", "everyone"),
+        )
+    return True, None, None, "everyone"
+
+
+def _normalise_alias_list(aliases: str | None, *, command_name: str) -> list[str]:
+    if not aliases:
+        return []
+    name = command_name.strip().lstrip("!").lower()
+    return list(
+        dict.fromkeys(
+            alias.strip().lstrip("!").lower()
+            for alias in aliases.split(",")
+            if alias.strip() and alias.strip().lstrip("!").lower() != name
+        )
+    )
 
 
 async def _retry_on_db_error(func, max_retries: int = 2):
@@ -262,37 +304,77 @@ class CommandConfigRepository:
         aliases: str | None = None,
     ) -> CommandConfig:
         """Insert or update a command config. Manages aliases in command_aliases table."""
+        default_enabled, default_response, default_cooldown, default_min_role = _insert_defaults(
+            command_name, command_type
+        )
         cd_value = None if cooldown is _UNSET else cooldown
         cd_provided = cooldown is not _UNSET
-        alias_list = [a.strip() for a in aliases.split(",") if a.strip()] if aliases else []
+        insert_enabled = default_enabled if enabled is None else enabled
+        insert_response = default_response if custom_response is None else custom_response
+        insert_cooldown = default_cooldown if not cd_provided else cd_value
+        insert_min_role = default_min_role if min_role is None else min_role
+        alias_list = _normalise_alias_list(aliases, command_name=command_name)
 
         async def _query():
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
+                    if aliases is not None:
+                        await conn.execute(
+                            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                            channel_id,
+                        )
+                        requested_names = [command_name.lower(), *alias_list]
+                        conflict = await conn.fetchval(
+                            """
+                            SELECT EXISTS (
+                                SELECT 1
+                                FROM command_configs AS existing
+                                LEFT JOIN command_aliases AS existing_alias
+                                  ON existing_alias.command_id = existing.id
+                                WHERE existing.channel_id = $1
+                                  AND existing.id IS DISTINCT FROM (
+                                      SELECT current.id
+                                      FROM command_configs AS current
+                                      WHERE current.channel_id = $1
+                                        AND current.command_name = $2
+                                  )
+                                  AND (
+                                      lower(existing.command_name) = ANY($3::text[])
+                                      OR lower(existing_alias.alias) = ANY($3::text[])
+                                  )
+                            )
+                            """,
+                            channel_id,
+                            command_name,
+                            requested_names,
+                        )
+                        if conflict:
+                            raise CommandNamespaceConflictError(context={"names": requested_names})
                     row = await conn.fetchrow(
                         f"""
                         INSERT INTO command_configs
                             (channel_id, command_name, command_type, enabled,
                              custom_response, cooldown, min_role)
-                        VALUES ($1, $2, $3,
-                                COALESCE($4, TRUE), $5,
-                                $6,
-                                COALESCE($7, 'everyone'))
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         ON CONFLICT (channel_id, command_name) DO UPDATE SET
-                            enabled = COALESCE($4, command_configs.enabled),
-                            custom_response = COALESCE($5, command_configs.custom_response),
-                            cooldown = CASE WHEN $8 THEN $6 ELSE command_configs.cooldown END,
-                            min_role = COALESCE($7, command_configs.min_role)
+                            enabled = COALESCE($8, command_configs.enabled),
+                            custom_response = COALESCE($9, command_configs.custom_response),
+                            cooldown = CASE WHEN $10 THEN $11 ELSE command_configs.cooldown END,
+                            min_role = COALESCE($12, command_configs.min_role)
                         RETURNING {_CMD_COLUMNS_BASE}
                         """,
                         channel_id,
                         command_name,
                         command_type,
+                        insert_enabled,
+                        insert_response,
+                        insert_cooldown,
+                        insert_min_role,
                         enabled,
                         custom_response,
+                        cd_provided,
                         cd_value,
                         min_role,
-                        cd_provided,
                     )
                     cmd_id = row["id"]
 
@@ -353,17 +435,33 @@ class CommandConfigRepository:
         check-then-insert race between two concurrent callers can't silently
         overwrite one caller's command with the other's.
         """
-        alias_list = [a.strip() for a in aliases.split(",") if a.strip()] if aliases else []
+        alias_list = _normalise_alias_list(aliases, command_name=command_name)
 
         async def _query():
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                        channel_id,
+                    )
+                    requested_names = [command_name.lower(), *alias_list]
                     row = await conn.fetchrow(
                         f"""
                         INSERT INTO command_configs
                             (channel_id, command_name, command_type, enabled,
                              custom_response, cooldown, min_role)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        SELECT $1, $2, $3, $4, $5, $6, $7
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM command_configs AS existing
+                            LEFT JOIN command_aliases AS existing_alias
+                              ON existing_alias.command_id = existing.id
+                            WHERE existing.channel_id = $1
+                              AND (
+                                  lower(existing.command_name) = ANY($8::text[])
+                                  OR lower(existing_alias.alias) = ANY($8::text[])
+                              )
+                        )
                         ON CONFLICT (channel_id, command_name) DO NOTHING
                         RETURNING {_CMD_COLUMNS_BASE}
                         """,
@@ -374,6 +472,7 @@ class CommandConfigRepository:
                         custom_response,
                         cooldown,
                         min_role,
+                        requested_names,
                     )
                     if row is None:
                         return None
@@ -411,18 +510,24 @@ class CommandConfigRepository:
         For virtual builtins (no DB row), this also creates the row so that
         usage tracking works correctly.
         """
+        enabled, custom_response, cooldown, min_role = _insert_defaults(command_name, "builtin")
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
                 INSERT INTO command_configs
-                    (channel_id, command_name, command_type, enabled, usage_count, last_used_at)
-                VALUES ($1, $2, 'builtin', TRUE, 1, NOW())
+                    (channel_id, command_name, command_type, enabled,
+                     custom_response, cooldown, min_role, usage_count, last_used_at)
+                VALUES ($1, $2, 'builtin', $3, $4, $5, $6, 1, NOW())
                 ON CONFLICT (channel_id, command_name) DO UPDATE SET
                     usage_count = command_configs.usage_count + 1,
                     last_used_at = NOW()
                 """,
                 channel_id,
                 command_name,
+                enabled,
+                custom_response,
+                cooldown,
+                min_role,
             )
         # Invalidate the name cache so the updated usage_count is reflected
         _cmd_cache.invalidate(f"cmd_config:{channel_id}:{command_name}")

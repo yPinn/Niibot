@@ -96,7 +96,7 @@ class GeneralCommandsComponent(BotComponent):
             await self._ctx_reply(ctx, f"Pong! @{ctx.chatter.display_name}")
         await self._record_command(ctx, "ping")
 
-    @commands.command(aliases=["commands", "指令"])
+    @commands.command(aliases=["指令"])
     async def help(self, ctx: commands.Context) -> None:
         """Show available commands.
 
@@ -187,7 +187,7 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "condemn")
 
-    @commands.command(name="del", aliases=["刪除", "vanish"])
+    @commands.command(name="del", aliases=["刪", "vanish"])
     async def delete_own_messages(self, ctx: commands.Context) -> None:
         """清除自己最近的聊天室留言（等同自我 timeout 1 秒）。用法: !del
 

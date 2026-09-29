@@ -93,7 +93,18 @@ SE_CUSTOM = [
     },
 ]
 SE_DEFAULT = [
-    {"command": "followage", "enabled": True},
+    {
+        "command": "followage",
+        "enabled": True,
+        "accessLevel": 100,
+        "cooldown": {"user": 15, "global": 15},
+    },
+    {
+        "command": "uptime",
+        "enabled": False,
+        "accessLevel": 100,
+        "cooldown": {"user": 0, "global": 0},
+    },
     {"command": "songrequest", "enabled": True},
     {"command": "points", "enabled": False},
 ]
@@ -168,6 +179,11 @@ async def _stubbed(transport: httpx.MockTransport | None = None, existing: set[s
 
 
 class TestSources:
+    def test_csv_is_always_available(self):
+        r = _make_client().get("/api/commands/import/sources")
+        csv_source = next(s for s in r.json() if s["source"] == "csv")
+        assert csv_source["available"] is True
+
     def test_streamelements_always_available(self):
         r = _make_client().get("/api/commands/import/sources")
         assert r.status_code == 200
@@ -188,6 +204,49 @@ class TestSources:
         nb = next(s for s in r.json() if s["source"] == "nightbot")
         assert nb["available"] is True
         assert nb["reason"] is None
+
+
+# ---------------------------------------------------------------------------
+# CSV preview / export
+# ---------------------------------------------------------------------------
+
+
+class TestCsvCommands:
+    @pytest.mark.asyncio
+    async def test_preview_accepts_bounded_csv_and_stashes_it(self):
+        async with _stubbed(existing=set()):
+            r = _make_client().post(
+                "/api/commands/import/csv/preview",
+                files={"upload": ("commands.csv", b"command,response\nhello,Hello\n", "text/csv")},
+            )
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "csv"
+        assert body["source_channel"] == "commands.csv"
+        assert body["items"][0]["source_enabled"] is False
+        assert body["default_selection"][body["items"][0]["key"]] is False
+
+    @pytest.mark.asyncio
+    async def test_invalid_csv_returns_a_safe_400(self):
+        async with _stubbed(existing=set()):
+            r = _make_client().post(
+                "/api/commands/import/csv/preview",
+                files={"upload": ("commands.csv", b"wrong,header\nx,y\n", "text/csv")},
+            )
+
+        assert r.status_code == 400
+        assert r.json()["error"]["code"] == "COMMAND_IMPORT.CSV_INVALID"
+
+    def test_export_is_a_no_store_csv_download(self):
+        payload = b"\xef\xbb\xbfniibot_version,command,response\r\n"
+        with patch.object(CommandImportService, "export_csv", AsyncMock(return_value=payload)):
+            r = _make_client().get("/api/commands/import/csv/export")
+
+        assert r.status_code == 200
+        assert r.content == payload
+        assert r.headers["cache-control"] == "no-store"
+        assert "niibot-commands.csv" in r.headers["content-disposition"]
 
 
 # ---------------------------------------------------------------------------
@@ -213,13 +272,22 @@ class TestStreamElementsPreview:
         # equivalent and is listed rather than silently dropped.
         assert by_name["!followage"]["section"] == "builtin"
         assert by_name["!followage"]["builtin_target"] == "followage"
+        assert by_name["!followage"]["cooldown"] == 15
+        assert by_name["!followage"]["min_role"] == "everyone"
+        assert {entry["field"] for entry in by_name["!followage"]["field_outcomes"]} >= {
+            "enabled",
+            "min_role",
+            "cooldown",
+        }
         assert by_name["!songrequest"]["section"] == "unsupported"
 
     @pytest.mark.asyncio
-    async def test_disabled_default_commands_are_not_listed(self):
+    async def test_disabled_default_commands_are_listed_with_source_state(self):
         async with _stubbed():
             r = _make_client().get("/api/commands/import/streamelements/preview")
-        assert all(i["source_name"] != "!points" for i in r.json()["items"])
+        by_name = {i["source_name"]: i for i in r.json()["items"]}
+        assert by_name["!points"]["source_enabled"] is False
+        assert by_name["!uptime"]["source_enabled"] is False
 
     @pytest.mark.asyncio
     async def test_keyword_becomes_a_trigger_row(self):
@@ -260,18 +328,16 @@ class TestStreamElementsPreview:
         assert all(selected[key] is False for key in non_builtin_keys if key in selected)
 
     @pytest.mark.asyncio
-    async def test_builtin_rows_are_preselected(self):
-        # The source platform already had this default command switched on
-        # (SE_DEFAULT's followage), and Niibot has a matching builtin — a full
-        # platform switch should not require re-ticking commands that were
-        # already running.
+    async def test_builtin_rows_are_preselected_with_their_source_state(self):
+        # A full platform switch should preserve whether each mapped default
+        # command was on or off at the source.
         async with _stubbed():
             r = _make_client().get("/api/commands/import/streamelements/preview")
         body = r.json()
         selected = body["default_selection"]
-        builtin_keys = [i["key"] for i in body["items"] if i["section"] == "builtin"]
-        assert builtin_keys
-        assert all(selected[key] is True for key in builtin_keys)
+        builtin_rows = [i for i in body["items"] if i["section"] == "builtin"]
+        assert builtin_rows
+        assert all(selected[item["key"]] is item["source_enabled"] for item in builtin_rows)
 
     @pytest.mark.asyncio
     async def test_unknown_channel_returns_404(self):
@@ -469,6 +535,8 @@ def _items() -> list[ImportItem]:
             status=ImportStatus.OK,
             source_name="!followage",
             source_enabled=True,
+            cooldown=20,
+            min_role="subscriber",
             builtin_target="followage",
         ),
         ImportItem(
@@ -491,7 +559,7 @@ def _service_with(
     service.existing_names = AsyncMock(return_value=existing or set())
     service.existing_trigger_names = AsyncMock(return_value=triggers or set())
     service.commands = MagicMock()
-    service.commands.toggle_command = AsyncMock()
+    service.commands.update_command = AsyncMock(return_value={})
     service.cmd_repo = MagicMock()
     service.cmd_repo.try_insert_config = AsyncMock(return_value=MagicMock())
     service.trigger_repo = MagicMock()
@@ -547,6 +615,18 @@ class TestApply:
         assert service.cmd_repo.try_insert_config.await_args.kwargs["aliases"] is None
 
     @pytest.mark.asyncio
+    async def test_runtime_reserved_alias_is_dropped_at_apply_time(self):
+        service = _service_with(set())
+        items = _items()
+        items[0].aliases = ["cmd"]
+        preview = ImportPreview(ImportSource.STREAMELEMENTS, LOGIN, items)
+
+        result = await service.apply(CHANNEL_ID, preview, {"cmd:discord": False})
+
+        assert result.created == 1
+        assert service.cmd_repo.try_insert_config.await_args.kwargs["aliases"] is None
+
+    @pytest.mark.asyncio
     async def test_unsupported_rows_are_never_written(self):
         service = _service_with(set())
         preview = ImportPreview(ImportSource.STREAMELEMENTS, LOGIN, _items())
@@ -558,14 +638,20 @@ class TestApply:
         service.cmd_repo.try_insert_config.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_builtin_row_toggles_instead_of_creating(self):
+    async def test_builtin_row_applies_enabled_role_and_cooldown_as_one_patch(self):
         service = _service_with(set())
         preview = ImportPreview(ImportSource.STREAMELEMENTS, LOGIN, _items())
 
         result = await service.apply(CHANNEL_ID, preview, {"builtin:followage": True})
 
         assert result.created == 1
-        service.commands.toggle_command.assert_awaited_once_with(CHANNEL_ID, "followage", True)
+        service.commands.update_command.assert_awaited_once_with(
+            CHANNEL_ID,
+            "followage",
+            enabled=True,
+            cooldown=20,
+            min_role="subscriber",
+        )
         service.cmd_repo.try_insert_config.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -710,6 +796,16 @@ class TestExistingNameLookups:
     async def test_existing_trigger_names_on_a_channel_with_none(self):
         service = CommandImportService(_pool_returning([]), MagicMock())
         assert await service.existing_trigger_names(CHANNEL_ID) == set()
+
+    @pytest.mark.asyncio
+    async def test_existing_names_always_include_runtime_reserved_namespace(self):
+        service = CommandImportService(AsyncMock(), MagicMock())
+        config = MagicMock(command_name="hello", aliases="hi,hey")
+        service.cmd_repo.list_configs = AsyncMock(return_value=[config])
+
+        names = await service.existing_names(CHANNEL_ID)
+
+        assert {"hello", "hi", "hey", "cmd", "commands", "uptime"} <= names
 
 
 # ---------------------------------------------------------------------------

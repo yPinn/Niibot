@@ -97,6 +97,7 @@ def _make_pool(
     fetch=_UNSET,
     fetchrow=_UNSET,
     execute=_UNSET,
+    fetchval=_UNSET,
 ) -> tuple[MagicMock, AsyncMock]:
     conn = AsyncMock()
     if fetch is not _UNSET:
@@ -105,6 +106,7 @@ def _make_pool(
         conn.fetchrow.return_value = fetchrow
     if execute is not _UNSET:
         conn.execute.return_value = execute
+    conn.fetchval.return_value = False if fetchval is _UNSET else fetchval
 
     # conn.transaction() must return an async context manager, not a coroutine.
     tx_ctx = MagicMock()
@@ -326,21 +328,38 @@ class TestListConfigs:
         names = [r.command_name for r in result]
         by_name = {r.command_name: r for r in result}
 
-        # common: del sits right after ping
+        # common: safe Niibot entries lead; opt-in compatibility commands follow.
+        assert names.index("schedule") == names.index("checkin") + 1
         assert names.index("del") == names.index("ping") + 1
-        # viewer: accountage after bits, quote right after accountage
-        assert names.index("accountage") == names.index("bits") + 1
-        assert names.index("quote") == names.index("accountage") + 1
-        # broadcaster: title/game/tags immediately after subcount
-        assert names.index("title") == names.index("subcount") + 1
+        # viewer: the enabled check-in companion leads; setup-dependent reads follow.
+        assert names.index("rank") == names.index("del") + 1
+        assert names.index("accountage") == names.index("subage") + 1
+        assert names.index("bits") == names.index("accountage") + 1
+        assert names.index("quote") == names.index("bits") + 1
+        # channel info: title/game/tags are viewer-readable; broadcaster-only
+        # subcount follows in its own category.
         assert names.index("game") == names.index("title") + 1
         assert names.index("tags") == names.index("game") + 1
-        # moderator: marker/winner after condemn
-        assert names.index("marker") == names.index("condemn") + 1
+        assert names.index("subcount") == names.index("tags") + 1
+        # moderator: common actions lead; the channel statement stays last.
+        assert names.index("marker") == names.index("so") + 1
         assert names.index("winner") == names.index("marker") + 1
+        assert names.index("condemn") == names.index("winner") + 1
 
-        for name in ("title", "game", "tags", "marker", "winner", "quote", "accountage", "del"):
+        for name in (
+            "title",
+            "game",
+            "tags",
+            "marker",
+            "winner",
+            "condemn",
+            "quote",
+            "accountage",
+            "del",
+            "roll",
+        ):
             assert by_name[name].enabled is False, f"{name} should default off (collision policy)"
+        assert by_name["choose"].enabled is True
 
 
 @pytest.mark.asyncio
@@ -378,6 +397,15 @@ class TestUpsertConfig:
         assert _cmd_cache.get("cmd_alias:ch1:hi") is _MISSING
         assert _cmd_cache.get("cmd_alias:ch1:hey") is _MISSING
 
+    async def test_alias_update_rejects_cross_command_namespace_collision(self):
+        from shared.repositories.command_config import CommandNamespaceConflictError
+
+        pool, _ = _make_pool(fetchrow=_CMD_ROW, fetchval=True)
+        repo = CommandConfigRepository(pool)
+
+        with pytest.raises(CommandNamespaceConflictError):
+            await repo.upsert_config("ch1", "hello", aliases="taken")
+
     async def test_invalidates_builtin_default_aliases_on_builtin_update(self):
         """Toggling a builtin also invalidates its default alias cache entries."""
         _cmd_cache.set("cmd_alias:ch1:alive", "cached_value")
@@ -390,6 +418,91 @@ class TestUpsertConfig:
 
         # "alive" is the default alias for "ping" → should be invalidated
         assert _cmd_cache.get("cmd_alias:ch1:alive") is _MISSING
+
+    async def test_builtin_insert_uses_catalog_defaults_for_omitted_fields(self):
+        """Toggling a virtual builtin must not persist schema defaults.
+
+        `marker` is disabled and moderator-only in the catalog.  Enabling it
+        supplies only `enabled=True`; the insert side must still persist its
+        cooldown and role so the real row remains as safe as the virtual row.
+        """
+        marker_row = {
+            **_CMD_ROW,
+            "command_name": "marker",
+            "enabled": True,
+            "cooldown": 10,
+            "min_role": "moderator",
+        }
+        pool, conn = _make_pool(fetchrow=marker_row)
+        repo = CommandConfigRepository(pool)
+
+        await repo.upsert_config("ch1", "marker", enabled=True)
+
+        insert_args = conn.fetchrow.call_args_list[0].args
+        assert insert_args[1:8] == (
+            "ch1",
+            "marker",
+            "builtin",
+            True,
+            None,
+            10,
+            "moderator",
+        )
+
+    async def test_custom_insert_keeps_neutral_defaults(self):
+        pool, conn = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        await repo.upsert_config(
+            "ch1",
+            "mycommand",
+            command_type="custom",
+            custom_response="Hello!",
+        )
+
+        insert_args = conn.fetchrow.call_args_list[0].args
+        assert insert_args[1:8] == (
+            "ch1",
+            "mycommand",
+            "custom",
+            True,
+            "Hello!",
+            None,
+            "everyone",
+        )
+
+
+@pytest.mark.asyncio
+class TestIncrementUsageCount:
+    async def test_new_builtin_row_preserves_catalog_security_defaults(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = CommandConfigRepository(pool)
+
+        await repo.increment_usage_count("ch1", "condemn")
+
+        execute_args = conn.execute.call_args.args
+        assert execute_args[1:] == (
+            "ch1",
+            "condemn",
+            False,
+            None,
+            5,
+            "moderator",
+        )
+
+    async def test_existing_row_is_only_updated_for_usage_fields(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        repo = CommandConfigRepository(pool)
+
+        await repo.increment_usage_count("ch1", "marker")
+
+        sql = conn.execute.call_args.args[0]
+        update_clause = sql.split("DO UPDATE SET", maxsplit=1)[1]
+        assert "usage_count = command_configs.usage_count + 1" in update_clause
+        assert "last_used_at = NOW()" in update_clause
+        assert "enabled =" not in update_clause
+        assert "min_role =" not in update_clause
+        assert "cooldown =" not in update_clause
 
 
 @pytest.mark.asyncio
@@ -415,6 +528,19 @@ class TestTryInsertConfig:
 
         assert result is None
         assert conn.fetchrow.call_count == 1  # no follow-up SELECT after a conflict
+
+    async def test_insert_serializes_and_checks_the_complete_channel_namespace(self):
+        _clear_caches()
+        pool, conn = _make_pool(fetchrow=_CUSTOM_ROW)
+        repo = CommandConfigRepository(pool)
+
+        await repo.try_insert_config("ch1", "mycommand", aliases="hi")
+
+        lock_sql = conn.execute.call_args_list[0].args[0]
+        insert_sql = conn.fetchrow.call_args.args[0]
+        assert "pg_advisory_xact_lock" in lock_sql
+        assert "command_aliases" in insert_sql
+        assert "ANY($8::text[])" in insert_sql
 
     async def test_invalidates_cmd_and_list_caches_when_created(self):
         _clear_caches()

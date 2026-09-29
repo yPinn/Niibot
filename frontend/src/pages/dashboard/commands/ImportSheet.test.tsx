@@ -13,6 +13,8 @@ vi.mock('@/api/commandImport', async importOriginal => {
     ...actual,
     getImportSources: vi.fn(),
     previewStreamElements: vi.fn(),
+    previewCommandCsv: vi.fn(),
+    exportCommandCsv: vi.fn(),
     getImportPreview: vi.fn(),
     applyImport: vi.fn(),
     getNightbotOauthUrl: vi.fn(),
@@ -33,11 +35,20 @@ const PREVIEW: ImportPreview = {
       source_name: '!followage',
       source_enabled: true,
       notes: ['改為啟用 Niibot 內建的 !followage'],
+      field_outcomes: [
+        { field: 'enabled', action: 'preserved', detail: '保留來源狀態：啟用' },
+        {
+          field: 'min_role',
+          action: 'tightened',
+          detail: '來源為 everyone；Niibot 安全下限為 moderator，已收緊',
+        },
+        { field: 'cooldown', action: 'preserved', detail: '保留冷卻：10 秒' },
+      ],
       command_name: null,
       response: null,
       original_response: null,
       cooldown: null,
-      min_role: 'everyone',
+      min_role: 'moderator',
       aliases: [],
       pattern: null,
       match_type: 'contains',
@@ -50,6 +61,7 @@ const PREVIEW: ImportPreview = {
       source_name: '!discord',
       source_enabled: true,
       notes: [],
+      field_outcomes: [],
       command_name: 'discord',
       response: '加入我們',
       original_response: '加入我們',
@@ -67,6 +79,7 @@ const PREVIEW: ImportPreview = {
       source_name: '!hug',
       source_enabled: false,
       notes: ['變數語法已改寫為 Niibot 格式'],
+      field_outcomes: [],
       command_name: 'hug',
       response: '$(touser) 抱了一下',
       original_response: '$(1|$(sender)) 抱了一下',
@@ -84,6 +97,7 @@ const PREVIEW: ImportPreview = {
       source_name: '!pb',
       source_enabled: true,
       notes: ['用到 $(customapi) 對外抓取資料，Niibot 不支援'],
+      field_outcomes: [],
       command_name: null,
       response: null,
       original_response: null,
@@ -124,6 +138,11 @@ beforeEach(() => {
     { source: 'nightbot', available: false, reason: '尚未設定金鑰' },
   ])
   vi.mocked(api.previewStreamElements).mockResolvedValue(PREVIEW)
+  vi.mocked(api.previewCommandCsv).mockResolvedValue({ ...PREVIEW, source: 'csv' })
+  vi.mocked(api.exportCommandCsv).mockResolvedValue({
+    blob: new Blob(['command,response']),
+    filename: 'niibot-commands.csv',
+  })
   vi.mocked(api.getImportPreview).mockResolvedValue(PREVIEW)
   vi.mocked(api.applyImport).mockResolvedValue({
     created: 3,
@@ -138,6 +157,26 @@ describe('ImportSheet source picker', () => {
   it('offers StreamElements without authorization', async () => {
     renderSheet()
     expect(await screen.findByText('直接讀取，不需要額外授權')).toBeInTheDocument()
+  })
+
+  it('accepts a universal CSV file for other bots', async () => {
+    const user = userEvent.setup()
+    renderSheet()
+    const upload = new File(['command,response\nhello,Hello'], 'commands.csv', {
+      type: 'text/csv',
+    })
+
+    await user.upload(await screen.findByLabelText('選擇 CSV 指令檔'), upload)
+
+    await screen.findByText('新增為自訂指令')
+    expect(api.previewCommandCsv).toHaveBeenCalledWith(upload)
+  })
+
+  it('offers an export compatible with the CSV importer', async () => {
+    renderSheet()
+    expect(
+      await screen.findByRole('button', { name: '匯出 Niibot 自訂指令 CSV' })
+    ).toBeInTheDocument()
   })
 
   it('disables Nightbot and explains why when it is not configured', async () => {
@@ -178,6 +217,24 @@ describe('ImportSheet preview', () => {
     await openPreview()
     expect(screen.getByText('$(touser) 抱了一下')).toBeInTheDocument()
     expect(screen.getByText('$(1|$(sender)) 抱了一下')).toBeInTheDocument()
+  })
+
+  it('shows the Twitch badge before an imported minimum role', async () => {
+    await openPreview()
+    const roleText = screen.getByText('Mod')
+    const modBadge = roleText.parentElement?.querySelector('img')
+    expect(modBadge).toBeInTheDocument()
+    expect(modBadge).toHaveAttribute('alt', '')
+    expect(
+      modBadge!.compareDocumentPosition(roleText) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('shows preserve and safety-tightening decisions per imported field', async () => {
+    await openPreview()
+    expect(screen.getByText('啟用狀態 · 保留')).toBeInTheDocument()
+    expect(screen.getByText('最低身分 · 收緊')).toBeInTheDocument()
+    expect(screen.getByText(/Niibot 安全下限為 moderator/)).toBeInTheDocument()
   })
 
   it('explains why an unsupported row cannot come across', async () => {

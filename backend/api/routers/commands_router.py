@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -39,6 +40,12 @@ class CommandInvalidError(InvalidInputError):
     user_message = "指令的設定有誤，請檢查後再試"
 
 
+class CommandCapabilityRequirementResponse(BaseModel):
+    capability_key: str
+    mode: Literal["all", "write", "effect"]
+    requires_bot_moderator: bool
+
+
 class CommandConfigResponse(BaseModel):
     id: int | None
     channel_id: str
@@ -59,6 +66,14 @@ class CommandConfigResponse(BaseModel):
     public_visible: bool = False
     display_order: int = 0
     category_label: str | None = None
+    integration_kind: Literal[
+        "internal", "twitch_public", "twitch_capability", "external_service"
+    ] = "internal"
+    integration_label: str = ""
+    capability_requirements: list[CommandCapabilityRequirementResponse] = Field(
+        default_factory=list
+    )
+    external_conditions: list[str] = Field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

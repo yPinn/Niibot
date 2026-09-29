@@ -15,6 +15,7 @@ from enum import StrEnum
 class ImportSource(StrEnum):
     NIGHTBOT = "nightbot"
     STREAMELEMENTS = "streamelements"
+    CSV = "csv"
 
 
 class ImportSection(StrEnum):
@@ -35,6 +36,24 @@ class ImportStatus(StrEnum):
     UNSUPPORTED = "unsupported"  # needs a capability Niibot does not have
 
 
+class ImportFieldAction(StrEnum):
+    """How one source setting survives conversion."""
+
+    PRESERVED = "preserved"
+    TIGHTENED = "tightened"
+    DROPPED = "dropped"
+    REVIEW = "review"
+
+
+@dataclass(frozen=True)
+class ImportFieldOutcome:
+    """Structured conversion note rendered next to an import row."""
+
+    field: str
+    action: ImportFieldAction
+    detail: str
+
+
 @dataclass
 class ImportItem:
     """A single row in the import preview."""
@@ -52,6 +71,9 @@ class ImportItem:
 
     notes: list[str] = field(default_factory=list)
     """Plain-language explanations shown next to the row."""
+
+    field_outcomes: list[ImportFieldOutcome] = field(default_factory=list)
+    """Per-field preserve/tighten/drop/review decisions for the preview."""
 
     # ── Command / trigger payload ────────────────────────────────────────
     command_name: str | None = None

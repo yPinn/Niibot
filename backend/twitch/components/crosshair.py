@@ -1,11 +1,11 @@
-"""Crosshair bot commands: !xhc and subcommands.
+"""Crosshair bot commands: !crosshairs / !xhc and subcommands.
 
 Syntax:
-    !xhc                      — 顯示準星收藏頁面連結（所有人）
-    !xhc <名稱>               — 查詢並分享準星代碼（所有人，15s cooldown）
-    !xhc a <名稱> <代碼>       — 新增準星（Mod+）
-    !xhc e <名稱> <新代碼>     — 編輯準星代碼（Mod+）
-    !xhc d <名稱>             — 刪除準星（Mod+）
+    !crosshairs / !xhc               — 顯示準星收藏頁面連結（所有人）
+    !crosshairs <名稱>                — 查詢並分享準星代碼（所有人，15s cooldown）
+    !crosshairs a <名稱> <代碼>        — 新增準星（Mod+）
+    !crosshairs e <名稱> <新代碼>      — 編輯準星代碼（Mod+）
+    !crosshairs d <名稱>              — 刪除準星（Mod+）
 
 <名稱> may contain spaces; <代碼> is always the last whitespace-delimited token
 since Valorant crosshair codes contain no spaces.
@@ -90,10 +90,10 @@ class CrosshairComponent(BotComponent):
         except Exception as e:
             LOGGER.error(f"Failed to record command usage: {e}")
 
-    # ── !xhc ──────────────────────────────────────────────────────────────────
+    # ── !crosshairs / !xhc ────────────────────────────────────────────────────
 
     @commands.group(
-        name="xhc", aliases=["crosshairs", "準星"], invoke_fallback=True, case_insensitive=True
+        name="crosshairs", aliases=["xhc", "準星"], invoke_fallback=True, case_insensitive=True
     )
     async def xhc(self, ctx: commands.Context) -> None:
         """Show crosshairs page link, or look up a crosshair by name."""

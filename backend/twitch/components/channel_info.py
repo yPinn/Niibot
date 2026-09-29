@@ -66,7 +66,7 @@ class ChannelInfoComponent(BotComponent):
     # !title
     # ------------------------------------------------------------------
 
-    @commands.command(name="title", aliases=["台標"])
+    @commands.command(name="title", aliases=["標題"])
     async def title(self, ctx: commands.Context, *, new_title: str | None = None) -> None:
         """查詢或修改頻道標題。用法: !title [新標題]（修改需要 Mod 以上）"""
         config = await check_command(

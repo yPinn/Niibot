@@ -1,5 +1,12 @@
+import type { TwitchCapabilityKey } from './botAccounts'
 import { API_ENDPOINTS } from './config'
 import { apiJson } from './errors'
+
+export interface CommandCapabilityRequirement {
+  capability_key: TwitchCapabilityKey
+  mode: 'all' | 'write' | 'effect'
+  requires_bot_moderator: boolean
+}
 
 export interface CommandConfig {
   /** Null for builtin commands without an explicit DB row. */
@@ -23,6 +30,10 @@ export interface CommandConfig {
   display_order: number
   /** Display label for the builtin's category; null for custom commands. */
   category_label: string | null
+  integration_kind: 'internal' | 'twitch_public' | 'twitch_capability' | 'external_service'
+  integration_label: string
+  capability_requirements: CommandCapabilityRequirement[]
+  external_conditions: string[]
 }
 
 export interface CommandConfigUpdate {

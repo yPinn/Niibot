@@ -49,12 +49,13 @@ class StreamElementsSource:
         )
 
         items: list[ImportItem] = []
+        taken = set(existing)
         for raw in defaults or []:
             item = self._map_default(raw)
             if item:
                 items.append(item)
         for raw in custom or []:
-            items.extend(self._map_custom(raw, existing))
+            items.extend(self._map_custom(raw, taken))
 
         return ImportPreview(
             source=ImportSource.STREAMELEMENTS,
@@ -81,17 +82,26 @@ class StreamElementsSource:
 
     @staticmethod
     def _map_default(raw: dict) -> ImportItem | None:
-        """Map an enabled StreamElements default command onto a Niibot builtin.
-
-        Defaults the channel never turned on are skipped entirely — listing
-        every one of the 72 would bury the rows that matter.
-        """
-        if not raw.get("enabled"):
-            return None
-        command = str(raw.get("command") or "")
+        """Map a StreamElements default and retain its source state."""
+        command = normalize_command_name(str(raw.get("command") or ""))
         if not command:
             return None
-        return default_command_item(command, key_prefix="se", platform="StreamElements")
+        role, role_notes = streamelements_role(raw.get("accessLevel"))
+        cooldown_provided = raw.get("cooldown") is not None
+        cooldown, cooldown_notes = (
+            _merge_cooldown(raw.get("cooldown")) if cooldown_provided else (None, [])
+        )
+        return default_command_item(
+            command,
+            key_prefix="se",
+            platform=_SOURCE,
+            source_enabled=bool(raw.get("enabled")),
+            source_role=role,
+            source_cooldown=cooldown,
+            cooldown_provided=cooldown_provided,
+            role_notes=role_notes,
+            cooldown_notes=cooldown_notes,
+        )
 
     @staticmethod
     def _map_custom(raw: dict, existing: set[str]) -> list[ImportItem]:
@@ -120,8 +130,18 @@ class StreamElementsSource:
             blockers.append("需要消耗忠誠點數，Niibot 沒有點數系統")
         blockers += check_length(response)
 
-        aliases = [normalize_command_name(a) for a in raw.get("aliases") or []]
-        aliases = [a for a in aliases if a and a != name]
+        aliases: list[str] = []
+        seen_aliases: set[str] = set()
+        for raw_alias in raw.get("aliases") or []:
+            alias = normalize_command_name(str(raw_alias))
+            if not alias or alias == name or alias in seen_aliases:
+                continue
+            seen_aliases.add(alias)
+            conflict = find_conflict(alias, existing)
+            if conflict:
+                notes.append(f"別名 !{alias} 與 !{conflict} 衝突，預覽已略過")
+                continue
+            aliases.append(alias)
 
         status, section, notes = classify(notes, blockers, find_conflict(name, existing))
         command_item = ImportItem(
@@ -134,10 +154,16 @@ class StreamElementsSource:
             command_name=name,
             response=response,
             original_response=reply,
-            cooldown=cooldown or None,
+            cooldown=cooldown,
             min_role=role,
             aliases=aliases,
         )
+        if command_item.section is ImportSection.CUSTOM and command_item.status in (
+            ImportStatus.OK,
+            ImportStatus.REVIEW,
+        ):
+            existing.add(name)
+            existing.update(aliases)
 
         keywords = [str(k).strip() for k in raw.get("keywords") or [] if str(k).strip()]
         if not keywords or blockers:
@@ -158,12 +184,14 @@ class StreamElementsSource:
         return [command_item, trigger_item]
 
 
-def _merge_cooldown(cooldown: dict) -> tuple[int, list[str]]:
+def _merge_cooldown(cooldown: dict | int | float | None) -> tuple[int, list[str]]:
     """Fold StreamElements' separate per-user and global cooldowns into our one.
 
     Takes the larger of the two, matching migration 009's GREATEST when the two
     columns were merged here as well.
     """
+    if not isinstance(cooldown, dict):
+        return int(cooldown or 0), []
     per_user, glob = int(cooldown.get("user") or 0), int(cooldown.get("global") or 0)
     merged = max(per_user, glob)
     if per_user == glob:

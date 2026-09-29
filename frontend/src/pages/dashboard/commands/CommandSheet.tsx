@@ -38,6 +38,7 @@ import { useChannelEmotes } from '@/hooks/useChannelEmotes'
 import { useInputInsert } from '@/hooks/useInputInsert'
 import { toastApiError } from '@/lib/toast-error'
 
+import { CommandRoleLabel } from './CommandRoleLabel'
 import { AUDIENCE_LABELS, EDITABLE_COMMANDS, PUBLIC_ROLE_LABELS, ROLE_LABELS } from './constants'
 import type { EditingState } from './types'
 
@@ -121,7 +122,6 @@ function sanitizeTriggerName(pattern: string): string {
 
 /** Keep in sync with backend MAX_RESPONSE_LENGTH (api/core/constants.py). */
 const MAX_RESPONSE_LENGTH = 450
-
 const COMMAND_VARS = [
   { var: '$(user)', desc: '使用者名稱' },
   { var: '$(touser)', desc: '第一個參數，沒有就用發話者' },
@@ -386,11 +386,16 @@ export function CommandSheet({
                       .join(' · ')}`}
                 </dd>
 
-                <dt className="text-muted-foreground">適用身分</dt>
+                <dt className="text-muted-foreground">適用對象</dt>
                 <dd>
                   {builtinCommand.audience
                     ? AUDIENCE_LABELS[builtinCommand.audience]
                     : ROLE_LABELS[form.role]}
+                </dd>
+
+                <dt className="text-muted-foreground">最低身分</dt>
+                <dd>
+                  <CommandRoleLabel role={form.role} compact />
                 </dd>
 
                 <dt className="text-muted-foreground">公開指令頁</dt>
@@ -638,13 +643,13 @@ export function CommandSheet({
                   value={form.role}
                   onValueChange={v => dispatch({ type: 'SET', field: 'role', value: v })}
                 >
-                  <SelectTrigger id="cmd-role" className="w-24">
+                  <SelectTrigger id="cmd-role" className="w-36">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent position="popper" className="w-24 min-w-0">
-                    {Object.entries(ROLE_LABELS).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
+                  <SelectContent position="popper" className="w-36 min-w-36">
+                    {Object.keys(ROLE_LABELS).map(value => (
+                      <SelectItem key={value} value={value} className="min-h-9">
+                        <CommandRoleLabel role={value} />
                       </SelectItem>
                     ))}
                   </SelectContent>

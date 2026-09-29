@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 
 import {
   applyImport,
+  exportCommandCsv,
   getImportPreview,
   getImportSources,
   getNightbotOauthUrl,
@@ -11,6 +12,7 @@ import {
   type ImportSection,
   type ImportSourceInfo,
   type ImportSourceName,
+  previewCommandCsv,
   previewStreamElements,
 } from '@/api/commandImport'
 import { Icon, OptionPicker, Spinner } from '@/components/primitives'
@@ -27,7 +29,7 @@ import {
 } from '@/components/ui'
 import { toastApiError } from '@/lib/toast-error'
 
-import { ROLE_LABELS } from './constants'
+import { CommandRoleLabel } from './CommandRoleLabel'
 
 /** How the imported commands should start out. */
 type StartMode = 'source' | 'off' | 'on'
@@ -35,6 +37,7 @@ type StartMode = 'source' | 'off' | 'on'
 const SOURCE_LABELS: Record<ImportSourceName, string> = {
   nightbot: 'Nightbot',
   streamelements: 'StreamElements',
+  csv: 'CSV',
 }
 
 const SECTION_ORDER: ImportSection[] = ['builtin', 'custom', 'trigger', 'unsupported']
@@ -58,6 +61,21 @@ const STATUS_BADGE: Record<ImportItem['status'], { label: string; className: str
   review: { label: '需確認', className: 'bg-warning/15 text-warning border-warning/30' },
   conflict: { label: '已存在', className: 'bg-muted text-muted-foreground' },
   unsupported: { label: '不支援', className: 'bg-destructive/10 text-destructive' },
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  enabled: '啟用狀態',
+  min_role: '最低身分',
+  cooldown: '冷卻',
+  command_name: '觸發名稱',
+  semantics: '指令行為',
+}
+
+const ACTION_LABELS: Record<ImportItem['field_outcomes'][number]['action'], string> = {
+  preserved: '保留',
+  tightened: '收緊',
+  dropped: '不轉換',
+  review: '需複核',
 }
 
 export interface ImportSheetProps {
@@ -123,6 +141,31 @@ export function ImportSheet({ open, initialImportId, onImported, onClose }: Impo
     } catch (e) {
       toastApiError(e, '無法開始 Nightbot 授權')
       setLoading(false)
+    }
+  }
+
+  const loadCsv = async (upload: File) => {
+    setLoading(true)
+    try {
+      adopt(await previewCommandCsv(upload))
+    } catch (e) {
+      toastApiError(e, '讀取 CSV 指令失敗')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exportCsv = async () => {
+    try {
+      const download = await exportCommandCsv()
+      const url = URL.createObjectURL(download.blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = download.filename
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toastApiError(e, '匯出指令失敗')
     }
   }
 
@@ -227,6 +270,8 @@ export function ImportSheet({ open, initialImportId, onImported, onClose }: Impo
           ) : (
             <SourcePicker
               sources={sources}
+              onCsv={loadCsv}
+              onExportCsv={exportCsv}
               onStreamElements={loadStreamElements}
               onNightbot={startNightbot}
             />
@@ -253,10 +298,14 @@ export function ImportSheet({ open, initialImportId, onImported, onClose }: Impo
 
 function SourcePicker({
   sources,
+  onCsv,
+  onExportCsv,
   onStreamElements,
   onNightbot,
 }: {
   sources: ImportSourceInfo[] | null
+  onCsv: (upload: File) => void
+  onExportCsv: () => void
   onStreamElements: () => void
   onNightbot: () => void
 }) {
@@ -272,6 +321,24 @@ function SourcePicker({
 
   return (
     <div className="space-y-3 pt-2">
+      <label className="block w-full cursor-pointer rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent/40">
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          aria-label="選擇 CSV 指令檔"
+          className="sr-only"
+          onChange={event => {
+            const upload = event.target.files?.[0]
+            event.target.value = ''
+            if (upload) onCsv(upload)
+          }}
+        />
+        <div className="font-semibold">CSV／其他 Bot</div>
+        <p className="text-label text-muted-foreground">
+          上傳 command,response CSV；可選填啟用狀態、身分、冷卻與別名
+        </p>
+      </label>
+
       <button
         type="button"
         onClick={onStreamElements}
@@ -294,6 +361,10 @@ function SourcePicker({
             : (nightbot?.reason ?? '目前無法使用')}
         </p>
       </button>
+
+      <Button type="button" variant="outline" className="w-full" onClick={onExportCsv}>
+        匯出 Niibot 自訂指令 CSV
+      </Button>
     </div>
   )
 }
@@ -374,6 +445,7 @@ const ImportRow = memo(function ImportRow({
   const selectable = item.section !== 'unsupported'
   const badge = STATUS_BADGE[item.status]
   const rewritten = item.original_response && item.original_response !== item.response
+  const outcomeDetails = new Set(item.field_outcomes.map(outcome => outcome.detail))
 
   return (
     <li className="flex items-start gap-3 p-3">
@@ -402,7 +474,7 @@ const ImportRow = memo(function ImportRow({
           )}
           {item.min_role !== 'everyone' && (
             <Badge variant="secondary" className="px-1.5 text-label">
-              {ROLE_LABELS[item.min_role] ?? item.min_role}
+              <CommandRoleLabel role={item.min_role} compact />
             </Badge>
           )}
         </div>
@@ -415,11 +487,24 @@ const ImportRow = memo(function ImportRow({
             {item.original_response}
           </p>
         )}
-        {item.notes.map(note => (
-          <p key={note} className="text-label text-muted-foreground">
-            · {note}
-          </p>
+        {item.field_outcomes.map(outcome => (
+          <div
+            key={`${outcome.field}:${outcome.detail}`}
+            className="flex flex-wrap items-baseline gap-x-2 text-label text-muted-foreground"
+          >
+            <span className="font-medium text-foreground/80">
+              {FIELD_LABELS[outcome.field] ?? outcome.field} · {ACTION_LABELS[outcome.action]}
+            </span>
+            <span>{outcome.detail}</span>
+          </div>
         ))}
+        {item.notes
+          .filter(note => !outcomeDetails.has(note))
+          .map(note => (
+            <p key={note} className="text-label text-muted-foreground">
+              · {note}
+            </p>
+          ))}
       </div>
 
       {selectable && (
