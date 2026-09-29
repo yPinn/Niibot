@@ -7,6 +7,7 @@ export interface CheckinSettings {
   success_template: string
   duplicate_template: string
   reply_delay_seconds: number
+  live_only: boolean
   created_at: string | null
   updated_at: string | null
 }
@@ -16,6 +17,7 @@ export interface CheckinSettingsUpdate {
   success_template: string
   duplicate_template: string
   reply_delay_seconds: number
+  live_only: boolean
 }
 
 export interface CheckinLeaderboardEntry {

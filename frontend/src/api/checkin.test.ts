@@ -60,6 +60,7 @@ describe('check-in settings API', () => {
       success_template: '$(@user) 第 $(count) 天',
       duplicate_template: '$(@user) 今天已簽到',
       reply_delay_seconds: 5,
+      live_only: true,
     }
 
     await updateCheckinSettings(update)

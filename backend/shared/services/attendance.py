@@ -39,6 +39,7 @@ class AttendanceService:
         success_template: str | None = None,
         duplicate_template: str | None = None,
         reply_delay_seconds: int | None = None,
+        live_only: bool | None = None,
     ) -> CheckinSettings:
         current = await self.repository.get_or_create_settings(channel_id)
         next_timezone = timezone if timezone is not None else current.timezone
@@ -51,6 +52,7 @@ class AttendanceService:
         next_delay = (
             reply_delay_seconds if reply_delay_seconds is not None else current.reply_delay_seconds
         )
+        next_live_only = live_only if live_only is not None else current.live_only
 
         self._validate_settings(next_timezone, next_success, next_duplicate)
         return await self.repository.update_settings(
@@ -59,6 +61,7 @@ class AttendanceService:
             success_template=next_success,
             duplicate_template=next_duplicate,
             reply_delay_seconds=next_delay,
+            live_only=next_live_only,
         )
 
     @staticmethod
@@ -174,7 +177,6 @@ class AttendanceService:
             occurred_at=now,
             session_id=session_id,
             require_live=settings.live_only,
-            timezone=timezone,
         )
         result: CheckinOutcome
         if recorded is None:

@@ -12,6 +12,8 @@ from typing import Any
 
 import asyncpg
 
+from shared.checkin_streaks import rebuild_checkin_streaks
+
 
 class CheckinClearScope(StrEnum):
     """Closed set of destructive check-in data boundaries."""
@@ -253,10 +255,6 @@ class CheckinDataService:
 
     async def _clear_imported(self, conn: asyncpg.Connection, channel_id: str) -> None:
         await conn.execute(
-            "DELETE FROM viewer_daily_checkin_streaks WHERE channel_id = $1",
-            channel_id,
-        )
-        await conn.execute(
             "DELETE FROM viewer_checkin_carryovers WHERE channel_id = $1",
             channel_id,
         )
@@ -264,7 +262,7 @@ class CheckinDataService:
             "DELETE FROM checkin_import_batches WHERE channel_id = $1",
             channel_id,
         )
-        await self._rebuild_ledger_streaks(conn, channel_id)
+        await rebuild_checkin_streaks(conn, channel_id)
 
     async def _clear_all(self, conn: asyncpg.Connection, channel_id: str) -> None:
         await conn.execute(
@@ -295,47 +293,6 @@ class CheckinDataService:
         )
         await conn.execute(
             "DELETE FROM checkin_import_batches WHERE channel_id = $1",
-            channel_id,
-        )
-
-    async def _rebuild_ledger_streaks(
-        self,
-        conn: asyncpg.Connection,
-        channel_id: str,
-    ) -> None:
-        await conn.execute(
-            """
-            WITH latest_island AS (
-                SELECT DISTINCT ON (channel_id, user_id)
-                    channel_id,
-                    user_id,
-                    COUNT(*) OVER (
-                        PARTITION BY channel_id, user_id, island_key
-                    ) AS current_streak,
-                    MAX(checkin_date) OVER (
-                        PARTITION BY channel_id, user_id, island_key
-                    ) AS last_checkin_date
-                FROM (
-                    SELECT
-                        channel_id,
-                        user_id,
-                        checkin_date,
-                        checkin_date - ROW_NUMBER() OVER (
-                            PARTITION BY channel_id, user_id ORDER BY checkin_date
-                        )::INT AS island_key
-                    FROM (
-                        SELECT DISTINCT channel_id, user_id, checkin_date
-                        FROM viewer_checkins
-                        WHERE channel_id = $1
-                    ) AS unique_dates
-                ) AS islands
-                ORDER BY channel_id, user_id, last_checkin_date DESC
-            )
-            INSERT INTO viewer_daily_checkin_streaks
-                (channel_id, user_id, current_streak, last_checkin_date)
-            SELECT channel_id, user_id, current_streak, last_checkin_date
-            FROM latest_island
-            """,
             channel_id,
         )
 

@@ -35,8 +35,24 @@ class _AnalyticsSessionMixin:
         async with self.pool.acquire() as conn:
             session_id = await conn.fetchval(
                 """
-                INSERT INTO stream_sessions (channel_id, started_at, title, game_name, game_id)
-                VALUES ($1, $2, $3, $4, $5)
+                WITH checkin_clock AS (
+                    SELECT COALESCE(
+                        (
+                            SELECT timezone
+                            FROM checkin_settings
+                            WHERE channel_id = $1
+                        ),
+                        'Asia/Taipei'
+                    ) AS timezone
+                )
+                INSERT INTO stream_sessions
+                    (channel_id, started_at, title, game_name, game_id,
+                     checkin_eligible, checkin_timezone, checkin_broadcast_day)
+                SELECT
+                    $1, $2, $3, $4, $5,
+                    TRUE, checkin_clock.timezone,
+                    ($2 AT TIME ZONE checkin_clock.timezone)::DATE
+                FROM checkin_clock
                 RETURNING id
                 """,
                 channel_id,

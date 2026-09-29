@@ -138,3 +138,16 @@ def test_broadcast_day_duplicate_template_preserves_channel_customizations() -> 
     assert "ALTER COLUMN duplicate_template" in sql
     assert expected in sql
     assert f"WHERE duplicate_template = '{previous}'" in sql
+
+
+def test_broadcast_days_are_snapshotted_only_for_observed_live_sessions() -> None:
+    sql = (_VERSIONS / "148_add_stream_session_checkin_days.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN checkin_eligible BOOLEAN NOT NULL DEFAULT FALSE" in sql
+    assert "ADD COLUMN checkin_timezone TEXT" in sql
+    assert "ADD COLUMN checkin_broadcast_day DATE" in sql
+    assert "attendance_snapshot_count > 0" in sql
+    assert "FROM stream_events" in sql
+    assert "FROM viewer_checkins" in sql
+    assert "checkin_broadcast_day" in sql
+    assert "idx_stream_sessions_checkin_days" in sql

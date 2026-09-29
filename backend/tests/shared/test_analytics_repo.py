@@ -103,6 +103,11 @@ class TestCreateSession:
         assert "My Stream" in args
         assert "Chess" in args
         assert "g1" in args
+        sql = args[0]
+        assert "checkin_eligible" in sql
+        assert "checkin_timezone" in sql
+        assert "checkin_broadcast_day" in sql
+        assert "checkin_settings" in sql
 
     async def test_invalidates_active_session_cache(self):
         _clear_all_caches()
@@ -342,6 +347,8 @@ class TestSyncSessionFromVod:
         result = await repo.sync_session_from_vod("ch123", _NOW, _LATER)
 
         assert result == 42
+        sql = conn.fetchval.await_args.args[0]
+        assert "checkin_eligible" not in sql
 
 
 # ---------------------------------------------------------------------------

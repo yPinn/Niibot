@@ -8,7 +8,7 @@
 | 子系統                                 | 事實粒度                       | 主要用途                         | 不可混入                  |
 | -------------------------------------- | ------------------------------ | -------------------------------- | ------------------------- |
 | Session Attendance                     | 每頻道、每場直播、每位觀眾     | 後台觀看分析、活躍分數、忠誠分層 | 每日主動簽到次數          |
-| Daily Check-in                         | 每頻道、每個當地日、每位使用者 | 社群持續參與、活動與獎勵         | 被動觀看時數／場次 streak |
+| Daily Check-in                         | 每頻道、每個簽到日、每位使用者 | 社群持續參與、活動與獎勵         | 被動觀看時數／場次 streak |
 | Live Display（內部 Community Overlay） | 每頻道、每個已發生的視覺事件   | OBS 動畫與活動回饋               | feature 的權威狀態        |
 
 所有資料與查詢皆以 `channel_id` 作為 tenant key。同一 Twitch 使用者在不同頻道的
@@ -37,16 +37,27 @@ stale session 若曾有完整 snapshot，補關閉時仍需按時間順序結算
 ## Daily Check-in：獨立 ledger
 
 `!checkin`／`!簽到` 以不可變 ledger 記錄成功日期，唯一鍵為
-`(channel_id, user_id, checkin_date)`，由資料庫保證同一頻道每日只成功一次。
+`(channel_id, user_id, checkin_date)`，由資料庫保證同一頻道每個簽到日只成功一次。
 累積 `count` 定義為該頻道的成功簽到天數加上已確認的外部 carry-over；`current_streak` 是可重算 projection。
 
-頻道 timezone、成功／已簽到模板與活動卡設定屬於 channel-scoped config。
-成功簽到可選擇性關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
+`checkin_settings.live_only` 關閉時，簽到日是事件時間依頻道 timezone 換算的自然日，離線也可簽到。
+開啟時只有事件時間落在可信 Twitch live session 內才可簽到；離線回明確的 `stream_offline`，且不寫 ledger、
+不抽卡、不發 Overlay。新頻道預設開啟，升級前已存在的頻道保留關閉，需由管理者明確啟用。
+
+live session 建立時會把當下 timezone 與 `started_at` 換算結果凍結為 `checkin_broadcast_day`。同一場跨午夜仍
+只算開台日一次，同一直播日多場也共用 daily unique key；直播中修改 timezone 只影響下一次開台。
+Bot 觀測到的 live session 立即具 `checkin_eligible`，VOD-only row 保持不具資格；migration 只替仍在直播，
+或已有 attendance snapshot、stream event、關聯 check-in 證據的舊 session 補資格，不用未觀測 stale row
+製造 streak 中斷點。成功簽到關聯當下 `session_id`，但不得改寫 Session Attendance、觀看分數或忠誠分層。
+
+live-only 的 `current_streak` 以 distinct eligible broadcast day 排序：休息日跳過，同日多場不增加，觀眾漏掉
+一個實際開台日才歸 1。關閉 live-only 則保留連續自然日規則。切換模式會在與即時簽到／匯入共用的 channel
+advisory lock 內重建 projection；ledger、累積 `count`、抽卡與 Overlay event 都不改寫。
 
 `checkin_settings.reply_delay_seconds`（預設 5，範圍 0–30）讓頻道自行延遲成功聊天回覆的送出時機：
 聊天訊息走 IRC 幾乎即時，但 Live Display 動畫要透過 Twitch 廣播管線（編碼／CDN）才會出現在畫面上，
 這段延遲因頻道的直播延遲模式而異，bot 無法查詢也無法控制。這個延遲只作用在 `recorded` 的「送出訊息」
-動作；check-in ledger、抽卡與 Overlay event 維持立即原子提交。同日 `duplicate` 沒有動畫，因此立即回覆。
+動作；check-in ledger、抽卡與 Overlay event 維持立即原子提交。同簽到日 `duplicate` 沒有動畫，因此立即回覆。
 `!checkin` 與頻道點數兌換兩個入口都使用同一設定。
 
 這項延遲只是 best-effort 的人工校準值，不是 Overlay 播放確認。系統不等待 OBS client ACK：OBS 可能離線、
@@ -56,8 +67,9 @@ in-process async delay；bot 若在等待期間重啟，可能漏送聊天回覆
 ### 觸發方式：聊天指令與 Twitch 頻道點數
 
 `!checkin`／`!簽到` 與 Twitch 自訂獎勵兌換都是 Daily Check-in 的 adapter，共用同一個
-`AttendanceService`、頻道 timezone、每日唯一鍵、回覆模板與成功 transaction。兩種入口可同時啟用；
-同一使用者同日從任一入口成功後，另一入口只會得到 duplicate 結果，不會增加 count 或再次發 Overlay。
+`AttendanceService`、頻道 timezone、簽到日唯一鍵、回覆模板與成功 transaction。聊天訊息使用接收時間；
+Channel Points 使用 Twitch `redeemed_at`，即使事件延遲送達也按兌換當時的 session 判斷。兩種入口可同時啟用；
+同一使用者同簽到日從任一入口成功後，另一入口只會得到 duplicate，不會增加 count 或再次發 Overlay。
 
 每筆 `recorded` check-in 恰好建立一筆 `viewer_card_draws`，並與 `viewer_checkins`、`community_overlay_events`
 在同一個資料庫 transaction 寫入。抽卡失敗時整筆 transaction 回滾，不留下「簽到成功但沒有卡」的半成品；
@@ -73,8 +85,9 @@ duplicate 則不建立 draw 或 event。頻道尚未指定 pool 時使用已發�
 
 外部 `Count` 寫入 `viewer_checkin_carryovers`，不展開成虛構 `viewer_checkins`，因此不補歷史卡片或
 Overlay event。`$(count)` 與排行榜使用 carry-over + 真實 ledger；來源 streak 只作下一次簽到的 continuity
-seed，隔日接續、日期 gap 歸 1。`$(today_order)` 在匯入截止日 duplicate 使用來源 `TodayOrder`；後續真實
-簽到則以頻道 + 本地日期 advisory lock 序列化，再依 immutable ledger id 計算穩定的當日順序。來源沒有
+seed：自然日模式按隔日接續，live-only 則接到來源日期後的第一個 eligible broadcast day；中間若已有漏掉的
+eligible day 就歸 1。`$(today_order)` 在匯入截止日 duplicate 使用來源 `TodayOrder`；後續真實簽到則以頻道 +
+簽到日 advisory lock 序列化，再依 immutable ledger id 計算穩定的當日順序。來源沒有
 `TodayOrder` 時，截止日 duplicate 明確代入 `0`，不虛構排序。
 
 Preview 原始檔不落地；標準化結果只在綁定 user + tenant 的 10 分鐘記憶體 cache 中保存。Apply 僅限 owner、
@@ -204,8 +217,8 @@ channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位�
 
 ## 已落地的 infra
 
-- `viewer_checkins` 以 `(channel_id, user_id, checkin_date)` 保證每日一次；`checkin_settings`
-  保存頻道 IANA timezone 與兩種聊天室模板。
+- `viewer_checkins` 以 `(channel_id, user_id, checkin_date)` 保證每個自然日／直播日一次；`checkin_settings`
+  保存頻道 IANA timezone、`live_only` 與兩種聊天室模板。
 - successful check-in、`viewer_card_draws` 與 `checkin.recorded` event 在同一 transaction 寫入；
   duplicate 不抽卡、不發 event 並立即回覆，optional `session_id` 會先驗證屬於相同 channel。
 - migration 112 建立 immutable collection catalog、set／card／rarity revisions、published pool、fallback pointer
@@ -225,7 +238,7 @@ channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位�
 
 ## 目前可用鏈路
 
-- `!checkin`／`!簽到` 走既有 builtin command guard；成功與同日重複都回傳該頻道累積天數，
+- `!checkin`／`!簽到` 走既有 builtin command guard；成功與同簽到日重複都回傳該頻道累積天數，
   DB／模板錯誤只回覆一般失敗訊息，不記錄假成功 usage。
 - `!rank`／`!排名` 讀取 Daily Check-in ledger 的累積簽到天數排名，與後台簽到排行榜共用同一段
   ranking SQL，兩者排序永遠一致；查無簽到紀錄時提示先簽到。Session Attendance 的
@@ -233,7 +246,7 @@ channel、viewer、簽到日期、id 排序，以單一 viewer 為鎖定單位�
 - Twitch Channel Points `checkin` action 以 `(channel_id, reward_id)` 找設定，收到兌換後走相同
   Attendance service；只有 `recorded` 會新增 Overlay event。Bot 不呼叫任何 reward mutation／退款 API。
 - Dashboard 將三種責任分開：`/events` 只編輯 EventSub 回覆模板；`/channel-points` 是 reward → action
-  映射的唯一寫入位置，並以獨立 `Check-in settings` sheet 編輯共用 timezone、成功與重複模板；
+  映射的唯一寫入位置，並以獨立 `Check-in settings` sheet 編輯 live-only、timezone、成功與重複模板；
   `Live Display` 只呈現顯示內容、各 block 外觀、測試與 OBS 連結；簽到入口細節仍導向 `/channel-points`。
 - 模板只允許 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`，renderer 不解譯 HTML、CSS、JS
   或通用 command substitution。

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, MagicMock
-from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -118,6 +117,7 @@ class TestAttendanceService:
             success_template="$(@user) 第 $(count) 天",
             duplicate_template="$(@user) 今天已簽到",
             reply_delay_seconds=5,
+            live_only=True,
         )
 
     async def test_update_settings_updates_only_the_reply_delay(self):
@@ -135,6 +135,26 @@ class TestAttendanceService:
             success_template=current.success_template,
             duplicate_template=current.duplicate_template,
             reply_delay_seconds=5,
+            live_only=True,
+        )
+
+    async def test_update_settings_can_enable_live_only_without_changing_templates(self):
+        current = _settings(live_only=False)
+        updated = _settings(live_only=True)
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=current)
+        repo.update_settings = AsyncMock(return_value=updated)
+
+        result = await AttendanceService(repo).update_settings("ch1", live_only=True)
+
+        assert result.live_only is True
+        repo.update_settings.assert_awaited_once_with(
+            channel_id="ch1",
+            timezone=current.timezone,
+            success_template=current.success_template,
+            duplicate_template=current.duplicate_template,
+            reply_delay_seconds=current.reply_delay_seconds,
+            live_only=True,
         )
 
     async def test_update_settings_rejects_invalid_timezone_before_write(self):
@@ -196,7 +216,6 @@ class TestAttendanceService:
             "occurred_at": now,
             "session_id": None,
             "require_live": False,
-            "timezone": ZoneInfo("Asia/Taipei"),
         }
 
     async def test_live_only_delegates_session_and_broadcast_day_resolution(self):
@@ -229,7 +248,6 @@ class TestAttendanceService:
 
         assert outcome is result
         assert repo.record_checkin.await_args.kwargs["require_live"] is True
-        assert repo.record_checkin.await_args.kwargs["timezone"] == ZoneInfo("Asia/Taipei")
         assert repo.record_checkin.await_args.kwargs["session_id"] == 42
 
     async def test_live_only_offline_returns_explicit_outcome_and_immediate_reply(self):

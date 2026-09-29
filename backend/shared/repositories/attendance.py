@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import asyncpg
 
+from shared.checkin_streaks import rebuild_checkin_streaks
 from shared.community_events import CHECKIN_RECORDED, validate_community_event
 from shared.models.attendance import (
     CheckinLeaderboardEntry,
@@ -118,28 +118,42 @@ class AttendanceRepository:
         success_template: str,
         duplicate_template: str,
         reply_delay_seconds: int,
+        live_only: bool,
     ) -> CheckinSettings:
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"""
-                INSERT INTO checkin_settings
-                    (channel_id, timezone, success_template, duplicate_template,
-                     reply_delay_seconds)
-                VALUES ($1, $2, $3, $4, $5)
-                ON CONFLICT (channel_id) DO UPDATE SET
-                    timezone = EXCLUDED.timezone,
-                    success_template = EXCLUDED.success_template,
-                    duplicate_template = EXCLUDED.duplicate_template,
-                    reply_delay_seconds = EXCLUDED.reply_delay_seconds,
-                    updated_at = NOW()
-                RETURNING {_SETTINGS_COLUMNS}
-                """,
-                channel_id,
-                timezone,
-                success_template,
-                duplicate_template,
-                reply_delay_seconds,
-            )
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    f"checkin-import:{channel_id}",
+                )
+                previous_live_only = await conn.fetchval(
+                    "SELECT live_only FROM checkin_settings WHERE channel_id = $1 FOR UPDATE",
+                    channel_id,
+                )
+                row = await conn.fetchrow(
+                    f"""
+                    INSERT INTO checkin_settings
+                        (channel_id, timezone, success_template, duplicate_template,
+                         reply_delay_seconds, live_only)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (channel_id) DO UPDATE SET
+                        timezone = EXCLUDED.timezone,
+                        success_template = EXCLUDED.success_template,
+                        duplicate_template = EXCLUDED.duplicate_template,
+                        reply_delay_seconds = EXCLUDED.reply_delay_seconds,
+                        live_only = EXCLUDED.live_only,
+                        updated_at = NOW()
+                    RETURNING {_SETTINGS_COLUMNS}
+                    """,
+                    channel_id,
+                    timezone,
+                    success_template,
+                    duplicate_template,
+                    reply_delay_seconds,
+                    live_only,
+                )
+                if previous_live_only is not None and bool(previous_live_only) != live_only:
+                    await rebuild_checkin_streaks(conn, channel_id)
         if row is None:
             raise RuntimeError(f"Failed to update check-in settings for channel {channel_id}")
         return CheckinSettings(**dict(row))
@@ -188,7 +202,6 @@ class AttendanceRepository:
         session_id: int | None = None,
         event_expires_at: datetime | None = None,
         require_live: bool = False,
-        timezone: ZoneInfo | None = None,
     ) -> CheckinResult | None:
         """Insert once per resolved check-in day and emit its event atomically."""
         expires_at = event_expires_at or occurred_at + timedelta(minutes=10)
@@ -202,13 +215,12 @@ class AttendanceRepository:
                     f"checkin-import:{channel_id}",
                 )
                 if require_live:
-                    if timezone is None:
-                        raise ValueError("timezone is required for live-only check-ins")
                     session = await conn.fetchrow(
                         """
-                        SELECT id, started_at
+                        SELECT id, checkin_broadcast_day
                         FROM stream_sessions
                         WHERE channel_id = $1
+                          AND checkin_eligible
                           AND started_at <= $2
                           AND (ended_at IS NULL OR ended_at >= $2)
                           AND ($3::INTEGER IS NULL OR id = $3)
@@ -223,7 +235,7 @@ class AttendanceRepository:
                     if session is None:
                         return None
                     session_id = int(session["id"])
-                    checkin_date = session["started_at"].astimezone(timezone).date()
+                    checkin_date = session["checkin_broadcast_day"]
                 elif session_id is not None:
                     valid_session = await conn.fetchval(
                         "SELECT EXISTS (SELECT 1 FROM stream_sessions "
@@ -342,6 +354,30 @@ class AttendanceRepository:
                 )
 
                 if recorded:
+                    if require_live:
+                        previous_streak_day = await conn.fetchval(
+                            """
+                            SELECT MAX(checkin_broadcast_day)
+                            FROM stream_sessions
+                            WHERE channel_id = $1
+                              AND checkin_eligible
+                              AND ended_at IS NOT NULL
+                              AND checkin_broadcast_day < $2
+                            """,
+                            channel_id,
+                            checkin_date,
+                        )
+                        if (
+                            carryover is not None
+                            and carryover["last_source_date"] < checkin_date
+                            and (
+                                previous_streak_day is None
+                                or carryover["last_source_date"] > previous_streak_day
+                            )
+                        ):
+                            previous_streak_day = carryover["last_source_date"]
+                    else:
+                        previous_streak_day = checkin_date - timedelta(days=1)
                     current_streak = int(
                         await conn.fetchval(
                             """
@@ -351,7 +387,9 @@ class AttendanceRepository:
                             ON CONFLICT (channel_id, user_id) DO UPDATE SET
                                 current_streak = CASE
                                     WHEN viewer_daily_checkin_streaks.last_checkin_date
-                                         = EXCLUDED.last_checkin_date - 1
+                                         > EXCLUDED.last_checkin_date
+                                    THEN viewer_daily_checkin_streaks.current_streak
+                                    WHEN viewer_daily_checkin_streaks.last_checkin_date = $4
                                     THEN viewer_daily_checkin_streaks.current_streak + 1
                                     WHEN viewer_daily_checkin_streaks.last_checkin_date
                                          = EXCLUDED.last_checkin_date
@@ -368,6 +406,7 @@ class AttendanceRepository:
                             channel_id,
                             user_id,
                             checkin_date,
+                            previous_streak_day,
                         )
                     )
                 else:

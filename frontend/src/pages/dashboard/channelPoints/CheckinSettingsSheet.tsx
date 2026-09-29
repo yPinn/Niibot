@@ -10,6 +10,7 @@ import {
 } from '@/api/checkin'
 import { EmoteInserter } from '@/components/EmoteInserter'
 import { Icon, Spinner } from '@/components/primitives'
+import { SettingRow } from '@/components/SettingRow'
 import { TemplatePartsPreview } from '@/components/TemplatePartsPreview'
 import {
   Alert,
@@ -31,6 +32,7 @@ import {
   SheetHeader,
   SheetTitle,
   Skeleton,
+  Switch,
   Tabs,
   TabsContent,
   TabsList,
@@ -58,6 +60,7 @@ interface CheckinForm {
   successTemplate: string
   duplicateTemplate: string
   replyDelaySeconds: number
+  liveOnly: boolean
 }
 
 const EMPTY_FORM: CheckinForm = {
@@ -65,15 +68,16 @@ const EMPTY_FORM: CheckinForm = {
   successTemplate: '',
   duplicateTemplate: '',
   replyDelaySeconds: 0,
+  liveOnly: true,
 }
 
 const CHECKIN_VARIABLES = [
   { var: '$(@user)', desc: '帶 @ 的觀眾顯示名稱' },
   { var: '$(user)', desc: '不帶 @ 的觀眾顯示名稱' },
   { var: '$(count)', desc: '累積簽到天數，包含轉移資料' },
-  { var: '$(streak)', desc: '目前連續天數，可接續轉移紀錄' },
-  { var: '$(today_order)', desc: '今天第幾位完成簽到' },
-  { var: '$(date)', desc: '本次依設定時區計算的簽到日期' },
+  { var: '$(streak)', desc: '目前連續簽到次數，可接續轉移紀錄' },
+  { var: '$(today_order)', desc: '本簽到日第幾位完成簽到' },
+  { var: '$(date)', desc: '本次簽到所屬的直播日或自然日' },
 ]
 
 const PREVIEW_VALUES: Record<string, string> = {
@@ -91,6 +95,7 @@ function toForm(settings: CheckinSettings): CheckinForm {
     successTemplate: settings.success_template,
     duplicateTemplate: settings.duplicate_template,
     replyDelaySeconds: settings.reply_delay_seconds,
+    liveOnly: settings.live_only,
   }
 }
 
@@ -150,13 +155,21 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
     void loadLeaderboard()
   }, [loadLeaderboard, loadSettings, open])
 
-  const updateForm = (field: keyof Omit<CheckinForm, 'replyDelaySeconds'>, value: string) => {
+  const updateForm = (
+    field: 'timezone' | 'successTemplate' | 'duplicateTemplate',
+    value: string
+  ) => {
     setForm(current => ({ ...current, [field]: value }))
     setValidationError(null)
   }
 
   const updateReplyDelay = (value: number) => {
     setForm(current => ({ ...current, replyDelaySeconds: value }))
+    setValidationError(null)
+  }
+
+  const updateLiveOnly = (value: boolean) => {
+    setForm(current => ({ ...current, liveOnly: value }))
     setValidationError(null)
   }
 
@@ -207,6 +220,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
         success_template: form.successTemplate,
         duplicate_template: form.duplicateTemplate,
         reply_delay_seconds: form.replyDelaySeconds,
+        live_only: form.liveOnly,
       })
       setForm(toForm(updated))
       toast.success('Check-in settings 已儲存')
@@ -225,7 +239,7 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
           <SheetHeader>
             <SheetTitle>Check-in settings</SheetTitle>
             <SheetDescription>
-              時區與回覆模板由聊天指令與 Twitch 點數簽到共用；獎勵綁定仍在表格管理。
+              簽到時機、時區與回覆模板由聊天指令與 Twitch 點數簽到共用；獎勵綁定仍在表格管理。
             </SheetDescription>
           </SheetHeader>
 
@@ -250,6 +264,21 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                 </Alert>
               ) : (
                 <>
+                  <SettingRow
+                    title="僅限直播中簽到"
+                    description={
+                      form.liveOnly
+                        ? '只有直播期間可簽到；跨午夜仍依開台日計一次，休息日不會中斷連續簽到。'
+                        : '關閉時沿用自然日規則，離線也可簽到。'
+                    }
+                  >
+                    <Switch
+                      aria-label="僅限直播中簽到"
+                      checked={form.liveOnly}
+                      onCheckedChange={updateLiveOnly}
+                    />
+                  </SettingRow>
+
                   <section className="space-y-2" aria-labelledby="checkin-timezone-label">
                     <Label id="checkin-timezone-label" htmlFor="checkin-timezone">
                       時區
@@ -269,7 +298,11 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-label text-muted-foreground">決定每日簽到跨日的時間點。</p>
+                    <p className="text-label text-muted-foreground">
+                      {form.liveOnly
+                        ? '直播日以開台時間為準；直播中變更時區會從下一次開台生效。'
+                        : '決定每日簽到跨日的時間點。'}
+                    </p>
                   </section>
 
                   <section
@@ -302,7 +335,9 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                       </TabsList>
                       <TabsContent value="success" className="space-y-3">
                         <p className="text-label text-muted-foreground">
-                          當今天第一次簽到成功時回覆。
+                          {form.liveOnly
+                            ? '當本直播日第一次簽到成功時回覆。'
+                            : '當今天第一次簽到成功時回覆。'}
                         </p>
                         <Textarea
                           id="checkin-success-template"
@@ -333,7 +368,9 @@ export function CheckinSettingsSheet({ open, onOpenChange }: CheckinSettingsShee
                       </TabsContent>
                       <TabsContent value="duplicate" className="space-y-3">
                         <p className="text-label text-muted-foreground">
-                          同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。
+                          {form.liveOnly
+                            ? '同一位觀眾在同一直播日重複簽到時回覆，不會增加累積天數。'
+                            : '同一位觀眾在同一天重複簽到時回覆，不會增加累積天數。'}
                         </p>
                         <Textarea
                           id="checkin-duplicate-template"
