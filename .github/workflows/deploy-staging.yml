@@ -28,6 +28,7 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: staging
+      deploy_sha: ${{ github.sha }}
       services: ${{ inputs.services }} # "default" is handled in _deploy.yml
       force_all: ${{ inputs.force_all }}
     secrets: inherit

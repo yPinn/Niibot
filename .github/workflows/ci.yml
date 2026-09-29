@@ -200,5 +200,6 @@ jobs:
       # Staging is an integration target, so its API must represent the full
       # branch HEAD even when an earlier deploy was skipped or failed.
       environment: staging
+      deploy_sha: ${{ github.sha }}
       force_all: true
     secrets: inherit

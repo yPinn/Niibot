@@ -248,7 +248,9 @@ def test_deploy_checks_private_services_via_compose_health() -> None:
     assert "Refuse running legacy stack" in workflow
     assert "symbolic-ref --quiet --short HEAD" in workflow
     assert 'if [ "$CURRENT_BRANCH" != "$DEPLOY_BRANCH" ]; then' in workflow
-    assert 'reset --hard "origin/$DEPLOY_BRANCH"' in workflow
+    assert 'merge-base --is-ancestor "$DEPLOY_SHA" "origin/$DEPLOY_BRANCH"' in workflow
+    assert 'reset --hard "$DEPLOY_SHA"' in workflow
+    assert 'reset --hard "origin/$DEPLOY_BRANCH"' not in workflow
     assert "checkout --detach" not in workflow
     for path_pattern in (
         r"^env\.registry\.toml$",

@@ -19,7 +19,7 @@ on:
       force_all:
         description: "Force rebuild + restart the resolved service set"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -32,6 +32,7 @@ jobs:
     uses: ./.github/workflows/_deploy.yml
     with:
       environment: production
+      deploy_sha: ${{ github.sha }}
       services: ${{ inputs.services }} # "" on schedule, "default" on dispatch — both handled in _deploy.yml
       force_all: ${{ inputs.force_all == true }}
       is_scheduled: ${{ github.event_name == 'schedule' }}
