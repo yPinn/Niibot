@@ -44,3 +44,21 @@ def test_schedule_bounds_preserve_legacy_rows_and_guard_new_writes() -> None:
     assert sql.count("NOT VALID") >= 2
     assert "NEW.offset_minutes >= schedule_duration" in sql
     assert "offset_minutes >= NEW.duration_minutes" in sql
+
+
+def test_twitch_publish_schema_is_tenant_scoped_and_transactionally_enqueued() -> None:
+    sql = (_VERSIONS / "149_add_stream_schedule_twitch_publish.sql").read_text(encoding="utf-8")
+
+    assert "stream_schedule_twitch_states" in sql
+    assert "stream_schedule_twitch_occurrences" in sql
+    assert "stream_schedule_publish_queue" in sql
+    assert "channel_id" in sql
+    assert "twitch_segment_id" in sql
+    assert "payload_fingerprint" in sql
+    assert "generation" in sql
+    assert "FOR EACH ROW EXECUTE FUNCTION fn_enqueue_stream_schedule_publish" in sql
+    assert "stream_schedule_segments" in sql
+    assert "stream_schedule_occurrence_exceptions" in sql
+    assert "AFTER UPDATE OF scopes, credential_revision, requires_reauth ON tokens" in sql
+    assert "NEW.token_type <> 'broadcaster'" in sql
+    assert "COALESCE(NEW.offset_minutes, OLD.offset_minutes)" not in sql

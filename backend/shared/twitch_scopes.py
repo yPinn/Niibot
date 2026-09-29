@@ -55,6 +55,8 @@ BROADCASTER_SCOPES: list[str] = [
     # channel info (title/game/tags/stream markers — Modify Channel Information
     # and Create Stream Marker both require the broadcaster's own token)
     "channel:manage:broadcast",
+    # publish Niibot's canonical stream plans to Twitch's public schedule
+    "channel:manage:schedule",
     # revenue (Bits API + channel.cheer EventSub require the broadcaster)
     "bits:read",
 ]
@@ -137,6 +139,12 @@ TWITCH_CAPABILITIES: dict[str, TwitchCapability] = {
         "broadcaster",
         ("channel:manage:broadcast",),
         "頻道資訊",
+    ),
+    "stream_schedule": TwitchCapability(
+        "stream_schedule",
+        "broadcaster",
+        ("channel:manage:schedule",),
+        "Twitch 行程表",
     ),
     "cheers": TwitchCapability("cheers", "broadcaster", ("bits:read",), "Cheer"),
     # Optional real-time acceleration for the default-off Twitch MOD sync.

@@ -19,6 +19,7 @@ from services._twitch_api._oauth import (
     TokenValidationResult,
     _OAuthMixin,
 )
+from services._twitch_api._schedule import TwitchScheduleAPIError, _ScheduleMixin
 from services._twitch_api._users import TwitchUsersLookupError, _UsersMixin
 
 __all__ = [
@@ -28,11 +29,19 @@ __all__ = [
     "TokenRevocationResult",
     "TokenValidationResult",
     "TwitchAPIClient",
+    "TwitchScheduleAPIError",
     "TwitchUsersLookupError",
 ]
 
 
-class TwitchAPIClient(_OAuthMixin, _UsersMixin, _ModerationMixin, _ChannelMixin, _TwitchAPIBase):
+class TwitchAPIClient(
+    _OAuthMixin,
+    _UsersMixin,
+    _ModerationMixin,
+    _ChannelMixin,
+    _ScheduleMixin,
+    _TwitchAPIBase,
+):
     """Client for interacting with Twitch API.
 
     Manages a shared httpx client for connection reuse and caches

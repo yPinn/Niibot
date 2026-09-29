@@ -61,6 +61,10 @@ from routers.command_import_router import close_command_import_http_client
 from routers.releases_router import close_releases_http_client
 from routers.video_queue_router import video_queue_history_retention_loop
 from services.assistant_scope_notifications import handle_assistant_scope_changed_notify
+from services.stream_schedule_publisher import (
+    StreamSchedulePublisher,
+    StreamSchedulePublisherError,
+)
 from services.twitch_authorization_service import TwitchAuthorizationService
 from shared.assistant import ASSISTANT_SCOPE_CHANGED_CHANNEL
 from shared.cache_invalidation import (
@@ -75,7 +79,10 @@ from shared.gauges import collect_runtime_gauges
 from shared.log_context import bind_log_context, clear_log_context
 from shared.pg_listener import pg_listen
 from shared.repositories.activation_code import activation_grant_cleanup_loop
+from shared.repositories.channel import ChannelRepository
 from shared.repositories.community_overlay import community_overlay_cleanup_loop
+from shared.repositories.stream_schedule import StreamScheduleRepository
+from shared.repositories.stream_schedule_publish import StreamSchedulePublishRepository
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -94,6 +101,7 @@ _channel_toggle_listener_task: asyncio.Task | None = None
 _cache_clear_task: asyncio.Task | None = None
 _gauge_log_task: asyncio.Task | None = None
 _twitch_authorization_task: asyncio.Task | None = None
+_stream_schedule_publish_task: asyncio.Task | None = None
 _APP_VERSION = os.getenv("APP_VERSION", "dev")
 _GIT_COMMIT = os.getenv("GIT_COMMIT", "unknown")
 _REQUEST_TIMEOUT = 30.0
@@ -101,6 +109,9 @@ _CACHE_CLEAR_INTERVAL = 600.0  # 10 min safety net for pg_notify misses (see cac
 _GAUGE_LOG_INTERVAL = 300.0  # 5 min, matches the twitch bot's heartbeat cadence
 _TWITCH_AUTHORIZATION_IDLE_INTERVAL = 30.0
 _TWITCH_AUTHORIZATION_ACTIVE_INTERVAL = 1.0
+_STREAM_SCHEDULE_PUBLISH_IDLE_INTERVAL = 30.0
+_STREAM_SCHEDULE_PUBLISH_ACTIVE_INTERVAL = 1.0
+_STREAM_SCHEDULE_OCCURRENCE_RECHECK_SECONDS = 3600
 
 
 async def _db_retry_loop(db_manager) -> None:
@@ -231,6 +242,68 @@ async def _twitch_authorization_loop(db_manager, settings) -> None:
             await asyncio.sleep(60)
 
 
+async def _stream_schedule_publish_loop(db_manager, settings) -> None:
+    """Drain the reliable Niibot -> Twitch Schedule publication queue."""
+    if not settings.twitch_token_encryption_key:
+        LOGGER.warning(
+            "Twitch schedule publication disabled: TWITCH_TOKEN_ENCRYPTION_KEY is not configured"
+        )
+        return
+
+    while True:
+        try:
+            delay = _STREAM_SCHEDULE_PUBLISH_IDLE_INTERVAL
+            if db_manager.is_connected:
+                publish_repo = StreamSchedulePublishRepository(db_manager.pool)
+                job = await publish_repo.claim_due_job()
+                if job is not None:
+                    publisher = StreamSchedulePublisher(
+                        StreamScheduleRepository(db_manager.pool),
+                        publish_repo,
+                        ChannelRepository(
+                            db_manager.pool,
+                            token_encryption_key=settings.twitch_token_encryption_key,
+                        ),
+                        get_twitch_api(),
+                    )
+                    try:
+                        needs_recheck = await publisher.sync_channel(job.channel_id)
+                    except StreamSchedulePublisherError as error:
+                        await publish_repo.fail_job(
+                            job.channel_id,
+                            generation=job.generation,
+                            attempt_count=job.attempt_count,
+                            error_code=error.code,
+                            retryable=error.retryable,
+                        )
+                    except Exception:
+                        LOGGER.exception(
+                            "Twitch schedule publication failed",
+                            extra={"channel_id": job.channel_id},
+                        )
+                        await publish_repo.fail_job(
+                            job.channel_id,
+                            generation=job.generation,
+                            attempt_count=job.attempt_count,
+                            error_code="internal_error",
+                            retryable=True,
+                        )
+                    else:
+                        await publish_repo.complete_job(job.channel_id, generation=job.generation)
+                        if needs_recheck:
+                            await publish_repo.enqueue_deferred(
+                                job.channel_id,
+                                delay_seconds=_STREAM_SCHEDULE_OCCURRENCE_RECHECK_SECONDS,
+                            )
+                    delay = _STREAM_SCHEDULE_PUBLISH_ACTIVE_INTERVAL
+            await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            LOGGER.exception("Twitch schedule publication loop failed")
+            await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Handle startup and shutdown"""
@@ -240,7 +313,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _config_change_listener_task, _assistant_scope_listener_task
     global _channel_toggle_listener_task
     global _cache_clear_task, _gauge_log_task
-    global _twitch_authorization_task
+    global _twitch_authorization_task, _stream_schedule_publish_task
     _start_time = time.time()
     _started_at = datetime.now(UTC).isoformat()
 
@@ -314,6 +387,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     _twitch_authorization_task = asyncio.create_task(
         _twitch_authorization_loop(db_manager, settings)
     )
+    _stream_schedule_publish_task = asyncio.create_task(
+        _stream_schedule_publish_loop(db_manager, settings)
+    )
 
     notify_hub = get_notify_hub()
     notify_hub.start()
@@ -335,6 +411,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         _cache_clear_task,
         _gauge_log_task,
         _twitch_authorization_task,
+        _stream_schedule_publish_task,
     ]
     for task in _background_tasks:
         if task:

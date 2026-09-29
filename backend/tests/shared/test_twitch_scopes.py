@@ -35,6 +35,15 @@ def test_missing_optional_scope_locks_only_its_capability() -> None:
     assert missing_capability_scopes("moderator_sync_realtime", granted) == ["moderation:read"]
 
 
+def test_stream_schedule_is_a_broadcaster_capability_requested_by_default() -> None:
+    capability = TWITCH_CAPABILITIES["stream_schedule"]
+
+    assert capability.credential == "broadcaster"
+    assert capability.scopes == ("channel:manage:schedule",)
+    assert capability.core is False
+    assert "channel:manage:schedule" in BROADCASTER_SCOPES
+
+
 def test_required_core_scopes_are_role_specific() -> None:
     assert required_core_scopes("bot") == frozenset(BOT_CORE_SCOPES)
     assert required_core_scopes("broadcaster") == frozenset(BROADCASTER_CORE_SCOPES)

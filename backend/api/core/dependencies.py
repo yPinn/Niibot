@@ -33,6 +33,7 @@ from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
 from shared.repositories.roleplay import RoleplayRepository
 from shared.repositories.stream_schedule import StreamScheduleRepository
+from shared.repositories.stream_schedule_publish import StreamSchedulePublishRepository
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.community_overlay import CommunityOverlayService
@@ -126,6 +127,12 @@ def get_stream_schedule_service(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> StreamScheduleService:
     return StreamScheduleService(StreamScheduleRepository(pool))
+
+
+def get_stream_schedule_publish_repository(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> StreamSchedulePublishRepository:
+    return StreamSchedulePublishRepository(pool)
 
 
 def get_community_overlay_service(

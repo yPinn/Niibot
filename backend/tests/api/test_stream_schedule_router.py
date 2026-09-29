@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from core.dependencies import (
+    get_stream_schedule_publish_repository,
     get_stream_schedule_service,
     get_twitch_api,
     require_self_tenant_access,
@@ -34,6 +35,7 @@ from shared.models.stream_schedule import (
     ScheduleKind,
     StreamSchedule,
     StreamScheduleOccurrenceException,
+    StreamSchedulePublishOverview,
     StreamScheduleSegment,
     StreamScheduleSettings,
 )
@@ -50,6 +52,7 @@ _SEG_DELETE_HEADERS = {"X-Niibot-Action": "stream-schedule-segment-delete"}
 _OCC_CANCEL_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-cancel"}
 _OCC_RESTORE_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-restore"}
 _OCC_REPLACE_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-replace"}
+_PUBLISH_RETRY_HEADERS = {"X-Niibot-Action": "stream-schedule-publish-retry"}
 _NOW = datetime(2026, 9, 21, tzinfo=UTC)
 
 _SETTINGS = StreamScheduleSettings(
@@ -109,7 +112,27 @@ def _twitch_api(search_results: list[dict] | None = None) -> MagicMock:
     return api
 
 
-def _make_client(service: MagicMock, twitch_api: MagicMock | None = None) -> TestClient:
+def _publish_repo() -> MagicMock:
+    repo = MagicMock()
+    repo.get_overview = AsyncMock(
+        return_value=StreamSchedulePublishOverview(
+            status="synced",
+            pending_count=0,
+            synced_count=1,
+            blocked_count=0,
+            error_count=0,
+            last_synced_at=_NOW,
+        )
+    )
+    repo.enqueue = AsyncMock()
+    return repo
+
+
+def _make_client(
+    service: MagicMock,
+    twitch_api: MagicMock | None = None,
+    publish_repo: MagicMock | None = None,
+) -> TestClient:
     app = FastAPI(lifespan=_no_lifespan)
     register_exception_handlers(app)
     app.include_router(_stream_schedule_router)
@@ -118,7 +141,39 @@ def _make_client(service: MagicMock, twitch_api: MagicMock | None = None) -> Tes
     )
     app.dependency_overrides[get_stream_schedule_service] = lambda: service
     app.dependency_overrides[get_twitch_api] = lambda: twitch_api or _twitch_api()
+    app.dependency_overrides[get_stream_schedule_publish_repository] = lambda: (
+        publish_repo or _publish_repo()
+    )
     return TestClient(app, raise_server_exceptions=False)
+
+
+class TestTwitchPublish:
+    def test_get_publish_status(self) -> None:
+        service = _service()
+        publish_repo = _publish_repo()
+
+        response = _make_client(service, publish_repo=publish_repo).get(
+            "/api/stream-schedule/twitch-publish"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "synced"
+        assert response.json()["synced_count"] == 1
+        publish_repo.get_overview.assert_awaited_once_with(CHANNEL_ID)
+
+    def test_retry_publish_requires_action_header_and_enqueues_channel(self) -> None:
+        service = _service()
+        publish_repo = _publish_repo()
+        client = _make_client(service, publish_repo=publish_repo)
+
+        assert client.post("/api/stream-schedule/twitch-publish/retry").status_code == 422
+        response = client.post(
+            "/api/stream-schedule/twitch-publish/retry",
+            headers=_PUBLISH_RETRY_HEADERS,
+        )
+
+        assert response.status_code == 202
+        publish_repo.enqueue.assert_awaited_once_with(CHANNEL_ID)
 
 
 class TestSettings:

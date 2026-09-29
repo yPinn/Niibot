@@ -1,8 +1,8 @@
 """Authenticated, tenant-scoped stream schedule routes.
 
-CRUD for stream_schedule_settings / stream_schedules / stream_schedule_segments.
-Auto-apply itself lives in twitch/components/stream_schedule_manager.py — this
-router only manages the data the bot reads from.
+CRUD for stream_schedule_settings / stream_schedules / stream_schedule_segments,
+plus the tenant-scoped Twitch publication status and retry endpoint. Runtime
+title/category auto-apply remains in twitch/components/stream_schedule_manager.py.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.dependencies import (
+    get_stream_schedule_publish_repository,
     get_stream_schedule_service,
     get_twitch_api,
     require_self_tenant_access,
@@ -22,7 +23,12 @@ from core.dependencies import (
 from services.tenant_service import TenantContext
 from services.twitch_api import TwitchAPIClient
 from shared.errors import InvalidInputError, NotFoundError
-from shared.models.stream_schedule import OccurrenceExceptionKind, ScheduleKind
+from shared.models.stream_schedule import (
+    OccurrenceExceptionKind,
+    ScheduleKind,
+    StreamSchedulePublishOverview,
+)
+from shared.repositories.stream_schedule_publish import StreamSchedulePublishRepository
 from shared.services.stream_schedule_service import StreamScheduleService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -49,6 +55,18 @@ class StreamScheduleGameSearchResult(BaseModel):
     id: str
     name: str
     box_art_url: str | None = None
+
+
+class StreamSchedulePublishResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    status: str
+    pending_count: int
+    synced_count: int
+    blocked_count: int
+    error_count: int
+    last_error_code: str | None = None
+    last_synced_at: datetime | None = None
 
 
 class StreamScheduleSettingsResponse(BaseModel):
@@ -194,6 +212,25 @@ class StreamScheduleSegmentUpdate(BaseModel):
 # ----------------------------------------------------------------------
 # Settings
 # ----------------------------------------------------------------------
+
+
+@router.get("/twitch-publish", response_model=StreamSchedulePublishResponse)
+async def get_stream_schedule_publish_status(
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    publish_repo: StreamSchedulePublishRepository = Depends(get_stream_schedule_publish_repository),
+) -> StreamSchedulePublishResponse:
+    overview: StreamSchedulePublishOverview = await publish_repo.get_overview(tenant.channel_id)
+    return StreamSchedulePublishResponse.model_validate(overview)
+
+
+@router.post("/twitch-publish/retry", status_code=202)
+async def retry_stream_schedule_publish(
+    _action: Literal["stream-schedule-publish-retry"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    publish_repo: StreamSchedulePublishRepository = Depends(get_stream_schedule_publish_repository),
+) -> dict[str, str]:
+    await publish_repo.enqueue(tenant.channel_id)
+    return {"status": "queued"}
 
 
 @router.get("/settings", response_model=StreamScheduleSettingsResponse)
