@@ -20,6 +20,7 @@ from core.config import get_settings
 from shared.assistant import AssistantScopeChange
 from shared.cache_invalidation import (
     invalidate_ai_settings_cache,
+    invalidate_channel_caches,
     invalidate_channel_config,
     invalidate_module_config,
 )
@@ -65,6 +66,12 @@ class _NotifyMixin:
                 return
 
             async with self._channel_lock(channel_id):  # type: ignore[attr-defined]
+                # The write happened in another process. Invalidate only after
+                # acquiring the per-channel lock: an ENABLE notification may
+                # wait behind a slow DISABLE unsubscribe, and invalidating
+                # before the wait would let the first handler cache DISABLE
+                # again before the second handler re-reads DB truth.
+                invalidate_channel_caches(channel_id)
                 await self._reconcile_channel_toggle(channel_id, notified_enabled=data["enabled"])
         except Exception as e:
             LOGGER.exception(f"[NOTIFY] Error handling channel toggle notification: {e}")
@@ -447,6 +454,13 @@ class _NotifyMixin:
                 expected_token_type="bot",
                 expected_revision=token_obj.credential_revision,
             )
+            if user_id == self._bot_id:  # type: ignore[attr-defined]
+                # Startup can legitimately converge on a reduced EventSub plan
+                # while the system Bot Token is unavailable. Loading the token
+                # alone does not add the newly-authorized chat subscriptions;
+                # reconcile every enabled channel immediately instead of
+                # waiting for the 15-minute drift-repair loop or a restart.
+                await self._reconcile_enabled_subscriptions()  # type: ignore[attr-defined]
             LOGGER.info("[NOTIFY] Bot credential hot reload completed for %s", user_id)
         except Exception:
             LOGGER.exception("[NOTIFY] Bot credential hot reload failed")
