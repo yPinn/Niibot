@@ -396,8 +396,9 @@ class BotAccountService:
                          last_validated_at, next_validation_at, invalidated_at,
                          validation_error_code)
                     VALUES (
-                        $1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6, $7, $7,
-                        $7 + INTERVAL '55 minutes', NULL, NULL
+                        $1, $2, $3, 'bot', $4, $5::uuid, FALSE, $6,
+                        $7::timestamptz, $7::timestamptz,
+                        $7::timestamptz + INTERVAL '55 minutes', NULL, NULL
                     )
                     ON CONFLICT (user_id, token_type) DO UPDATE SET
                         token = EXCLUDED.token,
