@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -24,9 +24,8 @@ import { cn } from '@/lib/utils'
 
 import { resolveActiveSegment } from './calendar'
 import { GamePicker, type GameValue } from './GamePicker'
+import { timeSlotOptions } from './segmentTimeSlots'
 import { endTimeFor, offsetFromStart } from './time'
-
-const STEP_MINUTES = 30
 
 interface RowFormState {
   time: string // HH:MM clock time, always one of timeSlotOptions() for the schedule
@@ -60,22 +59,6 @@ function inheritedRow(segments: StreamScheduleSegment[], time: string): RowFormS
     title_template: last?.title_template ?? '',
     game: last?.game_id && last?.game_name ? { id: last.game_id, name: last.game_name } : null,
   }
-}
-
-/** Half-hour marks across the schedule's own start–end window, as actual
- * clock times rather than a raw "minutes since start" number — picking "幾
- * 點" is a lot more direct than doing the offset math in your head. Wraps
- * past midnight the same way the schedule's own time range does. */
-function timeSlotOptions(
-  startTime: string,
-  durationMinutes: number
-): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = []
-  for (let offset = 0; offset < durationMinutes; offset += STEP_MINUTES) {
-    const time = endTimeFor(startTime, offset)
-    options.push({ value: time, label: offset === 0 ? `${time}（開台）` : time })
-  }
-  return options
 }
 
 /** Only one segment can ever be "active" at a given moment, so two segments
@@ -177,12 +160,19 @@ function SegmentRow({
   submitLabel,
   saving,
 }: SegmentRowProps) {
+  const fieldId = useId()
+  const timeId = `${fieldId}-time`
+  const titleId = `${fieldId}-title`
+  const [gamePendingSelection, setGamePendingSelection] = useState(false)
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col gap-1">
-        <Label className="text-label text-muted-foreground">套用時間</Label>
+        <Label htmlFor={timeId} className="text-label text-muted-foreground">
+          套用時間
+        </Label>
         <Select value={form.time} onValueChange={time => onChange({ ...form, time })}>
-          <SelectTrigger className="h-8 w-full">
+          <SelectTrigger id={timeId} className="h-8 w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -195,8 +185,11 @@ function SegmentRow({
         </Select>
       </div>
       <div className="flex flex-col gap-1">
-        <Label className="text-label text-muted-foreground">標題</Label>
+        <Label htmlFor={titleId} className="text-label text-muted-foreground">
+          標題
+        </Label>
         <Textarea
+          id={titleId}
           value={form.title_template}
           onChange={e => onChange({ ...form, title_template: e.target.value })}
           placeholder="開台標題"
@@ -210,14 +203,26 @@ function SegmentRow({
         inputClassName="h-8"
         value={form.game}
         onChange={game => onChange({ ...form, game })}
+        onPendingSelectionChange={setGamePendingSelection}
       />
       <div className="flex justify-end gap-1">
         {onCancel && (
-          <Button variant="ghost" size="icon" className="size-8" onClick={onCancel}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            onClick={onCancel}
+            aria-label={submitLabel === '新增' ? '取消新增分段' : '取消編輯分段'}
+          >
             <Icon icon="fa-solid fa-xmark" wrapperClassName="size-3.5" />
           </Button>
         )}
-        <Button size="sm" className="h-8" onClick={onSubmit} disabled={saving}>
+        <Button
+          size="sm"
+          className="h-8"
+          onClick={onSubmit}
+          disabled={saving || gamePendingSelection}
+        >
           {saving ? <Spinner className="size-3.5" /> : submitLabel}
         </Button>
       </div>
@@ -464,6 +469,7 @@ export function SegmentList({
                         className="size-8"
                         onClick={() => startEdit(segment)}
                         disabled={isPast}
+                        aria-label={`編輯 ${endTimeFor(startTime, segment.offset_minutes)} 分段`}
                       >
                         <Icon icon="fa-solid fa-pen" wrapperClassName="size-3" />
                       </Button>
@@ -473,6 +479,7 @@ export function SegmentList({
                         className="size-8 text-destructive hover:text-destructive"
                         onClick={() => handleDelete(segment)}
                         disabled={isPast || segment.offset_minutes === 0}
+                        aria-label={`刪除 ${endTimeFor(startTime, segment.offset_minutes)} 分段`}
                       >
                         <Icon icon="fa-solid fa-trash" wrapperClassName="size-3" />
                       </Button>

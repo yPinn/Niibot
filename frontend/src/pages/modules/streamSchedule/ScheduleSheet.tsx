@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import {
@@ -14,6 +14,14 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { Icon, Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
   Input,
   Label,
@@ -38,7 +46,12 @@ import {
 } from '@/components/ui'
 import { toastApiError } from '@/lib/toast-error'
 
-import { liveElapsedMinutesFor, todayInTimeZone } from './calendar'
+import {
+  liveElapsedMinutesFor,
+  timeZoneOffsetLabel,
+  todayInTimeZone,
+  weekdayInTimeZone,
+} from './calendar'
 import { WEEK_DISPLAY_ORDER, WEEKDAY_LABELS } from './constants'
 import { GamePicker, type GameValue } from './GamePicker'
 import { SegmentList } from './SegmentList'
@@ -58,7 +71,7 @@ interface FormState {
 
 function initialForm(kind: ScheduleKind, timezone: string, prefill?: CreatePrefill): FormState {
   return {
-    weekday: prefill?.weekday ?? 0,
+    weekday: prefill?.weekday ?? weekdayInTimeZone(new Date(), timezone),
     specificDate: kind === 'one_off' ? (prefill?.specificDate ?? todayInTimeZone(timezone)) : '',
     startTime: '20:00',
     endTime: '23:00',
@@ -103,28 +116,59 @@ export function ScheduleSheet({
   onOccurrenceCancelled,
   onClose,
 }: ScheduleSheetProps) {
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const key = editing
     ? editing.mode === 'edit'
       ? `edit-${editing.schedule.id}`
       : 'create'
     : 'closed'
 
+  const requestClose = () => {
+    if (hasUnsavedChanges) {
+      setConfirmDiscard(true)
+      return
+    }
+    onClose()
+  }
+
   return (
-    <Sheet open={!!editing} onOpenChange={open => !open && onClose()}>
-      <SheetContent className="gap-section">
-        {editing && (
-          <ScheduleSheetForm
-            key={key}
-            editing={editing}
-            timezone={timezone}
-            onSaved={onSaved}
-            onDeleted={onDeleted}
-            onOccurrenceCancelled={onOccurrenceCancelled}
-            onClose={onClose}
-          />
-        )}
-      </SheetContent>
-    </Sheet>
+    <>
+      <Sheet open={!!editing} onOpenChange={open => !open && requestClose()}>
+        <SheetContent className="gap-section">
+          {editing && (
+            <ScheduleSheetForm
+              key={key}
+              editing={editing}
+              timezone={timezone}
+              onSaved={onSaved}
+              onDeleted={onDeleted}
+              onOccurrenceCancelled={onOccurrenceCancelled}
+              onDirtyChange={setHasUnsavedChanges}
+              onClose={onClose}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放棄未儲存的排程？</AlertDialogTitle>
+            <AlertDialogDescription>目前輸入的內容不會保留。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>繼續編輯</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={onClose}
+            >
+              放棄變更
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
 
@@ -134,7 +178,21 @@ interface ScheduleSheetFormProps {
   onSaved: (schedule: StreamSchedule) => void
   onDeleted: (id: number) => void
   onOccurrenceCancelled: (exception: StreamScheduleOccurrenceException) => void
+  onDirtyChange: (dirty: boolean) => void
   onClose: () => void
+}
+
+function formMatches(left: FormState, right: FormState): boolean {
+  return (
+    left.weekday === right.weekday &&
+    left.specificDate === right.specificDate &&
+    left.startTime === right.startTime &&
+    left.endTime === right.endTime &&
+    left.titleTemplate === right.titleTemplate &&
+    left.game?.id === right.game?.id &&
+    left.game?.name === right.game?.name &&
+    left.enabled === right.enabled
+  )
 }
 
 function ScheduleSheetForm({
@@ -143,6 +201,7 @@ function ScheduleSheetForm({
   onSaved,
   onDeleted,
   onOccurrenceCancelled,
+  onDirtyChange,
   onClose,
 }: ScheduleSheetFormProps) {
   // A schedule's kind is fixed once created (the backend has no "convert" op),
@@ -151,20 +210,37 @@ function ScheduleSheetForm({
   // (e.g. clicking an empty day in the calendar view) can pin the initial
   // kind/weekday/date without removing the toggle.
   const prefill = editing.mode === 'create' ? editing.prefill : undefined
-  const [kind, setKind] = useState<ScheduleKind>(
-    editing.mode === 'edit' ? editing.schedule.kind : (prefill?.kind ?? 'recurring')
-  )
-  const [form, setForm] = useState<FormState>(() =>
-    editing.mode === 'edit' ? toForm(editing.schedule) : initialForm(kind, timezone, prefill)
-  )
+  const [initial] = useState(() => {
+    const initialKind =
+      editing.mode === 'edit' ? editing.schedule.kind : (prefill?.kind ?? 'recurring')
+    return {
+      kind: initialKind,
+      form:
+        editing.mode === 'edit'
+          ? toForm(editing.schedule)
+          : initialForm(initialKind, timezone, prefill),
+    }
+  })
+  const [kind, setKind] = useState<ScheduleKind>(initial.kind)
+  const [form, setForm] = useState<FormState>(initial.form)
+  const [gamePendingSelection, setGamePendingSelection] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   // After a fresh create, switch straight into "edit" so segments become addable
   // without the user re-opening the sheet — schedule_id doesn't exist until now.
   const [created, setCreated] = useState<StreamSchedule | null>(null)
 
-  const [skipping, setSkipping] = useState(false)
-
   const schedule = editing.mode === 'edit' ? editing.schedule : created
+  const hasUnsavedCreateChanges =
+    editing.mode === 'create' &&
+    !schedule &&
+    (kind !== initial.kind || !formMatches(form, initial.form) || gamePendingSelection)
+
+  useEffect(() => {
+    onDirtyChange(hasUnsavedCreateChanges)
+    return () => onDirtyChange(false)
+  }, [hasUnsavedCreateChanges, onDirtyChange])
+
+  const [skipping, setSkipping] = useState(false)
   // Only set when this sheet was opened by clicking a specific day on the
   // calendar (not the plain schedule table) — that's what a "skip just this
   // day" action needs to know which date to create the override for.
@@ -181,6 +257,7 @@ function ScheduleSheetForm({
     !!schedule && schedule.kind === 'one_off' && !!schedule.specific_date
       ? schedule.specific_date < todayInTimeZone(timezone)
       : false
+  const today = todayInTimeZone(timezone)
   const duration = durationBetween(form.startTime, form.endTime)
   const durationError =
     duration === 0
@@ -189,6 +266,14 @@ function ScheduleSheetForm({
         ? '排程至少 30 分鐘'
         : duration > 1380
           ? '排程最多 23 小時'
+          : null
+  const dateError =
+    kind !== 'one_off' || schedule
+      ? null
+      : !form.specificDate
+        ? '請選擇日期'
+        : form.specificDate < today
+          ? '日期不能早於今天'
           : null
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) =>
@@ -205,11 +290,7 @@ function ScheduleSheetForm({
   }
 
   const handleSave = async () => {
-    if (durationError) return
-    if (kind === 'one_off' && !form.specificDate) {
-      toast.error('請選擇日期')
-      return
-    }
+    if (durationError || dateError || gamePendingSelection) return
 
     setField('saving', true)
     try {
@@ -217,7 +298,6 @@ function ScheduleSheetForm({
         const updated = await updateStreamSchedule(schedule.id, {
           start_time: `${form.startTime}:00`,
           duration_minutes: duration,
-          title_template: form.titleTemplate.trim(),
           enabled: form.enabled,
         })
         onSaved(updated)
@@ -289,9 +369,15 @@ function ScheduleSheetForm({
           </p>
         )}
 
+        {(created || (editing.mode === 'edit' && editing.justCreated)) && (
+          <p role="status" className="rounded-md bg-muted/40 px-3 py-2 text-sub">
+            排程已建立，可繼續新增分段。
+          </p>
+        )}
+
         {!schedule && (
           <Tabs value={kind} onValueChange={v => switchKind(v as ScheduleKind)}>
-            <TabsList className="w-full">
+            <TabsList className="w-full" aria-label="排程類型">
               <TabsTrigger value="recurring" className="flex-1">
                 每週固定
               </TabsTrigger>
@@ -304,13 +390,13 @@ function ScheduleSheetForm({
 
         {kind === 'recurring' ? (
           <div className="flex flex-col gap-2">
-            <Label>星期</Label>
+            <Label htmlFor="schedule-weekday">星期</Label>
             <Select
               value={String(form.weekday)}
               onValueChange={v => setField('weekday', Number(v))}
               disabled={!!schedule}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id="schedule-weekday" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -331,8 +417,17 @@ function ScheduleSheetForm({
               value={form.specificDate}
               onChange={e => setField('specificDate', e.target.value)}
               disabled={!!schedule}
-              className="w-fit"
+              required
+              min={!schedule ? today : undefined}
+              aria-invalid={!!dateError}
+              aria-describedby={dateError ? 'schedule-date-error' : undefined}
+              className="w-full"
             />
+            {dateError && (
+              <span id="schedule-date-error" className="text-label text-destructive">
+                {dateError}
+              </span>
+            )}
           </div>
         )}
 
@@ -345,6 +440,8 @@ function ScheduleSheetForm({
               value={form.startTime}
               onChange={e => setField('startTime', e.target.value)}
               disabled={readOnly}
+              aria-invalid={!!durationError}
+              aria-describedby="schedule-duration-feedback"
             />
           </div>
           <div className="flex flex-1 flex-col gap-2">
@@ -355,19 +452,24 @@ function ScheduleSheetForm({
               value={form.endTime}
               onChange={e => setField('endTime', e.target.value)}
               disabled={readOnly}
+              aria-invalid={!!durationError}
+              aria-describedby="schedule-duration-feedback"
             />
           </div>
         </div>
-        <span className="text-label text-muted-foreground">
-          預估時長 {Math.floor(duration / 60)} 小時 {duration % 60} 分
-          {crossesMidnight(form.startTime, duration) && '（結束於隔天）'}
-        </span>
-        {durationError && <span className="text-label text-destructive">{durationError}</span>}
+        <div id="schedule-duration-feedback" className="flex flex-col gap-1">
+          <span className="text-label text-muted-foreground">
+            預估時長 {Math.floor(duration / 60)} 小時 {duration % 60} 分
+            {crossesMidnight(form.startTime, duration) && '（結束於隔天）'} ·{' '}
+            {timeZoneOffsetLabel(timezone)}
+          </span>
+          {durationError && <span className="text-label text-destructive">{durationError}</span>}
+        </div>
 
         {!schedule && (
           <>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="schedule-title">開台標題</Label>
+              <Label htmlFor="schedule-title">開台標題（選填）</Label>
               <Textarea
                 id="schedule-title"
                 value={form.titleTemplate}
@@ -381,6 +483,7 @@ function ScheduleSheetForm({
               id="schedule-game"
               value={form.game}
               onChange={game => setField('game', game)}
+              onPendingSelectionChange={setGamePendingSelection}
             />
           </>
         )}
@@ -436,9 +539,14 @@ function ScheduleSheetForm({
         <SheetClose asChild>
           <Button variant="outline">關閉</Button>
         </SheetClose>
-        <Button onClick={handleSave} disabled={form.saving || readOnly || !!durationError}>
+        <Button
+          onClick={handleSave}
+          disabled={
+            form.saving || readOnly || !!durationError || !!dateError || gamePendingSelection
+          }
+        >
           {form.saving && <Spinner className="mr-1.5" />}
-          {schedule ? '儲存' : '建立'}
+          {schedule ? '儲存變更' : '建立排程'}
         </Button>
       </SheetFooter>
 

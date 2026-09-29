@@ -17,4 +17,4 @@ export type EditingState =
   // calendar (not from the plain schedule table, which has no date context)
   // — it's what lets the sheet offer "skip just this day" for a recurring
   // schedule's specific occurrence.
-  | { mode: 'edit'; schedule: StreamSchedule; calendarDate?: string }
+  | { mode: 'edit'; schedule: StreamSchedule; calendarDate?: string; justCreated?: boolean }

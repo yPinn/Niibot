@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import {
   searchStreamScheduleGames,
@@ -21,6 +21,7 @@ interface GamePickerProps {
   inputClassName?: string
   value: GameValue | null
   onChange: (value: GameValue | null) => void
+  onPendingSelectionChange?: (pending: boolean) => void
 }
 
 /** Twitch box art URLs are a template ("…-{width}x{height}.jpg") the caller
@@ -43,11 +44,18 @@ export function GamePicker({
   inputClassName,
   value,
   onChange,
+  onPendingSelectionChange,
 }: GamePickerProps) {
+  const generatedId = useId()
+  const inputId = id ?? `game-picker-${generatedId}`
+  const listboxId = `${inputId}-listbox`
+  const hintId = `${inputId}-hint`
   const [query, setQuery] = useState(value?.name ?? '')
   const [open, setOpen] = useState(false)
   const [results, setResults] = useState<StreamScheduleGameSearchResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [searchState, setSearchState] = useState<'idle' | 'success' | 'error'>('idle')
+  const [activeIndex, setActiveIndex] = useState(-1)
   // Cosmetic only — never part of the value the parent stores/saves. Known
   // immediately when picked fresh from the dropdown; for a value the parent
   // mounted us with (e.g. editing an already-saved segment) it starts blank
@@ -61,16 +69,25 @@ export function GamePicker({
     if (!open || !debouncedQuery.trim() || debouncedQuery === value?.name) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([])
+      setSearchState('idle')
       return
     }
     let cancelled = false
     setLoading(true)
     searchStreamScheduleGames(debouncedQuery)
       .then(matches => {
-        if (!cancelled) setResults(matches)
+        if (!cancelled) {
+          setResults(matches)
+          setSearchState('success')
+          setActiveIndex(-1)
+        }
       })
       .catch(() => {
-        if (!cancelled) setResults([])
+        if (!cancelled) {
+          setResults([])
+          setSearchState('error')
+          setActiveIndex(-1)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -110,6 +127,7 @@ export function GamePicker({
 
   const select = (game: StreamScheduleGameSearchResult) => {
     onChange({ id: game.id, name: game.name })
+    onPendingSelectionChange?.(false)
     setQuery(game.name)
     setBoxArt(game.box_art_url)
     setOpen(false)
@@ -117,28 +135,73 @@ export function GamePicker({
 
   const clear = () => {
     onChange(null)
+    onPendingSelectionChange?.(false)
     setQuery('')
     setBoxArt(null)
     setOpen(false)
   }
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setOpen(false)
+      return
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setOpen(true)
+      if (results.length === 0) return
+      setActiveIndex(current => {
+        if (event.key === 'ArrowDown') return Math.min(current + 1, results.length - 1)
+        return current <= 0 ? results.length - 1 : current - 1
+      })
+      return
+    }
+    if (event.key === 'Enter' && open && activeIndex >= 0) {
+      event.preventDefault()
+      const activeResult = results[activeIndex]
+      if (activeResult) select(activeResult)
+    }
+  }
+
+  const hasPendingSelection = query.trim().length > 0 && value === null
+  const showSearchPanel =
+    open &&
+    query.trim().length > 0 &&
+    (loading || results.length > 0 || searchState === 'success' || searchState === 'error')
+
   return (
     <div className="flex flex-col gap-2">
       {label && (
-        <Label htmlFor={id} className={labelClassName}>
+        <Label htmlFor={inputId} className={labelClassName}>
           {label}
         </Label>
       )}
       <div className="relative">
         <div className="relative">
           <Input
-            id={id}
+            id={inputId}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={showSearchPanel}
+            aria-controls={showSearchPanel ? listboxId : undefined}
+            aria-activedescendant={
+              open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+            }
+            aria-describedby={hasPendingSelection ? hintId : undefined}
+            aria-invalid={hasPendingSelection && !open}
             value={query}
             onChange={e => {
-              setQuery(e.target.value)
+              const nextQuery = e.target.value
+              if (value) onChange(null)
+              onPendingSelectionChange?.(nextQuery.trim().length > 0)
+              setQuery(nextQuery)
+              setResults([])
+              setSearchState('idle')
+              setActiveIndex(-1)
               setOpen(true)
             }}
             onFocus={() => setOpen(true)}
+            onKeyDown={handleKeyDown}
             onBlur={() => {
               // Delay so a click on a dropdown item registers before the list unmounts.
               blurTimeout.current = setTimeout(() => setOpen(false), 150)
@@ -171,40 +234,59 @@ export function GamePicker({
           )}
         </div>
 
-        {open && (loading || results.length > 0) && (
-          <div className="absolute z-raised mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-md">
+        {showSearchPanel && (
+          <div
+            id={results.length === 0 ? listboxId : undefined}
+            className="absolute z-raised mt-1 w-full rounded-md border border-border bg-popover text-popover-foreground shadow-md"
+          >
             {loading ? (
               <div className="flex items-center gap-2 px-3 py-2 text-sub text-muted-foreground">
                 <Spinner className="size-3.5" />
                 搜尋中…
               </div>
-            ) : (
-              <ul className="max-h-72 overflow-y-auto py-1">
-                {results.map(game => (
-                  <li key={game.id}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sub hover:bg-accent"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => select(game)}
-                    >
-                      <img
-                        src={thumbnailUrl(game.box_art_url, 32, 43) ?? undefined}
-                        alt=""
-                        className={cn(
-                          'h-10.75 w-8 shrink-0 rounded-sm object-cover',
-                          !game.box_art_url && 'invisible'
-                        )}
-                      />
-                      {game.name}
-                    </button>
+            ) : results.length > 0 ? (
+              <ul id={listboxId} role="listbox" className="max-h-72 overflow-y-auto py-1">
+                {results.map((game, index) => (
+                  <li
+                    id={`${listboxId}-option-${index}`}
+                    key={game.id}
+                    role="option"
+                    aria-selected={activeIndex === index}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sub hover:bg-accent',
+                      activeIndex === index && 'bg-accent'
+                    )}
+                    onMouseDown={event => event.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => select(game)}
+                  >
+                    <img
+                      src={thumbnailUrl(game.box_art_url, 32, 43) ?? undefined}
+                      alt=""
+                      className={cn(
+                        'h-10.75 w-8 shrink-0 rounded-sm object-cover',
+                        !game.box_art_url && 'invisible'
+                      )}
+                    />
+                    {game.name}
                   </li>
                 ))}
               </ul>
+            ) : (
+              <div role="status" className="px-3 py-2 text-sub text-muted-foreground">
+                {searchState === 'error'
+                  ? '無法搜尋 Twitch 分類，請稍後再試'
+                  : '找不到符合的 Twitch 分類'}
+              </div>
             )}
           </div>
         )}
       </div>
+      {hasPendingSelection && (
+        <p id={hintId} className="text-label text-destructive">
+          請從搜尋結果選擇分類
+        </p>
+      )}
     </div>
   )
 }
