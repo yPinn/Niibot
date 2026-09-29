@@ -9,7 +9,6 @@ os.environ.setdefault("CLIENT_ID", "test-client-id")
 os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
-os.environ.setdefault("BOT_ID", "bot-999")
 
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,7 +41,8 @@ async def _no_lifespan(app: FastAPI):
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings_cache():
+def _reset_settings_cache(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BOT_ID", "bot-999")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

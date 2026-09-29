@@ -63,7 +63,7 @@ class PreviewExpiredError(NotFoundError):
 
 class CommandCsvInvalidError(InvalidInputError):
     code = "COMMAND_IMPORT.CSV_INVALID"
-    user_message = "CSV 指令檔無法辨識，請檢查欄位與內容"
+    user_message = "指令檔無法辨識，請檢查欄位與內容"
 
 
 # ---------------------------------------------------------------------------

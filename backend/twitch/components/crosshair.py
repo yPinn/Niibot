@@ -29,8 +29,6 @@ if TYPE_CHECKING:
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
-FRONTEND_URL = get_settings().frontend_url.rstrip("/")
-
 _VIEWER_SHARE_COOLDOWN = 15  # seconds
 
 _OPT_PATTERN = re.compile(r"-(\w+)=(\S+)")
@@ -66,6 +64,7 @@ def _split_name_code(args: str) -> tuple[str, str] | None:
 class CrosshairComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
+        self.frontend_url = get_settings().frontend_url.rstrip("/")
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self.xhair_repo = CrosshairRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -112,7 +111,7 @@ class CrosshairComponent(BotComponent):
 
         if not name:
             channel_name = ctx.channel.name
-            await self._ctx_reply(ctx, f"準星收藏： {FRONTEND_URL}/{channel_name}/crosshairs")
+            await self._ctx_reply(ctx, f"準星收藏： {self.frontend_url}/{channel_name}/crosshairs")
             await self._record_command(ctx, "crosshairs")
             return
 

@@ -16,17 +16,17 @@ from shared.twitch_scopes import BOT_SCOPES, required_core_scopes
 
 class BotSelectionAccountUnavailableError(NotFoundError):
     code = "BOT_SELECTION.ACCOUNT_UNAVAILABLE"
-    user_message = "這個 Bot 無法在此頻道使用，請重新整理"
+    user_message = "這個發言帳號目前無法使用，請重新整理"
 
 
 class BotSelectionSameIdentityUnsupportedError(ConflictError):
     code = "BOT_SELECTION.SAME_IDENTITY_UNSUPPORTED"
-    user_message = "同一個 Twitch 帳號目前不能同時作為頻道與 Bot，請改用另一個 Bot 帳號"
+    user_message = "這個帳號不能同時用於頻道和發言，請選擇其他帳號"
 
 
 class BotSelectionAuthorizationRequiredError(AccessDeniedError):
     code = "BOT_SELECTION.AUTHORIZATION_REQUIRED"
-    user_message = "Bot 授權已失效，請先重新授權"
+    user_message = "發言帳號授權已失效，請先重新授權"
 
 
 class BotSelectionScopeRequiredError(AccessDeniedError):
@@ -36,7 +36,7 @@ class BotSelectionScopeRequiredError(AccessDeniedError):
 
 class BotSelectionModeratorRequiredError(ConflictError):
     code = "BOT_SELECTION.MODERATOR_REQUIRED"
-    user_message = "請先在 Twitch 將這個 Bot 設為 MOD"
+    user_message = "請先在 Twitch 將這個帳號設為管理員"
 
 
 class BotSelectionProviderUnavailableError(ServiceUnavailableError):
