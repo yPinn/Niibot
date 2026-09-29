@@ -71,7 +71,7 @@ function timeSlotOptions(
   durationMinutes: number
 ): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
-  for (let offset = 0; offset <= durationMinutes; offset += STEP_MINUTES) {
+  for (let offset = 0; offset < durationMinutes; offset += STEP_MINUTES) {
     const time = endTimeFor(startTime, offset)
     options.push({ value: time, label: offset === 0 ? `${time}（開台）` : time })
   }
@@ -200,6 +200,7 @@ function SegmentRow({
           value={form.title_template}
           onChange={e => onChange({ ...form, title_template: e.target.value })}
           placeholder="開台標題"
+          maxLength={140}
           className="min-h-12 resize-y text-sub"
         />
       </div>
@@ -271,11 +272,8 @@ export function SegmentList({
     () => (elapsedMinutes !== null ? resolveActiveSegment(segments, elapsedMinutes) : null),
     [segments, elapsedMinutes]
   )
-  // Latest segment first, "at go-live" last — a display choice, kept
-  // separate from `segments` itself so nothing that computes off offsets
-  // (activeSegment, availableTimeOptions) needs to care about array order.
   const sortedSegments = useMemo(
-    () => [...segments].sort((a, b) => b.offset_minutes - a.offset_minutes),
+    () => [...segments].sort((a, b) => a.offset_minutes - b.offset_minutes),
     [segments]
   )
   // addForm.time is set once (before segments have loaded) and only changes
@@ -376,9 +374,7 @@ export function SegmentList({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-label text-muted-foreground">
-        時間到了自動切換標題／分類；選「開台」代表一開播就套用。沒設定分段的話，不會自動改標題或分類。
-      </p>
+      <p className="text-label text-muted-foreground">依時間自動切換標題與分類。</p>
 
       {disabled && (
         <p className="text-label text-muted-foreground">這天已經過去，分段無法再編輯。</p>

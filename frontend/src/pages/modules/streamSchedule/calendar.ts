@@ -1,21 +1,84 @@
-import type { StreamSchedule, StreamScheduleSegment } from '@/api/streamSchedule'
+import type {
+  StreamSchedule,
+  StreamScheduleOccurrenceException,
+  StreamScheduleSegment,
+} from '@/api/streamSchedule'
 
-// Local-date (not UTC) helpers — a UTC-based ISO string can land on the wrong
-// calendar day for the user, especially right around midnight.
-
-export function toDateStr(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
+const WEEKDAY_BY_SHORT_NAME: Record<string, number> = {
+  Mon: 0,
+  Tue: 1,
+  Wed: 2,
+  Thu: 3,
+  Fri: 4,
+  Sat: 5,
+  Sun: 6,
 }
 
-export function todayLocalDate(): string {
-  return toDateStr(new Date())
+interface ZonedParts {
+  dateStr: string
+  weekday: number
+  minutes: number
+}
+
+function zonedParts(date: Date, timezone: string): ZonedParts {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find(part => part.type === type)?.value ?? ''
+
+  return {
+    dateStr: `${value('year')}-${value('month')}-${value('day')}`,
+    weekday: WEEKDAY_BY_SHORT_NAME[value('weekday')] ?? 0,
+    minutes: Number(value('hour')) * 60 + Number(value('minute')),
+  }
+}
+
+/** A browser-timezone-independent calendar date container. */
+export function calendarDate(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00Z`)
+}
+
+export function toDateStr(date: Date): string {
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${date.getUTCFullYear()}-${month}-${day}`
+}
+
+export function dateStrInTimeZone(date: Date, timezone: string): string {
+  return zonedParts(date, timezone).dateStr
+}
+
+export function todayInTimeZone(timezone: string, now = new Date()): string {
+  return dateStrInTimeZone(now, timezone)
+}
+
+export function weekdayInTimeZone(date: Date, timezone: string): number {
+  return zonedParts(date, timezone).weekday
+}
+
+export function minutesInTimeZone(date: Date, timezone: string): number {
+  return zonedParts(date, timezone).minutes
+}
+
+export function timeZoneOffsetLabel(timezone: string, now = new Date()): string {
+  return (
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'shortOffset' })
+      .formatToParts(now)
+      .find(part => part.type === 'timeZoneName')?.value ?? ''
+  )
 }
 
 export function addDays(date: Date, days: number): Date {
   const next = new Date(date)
-  next.setDate(next.getDate() + days)
+  next.setUTCDate(next.getUTCDate() + days)
   return next
 }
 
@@ -25,19 +88,19 @@ export function addDays(date: Date, days: number): Date {
  * calendar display order, which starts the week on Sunday (see startOfWeek)
  * independently of this numbering. */
 export function weekdayOf(date: Date): number {
-  return (date.getDay() + 6) % 7
+  return (date.getUTCDay() + 6) % 7
 }
 
 /** Calendar display starts the week on Sunday — a display preference,
  * unrelated to weekdayOf's backend-matching numbering above. Uses Date's
  * native getDay() (0 = Sunday) directly. */
 export function startOfWeek(date: Date): Date {
-  return addDays(date, -date.getDay())
+  return addDays(date, -date.getUTCDay())
 }
 
 /** The Sunday on/before the 1st of the month — first cell of a month grid. */
 export function startOfMonthGrid(date: Date): Date {
-  const firstOfMonth = new Date(date.getFullYear(), date.getMonth(), 1)
+  const firstOfMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
   return startOfWeek(firstOfMonth)
 }
 
@@ -46,7 +109,7 @@ export function startOfMonthGrid(date: Date): Date {
  * 100% next-month padding. */
 export function monthGridWeekCount(date: Date): number {
   const gridStart = startOfMonthGrid(date)
-  const lastOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0)
+  const lastOfMonth = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0))
   const spanDays = Math.round((lastOfMonth.getTime() - gridStart.getTime()) / 86_400_000) + 1
   return Math.ceil(spanDays / 7)
 }
@@ -61,11 +124,19 @@ export function timeStrToMinutes(hhmmss: string): number {
  * day it spills into; the day it started on still resolves and displays
  * normally). Good enough for a visual accent, not worth the extra
  * cross-midnight window math the backend resolver does for the real thing. */
-export function isLiveNow(schedule: StreamSchedule, dateStr: string, now: Date): boolean {
-  if (dateStr !== toDateStr(now)) return false
+export function isLiveNow(
+  schedule: StreamSchedule,
+  occurrenceDate: string,
+  now: Date,
+  timezone: string
+): boolean {
   const startMinutes = timeStrToMinutes(schedule.start_time)
-  const nowMinutes = now.getHours() * 60 + now.getMinutes()
-  return nowMinutes >= startMinutes && nowMinutes < startMinutes + schedule.duration_minutes
+  const current = zonedParts(now, timezone)
+  const dayDelta = Math.round(
+    (calendarDate(current.dateStr).getTime() - calendarDate(occurrenceDate).getTime()) / 86_400_000
+  )
+  const elapsed = dayDelta * 1440 + current.minutes - startMinutes
+  return elapsed >= 0 && elapsed < schedule.duration_minutes
 }
 
 /** Minutes since a specific schedule's own start, only when it's the one
@@ -75,15 +146,32 @@ export function isLiveNow(schedule: StreamSchedule, dateStr: string, now: Date):
  * date," so the caller doesn't need to have already matched it against the
  * day-level override rule themselves (e.g. the schedule-edit sheet, which
  * only ever has one schedule in hand, not the full list to resolve against). */
-export function liveElapsedMinutesFor(schedule: StreamSchedule, now: Date): number | null {
+export function liveElapsedMinutesFor(
+  schedule: StreamSchedule,
+  now: Date,
+  timezone: string
+): number | null {
   if (!schedule.enabled) return null
-  const today = toDateStr(now)
-  const appliesToday =
-    schedule.kind === 'one_off'
-      ? schedule.specific_date === today
-      : schedule.weekday === weekdayOf(now)
-  if (!appliesToday || !isLiveNow(schedule, today, now)) return null
-  return now.getHours() * 60 + now.getMinutes() - timeStrToMinutes(schedule.start_time)
+  const today = dateStrInTimeZone(now, timezone)
+  const yesterday = toDateStr(addDays(calendarDate(today), -1))
+  const occurrenceDates =
+    schedule.kind === 'one_off' ? [schedule.specific_date] : [yesterday, today]
+
+  for (const occurrenceDate of occurrenceDates) {
+    if (!occurrenceDate) continue
+    const applies =
+      schedule.kind === 'one_off'
+        ? schedule.specific_date === occurrenceDate
+        : schedule.weekday === weekdayOf(calendarDate(occurrenceDate))
+    if (!applies || !isLiveNow(schedule, occurrenceDate, now, timezone)) continue
+    const dayDelta = Math.round(
+      (calendarDate(today).getTime() - calendarDate(occurrenceDate).getTime()) / 86_400_000
+    )
+    return (
+      dayDelta * 1440 + minutesInTimeZone(now, timezone) - timeStrToMinutes(schedule.start_time)
+    )
+  }
+  return null
 }
 
 /** Whether a recurring schedule already existed by a given date — a schedule
@@ -95,8 +183,10 @@ export function liveElapsedMinutesFor(schedule: StreamSchedule, now: Date): numb
  * it only ever evaluates today/yesterday relative to the actual current
  * moment, so it can't reach a date before the schedule existed regardless.
  * This is purely about the calendar not showing a misleading backfill. */
-function existedBy(schedule: StreamSchedule, dateStr: string): boolean {
-  return !schedule.created_at || toDateStr(new Date(schedule.created_at)) <= dateStr
+function existedBy(schedule: StreamSchedule, dateStr: string, timezone: string): boolean {
+  return (
+    !schedule.created_at || dateStrInTimeZone(new Date(schedule.created_at), timezone) <= dateStr
+  )
 }
 
 /** Resolve which schedule (if any) applies on a given date — the same
@@ -107,20 +197,53 @@ function existedBy(schedule: StreamSchedule, dateStr: string): boolean {
  * schedule list — no extra request per visible day. */
 export function resolveScheduleForDate(
   schedules: StreamSchedule[],
-  dateStr: string
+  dateStr: string,
+  timezone = 'Asia/Taipei',
+  exceptions: StreamScheduleOccurrenceException[] = []
 ): StreamSchedule | null {
-  const oneOffs = schedules
-    .filter(s => s.enabled && s.kind === 'one_off' && s.specific_date === dateStr)
-    .sort((a, b) => a.start_time.localeCompare(b.start_time))
-  if (oneOffs.length > 0) return oneOffs[0]
+  return resolveSchedulesForDate(schedules, dateStr, timezone, exceptions)[0] ?? null
+}
 
-  const weekday = weekdayOf(new Date(`${dateStr}T00:00:00`))
-  const recurring = schedules
-    .filter(
-      s => s.enabled && s.kind === 'recurring' && s.weekday === weekday && existedBy(s, dateStr)
-    )
-    .sort((a, b) => a.start_time.localeCompare(b.start_time))
-  return recurring[0] ?? null
+export function resolveSchedulesForDate(
+  schedules: StreamSchedule[],
+  dateStr: string,
+  timezone = 'Asia/Taipei',
+  exceptions: StreamScheduleOccurrenceException[] = []
+): StreamSchedule[] {
+  const oneOffs = schedules.filter(
+    s => s.enabled && s.kind === 'one_off' && s.specific_date === dateStr
+  )
+  const exceptionScheduleIds = new Set(
+    exceptions
+      .filter(exception => exception.occurrence_date === dateStr)
+      .map(exception => exception.recurring_schedule_id)
+  )
+
+  const weekday = weekdayOf(calendarDate(dateStr))
+  const recurring = schedules.filter(
+    s =>
+      s.enabled &&
+      s.kind === 'recurring' &&
+      s.weekday === weekday &&
+      !exceptionScheduleIds.has(s.id) &&
+      existedBy(s, dateStr, timezone)
+  )
+  return [...oneOffs, ...recurring].sort((a, b) => a.start_time.localeCompare(b.start_time))
+}
+
+export function cancelledSchedulesForDate(
+  schedules: StreamSchedule[],
+  dateStr: string,
+  exceptions: StreamScheduleOccurrenceException[]
+): StreamSchedule[] {
+  const cancelledIds = new Set(
+    exceptions
+      .filter(exception => exception.occurrence_date === dateStr && exception.kind === 'cancelled')
+      .map(exception => exception.recurring_schedule_id)
+  )
+  return schedules.filter(
+    schedule => schedule.kind === 'recurring' && cancelledIds.has(schedule.id)
+  )
 }
 
 /** A schedule resolved for the PREVIOUS calendar day that spills past
@@ -133,10 +256,12 @@ export function resolveScheduleForDate(
  * they're independent blocks on the same row, not a conflict to resolve. */
 export function resolveContinuationForDate(
   schedules: StreamSchedule[],
-  dateStr: string
+  dateStr: string,
+  timezone = 'Asia/Taipei',
+  exceptions: StreamScheduleOccurrenceException[] = []
 ): { schedule: StreamSchedule; minutes: number } | null {
-  const prevDateStr = toDateStr(addDays(new Date(`${dateStr}T00:00:00`), -1))
-  const prev = resolveScheduleForDate(schedules, prevDateStr)
+  const prevDateStr = toDateStr(addDays(calendarDate(dateStr), -1))
+  const prev = resolveScheduleForDate(schedules, prevDateStr, timezone, exceptions)
   if (!prev) return null
   const overflowMinutes = timeStrToMinutes(prev.start_time) + prev.duration_minutes - 1440
   return overflowMinutes > 0 ? { schedule: prev, minutes: overflowMinutes } : null

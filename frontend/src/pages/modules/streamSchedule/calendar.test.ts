@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
-import type { StreamSchedule } from '@/api/streamSchedule'
+import type { StreamSchedule, StreamScheduleOccurrenceException } from '@/api/streamSchedule'
 
 import {
   addDays,
+  calendarDate,
+  dateStrInTimeZone,
   isLiveNow,
+  liveElapsedMinutesFor,
   monthGridWeekCount,
   resolveContinuationForDate,
   resolveScheduleForDate,
+  resolveSchedulesForDate,
   startOfMonthGrid,
   startOfWeek,
   timeStrToMinutes,
+  timeZoneOffsetLabel,
   toDateStr,
+  todayInTimeZone,
+  weekdayInTimeZone,
   weekdayOf,
 } from './calendar'
 
@@ -32,22 +39,69 @@ function schedule(overrides: Partial<StreamSchedule>): StreamSchedule {
   }
 }
 
+function exception(
+  overrides: Partial<StreamScheduleOccurrenceException>
+): StreamScheduleOccurrenceException {
+  return {
+    id: 1,
+    channel_id: 'chan1',
+    recurring_schedule_id: 1,
+    occurrence_date: '2026-09-21',
+    kind: 'cancelled',
+    replacement_schedule_id: null,
+    created_at: null,
+    updated_at: null,
+    ...overrides,
+  }
+}
+
 describe('weekdayOf', () => {
   it('maps Monday to 0 and Sunday to 6 (backend convention, not JS getDay())', () => {
-    expect(weekdayOf(new Date('2026-09-21T00:00:00'))).toBe(0) // Monday
-    expect(weekdayOf(new Date('2026-09-27T00:00:00'))).toBe(6) // Sunday
+    expect(weekdayOf(calendarDate('2026-09-21'))).toBe(0) // Monday
+    expect(weekdayOf(calendarDate('2026-09-27'))).toBe(6) // Sunday
+  })
+})
+
+describe('schedule timezone', () => {
+  const instant = new Date('2026-09-21T16:30:00Z')
+
+  it('derives date and weekday from the configured timezone, not the browser timezone', () => {
+    expect(dateStrInTimeZone(instant, 'Asia/Taipei')).toBe('2026-09-22')
+    expect(weekdayInTimeZone(instant, 'Asia/Taipei')).toBe(1)
+    expect(dateStrInTimeZone(instant, 'America/Los_Angeles')).toBe('2026-09-21')
+    expect(weekdayInTimeZone(instant, 'America/Los_Angeles')).toBe(0)
+  })
+
+  it('keeps the configured local date stable across a DST boundary', () => {
+    const beforeJump = new Date('2026-03-08T06:59:00Z')
+    const afterJump = new Date('2026-03-08T07:01:00Z')
+    expect(todayInTimeZone('America/New_York', beforeJump)).toBe('2026-03-08')
+    expect(todayInTimeZone('America/New_York', afterJump)).toBe('2026-03-08')
+  })
+
+  it('formats the display timezone as an offset without the region name', () => {
+    expect(timeZoneOffsetLabel('Asia/Taipei', instant)).toBe('GMT+8')
+    expect(timeZoneOffsetLabel('America/Los_Angeles', instant)).toBe('GMT-7')
+  })
+
+  it('resolves a cross-midnight live occurrence in the configured timezone', () => {
+    const recurring = schedule({ weekday: 0, start_time: '23:00:00', duration_minutes: 180 })
+    const now = new Date('2026-09-21T17:30:00Z') // Tuesday 01:30 in Asia/Taipei.
+
+    expect(isLiveNow(recurring, '2026-09-21', now, 'Asia/Taipei')).toBe(true)
+    expect(liveElapsedMinutesFor(recurring, now, 'Asia/Taipei')).toBe(150)
   })
 })
 
 describe('startOfWeek / startOfMonthGrid', () => {
   it('starts the week on Sunday', () => {
     // 2026-09-24 is a Thursday, so the Sunday on/before it is 2026-09-20.
-    expect(toDateStr(startOfWeek(new Date('2026-09-24T00:00:00')))).toBe('2026-09-20')
+    expect(toDateStr(startOfWeek(calendarDate('2026-09-24')))).toBe('2026-09-20')
   })
 
   it('starts the month grid on the Sunday on/before the 1st', () => {
     // 2026-10-01 is a Thursday, so the Sunday on/before it is 2026-09-27.
-    expect(toDateStr(startOfMonthGrid(new Date('2026-10-15T00:00:00')))).toBe('2026-09-27')
+    expect(toDateStr(startOfMonthGrid(calendarDate('2026-10-15')))).toBe('2026-09-27')
   })
 })
 
@@ -55,13 +109,13 @@ describe('monthGridWeekCount', () => {
   it('needs only 5 weeks when the month ends early in its last calendar-grid row', () => {
     // September 2026: 1st is a Tuesday, 30th is a Wednesday — grid starts
     // Sun 8/30 and the 30th falls in the 5th row, no 6th row needed.
-    expect(monthGridWeekCount(new Date('2026-09-15T00:00:00'))).toBe(5)
+    expect(monthGridWeekCount(calendarDate('2026-09-15'))).toBe(5)
   })
 
   it('needs 6 weeks when the month spills into a 6th row', () => {
     // August 2026: 1st is a Saturday, so the grid starts Sun 7/26 and the
     // 31st (a Monday) lands in the 6th row.
-    expect(monthGridWeekCount(new Date('2026-08-15T00:00:00'))).toBe(6)
+    expect(monthGridWeekCount(calendarDate('2026-08-15'))).toBe(6)
   })
 })
 
@@ -123,7 +177,7 @@ describe('resolveContinuationForDate', () => {
 
 describe('addDays', () => {
   it('adds days without mutating the input', () => {
-    const start = new Date('2026-09-21T00:00:00')
+    const start = calendarDate('2026-09-21')
     const next = addDays(start, 3)
     expect(toDateStr(next)).toBe('2026-09-24')
     expect(toDateStr(start)).toBe('2026-09-21')
@@ -137,16 +191,26 @@ describe('resolveScheduleForDate', () => {
     expect(result?.id).toBe(1)
   })
 
-  it('one-off on the exact date wins over a recurring schedule for that weekday', () => {
-    const recurring = schedule({ id: 1, kind: 'recurring', weekday: 0 })
+  it('returns independent one-off and recurring schedules on the same date', () => {
+    const recurring = schedule({ id: 1, kind: 'recurring', weekday: 0, start_time: '20:00:00' })
     const oneOff = schedule({
       id: 2,
       kind: 'one_off',
       weekday: null,
       specific_date: '2026-09-21',
+      start_time: '18:00:00',
     })
-    const result = resolveScheduleForDate([recurring, oneOff], '2026-09-21')
-    expect(result?.id).toBe(2)
+    const result = resolveSchedulesForDate([recurring, oneOff], '2026-09-21')
+    expect(result.map(item => item.id)).toEqual([2, 1])
+  })
+
+  it('removes only the recurring occurrence targeted by an exception', () => {
+    const cancelled = schedule({ id: 1, weekday: 0, start_time: '20:00:00' })
+    const remaining = schedule({ id: 2, weekday: 0, start_time: '23:00:00' })
+    const result = resolveSchedulesForDate([cancelled, remaining], '2026-09-21', 'Asia/Taipei', [
+      exception({ recurring_schedule_id: 1 }),
+    ])
+    expect(result.map(item => item.id)).toEqual([2])
   })
 
   it('a disabled schedule never resolves', () => {

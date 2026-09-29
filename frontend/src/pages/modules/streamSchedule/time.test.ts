@@ -22,8 +22,8 @@ describe('durationBetween', () => {
     expect(durationBetween('23:00', '02:00')).toBe(180)
   })
 
-  it('treats an identical start/end as a full 24h loop, not zero', () => {
-    expect(durationBetween('20:00', '20:00')).toBe(1440)
+  it('treats an identical start/end as invalid zero duration', () => {
+    expect(durationBetween('20:00', '20:00')).toBe(0)
   })
 })
 

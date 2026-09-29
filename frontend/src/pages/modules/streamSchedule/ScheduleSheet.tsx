@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import {
+  cancelStreamScheduleOccurrence,
   createStreamSchedule,
-  createStreamScheduleSegment,
   deleteStreamSchedule,
   type ScheduleKind,
   type StreamSchedule,
+  type StreamScheduleOccurrenceException,
   updateStreamSchedule,
 } from '@/api/streamSchedule'
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
@@ -37,7 +38,7 @@ import {
 } from '@/components/ui'
 import { toastApiError } from '@/lib/toast-error'
 
-import { liveElapsedMinutesFor, todayLocalDate } from './calendar'
+import { liveElapsedMinutesFor, todayInTimeZone } from './calendar'
 import { WEEK_DISPLAY_ORDER, WEEKDAY_LABELS } from './constants'
 import { GamePicker, type GameValue } from './GamePicker'
 import { SegmentList } from './SegmentList'
@@ -55,10 +56,10 @@ interface FormState {
   saving: boolean
 }
 
-function initialForm(kind: ScheduleKind, prefill?: CreatePrefill): FormState {
+function initialForm(kind: ScheduleKind, timezone: string, prefill?: CreatePrefill): FormState {
   return {
     weekday: prefill?.weekday ?? 0,
-    specificDate: kind === 'one_off' ? (prefill?.specificDate ?? todayLocalDate()) : '',
+    specificDate: kind === 'one_off' ? (prefill?.specificDate ?? todayInTimeZone(timezone)) : '',
     startTime: '20:00',
     endTime: '23:00',
     titleTemplate: '',
@@ -84,15 +85,24 @@ function toForm(schedule: StreamSchedule): FormState {
 
 interface ScheduleSheetProps {
   editing: EditingState | null
+  timezone: string
   onSaved: (schedule: StreamSchedule) => void
   onDeleted: (id: number) => void
+  onOccurrenceCancelled: (exception: StreamScheduleOccurrenceException) => void
   onClose: () => void
 }
 
 /** Outer shell owns the Sheet's open/close so its animation survives; the inner
  * form is keyed by editing target so it remounts (fresh local state, no effect
  * needed to re-sync form fields when the user opens a different schedule). */
-export function ScheduleSheet({ editing, onSaved, onDeleted, onClose }: ScheduleSheetProps) {
+export function ScheduleSheet({
+  editing,
+  timezone,
+  onSaved,
+  onDeleted,
+  onOccurrenceCancelled,
+  onClose,
+}: ScheduleSheetProps) {
   const key = editing
     ? editing.mode === 'edit'
       ? `edit-${editing.schedule.id}`
@@ -106,8 +116,10 @@ export function ScheduleSheet({ editing, onSaved, onDeleted, onClose }: Schedule
           <ScheduleSheetForm
             key={key}
             editing={editing}
+            timezone={timezone}
             onSaved={onSaved}
             onDeleted={onDeleted}
+            onOccurrenceCancelled={onOccurrenceCancelled}
             onClose={onClose}
           />
         )}
@@ -118,12 +130,21 @@ export function ScheduleSheet({ editing, onSaved, onDeleted, onClose }: Schedule
 
 interface ScheduleSheetFormProps {
   editing: EditingState
+  timezone: string
   onSaved: (schedule: StreamSchedule) => void
   onDeleted: (id: number) => void
+  onOccurrenceCancelled: (exception: StreamScheduleOccurrenceException) => void
   onClose: () => void
 }
 
-function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleSheetFormProps) {
+function ScheduleSheetForm({
+  editing,
+  timezone,
+  onSaved,
+  onDeleted,
+  onOccurrenceCancelled,
+  onClose,
+}: ScheduleSheetFormProps) {
   // A schedule's kind is fixed once created (the backend has no "convert" op),
   // but on create it's just another option in the form — no separate entry
   // point per kind, the weekday-vs-date choice below decides it. A prefill
@@ -134,7 +155,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
     editing.mode === 'edit' ? editing.schedule.kind : (prefill?.kind ?? 'recurring')
   )
   const [form, setForm] = useState<FormState>(() =>
-    editing.mode === 'edit' ? toForm(editing.schedule) : initialForm(kind, prefill)
+    editing.mode === 'edit' ? toForm(editing.schedule) : initialForm(kind, timezone, prefill)
   )
   const [confirmDelete, setConfirmDelete] = useState(false)
   // After a fresh create, switch straight into "edit" so segments become addable
@@ -149,7 +170,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
   // day" action needs to know which date to create the override for.
   const calendarDate = editing.mode === 'edit' ? editing.calendarDate : undefined
   // Skipping a day that's already happened doesn't mean anything.
-  const calendarDateIsPast = !!calendarDate && calendarDate < todayLocalDate()
+  const calendarDateIsPast = !!calendarDate && calendarDate < todayInTimeZone(timezone)
   // A recurring schedule has no "it's over" state (next week's occurrence is
   // always still ahead), but a one-off's specific_date is a single fixed
   // occurrence — once that date has passed, the whole thing is history: not
@@ -158,9 +179,17 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
   // still deletable, for cleanup).
   const readOnly =
     !!schedule && schedule.kind === 'one_off' && !!schedule.specific_date
-      ? schedule.specific_date < todayLocalDate()
+      ? schedule.specific_date < todayInTimeZone(timezone)
       : false
   const duration = durationBetween(form.startTime, form.endTime)
+  const durationError =
+    duration === 0
+      ? '開始與結束時間不能相同'
+      : duration < 30
+        ? '排程至少 30 分鐘'
+        : duration > 1380
+          ? '排程最多 23 小時'
+          : null
 
   const setField = <K extends keyof FormState>(field: K, value: FormState[K]) =>
     setForm(prev => ({ ...prev, [field]: value }))
@@ -171,11 +200,12 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
     setKind(next)
     setForm(prev => ({
       ...prev,
-      specificDate: next === 'one_off' ? prev.specificDate || todayLocalDate() : '',
+      specificDate: next === 'one_off' ? prev.specificDate || todayInTimeZone(timezone) : '',
     }))
   }
 
   const handleSave = async () => {
+    if (durationError) return
     if (kind === 'one_off' && !form.specificDate) {
       toast.error('請選擇日期')
       return
@@ -200,23 +230,12 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
           start_time: `${form.startTime}:00`,
           duration_minutes: duration,
           title_template: form.titleTemplate.trim(),
+          game_id: form.game?.id,
+          game_name: form.game?.name,
         })
         onSaved(createdSchedule)
         setCreated(createdSchedule)
-        // Seed the "at go-live" segment so the schedule actually does something
-        // the moment it's created — without this the schedule would silently
-        // apply nothing until the user separately added a segment below.
-        try {
-          await createStreamScheduleSegment(createdSchedule.id, {
-            offset_minutes: 0,
-            title_template: form.titleTemplate.trim(),
-            game_id: form.game?.id,
-            game_name: form.game?.name,
-          })
-          toast.success('排程已建立')
-        } catch (segErr) {
-          toastApiError(segErr, '排程已建立，但標題／分類套用失敗，請到下方「分段設定」補上')
-        }
+        toast.success('排程已建立')
       }
     } catch (e) {
       toastApiError(e, '儲存排程失敗')
@@ -237,25 +256,13 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
     }
   }
 
-  // Skipping one occurrence reuses the existing day-level override rule
-  // (an enabled one-off always wins over that day's recurring schedule) —
-  // an empty one-off with no segments applies nothing, so that day is a
-  // no-op without touching the recurring schedule itself. Deleting that
-  // empty one-off later (from the same sheet, opened by clicking that day
-  // again) undoes the skip.
   const handleSkipDay = async () => {
     if (!schedule || !calendarDate) return
     setSkipping(true)
     try {
-      const skipped = await createStreamSchedule({
-        kind: 'one_off',
-        specific_date: calendarDate,
-        start_time: schedule.start_time,
-        duration_minutes: schedule.duration_minutes,
-        title_template: '',
-      })
-      onSaved(skipped)
-      toast.success(`已跳過 ${calendarDate}`)
+      const exception = await cancelStreamScheduleOccurrence(schedule.id, calendarDate)
+      onOccurrenceCancelled(exception)
+      toast.success('已取消本次排程')
       onClose()
     } catch (e) {
       toastApiError(e, '跳過失敗')
@@ -355,6 +362,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
           預估時長 {Math.floor(duration / 60)} 小時 {duration % 60} 分
           {crossesMidnight(form.startTime, duration) && '（結束於隔天）'}
         </span>
+        {durationError && <span className="text-label text-destructive">{durationError}</span>}
 
         {!schedule && (
           <>
@@ -365,6 +373,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
                 value={form.titleTemplate}
                 onChange={e => setField('titleTemplate', e.target.value)}
                 placeholder="例：週一固定台"
+                maxLength={140}
                 className="min-h-16 resize-y text-sub"
               />
             </div>
@@ -390,13 +399,11 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
         {schedule && kind === 'recurring' && calendarDate && !calendarDateIsPast && (
           <div className="flex items-center justify-between gap-2 rounded-md border border-border p-2">
             <div className="flex flex-col">
-              <span className="text-sub font-medium">跳過 {calendarDate}</span>
-              <span className="text-label text-muted-foreground">
-                不影響其他週次，只有這天不開台
-              </span>
+              <span className="text-sub font-medium">取消 {calendarDate}</span>
+              <span className="text-label text-muted-foreground">只取消這次</span>
             </div>
             <Button variant="outline" size="sm" onClick={handleSkipDay} disabled={skipping}>
-              {skipping ? <Spinner className="size-3.5" /> : '跳過'}
+              {skipping ? <Spinner className="size-3.5" /> : '取消本次'}
             </Button>
           </div>
         )}
@@ -410,7 +417,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
                 scheduleId={schedule.id}
                 startTime={schedule.start_time.slice(0, 5)}
                 durationMinutes={schedule.duration_minutes}
-                elapsedMinutes={liveElapsedMinutesFor(schedule, new Date())}
+                elapsedMinutes={liveElapsedMinutesFor(schedule, new Date(), timezone)}
                 disabled={readOnly}
               />
             </div>
@@ -429,7 +436,7 @@ function ScheduleSheetForm({ editing, onSaved, onDeleted, onClose }: ScheduleShe
         <SheetClose asChild>
           <Button variant="outline">關閉</Button>
         </SheetClose>
-        <Button onClick={handleSave} disabled={form.saving || readOnly}>
+        <Button onClick={handleSave} disabled={form.saving || readOnly || !!durationError}>
           {form.saving && <Spinner className="mr-1.5" />}
           {schedule ? '儲存' : '建立'}
         </Button>

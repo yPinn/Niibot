@@ -1,16 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { StreamSchedule, StreamScheduleSegment } from '@/api/streamSchedule'
+import type {
+  StreamSchedule,
+  StreamScheduleOccurrenceException,
+  StreamScheduleSegment,
+} from '@/api/streamSchedule'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui'
 import { cn } from '@/lib/utils'
 
 import {
+  cancelledSchedulesForDate,
   firstSegment,
   isLiveNow,
+  minutesInTimeZone,
   resolveActiveSegment,
   resolveContinuationForDate,
-  resolveScheduleForDate,
+  resolveSchedulesForDate,
   timeStrToMinutes,
+  timeZoneOffsetLabel,
   toDateStr,
   weekdayOf,
 } from './calendar'
@@ -19,7 +26,7 @@ import { useGameColor } from './gameColor'
 import { SchedulePreview } from './schedulePreview'
 import { useSegmentPreview } from './useSegmentPreview'
 
-const LEFT_COL_WIDTH = 88
+const LEFT_COL_WIDTH = 128
 const ROW_HEIGHT = 64
 const MINUTES_PER_DAY = 1440
 // A fixed 24 one-hour columns doesn't fit every viewport — flex items won't
@@ -61,8 +68,11 @@ function useElementWidth<T extends HTMLElement>() {
 interface WeekTimelineProps {
   days: Date[] // exactly 7, Sunday first
   schedules: StreamSchedule[]
+  exceptions: StreamScheduleOccurrenceException[]
+  timezone: string
   onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
   onCreateForDate: (dateStr: string) => void
+  onRestoreOccurrence: (schedule: StreamSchedule, dateStr: string) => void
 }
 
 function formatHourLabel(hour: number): string {
@@ -124,96 +134,136 @@ function BlockContent({
 interface WeekDayRowProps {
   day: Date
   schedules: StreamSchedule[]
+  exceptions: StreamScheduleOccurrenceException[]
   today: string
   now: Date
   nowX: number
   columnCount: number
+  timezone: string
   onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
   onCreateForDate: (dateStr: string) => void
+  onRestoreOccurrence: (schedule: StreamSchedule, dateStr: string) => void
+}
+
+function WeekScheduleBlock({
+  schedule,
+  dateStr,
+  now,
+  timezone,
+  isReplacement,
+  onEditSchedule,
+}: {
+  schedule: StreamSchedule
+  dateStr: string
+  now: Date
+  timezone: string
+  isReplacement: boolean
+  onEditSchedule: (schedule: StreamSchedule, dateStr: string) => void
+}) {
+  const live = isLiveNow(schedule, dateStr, now, timezone)
+  const startMinutes = timeStrToMinutes(schedule.start_time)
+  const visibleMinutes = Math.min(schedule.duration_minutes, MINUTES_PER_DAY - startMinutes)
+  const preview = useSegmentPreview(schedule.id)
+  useEffect(() => {
+    preview.load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule.id])
+  const activeSegment = live
+    ? resolveActiveSegment(preview.segments ?? [], minutesInTimeZone(now, timezone) - startMinutes)
+    : null
+  const defaultSegment = firstSegment(preview.segments ?? [])
+  const effectiveSegment = live ? activeSegment : defaultSegment
+  const gameColor = useGameColor(
+    effectiveSegment?.game_id ?? null,
+    effectiveSegment?.game_name ?? null
+  )
+
+  return (
+    <Tooltip onOpenChange={open => open && preview.load()}>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => onEditSchedule(schedule, dateStr)}
+          aria-label={`${dateStr}：${schedule.start_time.slice(0, 5)} ${schedule.title_template || '（已排程）'}${live ? '，正在開台' : ''}`}
+          className={cn(
+            'absolute top-1 bottom-1 z-10 overflow-hidden rounded px-2 py-1 text-left text-label leading-tight',
+            gameColor ? 'text-white' : scheduleBlockClass(schedule.kind)
+          )}
+          style={{
+            left: `${xForMinutes(startMinutes)}%`,
+            width: `${xForMinutes(visibleMinutes)}%`,
+            ...(gameColor && { background: gameColor }),
+          }}
+        >
+          <BlockContent
+            isLive={live}
+            fallbackTitle={schedule.title_template || schedule.start_time.slice(0, 5)}
+            fallbackSubtitle={isReplacement ? '本次調整' : schedule.start_time.slice(0, 5)}
+            activeSegment={activeSegment}
+            defaultSegment={defaultSegment}
+            colored={!!gameColor}
+          />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <SchedulePreview
+          schedule={schedule}
+          segments={preview.segments}
+          loading={preview.loading}
+        />
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 function WeekDayRow({
   day,
   schedules,
+  exceptions,
   today,
   now,
   nowX,
   columnCount,
+  timezone,
   onEditSchedule,
   onCreateForDate,
+  onRestoreOccurrence,
 }: WeekDayRowProps) {
   const dateStr = toDateStr(day)
-  const resolved = resolveScheduleForDate(schedules, dateStr)
+  const resolved = resolveSchedulesForDate(schedules, dateStr, timezone, exceptions)
+  const cancelled = cancelledSchedulesForDate(schedules, dateStr, exceptions)
+  const replacementIds = new Set(
+    exceptions
+      .filter(exception => exception.occurrence_date === dateStr)
+      .map(exception => exception.replacement_schedule_id)
+  )
   const isToday = dateStr === today
-  const live = resolved ? isLiveNow(resolved, dateStr, now) : false
-
-  const startMinutes = resolved ? timeStrToMinutes(resolved.start_time) : 0
-  const visibleMinutes = resolved
-    ? Math.min(resolved.duration_minutes, MINUTES_PER_DAY - startMinutes)
-    : 0
-
-  const continuation = resolveContinuationForDate(schedules, dateStr)
-  const continuationLive =
-    continuation !== null &&
-    isToday &&
-    now.getHours() * 60 + now.getMinutes() < continuation.minutes
-
-  const resolvedPreview = useSegmentPreview(resolved?.id ?? null)
+  const nowMinutes = minutesInTimeZone(now, timezone)
+  const continuation = resolveContinuationForDate(schedules, dateStr, timezone, exceptions)
+  const continuationLive = continuation !== null && isToday && nowMinutes < continuation.minutes
   const continuationPreview = useSegmentPreview(continuation?.schedule.id ?? null)
-
-  // Every visible block shows its category, not just the live one — fetch
-  // eagerly rather than waiting for hover.
   useEffect(() => {
-    resolvedPreview.load()
     continuationPreview.load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolved?.id, continuation?.schedule.id])
-
-  const resolvedActiveSegment = live
-    ? resolveActiveSegment(
-        resolvedPreview.segments ?? [],
-        now.getHours() * 60 + now.getMinutes() - startMinutes
-      )
-    : null
-  const resolvedDefaultSegment = firstSegment(resolvedPreview.segments ?? [])
+  }, [continuation?.schedule.id])
   const continuationActiveSegment =
     continuationLive && continuation
       ? resolveActiveSegment(
           continuationPreview.segments ?? [],
-          MINUTES_PER_DAY -
-            timeStrToMinutes(continuation.schedule.start_time) +
-            (now.getHours() * 60 + now.getMinutes())
+          MINUTES_PER_DAY - timeStrToMinutes(continuation.schedule.start_time) + nowMinutes
         )
       : null
   const continuationDefaultSegment = firstSegment(continuationPreview.segments ?? [])
-
-  const resolvedEffectiveSegment = live ? resolvedActiveSegment : resolvedDefaultSegment
   const continuationEffectiveSegment = continuationLive
     ? continuationActiveSegment
     : continuationDefaultSegment
-  const resolvedGameColor = useGameColor(
-    resolvedEffectiveSegment?.game_id ?? null,
-    resolvedEffectiveSegment?.game_name ?? null
-  )
   const continuationGameColor = useGameColor(
     continuationEffectiveSegment?.game_id ?? null,
     continuationEffectiveSegment?.game_name ?? null
   )
 
-  const baseLabel = resolved
-    ? `${dateStr}：${resolved.start_time.slice(0, 5)} ${resolved.title_template || '（已排程）'}${live ? '，正在開台' : ''}`
-    : `${dateStr}：尚未排程`
-  const continuationLabel = continuation
-    ? `；延續自昨晚，播到 ${formatMinutesLabel(continuation.minutes)}${continuationLive ? '，正在開台' : ''}`
-    : ''
-
   return (
-    <button
-      type="button"
-      onClick={() => (resolved ? onEditSchedule(resolved, dateStr) : onCreateForDate(dateStr))}
-      aria-label={baseLabel + continuationLabel}
-      className="flex w-full border-b border-border text-left last:border-b-0 hover:bg-accent/40"
-    >
+    <div className="flex w-full border-b border-border text-left last:border-b-0 hover:bg-accent/40">
       <div
         style={{ width: LEFT_COL_WIDTH }}
         className={cn(
@@ -223,30 +273,34 @@ function WeekDayRow({
       >
         <div>{WEEKDAY_LABELS[weekdayOf(day)]}</div>
         <div className="text-label text-muted-foreground">
-          {day.getMonth() + 1}/{day.getDate()}
+          {day.getUTCMonth() + 1}/{day.getUTCDate()}
         </div>
       </div>
 
       <div className="relative min-w-0 flex-1" style={{ height: ROW_HEIGHT }}>
-        <div className="absolute inset-0 flex">
+        <button
+          type="button"
+          className="absolute inset-0"
+          onClick={() => onCreateForDate(dateStr)}
+          aria-label={resolved.length === 0 ? `${dateStr}：尚未排程` : `新增 ${dateStr} 排程`}
+        />
+        <div className="pointer-events-none absolute inset-0 flex">
           {Array.from({ length: columnCount }, (_, h) => (
             <div key={h} className="min-w-0 flex-1 border-r border-border/20" />
           ))}
         </div>
-
         {isToday && (
           <div
-            className="absolute top-0 bottom-0 w-px bg-destructive"
+            className="pointer-events-none absolute top-0 bottom-0 w-px bg-destructive"
             style={{ left: `${nowX}%` }}
           />
         )}
-
         {continuation && (
           <Tooltip onOpenChange={open => open && continuationPreview.load()}>
             <TooltipTrigger asChild>
               <div
                 className={cn(
-                  'absolute top-1 bottom-1 overflow-hidden rounded-r px-2 py-1 text-label leading-tight',
+                  'absolute top-1 bottom-1 z-10 overflow-hidden rounded-r px-2 py-1 text-label leading-tight',
                   continuationGameColor
                     ? 'text-white'
                     : scheduleBlockClass(continuation.schedule.kind)
@@ -279,42 +333,38 @@ function WeekDayRow({
             </TooltipContent>
           </Tooltip>
         )}
-
-        {resolved && (
-          <Tooltip onOpenChange={open => open && resolvedPreview.load()}>
-            <TooltipTrigger asChild>
-              <div
-                className={cn(
-                  'absolute top-1 bottom-1 overflow-hidden rounded px-2 py-1 text-label leading-tight',
-                  resolvedGameColor ? 'text-white' : scheduleBlockClass(resolved.kind)
-                )}
-                style={{
-                  left: `${xForMinutes(startMinutes)}%`,
-                  width: `${xForMinutes(visibleMinutes)}%`,
-                  ...(resolvedGameColor && { background: resolvedGameColor }),
-                }}
-              >
-                <BlockContent
-                  isLive={live}
-                  fallbackTitle={resolved.title_template || resolved.start_time.slice(0, 5)}
-                  fallbackSubtitle={resolved.start_time.slice(0, 5)}
-                  activeSegment={resolvedActiveSegment}
-                  defaultSegment={resolvedDefaultSegment}
-                  colored={!!resolvedGameColor}
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <SchedulePreview
-                schedule={resolved}
-                segments={resolvedPreview.segments}
-                loading={resolvedPreview.loading}
-              />
-            </TooltipContent>
-          </Tooltip>
-        )}
+        {resolved.map(schedule => (
+          <WeekScheduleBlock
+            key={schedule.id}
+            schedule={schedule}
+            dateStr={dateStr}
+            now={now}
+            timezone={timezone}
+            isReplacement={replacementIds.has(schedule.id)}
+            onEditSchedule={onEditSchedule}
+          />
+        ))}
+        {cancelled.map(schedule => {
+          const startMinutes = timeStrToMinutes(schedule.start_time)
+          const visibleMinutes = Math.min(schedule.duration_minutes, MINUTES_PER_DAY - startMinutes)
+          return (
+            <button
+              key={`cancelled-${schedule.id}`}
+              type="button"
+              onClick={() => onRestoreOccurrence(schedule, dateStr)}
+              aria-label={`${dateStr}：已取消，點擊恢復`}
+              className="absolute top-1 bottom-1 z-10 overflow-hidden rounded border border-dashed border-border bg-muted px-2 text-left text-label text-muted-foreground line-through"
+              style={{
+                left: `${xForMinutes(startMinutes)}%`,
+                width: `${xForMinutes(visibleMinutes)}%`,
+              }}
+            >
+              已取消
+            </button>
+          )
+        })}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -327,12 +377,21 @@ function WeekDayRow({
 export function WeekTimeline({
   days,
   schedules,
+  exceptions,
+  timezone,
   onEditSchedule,
   onCreateForDate,
+  onRestoreOccurrence,
 }: WeekTimelineProps) {
   const now = new Date()
-  const today = toDateStr(now)
-  const nowX = xForMinutes(now.getHours() * 60 + now.getMinutes())
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+  const nowX = xForMinutes(minutesInTimeZone(now, timezone))
+  const offset = timeZoneOffsetLabel(timezone, now)
 
   const { ref, width } = useElementWidth<HTMLDivElement>()
   const trackWidth = Math.max(width - LEFT_COL_WIDTH, 0)
@@ -349,7 +408,9 @@ export function WeekTimeline({
           style={{ width: LEFT_COL_WIDTH }}
           className="flex shrink-0 items-center justify-center border-r border-border p-2 text-center text-label text-muted-foreground"
         >
-          GMT+8
+          <span className="truncate" title={offset}>
+            {offset}
+          </span>
         </div>
         {Array.from({ length: columnCount }, (_, i) => (
           <div
@@ -366,12 +427,15 @@ export function WeekTimeline({
           key={toDateStr(day)}
           day={day}
           schedules={schedules}
+          exceptions={exceptions}
           today={today}
           now={now}
           nowX={nowX}
           columnCount={columnCount}
+          timezone={timezone}
           onEditSchedule={onEditSchedule}
           onCreateForDate={onCreateForDate}
+          onRestoreOccurrence={onRestoreOccurrence}
         />
       ))}
     </div>

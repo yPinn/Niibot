@@ -234,6 +234,13 @@ export const API_ENDPOINTS = {
     settings: join('/api/stream-schedule/settings'),
     schedules: join('/api/stream-schedule/schedules'),
     schedule: (id: number) => join(`/api/stream-schedule/schedules/${id}`),
+    occurrenceExceptions: join('/api/stream-schedule/occurrences/exceptions'),
+    occurrenceCancel: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}/cancel`),
+    occurrenceRestore: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}`),
+    occurrenceReplace: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}/replace`),
     segments: (scheduleId: number) => join(`/api/stream-schedule/schedules/${scheduleId}/segments`),
     segment: (id: number) => join(`/api/stream-schedule/segments/${id}`),
     gamesSearch: (query: string) =>
