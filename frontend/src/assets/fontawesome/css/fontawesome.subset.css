@@ -676,6 +676,10 @@
   color: var(--fa-inverse, #fff);
 }
 
+.fa-trash-can::before {
+  content: '\f2ed';
+}
+
 .fa-user-xmark::before {
   content: '\f235';
 }
@@ -702,10 +706,6 @@
 
 .fa-box-archive::before {
   content: '\f187';
-}
-
-.fa-gavel::before {
-  content: '\f0e3';
 }
 
 .fa-compass::before {
@@ -1312,6 +1312,11 @@
   --fa-font-duotone: normal 900 1em/1 'Font Awesome 6 Duotone';
 }
 
+.fad.fa-trash-can::after,
+.fa-duotone.fa-trash-can::after {
+  content: '\f2ed\f2ed';
+}
+
 .fad.fa-user-xmark::after,
 .fa-duotone.fa-user-xmark::after {
   content: '\f235\f235';
@@ -1345,11 +1350,6 @@
 .fad.fa-box-archive::after,
 .fa-duotone.fa-box-archive::after {
   content: '\f187\f187';
-}
-
-.fad.fa-gavel::after,
-.fa-duotone.fa-gavel::after {
-  content: '\f0e3\f0e3';
 }
 
 .fad.fa-compass::after,

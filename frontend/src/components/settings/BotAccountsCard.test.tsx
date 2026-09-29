@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, type MockedFunction, vi } from 'vitest'
 
@@ -100,7 +100,7 @@ describe('BotAccountsCard', () => {
         platform_user_id: 'niibot',
         login: 'niibot_',
         display_name: 'Niibot',
-        avatar: null,
+        avatar: 'https://static-cdn.jtvnw.net/jtv_user_pictures/niibot.png',
         is_system_default: true,
         requires_reauth: false,
         last_validated_at: null,
@@ -115,7 +115,7 @@ describe('BotAccountsCard', () => {
         platform_user_id: 'bot-b',
         login: 'bot_b',
         display_name: 'Bot B',
-        avatar: null,
+        avatar: 'https://static-cdn.jtvnw.net/jtv_user_pictures/bot-b.png',
         is_system_default: false,
         requires_reauth: false,
         last_validated_at: null,
@@ -164,6 +164,7 @@ describe('BotAccountsCard', () => {
       channel_id: 'channel-a',
       channel_name: 'alice',
       display_name: 'Alice',
+      avatar: 'https://static-cdn.jtvnw.net/jtv_user_pictures/alice.png',
       enabled: true,
       status: 'valid',
       last_checked_at: '2026-09-20T01:00:00Z',
@@ -197,16 +198,28 @@ describe('BotAccountsCard', () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
-    expect(await screen.findByText('Twitch 帳號與授權')).toBeInTheDocument()
+    expect(await screen.findByText('Twitch 帳號')).toBeInTheDocument()
     expect(screen.getByText('實況主帳號')).toBeInTheDocument()
     expect((await screen.findAllByText('Niibot')).length).toBeGreaterThan(0)
     expect(screen.getByText('Bot B')).toBeInTheDocument()
-    expect(screen.getByText('系統管理')).toBeInTheDocument()
+    expect(screen.getByText('系統帳號')).toBeInTheDocument()
+    expect(screen.queryByText('查看狀態或管理授權。')).not.toBeInTheDocument()
+    const broadcasterRegion = screen.getByRole('region', { name: '實況主帳號' })
+    const senderPanel = screen.getByRole('complementary', { name: '發言帳號' })
+    expect(within(broadcasterRegion).queryByRole('combobox')).not.toBeInTheDocument()
+    expect(within(senderPanel).getByRole('combobox', { name: '選擇發言帳號' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Alice 的 Twitch 大頭貼' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Niibot 的 Twitch 大頭貼' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Bot B 的 Twitch 大頭貼' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '邀請帳號' }))
+    const inviteButton = within(senderPanel).getByRole('button', { name: '邀請發言帳號' })
+    expect(inviteButton).not.toHaveTextContent('邀請')
+    await user.hover(inviteButton)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('邀請發言帳號')
+    await user.click(inviteButton)
 
     await waitFor(() => expect(mockCreateBotInvite).toHaveBeenCalledWith('channel-a'))
-    expect(screen.getByDisplayValue(/\/bot-invite\/opaque/)).toBeInTheDocument()
+    expect(screen.queryByDisplayValue(/\/bot-invite\/opaque/)).not.toBeInTheDocument()
     expect(screen.queryByText(/access_token|refresh_token/)).not.toBeInTheDocument()
     const copyInvite = screen.getByRole('button', { name: '複製邀請連結' })
     expect(copyInvite).not.toHaveTextContent('複製')
@@ -222,13 +235,16 @@ describe('BotAccountsCard', () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
-    expect(await screen.findByText('檢查 Twitch 授權，並選擇聊天室發言帳號。')).toBeInTheDocument()
-    expect(screen.getByText('解除後，Niibot 會停止這個頻道的服務。')).toBeInTheDocument()
+    expect(await screen.findByText('查看授權狀態並選擇發言帳號。')).toBeInTheDocument()
+    expect(screen.queryByText('解除後會停止此頻道的服務。')).not.toBeInTheDocument()
+    expect(screen.queryByText('切換完成前仍使用目前帳號。')).not.toBeInTheDocument()
     expect(
-      screen.getByText(
-        /同一個 Bot 的憑證只保存一份；每個頻道仍需帳號本人同意。.*邀請連結只能使用一次，30 分鐘後失效。/
-      )
-    ).toBeInTheDocument()
+      screen.queryByText('每個頻道需個別同意；連結 30 分鐘內一次有效。')
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/憑證只保存一份/)).not.toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(
+      /\bMOD\b|\bDashboard\b|scope|credential|provider|\bToken\b/i
+    )
 
     const checkBroadcaster = await screen.findByRole('button', { name: '重新檢查實況主授權' })
     const reauthorizeBroadcaster = screen.getByRole('button', {
@@ -284,9 +300,9 @@ describe('BotAccountsCard', () => {
     render(<BotAccountsCard />)
 
     expect(await screen.findByRole('status')).toHaveTextContent('目前使用：Niibot')
-    await user.click(screen.getByRole('combobox', { name: '聊天室發言帳號' }))
+    await user.click(screen.getByRole('combobox', { name: '選擇發言帳號' }))
     await user.click(screen.getByRole('option', { name: /Bot B/ }))
-    await user.click(screen.getByRole('button', { name: '套用發言帳號' }))
+    await user.click(screen.getByRole('button', { name: '切換發言帳號' }))
 
     await waitFor(() =>
       expect(mockUpdateBotAccountSelection).toHaveBeenCalledWith('channel-a', 'bot-b')
@@ -331,7 +347,7 @@ describe('BotAccountsCard', () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
-    await user.click(await screen.findByRole('combobox', { name: '聊天室發言帳號' }))
+    await user.click(await screen.findByRole('combobox', { name: '選擇發言帳號' }))
     const sameIdentity = screen.getByRole('option', { name: 'Alice（不能使用頻道主帳號）' })
 
     expect(sameIdentity).toHaveAttribute('aria-disabled', 'true')
@@ -351,16 +367,16 @@ describe('BotAccountsCard', () => {
 
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent('仍使用 Niibot')
-    expect(status).toHaveTextContent('請先在 Twitch 將 Bot B 設為 MOD')
+    expect(status).toHaveTextContent('請先在 Twitch 將 Bot B 設為頻道管理員')
     expect(status).not.toHaveTextContent('bot_not_moderator')
   })
 
   it.each([
-    ['bot_authorization_required', '請由頻道擁有者重新授權 Bot B，再重試。'],
-    ['bot_scope_required', '請由頻道擁有者重新授權 Bot B，再重試。'],
-    ['broadcaster_authorization_required', '請由頻道擁有者更新實況主授權，再重試。'],
-    ['broadcaster_scope_required', '請由頻道擁有者更新實況主授權，再重試。'],
-    ['provider_unavailable', '請稍後再試；若持續失敗，請檢查 Twitch 授權與 MOD 設定。'],
+    ['bot_authorization_required', '請先重新授權 Bot B，再重試。'],
+    ['bot_scope_required', '請先重新授權 Bot B，再重試。'],
+    ['broadcaster_authorization_required', '請先更新實況主授權，再重試。'],
+    ['broadcaster_scope_required', '請先更新實況主授權，再重試。'],
+    ['provider_unavailable', '暫時無法切換，請稍後再試。'],
   ])('maps %s to safe recovery guidance', async (errorCode, expectedCopy) => {
     mockGetBotAccountSelection.mockResolvedValueOnce({
       desired_bot_user_id: 'bot-b',
@@ -396,19 +412,20 @@ describe('BotAccountsCard', () => {
     const user = userEvent.setup()
     render(<BotAccountsCard />)
 
-    await user.click(await screen.findByRole('combobox', { name: '聊天室發言帳號' }))
+    await user.click(await screen.findByRole('combobox', { name: '選擇發言帳號' }))
     await user.click(screen.getByRole('option', { name: /Bot B/ }))
-    await user.click(screen.getByRole('button', { name: '套用發言帳號' }))
+    await user.click(screen.getByRole('button', { name: '切換發言帳號' }))
 
     await waitFor(() => expect(mockListBotAccounts).toHaveBeenCalledTimes(2))
     expect(screen.getByRole('status')).toHaveTextContent('目前使用：Bot B')
   })
 
-  it('shows unknown check times without leaking invalid timestamps', async () => {
+  it('keeps account status concise without showing check timestamps', async () => {
     mockGetBroadcasterAuthorization.mockResolvedValueOnce({
       channel_id: 'channel-a',
       channel_name: 'alice',
       display_name: '',
+      avatar: null,
       enabled: false,
       status: 'not_checked',
       last_checked_at: 'not-a-date',
@@ -418,7 +435,9 @@ describe('BotAccountsCard', () => {
 
     render(<BotAccountsCard />)
 
-    expect(await screen.findByText('檢查時間未知')).toBeInTheDocument()
+    await screen.findByText('@alice')
+    expect(screen.queryByText('檢查時間未知')).not.toBeInTheDocument()
+    expect(screen.queryByText(/上次確認/)).not.toBeInTheDocument()
     expect(screen.getByText('Niibot 已停止')).toBeInTheDocument()
     expect(screen.getByText('@alice')).toBeInTheDocument()
   })
@@ -447,8 +466,9 @@ describe('BotAccountsCard', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '從這個頻道移除 Bot B' }))
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('其他頻道若仍在使用，授權會保留')
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('既有設定與歷史紀錄不會刪除')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      '這個帳號將不再供目前頻道使用；其他頻道不受影響。'
+    )
     await user.click(screen.getByRole('button', { name: '確認移除' }))
 
     await waitFor(() => expect(mockUnlinkBotAccount).toHaveBeenCalledWith('channel-a', 'bot-b'))
@@ -463,8 +483,10 @@ describe('BotAccountsCard', () => {
 
     const confirm = screen.getByRole('button', { name: '確認停止並解除' })
     expect(confirm).toBeDisabled()
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('你目前所有 Dashboard 登入會立即登出')
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('設定與歷史紀錄會保留')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      'Niibot 會停止此頻道的服務，你也會登出管理後台。設定與紀錄會保留。'
+    )
+    expect(screen.getByRole('alertdialog')).not.toHaveTextContent('Dashboard')
     await user.type(screen.getByLabelText('輸入頻道帳號以確認'), 'alice')
     expect(confirm).toBeEnabled()
   })
@@ -488,7 +510,7 @@ describe('BotAccountsCard', () => {
     await waitFor(() => expect(reauthorize).toBeEnabled())
   })
 
-  it('lets a MOD switch approved accounts but not manage credentials', async () => {
+  it('lets a channel manager switch approved accounts without managing authorization', async () => {
     mockUseTenant.mockReturnValue({
       tenants: [
         {
@@ -512,8 +534,8 @@ describe('BotAccountsCard', () => {
     render(<BotAccountsCard />)
 
     expect((await screen.findAllByText('Niibot')).length).toBeGreaterThan(0)
-    expect(screen.getByRole('combobox', { name: '聊天室發言帳號' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '邀請帳號' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: '選擇發言帳號' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '邀請發言帳號' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '重新授權 Bot B' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '從這個頻道移除 Bot B' })).not.toBeInTheDocument()
   })
@@ -528,7 +550,7 @@ describe('BotAccountsCard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('發言帳號載入失敗')
     expect(screen.queryByText('Bot B')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '重新載入聊天室發言帳號' }))
+    await user.click(screen.getByRole('button', { name: '重新載入發言帳號' }))
 
     expect(await screen.findByText('Bot B')).toBeInTheDocument()
     expect(mockGetBroadcasterAuthorization).toHaveBeenCalledTimes(1)

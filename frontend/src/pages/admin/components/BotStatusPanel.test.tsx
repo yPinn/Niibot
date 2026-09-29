@@ -103,6 +103,15 @@ describe('BotStatusPanel', () => {
     expect(screen.queryByText(/新增帳號/)).not.toBeInTheDocument()
   })
 
+  it('identifies the Twitch account with the shared avatar pattern', () => {
+    renderPanel({
+      ...BOT,
+      avatar: 'https://static-cdn.jtvnw.net/jtv_user_pictures/niibot.png',
+    })
+
+    expect(screen.getByRole('img', { name: 'Niibot 的 Twitch 大頭貼' })).toBeInTheDocument()
+  })
+
   it('creates one expected-account invite and replaces the action with a safe link', async () => {
     const user = userEvent.setup()
     renderPanel()

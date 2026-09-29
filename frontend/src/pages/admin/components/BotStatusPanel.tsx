@@ -5,6 +5,7 @@ import type { BotTokenInfo } from '@/api/admin'
 import { type BotInviteCreated, createSystemBotResetInvite } from '@/api/botAccounts'
 import type { RedemptionConfig, TwitchReward } from '@/api/events'
 import { Icon, Spinner, TwitchRoleBadge } from '@/components/primitives'
+import { TwitchAccountIdentity } from '@/components/TwitchAccountIdentity'
 import {
   Badge,
   Button,
@@ -66,6 +67,7 @@ export function BotStatusPanel({
   onAuthToggle: () => void
 }) {
   const botCfg = bot ? BOT_STATUS_CONFIG[bot.status] : null
+  const botName = bot ? bot.display_name || bot.name : ''
   const [resetting, setResetting] = useState(false)
   const [resetInvite, setResetInvite] = useState<BotInviteCreated | null>(null)
 
@@ -93,7 +95,7 @@ export function BotStatusPanel({
           <div className="space-y-section">
             <div className="flex items-center gap-element">
               <Skeleton className="size-10 shrink-0 rounded-full" />
-              <div className="flex-1 space-y-1.5">
+              <div className="flex-1 space-y-element">
                 <Skeleton className="h-4 w-28" />
                 <Skeleton className="h-3 w-20" />
               </div>
@@ -104,28 +106,13 @@ export function BotStatusPanel({
         ) : bot && botCfg ? (
           <div className="space-y-section">
             <div className="flex items-start gap-element">
-              {bot.avatar ? (
-                <img
-                  src={bot.avatar}
-                  alt={bot.display_name || bot.name}
-                  className="size-10 shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <div className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-full">
-                  <Icon
-                    icon="fa-solid fa-robot"
-                    size="sm"
-                    wrapperClassName="text-muted-foreground"
-                  />
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <TwitchRoleBadge role="bot" size={18} className="shrink-0 opacity-80" />
-                  <p className="truncate text-sub font-medium">{bot.display_name || bot.name}</p>
-                </div>
-                <p className="truncate font-mono text-label text-muted-foreground">@{bot.name}</p>
-              </div>
+              <TwitchAccountIdentity
+                className="flex-1"
+                avatar={bot.avatar}
+                displayName={botName}
+                login={bot.name}
+                badges={<TwitchRoleBadge role="bot" size={18} className="shrink-0 opacity-80" />}
+              />
               <Badge className={`shrink-0 gap-1.5 ${botCfg.className}`}>
                 <Icon icon={botCfg.icon} size="xs" />
                 {botCfg.label}
@@ -171,7 +158,7 @@ export function BotStatusPanel({
         <Separator />
 
         <div className="space-y-element">
-          <div className="space-y-1">
+          <div className="space-y-element">
             <div className="flex items-center gap-element">
               <Icon icon="fa-solid fa-coins" size="xs" wrapperClassName="text-muted-foreground" />
               <p className="select-none text-label font-medium">使用資格獎勵</p>
