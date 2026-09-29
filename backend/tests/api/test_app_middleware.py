@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from unittest.mock import patch
 
@@ -47,9 +48,9 @@ def _reset_settings():
 
 
 @pytest.fixture
-def client() -> TestClient:
-    """Full app via create_app() with a no-op lifespan + two test-only routes."""
-    with patch("app.lifespan", _no_lifespan):
+def client() -> Iterator[TestClient]:
+    """Full app without mutating process-wide logging or starting real services."""
+    with patch("app.lifespan", _no_lifespan), patch("app.setup_logging"):
         test_app = create_app()
 
     @test_app.get("/_test/ok")
@@ -71,7 +72,14 @@ def client() -> TestClient:
     async def _validate(body: _Body):
         return {"count": body.count}
 
-    return TestClient(test_app, raise_server_exceptions=False)
+    root_logger = logging.getLogger()
+    previous_level = root_logger.level
+    root_logger.setLevel(logging.INFO)
+    try:
+        with TestClient(test_app, raise_server_exceptions=False) as test_client:
+            yield test_client
+    finally:
+        root_logger.setLevel(previous_level)
 
 
 # ── Security headers ──────────────────────────────────────────────────────────
