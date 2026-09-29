@@ -11,43 +11,43 @@ type FailureCopy = {
 }
 
 const DEFAULT_FAILURE: FailureCopy = {
-  description: 'Bot 授權未完成，請重新取得授權連結。',
-  action: '若仍無法完成，請通知 Niibot 管理員。',
+  description: '授權未完成，請重新取得邀請連結。',
+  action: '若仍無法完成，請通知邀請人。',
 }
 
 const FAILURE_COPY: Record<string, FailureCopy> = {
   authorization_denied: {
     description: '你已取消 Twitch 授權。',
-    action: '如需使用 Bot，請以新的授權連結重試。',
+    action: '如要繼續，請向邀請人索取新連結。',
   },
   provider_unavailable: {
     description: 'Twitch 授權暫時無法使用。',
     action: '請稍後以新的授權連結重試。',
   },
   bot_invite_expired: {
-    description: 'Bot 授權連結已失效。',
+    description: '機器人授權連結已失效。',
     action: '請向邀請人索取新的授權連結。',
   },
   bot_invite_already_used: {
-    description: 'Bot 授權連結已失效。',
+    description: '機器人授權連結已失效。',
     action: '請向邀請人索取新的授權連結。',
   },
   bot_invite_wrong_account: {
-    description: '請使用指定的 Bot 帳號完成授權。',
+    description: '請使用邀請指定的 Twitch 帳號。',
     action: '切換帳號後，請以新的授權連結重試。',
   },
   bot_account_missing_scopes: {
-    description: 'Bot 權限未完整授予。',
-    action: '請以新的授權連結重試並接受必要權限。',
+    description: '尚未完成必要授權。',
+    action: '請重新開啟邀請連結，並完成 Twitch 上的確認。',
   },
   bot_account_role_conflict: {
-    description: '這個 Twitch 帳號已作為 Niibot 實況主使用。',
-    action: '請改用另一個 Bot 帳號。',
+    description: '這個 Twitch 帳號目前無法作為機器人帳號。',
+    action: '請改用另一個 Twitch 帳號。',
   },
 }
 
 export default function BotAuthorizationResult() {
-  useDocumentTitle('Bot 授權結果')
+  useDocumentTitle('機器人授權結果')
   useSensitivePageMetadata()
   const [params] = useSearchParams()
   const succeeded = params.get('status') === 'success'
@@ -68,11 +68,9 @@ export default function BotAuthorizationResult() {
                 wrapperClassName={succeeded ? 'text-status-online' : 'text-destructive'}
               />
             </div>
-            <h1 className="text-page-title font-bold">
-              {succeeded ? 'Bot 授權完成' : 'Bot 授權未完成'}
-            </h1>
+            <h1 className="text-page-title font-bold">{succeeded ? '授權已完成' : '授權未完成'}</h1>
             <CardDescription className="max-w-[48ch] text-balance">
-              {succeeded ? '邀請人現在可以在自己的頻道選用這個 Bot 帳號。' : failure.description}
+              {succeeded ? '邀請人現在可以在自己的頻道使用這個帳號。' : failure.description}
             </CardDescription>
           </CardHeader>
           <CardContent className="pb-card">

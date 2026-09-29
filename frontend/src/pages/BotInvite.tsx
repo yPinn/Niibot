@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { declineBotInvite, getPublicBotInvite, type PublicBotInvite } from '@/api/botAccounts'
 import { assertTrustedOAuthUrl } from '@/api/config'
 import { FadeIn, Icon, Spinner } from '@/components/primitives'
+import { TwitchAccountIdentity } from '@/components/TwitchAccountIdentity'
 import {
   Alert,
   AlertDescription,
@@ -18,33 +19,23 @@ import { useSensitivePageMetadata } from '@/hooks/useSensitivePageMetadata'
 import { formatDateTimeShort } from '@/lib/format'
 
 function terminalMessage(status: PublicBotInvite['status']) {
-  if (status === 'declined') return '已拒絕這次 Bot 授權邀請'
-  if (status === 'authorized') return '這次 Bot 授權已經完成'
-  return '這個 Bot 授權邀請已過期'
+  if (status === 'declined') return '邀請已拒絕'
+  if (status === 'authorized') return '授權已完成'
+  return '邀請已過期'
 }
 
-/** 第一句：說明這封邀請要你做什麼。Twitch 授權頁不會交代這件事。 */
-function purposeIntro(purpose: PublicBotInvite['purpose'], name: string) {
+function purposeIntro(purpose: PublicBotInvite['purpose'], name: string, channelName: string) {
   if (purpose === 'reauthorize') {
-    return `${name} 邀請你更新 Bot 授權，讓 Niibot 繼續在其頻道運作。`
+    return `${name} 邀請你重新授權這個 Twitch 帳號，讓 Niibot 繼續在 @${channelName} 發言。`
   }
   if (purpose === 'system_default_reset') {
-    return '請使用這個帳號更新 Niibot 的系統 Bot 授權。'
+    return '請重新授權這個 Twitch 帳號，讓 Niibot 繼續使用。'
   }
-  return `${name} 邀請你讓 Niibot 以你的 Twitch 帳號，在其頻道擔任聊天機器人。`
+  return `${name} 想使用您的帳號，作為該頻道的機器人帳號。`
 }
 
-const CAPABILITY_SUMMARY: { icon: string; text: string }[] = [
-  { icon: 'fa-solid fa-comments', text: '以你的帳號讀寫聊天室訊息、執行指令與發送公告' },
-  {
-    icon: 'fa-solid fa-gavel',
-    text: '在你具備 MOD 身分時執行禁言、封鎖等管理操作',
-  },
-  { icon: 'fa-solid fa-users', text: '讀取運作所需的追隨、訂閱與聊天室資訊' },
-]
-
 export default function BotInvite() {
-  useDocumentTitle('Bot 授權邀請')
+  useDocumentTitle('機器人授權邀請')
   useSensitivePageMetadata()
   const { publicToken = '' } = useParams()
   const [searchParams] = useSearchParams()
@@ -93,24 +84,50 @@ export default function BotInvite() {
   }
 
   const isSystemReset = invite?.purpose === 'system_default_reset'
+  const profileName = invite ? invite.display_name || invite.channel_name : ''
+  const consentPoints = invite
+    ? [
+        {
+          icon: 'fa-solid fa-comments',
+          label: '會做什麼',
+          description: isSystemReset
+            ? 'Niibot 會用這個帳號發言並執行必要的管理操作。'
+            : `Niibot 會用這個帳號在 @${invite.channel_name} 發言；若它是頻道管理員，也能執行管理操作。`,
+        },
+        {
+          icon: 'fa-solid fa-link',
+          label: '可用頻道',
+          description: isSystemReset
+            ? '這次只會更新 Niibot 的系統機器人授權。'
+            : `只供 @${invite.channel_name} 使用；其他頻道需要你另外同意。`,
+        },
+        {
+          icon: 'fa-solid fa-shield-halved',
+          label: '撤回授權',
+          description: isSystemReset
+            ? 'Niibot 不會取得你的 Twitch 密碼。你可隨時撤回授權；撤回後，使用系統機器人的頻道會停止相關功能。'
+            : 'Niibot 不會取得你的 Twitch 密碼。你可隨時撤回授權；撤回後，使用此帳號的頻道會停止相關功能。',
+        },
+      ]
+    : []
 
   return (
     <div className="bg-background flex min-h-svh items-center justify-center p-page md:p-page-lg">
-      <FadeIn className="w-full max-w-2xl">
+      <FadeIn className="w-full max-w-xl">
         <Card className="overflow-hidden">
-          <CardHeader className="grid grid-cols-[auto_1fr] items-start gap-section text-left">
+          <CardHeader className="grid grid-cols-[auto_1fr] items-start gap-section pb-card text-left">
             <div className="bg-primary/10 flex size-10 items-center justify-center rounded-full">
               <Icon icon="fa-solid fa-robot" wrapperClassName="text-primary" />
             </div>
-            <div className="space-y-1">
-              <h1 className="text-page-title font-bold">授權 Bot 帳號</h1>
-              <CardDescription className="max-w-[52ch]">
-                確認這個帳號會如何使用，再前往 Twitch 完成授權。
+            <div className="space-y-element">
+              <h1 className="text-page-title font-bold">授權 Twitch 帳號擔任機器人</h1>
+              <CardDescription className="max-w-[44ch]">
+                確認後，Niibot 會依下列方式使用你的帳號。
               </CardDescription>
             </div>
           </CardHeader>
 
-          <CardContent className="flex flex-col gap-section pb-card">
+          <CardContent className="flex flex-col gap-card pb-card">
             {capabilityError || (error && !invite) ? (
               <Alert variant="destructive">
                 <AlertDescription>{capabilityError || error}</AlertDescription>
@@ -140,79 +157,42 @@ export default function BotInvite() {
                 )}
 
                 <section
-                  aria-labelledby="invite-account"
-                  className="bg-muted grid gap-element rounded-lg p-section sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] sm:items-center"
+                  aria-label={isSystemReset ? '系統機器人帳號' : '邀請頻道'}
+                  className="bg-muted/70 flex flex-col gap-card rounded-lg p-card"
                 >
-                  <div className="flex min-w-0 items-center gap-element">
-                    <div className="bg-background flex size-9 shrink-0 items-center justify-center rounded-full">
-                      <Icon icon="fa-brands fa-twitch" size="sm" wrapperClassName="text-primary" />
-                    </div>
-                    <div className="min-w-0">
-                      <p id="invite-account" className="text-label text-muted-foreground">
-                        {isSystemReset ? '系統 Bot 帳號' : '邀請頻道'}
-                      </p>
-                      <p className="truncate text-sub font-semibold">
-                        {invite.display_name || invite.channel_name}
-                      </p>
-                      <p className="truncate font-mono text-label text-muted-foreground">
-                        @{invite.channel_name}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-sub text-muted-foreground">
-                    {purposeIntro(invite.purpose, invite.display_name || invite.channel_name)}
+                  <TwitchAccountIdentity
+                    avatar={invite.avatar}
+                    displayName={profileName}
+                    login={invite.channel_name}
+                    label={isSystemReset ? '系統機器人帳號' : '邀請頻道'}
+                    size="large"
+                  />
+                  <p className="max-w-[48ch] text-sub leading-relaxed text-muted-foreground">
+                    {purposeIntro(invite.purpose, profileName, invite.channel_name)}
                   </p>
                 </section>
 
-                <div className="grid gap-section md:grid-cols-2">
-                  <section
-                    aria-labelledby="invite-capabilities"
-                    className="space-y-element border-b pb-section md:border-r md:border-b-0 md:pr-section md:pb-0"
-                  >
-                    <h2 id="invite-capabilities" className="text-sub font-semibold">
-                      授權後
-                    </h2>
-                    <ul className="space-y-element">
-                      {CAPABILITY_SUMMARY.map(item => (
-                        <li key={item.text} className="flex items-start gap-element text-sub">
-                          <Icon
-                            icon={item.icon}
-                            size="sm"
-                            wrapperClassName="mt-0.5 text-muted-foreground"
-                          />
-                          <span>{item.text}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-
-                  <section aria-labelledby="invite-boundaries" className="space-y-element">
-                    <h2 id="invite-boundaries" className="text-sub font-semibold">
-                      使用範圍
-                    </h2>
-                    <ul className="space-y-element text-sub text-muted-foreground">
-                      {isSystemReset ? (
-                        <>
-                          <li>這次只會更新 Niibot 的系統 Bot 授權，不會建立 Dashboard 帳號。</li>
-                          <li>Niibot 不會取得 Twitch 密碼；授權資料會加密保存。</li>
-                          <li>若從 Twitch 撤銷授權，使用這個系統 Bot 的頻道都會停止相關功能。</li>
-                        </>
-                      ) : (
-                        <>
-                          <li>
-                            只同意 <span className="font-mono">@{invite.channel_name}</span>{' '}
-                            使用這個 Bot；其他頻道仍需你個別同意。
-                          </li>
-                          <li>Niibot 不會取得 Twitch 密碼，也不會替你建立 Dashboard 帳號。</li>
-                          <li>
-                            邀請人可停止本頻道使用；若從 Twitch 撤銷授權，所有使用這個 Bot
-                            的頻道都會停止相關功能。
-                          </li>
-                        </>
-                      )}
-                      <li>連結只能使用一次，{formatDateTimeShort(invite.expires_at)} 前有效。</li>
-                    </ul>
-                  </section>
+                <div aria-label="授權重點" className="divide-y">
+                  {consentPoints.map(point => (
+                    <section
+                      key={point.label}
+                      className="grid grid-cols-[2.5rem_1fr] gap-section py-section first:pt-0 last:pb-0"
+                    >
+                      <div className="bg-muted flex size-10 items-center justify-center rounded-full">
+                        <Icon
+                          icon={point.icon}
+                          size="sm"
+                          wrapperClassName="text-muted-foreground"
+                        />
+                      </div>
+                      <div className="max-w-[48ch] space-y-element">
+                        <h2 className="text-content font-semibold">{point.label}</h2>
+                        <p className="text-sub leading-relaxed text-muted-foreground">
+                          {point.description}
+                        </p>
+                      </div>
+                    </section>
+                  ))}
                 </div>
 
                 {!isSystemReset && (
@@ -226,30 +206,36 @@ export default function BotInvite() {
                       wrapperClassName="mt-0.5"
                     />
                     <p className="text-status-warning">
-                      請使用專用 Bot 帳號。若同一 Twitch 帳號已用來管理自己的 Niibot
-                      頻道，授權會失敗。
+                      請使用專用的機器人帳號，不要使用頻道主帳號。
                     </p>
                   </div>
                 )}
 
-                <div className="space-y-element border-t pt-section">
+                <div className="space-y-section border-t pt-card">
                   <p className="text-center text-label text-muted-foreground">
-                    Twitch 會在下一頁列出精確權限。
+                    此連結只能使用一次，{formatDateTimeShort(invite.expires_at)} 前有效。
                   </p>
                   <div className="grid gap-element sm:grid-cols-2">
-                    <Button variant="outline" onClick={() => void decline()} disabled={declining}>
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      onClick={() => void decline()}
+                      disabled={declining}
+                    >
                       {declining && <Spinner className="mr-2" />}
                       拒絕邀請
                     </Button>
                     {oauthUrl ? (
-                      <Button asChild>
+                      <Button size="lg" asChild>
                         <a href={oauthUrl}>
                           <Icon icon="fa-brands fa-twitch" size="sm" />
                           前往 Twitch 授權
                         </a>
                       </Button>
                     ) : (
-                      <Button disabled>授權連結無效</Button>
+                      <Button size="lg" disabled>
+                        授權連結無效
+                      </Button>
                     )}
                   </div>
                 </div>
