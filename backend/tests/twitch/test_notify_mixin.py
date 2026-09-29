@@ -67,6 +67,7 @@ class _StubMixin(_NotifyMixin):
         self._mod_checked_at: dict[str, float] = {}
         self._channel_locks: dict[str, asyncio.Lock] = {}
         self._check_bot_mod_status = AsyncMock()
+        self._reconcile_enabled_subscriptions = AsyncMock(return_value=([], {}))
         self._send_welcome_message = AsyncMock()
         self.redemption_configs = MagicMock()
         self.redemption_configs.ensure_defaults = AsyncMock()
@@ -458,6 +459,29 @@ class TestHandleChannelToggleEnable:
 
 class TestChannelToggleLockSerialization:
     pytestmark = pytest.mark.asyncio
+
+    async def test_toggle_invalidates_channel_cache_before_reading_db_truth(self):
+        """A NOTIFY comes from another process, so this process must not reuse
+        the channel row cached before the committed toggle."""
+        mixin = _StubMixin()
+        order: list[str] = []
+
+        async def _read_channel(channel_id: str):
+            order.append(f"read:{channel_id}")
+            return SimpleNamespace(enabled=True)
+
+        mixin.channels.get_channel = AsyncMock(side_effect=_read_channel)
+
+        with patch(
+            "core._notify_mixin.invalidate_channel_caches",
+            create=True,
+            side_effect=lambda channel_id: order.append(f"invalidate:{channel_id}"),
+        ):
+            await mixin._handle_channel_toggle(
+                None, None, "channel_toggle", _payload("ch1", enabled=True)
+            )
+
+        assert order[:2] == ["invalidate:ch1", "read:ch1"]
 
     async def test_toggle_payload_mismatched_with_db_uses_db(self):
         """A stale/reordered payload must not override the current DB state."""
@@ -936,6 +960,46 @@ class TestHandleBotTokenUpdated:
             expected_revision=token.credential_revision,
         )
 
+    async def test_system_bot_reload_rebuilds_chat_eventsub_plan(self):
+        """Startup may have converged without chat subscriptions while the Bot
+        Token was missing; loading the token must immediately rebuild the plan."""
+        mixin = _StubMixin()
+        token = MagicMock(token="access", refresh="refresh")
+        mixin.channels.get_token = AsyncMock(return_value=token)
+        mixin.add_token = AsyncMock(return_value=_make_user_info("niibot", []))
+        result = SimpleNamespace(converged=True, errors=())
+        mixin._reconcile_enabled_subscriptions.return_value = (
+            [SimpleNamespace(channel_id="ch1")],
+            {"ch1": result},
+        )
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_bot_token_updated(
+                None,
+                None,
+                "bot_token_updated",
+                _new_token_payload("bot-001"),
+            )
+
+        mixin._reconcile_enabled_subscriptions.assert_awaited_once_with()
+
+    async def test_custom_bot_reload_does_not_rebuild_system_chat_subscriptions(self):
+        mixin = _StubMixin()
+        mixin.bots._custom_logins["bot-002"] = "custom-bot"
+        token = MagicMock(token="access", refresh="refresh")
+        mixin.channels.get_token = AsyncMock(return_value=token)
+        mixin.add_token = AsyncMock(return_value=_make_user_info("custom-bot", []))
+
+        with patch("shared.repositories.channel._token_cache"):
+            await mixin._handle_bot_token_updated(
+                None,
+                None,
+                "bot_token_updated",
+                _new_token_payload("bot-002"),
+            )
+
+        mixin._reconcile_enabled_subscriptions.assert_not_awaited()
+
     async def test_missing_updated_credential_fails_closed(self):
         mixin = _StubMixin()
         mixin.channels.get_token = AsyncMock(return_value=None)
@@ -949,6 +1013,7 @@ class TestHandleBotTokenUpdated:
         )
 
         mixin.add_token.assert_not_awaited()
+        mixin._reconcile_enabled_subscriptions.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
