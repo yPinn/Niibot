@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import asyncpg
 
@@ -22,7 +23,7 @@ _CHECKIN_COLUMNS = (
 )
 _SETTINGS_COLUMNS = (
     "channel_id, timezone, success_template, duplicate_template, "
-    "reply_delay_seconds, created_at, updated_at"
+    "reply_delay_seconds, live_only, created_at, updated_at"
 )
 
 # Shared by list_leaderboard and get_checkin_rank so a viewer's chat-facing rank can
@@ -186,8 +187,10 @@ class AttendanceRepository:
         occurred_at: datetime,
         session_id: int | None = None,
         event_expires_at: datetime | None = None,
-    ) -> CheckinResult:
-        """Insert once per local day and emit its overlay event in one transaction."""
+        require_live: bool = False,
+        timezone: ZoneInfo | None = None,
+    ) -> CheckinResult | None:
+        """Insert once per resolved check-in day and emit its event atomically."""
         expires_at = event_expires_at or occurred_at + timedelta(minutes=10)
 
         async with self.pool.acquire() as conn:
@@ -198,7 +201,30 @@ class AttendanceRepository:
                     "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))",
                     f"checkin-import:{channel_id}",
                 )
-                if session_id is not None:
+                if require_live:
+                    if timezone is None:
+                        raise ValueError("timezone is required for live-only check-ins")
+                    session = await conn.fetchrow(
+                        """
+                        SELECT id, started_at
+                        FROM stream_sessions
+                        WHERE channel_id = $1
+                          AND started_at <= $2
+                          AND (ended_at IS NULL OR ended_at >= $2)
+                          AND ($3::INTEGER IS NULL OR id = $3)
+                        ORDER BY started_at DESC, id DESC
+                        LIMIT 1
+                        FOR SHARE
+                        """,
+                        channel_id,
+                        occurred_at,
+                        session_id,
+                    )
+                    if session is None:
+                        return None
+                    session_id = int(session["id"])
+                    checkin_date = session["started_at"].astimezone(timezone).date()
+                elif session_id is not None:
                     valid_session = await conn.fetchval(
                         "SELECT EXISTS (SELECT 1 FROM stream_sessions "
                         "WHERE id = $1 AND channel_id = $2)",

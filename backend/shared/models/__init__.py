@@ -1,10 +1,12 @@
 """Shared data models for all Niibot backend services."""
 
 from .attendance import (
+    CheckinOutcome,
     CheckinReply,
     CheckinResult,
     CheckinSettings,
     CheckinStatus,
+    CheckinUnavailable,
     CommunityOverlayAccess,
     CommunityOverlayEvent,
     CommunityOverlayFeed,
@@ -26,10 +28,12 @@ from .roleplay import RoleplayRevision, RoleplaySet
 __all__ = [
     "Birthday",
     "BirthdaySettings",
+    "CheckinOutcome",
     "CheckinReply",
     "CheckinResult",
     "CheckinSettings",
     "CheckinStatus",
+    "CheckinUnavailable",
     "Channel",
     "CollectionCardRevision",
     "CollectionDraw",

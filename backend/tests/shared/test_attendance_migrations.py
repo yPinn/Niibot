@@ -118,3 +118,13 @@ def test_checkin_reply_delay_default_becomes_five_without_rewriting_rows() -> No
 
     assert "ALTER COLUMN reply_delay_seconds SET DEFAULT 5" in sql
     assert "UPDATE checkin_settings" not in sql
+
+
+def test_live_only_defaults_on_for_new_channels_without_changing_existing_channels() -> None:
+    sql = (_VERSIONS / "145_add_checkin_live_only.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN live_only BOOLEAN NOT NULL DEFAULT TRUE" in sql
+    assert "UPDATE checkin_settings SET live_only = FALSE" in sql
+    assert "INSERT INTO checkin_settings (channel_id, live_only)" in sql
+    assert "SELECT channel_id, FALSE FROM channels" in sql
+    assert "ON CONFLICT (channel_id) DO NOTHING" in sql

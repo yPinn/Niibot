@@ -8,6 +8,7 @@ import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import asyncpg
 import pytest
@@ -46,6 +47,131 @@ def _decode_jsonb(value: object) -> dict[str, object]:
         return decoded
     assert isinstance(value, dict)
     return value
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_live_only_uses_broadcast_day_and_keeps_duplicate_writes_atomic() -> None:
+    pool = await _create_pool(max_size=4)
+    channel_id = f"test-live-checkin-{uuid4().hex}"
+    timezone = ZoneInfo("Asia/Taipei")
+    first_started_at = datetime(2026, 9, 29, 2, 0, tzinfo=UTC)
+    first_event_at = datetime(2026, 9, 29, 3, 0, tzinfo=UTC)
+    overnight_started_at = datetime(2026, 9, 29, 15, 30, tzinfo=UTC)
+    after_midnight_at = datetime(2026, 9, 29, 16, 30, tzinfo=UTC)
+    broadcast_day = date(2026, 9, 29)
+    repository = AttendanceRepository(pool)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+            first_session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions (channel_id, started_at, ended_at)
+                VALUES ($1, $2, $3)
+                RETURNING id
+                """,
+                channel_id,
+                first_started_at,
+                first_started_at + timedelta(hours=2),
+            )
+            overnight_session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions (channel_id, started_at, ended_at)
+                VALUES ($1, $2, $3)
+                RETURNING id
+                """,
+                channel_id,
+                overnight_started_at,
+                overnight_started_at + timedelta(hours=2),
+            )
+
+        first = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="same-day-viewer",
+            username="same_day",
+            display_name="Same Day",
+            checkin_date=first_event_at.date(),
+            occurred_at=first_event_at,
+            session_id=first_session_id,
+            require_live=True,
+            timezone=timezone,
+        )
+        second_stream = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="same-day-viewer",
+            username="same_day",
+            display_name="Same Day",
+            checkin_date=after_midnight_at.date(),
+            occurred_at=after_midnight_at,
+            session_id=overnight_session_id,
+            require_live=True,
+            timezone=timezone,
+        )
+        concurrent = await asyncio.gather(
+            *(
+                repository.record_checkin(
+                    channel_id=channel_id,
+                    user_id="concurrent-viewer",
+                    username="concurrent",
+                    display_name="Concurrent",
+                    checkin_date=after_midnight_at.date(),
+                    occurred_at=after_midnight_at,
+                    session_id=overnight_session_id,
+                    require_live=True,
+                    timezone=timezone,
+                )
+                for _ in range(2)
+            )
+        )
+        after_end = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="offline-viewer",
+            username="offline",
+            display_name="Offline",
+            checkin_date=after_midnight_at.date(),
+            occurred_at=overnight_started_at + timedelta(hours=3),
+            session_id=overnight_session_id,
+            require_live=True,
+            timezone=timezone,
+        )
+
+        assert first is not None and first.status is CheckinStatus.RECORDED
+        assert first.checkin_date == broadcast_day
+        assert second_stream is not None
+        assert second_stream.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert second_stream.checkin_date == broadcast_day
+        assert all(result is not None for result in concurrent)
+        assert {result.status for result in concurrent if result is not None} == {
+            CheckinStatus.RECORDED,
+            CheckinStatus.ALREADY_CHECKED_IN,
+        }
+        assert {result.checkin_date for result in concurrent if result is not None} == {
+            broadcast_day
+        }
+        assert after_end is None
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, checkin_date, session_id
+                FROM viewer_checkins
+                WHERE channel_id = $1
+                ORDER BY user_id
+                """,
+                channel_id,
+            )
+        assert [(row["user_id"], row["checkin_date"]) for row in rows] == [
+            ("concurrent-viewer", broadcast_day),
+            ("same-day-viewer", broadcast_day),
+        ]
+        assert rows[1]["session_id"] == first_session_id
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stream_sessions WHERE channel_id = $1", channel_id)
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
 
 
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
