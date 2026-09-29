@@ -361,7 +361,10 @@ class SessionService:
                     if cid not in live_map:
                         await self.end_session(cid)
 
-                closed = await self._analytics.close_stale_sessions(max_hours=12)
+                closed = await self._analytics.close_stale_sessions(
+                    max_hours=12,
+                    live_channel_ids=frozenset(live_map),
+                )
                 if closed:
                     LOGGER.info(f"Closed {closed} stale session(s)")
 

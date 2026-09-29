@@ -7,6 +7,7 @@ Depends on attributes defined in AnalyticsRepository.__init__:
 from __future__ import annotations
 
 import logging
+from collections.abc import Collection
 from datetime import datetime
 
 import asyncpg
@@ -193,11 +194,21 @@ class _AnalyticsSessionMixin:
                     "Failed to update attendance streaks for session %s: %s", session_id, e
                 )
 
-    async def close_stale_sessions(self, max_hours: int = 12) -> int:
+    async def close_stale_sessions(
+        self,
+        max_hours: int = 12,
+        *,
+        live_channel_ids: Collection[str] = (),
+    ) -> int:
         """Close sessions running longer than max_hours without ended_at.
+
+        Channels confirmed live by the caller's current provider snapshot are
+        excluded. This prevents a healthy long-running stream from being
+        mistaken for an orphaned session solely because of its age.
 
         Returns the number of sessions closed.
         """
+        protected_channels = sorted(set(live_channel_ids))
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -205,9 +216,11 @@ class _AnalyticsSessionMixin:
                 SET ended_at = started_at + INTERVAL '1 hour' * $1
                 WHERE ended_at IS NULL
                   AND started_at < NOW() - INTERVAL '1 hour' * $1
+                  AND channel_id <> ALL($2::text[])
                 RETURNING id, channel_id, started_at, attendance_snapshot_count
                 """,
                 float(max_hours),
+                protected_channels,
             )
         _session_cache.clear()
         ordered_rows = sorted(
