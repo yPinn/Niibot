@@ -41,22 +41,23 @@ describe('Bot authorization public pages', () => {
       </MemoryRouter>
     )
 
-  it('explains the invite in plain language and discloses the boundaries', async () => {
+  it('keeps the consent decision compact while preserving essential boundaries', async () => {
     renderInvite()
 
     expect(await screen.findByRole('heading', { name: '授權 Bot 帳號' })).toBeInTheDocument()
-    // who invited you + which channel your account acts in
+    expect(screen.getByText('邀請頻道')).toBeInTheDocument()
     expect(screen.getByText('Alice')).toBeInTheDocument()
     expect(screen.getAllByText('@alice').length).toBeGreaterThan(0)
     expect(screen.getByText(/邀請你讓 Niibot 以你的 Twitch 帳號/)).toBeInTheDocument()
-    // plain-language capability summary, not raw scope codes
-    expect(screen.getByText(/發送機器人回覆與指令/)).toBeInTheDocument()
-    // disclosures Twitch's own consent screen cannot make
-    expect(screen.getByText(/不會建立 Niibot 帳號/)).toBeInTheDocument()
-    expect(screen.getByText(/拿不到你的 Twitch 密碼/)).toBeInTheDocument()
-    expect(screen.getByText(/其他頻道必須另行取得你的同意/)).toBeInTheDocument()
-    expect(screen.getByText(/也用來登入自己的 Niibot 頻道/)).toBeInTheDocument()
-    expect(screen.getByText(/會停止 Niibot 對這個 Twitch 帳號的全部授權/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '授權後' })).toBeInTheDocument()
+    expect(screen.getByText(/以你的帳號讀寫聊天室訊息、執行指令與發送公告/)).toBeInTheDocument()
+    expect(screen.getByText(/具備 MOD 身分時執行禁言、封鎖等管理操作/)).toBeInTheDocument()
+    expect(screen.getByText(/只同意/, { selector: 'li' })).toHaveTextContent(
+      '只同意 @alice 使用這個 Bot'
+    )
+    expect(screen.getByText(/不會取得 Twitch 密碼/)).toBeInTheDocument()
+    expect(screen.getByText(/所有使用這個 Bot 的頻道都會停止相關功能/)).toBeInTheDocument()
+    expect(screen.getByText(/請使用專用 Bot 帳號/)).toBeInTheDocument()
     expect(screen.getByText(/只能使用一次/)).toBeInTheDocument()
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument()
   })
@@ -99,17 +100,14 @@ describe('Bot authorization public pages', () => {
     referrer.remove()
   })
 
-  it('keeps the raw Twitch scope list collapsed by default to avoid duplicating the OAuth screen', async () => {
-    const user = userEvent.setup()
+  it('leaves exact Twitch scopes to the provider consent page', async () => {
     renderInvite()
 
     await screen.findByRole('heading', { name: '授權 Bot 帳號' })
     expect(screen.queryByText('user:bot')).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: /完整 Twitch 權限清單（2 項）/ }))
-
-    expect(await screen.findByText('user:bot')).toBeInTheDocument()
-    expect(screen.getByText('user:write:chat')).toBeInTheDocument()
+    expect(screen.queryByText('user:write:chat')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /完整 Twitch 權限清單/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Twitch 會在下一頁列出精確權限。')).toBeInTheDocument()
   })
 
   it('links to the trusted Twitch OAuth URL and supports declining', async () => {
@@ -139,7 +137,7 @@ describe('Bot authorization public pages', () => {
     })
     renderInvite()
 
-    expect(await screen.findByText(/請你重新授權這個 Bot 帳號/)).toBeInTheDocument()
+    expect(await screen.findByText(/邀請你更新 Bot 授權/)).toBeInTheDocument()
   })
 
   it('keeps the system-account reset flow separate from per-channel identity consent', async () => {
@@ -154,8 +152,16 @@ describe('Bot authorization public pages', () => {
     })
     renderInvite()
 
-    expect(await screen.findByText('請你重新授權 Niibot 的系統預設 Bot 帳號。')).toBeInTheDocument()
-    expect(screen.queryByText(/觀眾看到的發言者/)).not.toBeInTheDocument()
+    expect(await screen.findByText('系統 Bot 帳號')).toBeInTheDocument()
+    expect(screen.getByText('@niibot_')).toBeInTheDocument()
+    expect(screen.getByText('請使用這個帳號更新 Niibot 的系統 Bot 授權。')).toBeInTheDocument()
+    expect(
+      screen.getByText(/這次只會更新 Niibot 的系統 Bot 授權，不會建立 Dashboard 帳號/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/使用這個系統 Bot 的頻道都會停止相關功能/)).toBeInTheDocument()
+    expect(screen.queryByText('邀請頻道')).not.toBeInTheDocument()
+    expect(screen.queryByText(/只同意 @niibot_ 使用這個 Bot/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/請使用專用 Bot 帳號/)).not.toBeInTheDocument()
   })
 
   it('rejects incomplete, unreadable, and untrusted invite links with safe copy', async () => {
