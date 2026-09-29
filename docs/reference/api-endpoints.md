@@ -93,12 +93,15 @@ router 標記為「（無獨立頁面）」。
 - `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD 切換已核准 sender；需
   `X-Niibot-Action: bot-account-management`。同一 Twitch identity 已作為 Niibot broadcaster 時回
   `409 BOT_SELECTION.SAME_IDENTITY_UNSUPPORTED`，不允許雙角色進入 TwitchIO 的單一 user-ID credential slot。
-- `GET /api/public/bot-invites/{public_token}`：safe consent summary；nonce 放 query。
+- `GET /api/public/bot-invites/{public_token}`：safe consent summary；nonce 放 query。回應包含由後端
+  Twitch app credential 查得的公開 `channel_name`、`display_name`、`avatar`；provider 暫時不可用時
+  使用既有 metadata fallback，瀏覽器不接觸 Twitch client secret 或 access token。
 - `POST /api/public/bot-invites/{public_token}/decline`：拒絕一次性 invite；nonce 放 query。
 - `GET /api/auth/twitch/bot/callback`：不建立 User、session、membership 或 tenant。
 - `GET /api/auth/twitch/collaborator/oauth|callback`：identity-only collaborator session。
 - `POST /api/admin/bot-accounts/system-default/reset-invite`：system owner-only Niibot token reset。
-- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
+- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要；公開 login、display name、
+  `avatar` 由後端 Twitch app credential 更新，provider 暫時不可用時使用資料庫 fallback。
 - `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only 手動驗證。
 - `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only；停用頻道、撤銷 Owner sessions 並解除 token，
   但保留設定與歷史紀錄。

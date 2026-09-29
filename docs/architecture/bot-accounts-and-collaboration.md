@@ -365,13 +365,16 @@ Audit、error、URL、PG NOTIFY payload 永遠不包含 access／refresh token �
 - `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/authorization-check`：Owner-only，立即重查。
 - `POST /api/tenants/{channel_id}/bot-accounts/invites`：Owner-only，201。
 - `GET /api/tenants/{channel_id}/bot-accounts/invites/{id}`：Owner-only status polling。
-- `GET /api/public/bot-invites/{public_token}`：public safe consent summary。
+- `GET /api/public/bot-invites/{public_token}`：public safe consent summary；後端用 app access token
+  向 Twitch Helix 補齊公開 login、display name 與 avatar。一般邀請顯示邀請頻道，system reset
+  顯示指定的系統機器人帳號；Helix 暫時不可用時退回資料庫內的安全摘要，不阻斷有效邀請。
 - `POST /api/public/bot-invites/{public_token}/decline`：public one-time decline。
 - `GET /api/auth/twitch/bot/callback`：public OAuth callback。
 - `DELETE /api/tenants/{channel_id}/bot-accounts/{bot_id}`：Owner-only；active／desired 時回 409。
 - `GET /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD，讀 desired／active／ack 安全狀態。
 - `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD，寫 desired + version。
-- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
+- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要；後端以 Twitch
+  app access token 更新公開 login、display name 與 avatar，Helix 暫時不可用時退回資料庫摘要。
 - `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only，立即重查。
 - `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only，停用服務、撤銷 Owner session 並解除 token。
 
