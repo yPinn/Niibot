@@ -17,6 +17,16 @@ export interface StreamScheduleSettingsUpdate {
   enabled?: boolean
 }
 
+export interface StreamSchedulePublishStatus {
+  status: 'idle' | 'pending' | 'synced' | 'blocked' | 'error'
+  pending_count: number
+  synced_count: number
+  blocked_count: number
+  error_count: number
+  last_error_code: string | null
+  last_synced_at: string | null
+}
+
 export interface StreamSchedule {
   id: number
   channel_id: string
@@ -106,6 +116,26 @@ export function getStreamScheduleSettings(): Promise<StreamScheduleSettings> {
     API_ENDPOINTS.streamSchedule.settings,
     { credentials: 'include' },
     { fallback: '載入排程設定失敗' }
+  )
+}
+
+export function getStreamSchedulePublishStatus(): Promise<StreamSchedulePublishStatus> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.twitchPublish,
+    { credentials: 'include' },
+    { fallback: '載入 Twitch 行程表同步狀態失敗' }
+  )
+}
+
+export function retryStreamSchedulePublish(): Promise<{ status: 'queued' }> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.twitchPublishRetry,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Niibot-Action': 'stream-schedule-publish-retry' },
+    },
+    { fallback: '重新同步 Twitch 行程表失敗' }
   )
 }
 

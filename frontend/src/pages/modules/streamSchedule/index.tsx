@@ -3,12 +3,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   cancelStreamScheduleOccurrence,
   getStreamScheduleOccurrenceExceptions,
+  getStreamSchedulePublishStatus,
   getStreamSchedules,
   getStreamScheduleSettings,
   replaceStreamScheduleOccurrence,
   restoreStreamScheduleOccurrence,
+  retryStreamSchedulePublish,
   type StreamSchedule,
   type StreamScheduleOccurrenceException,
+  type StreamSchedulePublishStatus,
   type StreamScheduleSettings,
   updateStreamSchedule,
 } from '@/api/streamSchedule'
@@ -18,6 +21,7 @@ import { Icon, SlideUp } from '@/components/primitives'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
 import { TableShell } from '@/components/TableShell'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
+import { TwitchCapabilityAlert } from '@/components/TwitchCapabilityAlert'
 import {
   Alert,
   AlertDescription,
@@ -48,6 +52,7 @@ import {
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 import { toastApiError } from '@/lib/toast-error'
 
 import {
@@ -66,6 +71,7 @@ import { WEEKDAY_LABELS } from './constants'
 import { ScheduleSheet } from './ScheduleSheet'
 import { SettingsSheet } from './SettingsSheet'
 import { crossesMidnight, endTimeFor } from './time'
+import { TwitchPublishStatus } from './TwitchPublishStatus'
 import type { EditingState } from './types'
 import { useSegmentPreview } from './useSegmentPreview'
 
@@ -201,8 +207,12 @@ function NextScheduleSummary({
 
 export default function StreamSchedule() {
   useDocumentTitle('直播排程')
+  const { capability } = useTwitchCapabilities()
+  const scheduleCapability = capability('stream_schedule')
 
   const [settings, setSettings] = useState<StreamScheduleSettings | null>(null)
+  const [publishStatus, setPublishStatus] = useState<StreamSchedulePublishStatus | null>(null)
+  const [publishRetrying, setPublishRetrying] = useState(false)
   const [schedules, setSchedules] = useState<StreamSchedule[]>([])
   const [exceptions, setExceptions] = useState<StreamScheduleOccurrenceException[]>([])
   const [loading, setLoading] = useState(true)
@@ -218,14 +228,16 @@ export default function StreamSchedule() {
   const fetchData = useCallback(async () => {
     try {
       setError(null)
-      const [settingsData, schedulesData, exceptionData] = await Promise.all([
+      const [settingsData, schedulesData, exceptionData, publishData] = await Promise.all([
         getStreamScheduleSettings(),
         getStreamSchedules(),
         getStreamScheduleOccurrenceExceptions(),
+        getStreamSchedulePublishStatus().catch(() => null),
       ])
       setSettings(settingsData)
       setSchedules(schedulesData)
       setExceptions(exceptionData)
+      setPublishStatus(publishData)
     } catch {
       setError('無法載入排程設定')
     } finally {
@@ -241,7 +253,10 @@ export default function StreamSchedule() {
   const { toggle: handleToggle } = useOptimisticToggle<StreamSchedule>({
     setState: setSchedules,
     getId: s => s.id,
-    toggleFn: (s, enabled) => updateStreamSchedule(s.id, { enabled }).then(() => {}),
+    toggleFn: (s, enabled) =>
+      updateStreamSchedule(s.id, { enabled }).then(() => {
+        setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+      }),
     messages: { on: '排程已啟用', off: '排程已停用', error: '切換排程狀態失敗' },
   })
 
@@ -250,13 +265,31 @@ export default function StreamSchedule() {
       const exists = prev.some(s => s.id === schedule.id)
       return exists ? prev.map(s => (s.id === schedule.id ? schedule : s)) : [...prev, schedule]
     })
-    setEditing(prev => (prev ? { mode: 'edit', schedule } : prev))
+    setEditing(prev =>
+      prev ? { mode: 'edit', schedule, justCreated: prev.mode === 'create' } : prev
+    )
+    setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
   }
 
   const handleDeleted = (id: number) => {
     setSchedules(prev => prev.filter(s => s.id !== id))
     setExceptions(prev => prev.filter(item => item.replacement_schedule_id !== id))
     setEditing(null)
+    setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+  }
+
+  const handlePublishRetry = async () => {
+    setPublishRetrying(true)
+    try {
+      await retryStreamSchedulePublish()
+      setPublishStatus(prev =>
+        prev ? { ...prev, status: 'pending', last_error_code: null, error_count: 0 } : prev
+      )
+    } catch (error) {
+      toastApiError(error, '重新同步 Twitch 行程表失敗')
+    } finally {
+      setPublishRetrying(false)
+    }
   }
 
   const upsertException = (exception: StreamScheduleOccurrenceException) => {
@@ -296,6 +329,7 @@ export default function StreamSchedule() {
           item => item.recurring_schedule_id !== schedule.id || item.occurrence_date !== date
         )
       )
+      setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
     } catch (error) {
       toastApiError(error, '恢復本次排程失敗')
     }
@@ -307,6 +341,7 @@ export default function StreamSchedule() {
     setScopePrompt(null)
     try {
       upsertException(await cancelStreamScheduleOccurrence(target.schedule.id, target.date))
+      setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
     } catch (error) {
       toastApiError(error, '取消本次排程失敗')
     }
@@ -330,6 +365,15 @@ export default function StreamSchedule() {
           <AlertDescription>自動套用已關閉；排程仍可查看與編輯。</AlertDescription>
         </Alert>
       )}
+
+      {scheduleCapability && <TwitchCapabilityAlert capabilities={[scheduleCapability]} />}
+
+      <TwitchPublishStatus
+        value={publishStatus}
+        capabilityAvailable={scheduleCapability?.available ?? true}
+        retrying={publishRetrying}
+        onRetry={handlePublishRetry}
+      />
 
       <SlideUp inView>
         <Card>
@@ -404,25 +448,30 @@ export default function StreamSchedule() {
       <SettingsSheet
         open={settingsOpen}
         settings={settings}
-        onSaved={setSettings}
+        onSaved={value => {
+          setSettings(value)
+          setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+        }}
         onClose={() => setSettingsOpen(false)}
       />
 
       <AlertDialog open={!!scopePrompt} onOpenChange={open => !open && setScopePrompt(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>編輯範圍</AlertDialogTitle>
-            <AlertDialogDescription>要調整這次，還是每週排程？</AlertDialogDescription>
+            <AlertDialogTitle>調整排程</AlertDialogTitle>
+            <AlertDialogDescription>選擇要修改的範圍，或取消這次排程。</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <Button variant="ghost" onClick={handleCancelOccurrence}>
-              取消本次
-            </Button>
-            <Button variant="outline" onClick={() => handleOccurrenceScope('occurrence')}>
-              這次
-            </Button>
-            <Button onClick={() => handleOccurrenceScope('series')}>每週</Button>
+          <AlertDialogFooter className="sm:justify-between sm:gap-4">
+            <AlertDialogCancel>關閉</AlertDialogCancel>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="destructive" onClick={handleCancelOccurrence}>
+                取消這次
+              </Button>
+              <Button variant="outline" onClick={() => handleOccurrenceScope('series')}>
+                修改每週
+              </Button>
+              <Button onClick={() => handleOccurrenceScope('occurrence')}>只改這次</Button>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

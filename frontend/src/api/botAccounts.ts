@@ -23,6 +23,7 @@ export type TwitchCapabilityKey =
   | 'moderator_management'
   | 'vip_management'
   | 'channel_info'
+  | 'stream_schedule'
   | 'cheers'
   | 'moderator_sync_realtime'
 

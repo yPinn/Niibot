@@ -232,6 +232,8 @@ export const API_ENDPOINTS = {
   },
   streamSchedule: {
     settings: join('/api/stream-schedule/settings'),
+    twitchPublish: join('/api/stream-schedule/twitch-publish'),
+    twitchPublishRetry: join('/api/stream-schedule/twitch-publish/retry'),
     schedules: join('/api/stream-schedule/schedules'),
     schedule: (id: number) => join(`/api/stream-schedule/schedules/${id}`),
     occurrenceExceptions: join('/api/stream-schedule/occurrences/exceptions'),
