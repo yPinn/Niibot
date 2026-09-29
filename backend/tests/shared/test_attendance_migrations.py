@@ -128,3 +128,13 @@ def test_live_only_defaults_on_for_new_channels_without_changing_existing_channe
     assert "INSERT INTO checkin_settings (channel_id, live_only)" in sql
     assert "SELECT channel_id, FALSE FROM channels" in sql
     assert "ON CONFLICT (channel_id) DO NOTHING" in sql
+
+
+def test_broadcast_day_duplicate_template_preserves_channel_customizations() -> None:
+    sql = (_VERSIONS / "146_update_checkin_duplicate_broadcast_day.sql").read_text(encoding="utf-8")
+
+    expected = "$(@user) 本直播日已經簽到過了，目前累積 $(count) 天！"
+    previous = "$(@user) 今天已經簽到過了，目前累積 $(count) 天！"
+    assert "ALTER COLUMN duplicate_template" in sql
+    assert expected in sql
+    assert f"WHERE duplicate_template = '{previous}'" in sql
