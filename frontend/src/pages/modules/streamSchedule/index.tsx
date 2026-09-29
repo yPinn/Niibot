@@ -37,7 +37,6 @@ import {
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Switch,
@@ -62,12 +61,16 @@ import {
   minutesInTimeZone,
   resolveSchedulesForDate,
   timeStrToMinutes,
-  timeZoneOffsetLabel,
   toDateStr,
   todayInTimeZone,
 } from './calendar'
 import { CalendarView } from './CalendarView'
 import { WEEKDAY_LABELS } from './constants'
+import {
+  NextScheduleCard,
+  NextScheduleCardEmpty,
+  NextScheduleCardSkeleton,
+} from './NextScheduleCard'
 import { ScheduleSheet } from './ScheduleSheet'
 import { SettingsSheet } from './SettingsSheet'
 import { crossesMidnight, endTimeFor } from './time'
@@ -167,10 +170,12 @@ function NextScheduleSummary({
   schedules,
   exceptions,
   timezone,
+  loading,
 }: {
   schedules: StreamSchedule[]
   exceptions: StreamScheduleOccurrenceException[]
   timezone: string
+  loading: boolean
 }) {
   const next = useMemo(() => {
     const now = new Date()
@@ -195,13 +200,15 @@ function NextScheduleSummary({
   }, [next?.schedule.id])
   const opening = firstSegment(preview.segments ?? [])
 
-  if (!next) return <CardDescription>尚無即將到來的排程</CardDescription>
+  if (loading) return <NextScheduleCardSkeleton />
+  if (!next) return <NextScheduleCardEmpty />
   return (
-    <CardDescription>
-      下一場：{next.date} {next.schedule.start_time.slice(0, 5)} ·{' '}
-      {opening?.title_template || next.schedule.title_template || '未設定標題'} ·{' '}
-      {opening?.game_name || '未設定分類'} · {timeZoneOffsetLabel(timezone)}
-    </CardDescription>
+    <NextScheduleCard
+      date={next.date}
+      schedule={next.schedule}
+      opening={opening}
+      timezone={timezone}
+    />
   )
 }
 
@@ -379,11 +386,6 @@ export default function StreamSchedule() {
         <Card>
           <CardHeader>
             <CardTitle>行程</CardTitle>
-            <NextScheduleSummary
-              schedules={schedules}
-              exceptions={exceptions}
-              timezone={settings?.timezone ?? 'Asia/Taipei'}
-            />
             <CardAction>
               <Tabs
                 value={displayMode}
@@ -397,7 +399,13 @@ export default function StreamSchedule() {
               </Tabs>
             </CardAction>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-section">
+            <NextScheduleSummary
+              schedules={schedules}
+              exceptions={exceptions}
+              timezone={settings?.timezone ?? 'Asia/Taipei'}
+              loading={loading}
+            />
             {loading ? (
               <TableSkeletonRows
                 count={4}

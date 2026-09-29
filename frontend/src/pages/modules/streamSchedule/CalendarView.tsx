@@ -78,7 +78,7 @@ function MonthScheduleChip({
           onClick={() => onEditSchedule(schedule, dateStr)}
           aria-label={`${dateStr}：${schedule.start_time.slice(0, 5)} ${schedule.title_template || '（已排程）'}`}
           className={cn(
-            'w-full min-w-0 rounded px-1.5 py-1 text-left text-label leading-tight',
+            'w-full min-w-0 select-none rounded px-1.5 py-1 text-left text-label leading-tight',
             gameColor ? 'text-white' : scheduleBlockClass(schedule.kind)
           )}
           style={gameColor ? { background: gameColor } : undefined}
@@ -148,7 +148,7 @@ function MonthDayCell({
             : `${dateStr}：尚未排程`
         }
         className={cn(
-          'flex size-5 items-center justify-center rounded-full text-label',
+          'flex size-5 select-none items-center justify-center rounded-full text-label',
           isToday ? 'bg-primary font-bold text-primary-foreground' : 'text-muted-foreground'
         )}
       >
@@ -168,7 +168,7 @@ function MonthDayCell({
           key={`cancelled-${schedule.id}`}
           type="button"
           onClick={() => onRestoreOccurrence(schedule, dateStr)}
-          className="w-full rounded bg-muted px-1.5 py-1 text-left text-label text-muted-foreground line-through"
+          className="w-full select-none rounded bg-muted px-1.5 py-1 text-left text-label text-muted-foreground line-through"
           aria-label={`${dateStr}：已取消，點擊恢復`}
         >
           {schedule.start_time.slice(0, 5)} · 已取消

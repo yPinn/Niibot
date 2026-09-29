@@ -75,7 +75,9 @@ describe('CalendarView', () => {
       />
     )
 
-    await user.click(dayButton(todayInTimeZone(TIMEZONE)))
+    const scheduleButton = dayButton(todayInTimeZone(TIMEZONE))
+    expect(scheduleButton).toHaveClass('select-none')
+    await user.click(scheduleButton)
 
     expect(onEditSchedule).toHaveBeenCalledWith(recurring, todayInTimeZone(TIMEZONE))
   })
@@ -95,7 +97,9 @@ describe('CalendarView', () => {
       />
     )
 
-    await user.click(dayButton(todayInTimeZone(TIMEZONE)))
+    const emptyDay = dayButton(todayInTimeZone(TIMEZONE))
+    expect(emptyDay).toHaveClass('select-none')
+    await user.click(emptyDay)
 
     expect(onCreateForDate).toHaveBeenCalledWith(todayInTimeZone(TIMEZONE))
   })
@@ -116,8 +120,8 @@ describe('CalendarView', () => {
       />
     )
 
-    expect(screen.getByRole('button', { name: /第一場/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /第二場/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /第一場/ })).toHaveClass('select-none')
+    expect(screen.getByRole('button', { name: /第二場/ })).toHaveClass('select-none')
   })
 
   it('shows a cancelled occurrence and restores it when clicked', async () => {
@@ -148,7 +152,9 @@ describe('CalendarView', () => {
       />
     )
 
-    await user.click(screen.getByRole('button', { name: `${today}：已取消，點擊恢復` }))
+    const cancelled = screen.getByRole('button', { name: `${today}：已取消，點擊恢復` })
+    expect(cancelled).toHaveClass('select-none')
+    await user.click(cancelled)
     expect(onRestoreOccurrence).toHaveBeenCalledWith(recurring, today)
   })
 

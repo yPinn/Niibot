@@ -186,7 +186,7 @@ function WeekScheduleBlock({
           onClick={() => onEditSchedule(schedule, dateStr)}
           aria-label={`${dateStr}：${schedule.start_time.slice(0, 5)} ${schedule.title_template || '（已排程）'}${live ? '，正在開台' : ''}`}
           className={cn(
-            'absolute top-1 bottom-1 z-10 overflow-hidden rounded px-2 py-1 text-left text-label leading-tight',
+            'absolute top-1 bottom-1 z-10 select-none overflow-hidden rounded px-2 py-1 text-left text-label leading-tight',
             gameColor ? 'text-white' : scheduleBlockClass(schedule.kind)
           )}
           style={{
@@ -280,7 +280,7 @@ function WeekDayRow({
       <div className="relative min-w-0 flex-1" style={{ height: ROW_HEIGHT }}>
         <button
           type="button"
-          className="absolute inset-0"
+          className="absolute inset-0 select-none"
           onClick={() => onCreateForDate(dateStr)}
           aria-label={resolved.length === 0 ? `${dateStr}：尚未排程` : `新增 ${dateStr} 排程`}
         />
@@ -353,7 +353,7 @@ function WeekDayRow({
               type="button"
               onClick={() => onRestoreOccurrence(schedule, dateStr)}
               aria-label={`${dateStr}：已取消，點擊恢復`}
-              className="absolute top-1 bottom-1 z-10 overflow-hidden rounded border border-dashed border-border bg-muted px-2 text-left text-label text-muted-foreground line-through"
+              className="absolute top-1 bottom-1 z-10 select-none overflow-hidden rounded border border-dashed border-border bg-muted px-2 text-left text-label text-muted-foreground line-through"
               style={{
                 left: `${xForMinutes(startMinutes)}%`,
                 width: `${xForMinutes(visibleMinutes)}%`,
