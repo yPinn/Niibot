@@ -13,6 +13,7 @@ import asyncpg
 import pytest
 
 from shared.models.attendance import CheckinStatus
+from shared.repositories.analytics import AnalyticsRepository
 from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.collection import CollectionRepository
 
@@ -46,6 +47,257 @@ def _decode_jsonb(value: object) -> dict[str, object]:
         return decoded
     assert isinstance(value, dict)
     return value
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_live_session_freezes_its_checkin_clock_while_vod_rows_remain_ineligible() -> None:
+    pool = await _create_pool(max_size=2)
+    channel_id = f"test-checkin-session-clock-{uuid4().hex}"
+    live_started_at = datetime(2026, 9, 29, 16, 30, tzinfo=UTC)
+    vod_started_at = datetime(2026, 9, 30, 18, 0, tzinfo=UTC)
+    repository = AnalyticsRepository(pool)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)", channel_id
+            )
+            await conn.execute(
+                "INSERT INTO checkin_settings (channel_id, timezone) VALUES ($1, 'Asia/Taipei')",
+                channel_id,
+            )
+
+        live_session_id = await repository.create_session(channel_id, live_started_at)
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE checkin_settings SET timezone = 'America/New_York' WHERE channel_id = $1",
+                channel_id,
+            )
+        vod_session_id = await repository.sync_session_from_vod(
+            channel_id,
+            vod_started_at,
+            vod_started_at + timedelta(hours=2),
+        )
+        assert vod_session_id is not None
+
+        async with pool.acquire() as conn:
+            live = await conn.fetchrow(
+                "SELECT checkin_eligible, checkin_timezone, checkin_broadcast_day "
+                "FROM stream_sessions WHERE id = $1",
+                live_session_id,
+            )
+            vod = await conn.fetchrow(
+                "SELECT checkin_eligible, checkin_timezone, checkin_broadcast_day "
+                "FROM stream_sessions WHERE id = $1",
+                vod_session_id,
+            )
+
+        assert live is not None
+        assert tuple(live) == (True, "Asia/Taipei", date(2026, 9, 30))
+        assert vod is not None
+        assert tuple(vod) == (False, None, None)
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stream_sessions WHERE channel_id = $1", channel_id)
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_live_only_uses_broadcast_day_and_keeps_duplicate_writes_atomic() -> None:
+    pool = await _create_pool(max_size=4)
+    channel_id = f"test-live-checkin-{uuid4().hex}"
+    first_started_at = datetime(2026, 9, 29, 2, 0, tzinfo=UTC)
+    first_event_at = datetime(2026, 9, 29, 3, 0, tzinfo=UTC)
+    overnight_started_at = datetime(2026, 9, 29, 15, 30, tzinfo=UTC)
+    after_midnight_at = datetime(2026, 9, 29, 16, 30, tzinfo=UTC)
+    broadcast_day = date(2026, 9, 29)
+    repository = AttendanceRepository(pool)
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)",
+                channel_id,
+            )
+            first_session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions
+                    (channel_id, started_at, ended_at, checkin_eligible,
+                     checkin_timezone, checkin_broadcast_day)
+                VALUES ($1, $2, $3, TRUE, 'Asia/Taipei', $4)
+                RETURNING id
+                """,
+                channel_id,
+                first_started_at,
+                first_started_at + timedelta(hours=2),
+                broadcast_day,
+            )
+            overnight_session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions
+                    (channel_id, started_at, ended_at, checkin_eligible,
+                     checkin_timezone, checkin_broadcast_day)
+                VALUES ($1, $2, $3, TRUE, 'Asia/Taipei', $4)
+                RETURNING id
+                """,
+                channel_id,
+                overnight_started_at,
+                overnight_started_at + timedelta(hours=2),
+                broadcast_day,
+            )
+
+        first = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="same-day-viewer",
+            username="same_day",
+            display_name="Same Day",
+            checkin_date=first_event_at.date(),
+            occurred_at=first_event_at,
+            session_id=first_session_id,
+            require_live=True,
+        )
+        second_stream = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="same-day-viewer",
+            username="same_day",
+            display_name="Same Day",
+            checkin_date=after_midnight_at.date(),
+            occurred_at=after_midnight_at,
+            session_id=overnight_session_id,
+            require_live=True,
+        )
+        concurrent = await asyncio.gather(
+            *(
+                repository.record_checkin(
+                    channel_id=channel_id,
+                    user_id="concurrent-viewer",
+                    username="concurrent",
+                    display_name="Concurrent",
+                    checkin_date=after_midnight_at.date(),
+                    occurred_at=after_midnight_at,
+                    session_id=overnight_session_id,
+                    require_live=True,
+                )
+                for _ in range(2)
+            )
+        )
+        after_end = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="offline-viewer",
+            username="offline",
+            display_name="Offline",
+            checkin_date=after_midnight_at.date(),
+            occurred_at=overnight_started_at + timedelta(hours=3),
+            session_id=overnight_session_id,
+            require_live=True,
+        )
+
+        assert first is not None and first.status is CheckinStatus.RECORDED
+        assert first.checkin_date == broadcast_day
+        assert second_stream is not None
+        assert second_stream.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert second_stream.checkin_date == broadcast_day
+        assert all(result is not None for result in concurrent)
+        assert {result.status for result in concurrent if result is not None} == {
+            CheckinStatus.RECORDED,
+            CheckinStatus.ALREADY_CHECKED_IN,
+        }
+        assert {result.checkin_date for result in concurrent if result is not None} == {
+            broadcast_day
+        }
+        assert after_end is None
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, checkin_date, session_id
+                FROM viewer_checkins
+                WHERE channel_id = $1
+                ORDER BY user_id
+                """,
+                channel_id,
+            )
+        assert [(row["user_id"], row["checkin_date"]) for row in rows] == [
+            ("concurrent-viewer", broadcast_day),
+            ("same-day-viewer", broadcast_day),
+        ]
+        assert rows[1]["session_id"] == first_session_id
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stream_sessions WHERE channel_id = $1", channel_id)
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
+
+
+@pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
+async def test_live_only_streak_skips_rest_days_and_resets_after_a_missed_broadcast() -> None:
+    pool = await _create_pool(max_size=2)
+    channel_id = f"test-live-streak-{uuid4().hex}"
+    repository = AttendanceRepository(pool)
+    broadcast_days = [date(2026, 9, 1), date(2026, 9, 5), date(2026, 9, 7), date(2026, 9, 10)]
+    session_ids: list[int] = []
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)", channel_id
+            )
+            for day in broadcast_days:
+                started_at = datetime(day.year, day.month, day.day, 12, tzinfo=UTC)
+                session_id = await conn.fetchval(
+                    """
+                    INSERT INTO stream_sessions
+                        (channel_id, started_at, ended_at, checkin_eligible,
+                         checkin_timezone, checkin_broadcast_day)
+                    VALUES ($1, $2, $3, TRUE, 'Asia/Taipei', $4)
+                    RETURNING id
+                    """,
+                    channel_id,
+                    started_at,
+                    started_at + timedelta(hours=2),
+                    day,
+                )
+                session_ids.append(int(session_id))
+
+        first = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=broadcast_days[0],
+            occurred_at=datetime(2026, 9, 1, 13, tzinfo=UTC),
+            session_id=session_ids[0],
+            require_live=True,
+        )
+        after_rest_days = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=broadcast_days[1],
+            occurred_at=datetime(2026, 9, 5, 13, tzinfo=UTC),
+            session_id=session_ids[1],
+            require_live=True,
+        )
+        after_missed_broadcast = await repository.record_checkin(
+            channel_id=channel_id,
+            user_id="viewer-1",
+            username="viewer",
+            display_name="Viewer",
+            checkin_date=broadcast_days[3],
+            occurred_at=datetime(2026, 9, 10, 13, tzinfo=UTC),
+            session_id=session_ids[3],
+            require_live=True,
+        )
+
+        assert first is not None and first.current_streak == 1
+        assert after_rest_days is not None and after_rest_days.current_streak == 2
+        assert after_missed_broadcast is not None
+        assert after_missed_broadcast.current_streak == 1
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stream_sessions WHERE channel_id = $1", channel_id)
+            await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
+        await pool.close()
 
 
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
@@ -453,7 +705,7 @@ async def test_carryover_bridges_lifetime_total_and_next_day_streak_without_fake
     channel_id = f"test-checkin-carryover-{uuid4().hex}"
     actor_id = uuid4()
     source_day = date(2026, 9, 10)
-    next_day_at = datetime(2026, 9, 11, 8, 0, tzinfo=UTC)
+    next_day_at = datetime(2026, 9, 15, 8, 0, tzinfo=UTC)
     repository = AttendanceRepository(pool)
     try:
         async with pool.acquire() as conn:
@@ -498,6 +750,19 @@ async def test_carryover_bridges_lifetime_total_and_next_day_streak_without_fake
                 channel_id,
                 source_day,
             )
+            session_id = await conn.fetchval(
+                """
+                INSERT INTO stream_sessions
+                    (channel_id, started_at, ended_at, checkin_eligible,
+                     checkin_timezone, checkin_broadcast_day)
+                VALUES ($1, $2, $3, TRUE, 'Asia/Taipei', $4)
+                RETURNING id
+                """,
+                channel_id,
+                next_day_at - timedelta(hours=1),
+                next_day_at + timedelta(hours=1),
+                next_day_at.date(),
+            )
 
         before = await repository.list_leaderboard(channel_id)
         duplicate = await repository.record_checkin(
@@ -515,6 +780,8 @@ async def test_carryover_bridges_lifetime_total_and_next_day_streak_without_fake
             display_name="Viewer",
             checkin_date=next_day_at.date(),
             occurred_at=next_day_at,
+            session_id=session_id,
+            require_live=True,
         )
 
         assert [(entry.user_id, entry.total_days) for entry in before] == [("viewer-1", 15)]
@@ -539,6 +806,7 @@ async def test_carryover_bridges_lifetime_total_and_next_day_streak_without_fake
         assert tuple(counts) == (1, 1, 1)
     finally:
         async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stream_sessions WHERE channel_id = $1", channel_id)
             await conn.execute("DELETE FROM channels WHERE channel_id = $1", channel_id)
             await conn.execute("DELETE FROM users WHERE id = $1", actor_id)
         await pool.close()
@@ -564,7 +832,10 @@ async def test_export_then_bounded_resets_preserve_settings_and_real_data_until_
             await conn.execute(
                 "INSERT INTO channels (channel_id, channel_name) VALUES ($1, $1)", channel_id
             )
-            await conn.execute("INSERT INTO checkin_settings (channel_id) VALUES ($1)", channel_id)
+            await conn.execute(
+                "INSERT INTO checkin_settings (channel_id, live_only) VALUES ($1, FALSE)",
+                channel_id,
+            )
             batch_id = await conn.fetchval(
                 """
                 INSERT INTO checkin_import_batches

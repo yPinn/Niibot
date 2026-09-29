@@ -34,11 +34,16 @@ def component() -> CommandManagerComponent:
     comp = CommandManagerComponent(_make_bot())
     comp._ctx_reply = AsyncMock()
     comp.cmd_repo = MagicMock()
+    comp.cmd_repo.list_configs = AsyncMock(return_value=[])
     return comp
 
 
 async def _cmd_add(component: CommandManagerComponent, ctx: MagicMock, args: str) -> None:
     await CommandManagerComponent.cmd_add.callback(component, ctx, args=args)  # type: ignore[attr-defined]
+
+
+async def _cmd_edit(component: CommandManagerComponent, ctx: MagicMock, args: str) -> None:
+    await CommandManagerComponent.cmd_edit.callback(component, ctx, args=args)  # type: ignore[attr-defined]
 
 
 class TestCommandAddAtomicity:
@@ -77,6 +82,57 @@ class TestCommandAddAtomicity:
         component.cmd_repo.try_insert_config.assert_not_called()
         reply_text = component._ctx_reply.call_args[0][1]
         assert "已存在" in reply_text
+
+    @pytest.mark.parametrize("reserved", ["cmd", "ai", "xhc", "commands", "指令"])
+    @pytest.mark.asyncio
+    async def test_every_reserved_namespace_name_is_rejected(
+        self, component: CommandManagerComponent, reserved: str
+    ) -> None:
+        component.cmd_repo.try_insert_config = AsyncMock()
+
+        await _cmd_add(component, _make_ctx(), f"!{reserved} shadow")
+
+        component.cmd_repo.try_insert_config.assert_not_called()
+        assert "保留" in component._ctx_reply.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_reserved_alias_rejects_the_whole_create(
+        self, component: CommandManagerComponent
+    ) -> None:
+        component.cmd_repo.try_insert_config = AsyncMock()
+
+        await _cmd_add(component, _make_ctx(), "!safe -alias=cmd,okay response")
+
+        component.cmd_repo.try_insert_config.assert_not_called()
+        assert "別名" in component._ctx_reply.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_existing_alias_blocks_a_new_canonical_name(
+        self, component: CommandManagerComponent
+    ) -> None:
+        component.cmd_repo.list_configs = AsyncMock(
+            return_value=[MagicMock(command_name="first", aliases="shared")]
+        )
+        component.cmd_repo.try_insert_config = AsyncMock()
+
+        await _cmd_add(component, _make_ctx(), "!shared response")
+
+        component.cmd_repo.try_insert_config.assert_not_called()
+        assert "衝突" in component._ctx_reply.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_existing_canonical_name_blocks_a_new_alias(
+        self, component: CommandManagerComponent
+    ) -> None:
+        component.cmd_repo.list_configs = AsyncMock(
+            return_value=[MagicMock(command_name="existing", aliases=None)]
+        )
+        component.cmd_repo.try_insert_config = AsyncMock()
+
+        await _cmd_add(component, _make_ctx(), "!safe -alias=existing response")
+
+        component.cmd_repo.try_insert_config.assert_not_called()
+        assert "衝突" in component._ctx_reply.call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_non_moderator_cannot_add(self, component: CommandManagerComponent) -> None:
@@ -128,3 +184,33 @@ class TestTriggerAddAtomicity:
 
         reply_text = component._ctx_reply.call_args[0][1]
         assert "衝突" in reply_text
+
+
+class TestCommandEditNamespace:
+    @pytest.mark.asyncio
+    async def test_reserved_alias_is_rejected_without_updating(
+        self, component: CommandManagerComponent
+    ) -> None:
+        component.cmd_repo.get_config = AsyncMock(return_value=MagicMock(command_type="custom"))
+        component.cmd_repo.upsert_config = AsyncMock()
+
+        await _cmd_edit(component, _make_ctx(), "!safe -alias=xhc response")
+
+        component.cmd_repo.upsert_config.assert_not_called()
+        assert "別名" in component._ctx_reply.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_existing_namespace_blocks_alias_edit(
+        self, component: CommandManagerComponent
+    ) -> None:
+        current = MagicMock(command_name="safe", command_type="custom", aliases=None)
+        component.cmd_repo.get_config = AsyncMock(return_value=current)
+        component.cmd_repo.list_configs = AsyncMock(
+            return_value=[current, MagicMock(command_name="existing", aliases="other")]
+        )
+        component.cmd_repo.upsert_config = AsyncMock()
+
+        await _cmd_edit(component, _make_ctx(), "!safe -alias=other response")
+
+        component.cmd_repo.upsert_config.assert_not_called()
+        assert "衝突" in component._ctx_reply.call_args[0][1]

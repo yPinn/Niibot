@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
-import { type ChannelDefaults, getChannelDefaults } from '@/api/channels'
+import { type ChannelDefaults, getBotModStatus, getChannelDefaults } from '@/api/channels'
 import { type CommandConfig, getCommandConfigs, toggleCommandConfig } from '@/api/commands'
 import { getTriggerConfigs, toggleTrigger, type TriggerConfig } from '@/api/triggers'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -27,9 +27,11 @@ import {
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
 import { useSortState } from '@/hooks/useSortState'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
 import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
 import { BuiltinTab } from './BuiltinTab'
+import { CommandSetupNotice } from './CommandSetupNotice'
 import { CommandSheet } from './CommandSheet'
 import { CustomTab } from './CustomTab'
 import { ImportSheet } from './ImportSheet'
@@ -54,6 +56,10 @@ export default function Commands() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
+  const [botModeratorResult, setBotModeratorResult] = useState<{
+    botUserId: string
+    value: boolean | null
+  } | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   // The Nightbot OAuth callback redirects back here with a preview waiting.
   const [importState, setImportState] = useState<{ open: boolean; importId: string | null }>(() => {
@@ -63,6 +69,31 @@ export default function Commands() {
 
   const builtinSort = useSortState<SortKey>('catalog_order')
   const customSort = useSortState<CustomSortKey>('kind')
+  const { snapshot: capabilitySnapshot, isAvailable: isCapabilityAvailable } =
+    useTwitchCapabilities()
+
+  useEffect(() => {
+    if (!capabilitySnapshot || !isCapabilityAvailable('moderator_management')) {
+      return
+    }
+    let cancelled = false
+    void getBotModStatus(capabilitySnapshot.bot_user_id).then(result => {
+      if (!cancelled) {
+        setBotModeratorResult({
+          botUserId: result.ok ? result.data.bot_user_id : capabilitySnapshot.bot_user_id,
+          value: result.ok ? result.data.is_moderator : null,
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [capabilitySnapshot, isCapabilityAvailable])
+
+  const botModerator =
+    capabilitySnapshot && botModeratorResult?.botUserId === capabilitySnapshot.bot_user_id
+      ? botModeratorResult.value
+      : null
 
   const { toggle: toggleCommand } = useOptimisticToggle<CommandConfig>({
     setState: setCommands,
@@ -235,42 +266,50 @@ export default function Commands() {
                 {error}
               </div>
             ) : (
-              <Tabs defaultValue="builtin">
-                <TabsList>
-                  <TabsTrigger value="builtin">
-                    內建
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {commands.filter(c => c.command_type === 'builtin').length}
-                    </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="custom">
-                    自訂
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {commands.filter(c => c.command_type === 'custom').length + triggers.length}
-                    </Badge>
-                  </TabsTrigger>
-                </TabsList>
+              <div className="space-y-4">
+                <CommandSetupNotice
+                  commands={commands}
+                  snapshot={capabilitySnapshot}
+                  botModerator={botModerator}
+                />
 
-                <TabsContent value="builtin">
-                  <BuiltinTab
-                    commands={commands.filter(c => c.command_type === 'builtin')}
-                    sortState={builtinSort}
-                    defaults={defaults}
-                    onToggle={toggleCommand}
-                    onEdit={openEditCommand}
-                  />
-                </TabsContent>
+                <Tabs defaultValue="builtin">
+                  <TabsList>
+                    <TabsTrigger value="builtin">
+                      內建
+                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                        {commands.filter(c => c.command_type === 'builtin').length}
+                      </Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="custom">
+                      自訂
+                      <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
+                        {commands.filter(c => c.command_type === 'custom').length + triggers.length}
+                      </Badge>
+                    </TabsTrigger>
+                  </TabsList>
 
-                <TabsContent value="custom">
-                  <CustomTab
-                    customRows={customRows}
-                    sortState={customSort}
-                    defaults={defaults}
-                    onToggle={handleToggleRow}
-                    onEdit={openEditRow}
-                  />
-                </TabsContent>
-              </Tabs>
+                  <TabsContent value="builtin">
+                    <BuiltinTab
+                      commands={commands.filter(c => c.command_type === 'builtin')}
+                      sortState={builtinSort}
+                      defaults={defaults}
+                      onToggle={toggleCommand}
+                      onEdit={openEditCommand}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="custom">
+                    <CustomTab
+                      customRows={customRows}
+                      sortState={customSort}
+                      defaults={defaults}
+                      onToggle={handleToggleRow}
+                      onEdit={openEditRow}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
             )}
           </CardContent>
         </Card>

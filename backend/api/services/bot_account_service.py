@@ -60,8 +60,10 @@ class BotAccountSummary:
 @dataclass(frozen=True)
 class PublicBotInviteSummary:
     invite_id: str
+    profile_user_id: str
     channel_name: str
     display_name: str | None
+    avatar: str | None
     purpose: BotInvitePurpose
     status: Literal["pending", "authorized", "declined", "expired"]
     expires_at: datetime
@@ -109,6 +111,11 @@ class BotInviteWrongAccountError(ConflictError):
 class BotMissingScopesError(InvalidInputError):
     code = "BOT_ACCOUNT.MISSING_SCOPES"
     user_message = "Bot 權限不完整，請重新授權"
+
+
+class BotCredentialRoleConflictError(ConflictError):
+    code = "BOT_ACCOUNT.ROLE_CONFLICT"
+    user_message = "這個 Twitch 帳號已作為實況主使用，請改用另一個 Bot 帳號"
 
 
 def _sha256(value: str) -> str:
@@ -238,11 +245,34 @@ class BotAccountService:
                        invite.state_nonce_hash,
                        invite.status,
                        invite.expires_at,
-                       channel.channel_name,
-                       channel.display_name
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(invite.expected_bot_user_id, invite.channel_id)
+                           ELSE invite.channel_id
+                       END AS profile_user_id,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(bot.login, invite.expected_bot_user_id,
+                                         channel.channel_name)
+                           ELSE channel.channel_name
+                       END AS channel_name,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(NULLIF(bot.display_name, ''), bot.login,
+                                         invite.expected_bot_user_id, channel.display_name,
+                                         channel.channel_name)
+                           ELSE channel.display_name
+                       END AS display_name,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN bot.avatar
+                           ELSE NULL
+                       END AS avatar
                   FROM bot_oauth_invites invite
                   JOIN channels channel
                     ON channel.channel_id = invite.channel_id
+                  LEFT JOIN bot_accounts bot
+                    ON bot.platform_user_id = invite.expected_bot_user_id
                  WHERE invite.public_token_hash = $1
                 """,
                 _sha256(public_token),
@@ -257,8 +287,10 @@ class BotAccountService:
             status = "expired"
         return PublicBotInviteSummary(
             invite_id=str(invite["invite_id"]),
+            profile_user_id=str(invite["profile_user_id"]),
             channel_name=str(invite["channel_name"]),
             display_name=invite["display_name"],
+            avatar=invite["avatar"],
             purpose=str(invite["purpose"]),  # type: ignore[arg-type]
             status=status,  # type: ignore[arg-type]
             expires_at=invite["expires_at"],
@@ -355,6 +387,24 @@ class BotAccountService:
                     raise BotInviteWrongAccountError(
                         context={"expected_bot_user_id": expected_bot_user_id}
                     )
+
+                await conn.fetchval(
+                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+                    f"twitch-runtime-identity:{platform_user_id}",
+                )
+                has_broadcaster_credential = await conn.fetchval(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                          FROM tokens
+                         WHERE user_id = $1
+                           AND token_type = 'broadcaster'
+                    )
+                    """,
+                    platform_user_id,
+                )
+                if has_broadcaster_credential is True:
+                    raise BotCredentialRoleConflictError()
 
                 encrypted_access, encryption_version = encrypt_twitch_token(
                     access_token, token_encryption_key

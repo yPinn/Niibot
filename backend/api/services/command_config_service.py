@@ -12,16 +12,21 @@ from shared.builtin_commands import (
     BUILTIN_DEFS,
     BUILTIN_DESCRIPTIONS,
     BUILTIN_DETAILS,
+    BUILTIN_INTEGRATIONS,
     BUILTIN_MAP,
     BUILTIN_PREVIEWS,
     BUILTIN_USAGE,
+    COMMAND_RESERVED_NAMES,
+    COMMAND_RESERVED_OWNERS,
     PUBLIC_DESCRIPTIONS,
 )
+from shared.errors import ConflictError
 from shared.repositories.command_config import (
     UNSET as _UNSET,
 )
 from shared.repositories.command_config import (
     CommandConfigRepository,
+    CommandNamespaceConflictError,
     RedemptionConfigRepository,
     UnsetType,
 )
@@ -31,6 +36,51 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 _VIEWER_ROLES = frozenset({"everyone", "subscriber", "vip"})
 _BUILTIN_ORDER = {defn["command_name"]: index for index, defn in enumerate(BUILTIN_DEFS)}
+
+
+class CommandNameConflictError(ConflictError):
+    code = "COMMAND.NAME_CONFLICT"
+    user_message = "這個指令名稱已被保留，請換一個"
+
+
+def _normalise_command_name(value: str) -> str:
+    return value.strip().lstrip("!").lower()
+
+
+def _normalise_aliases(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return list(
+        dict.fromkeys(_normalise_command_name(alias) for alias in value.split(",") if alias.strip())
+    )
+
+
+def _config_namespace(configs) -> set[str]:
+    names: set[str] = set()
+    for cfg in configs:
+        names.add(cfg.command_name.lower())
+        names.update(_normalise_aliases(cfg.aliases))
+    return names
+
+
+def _reserved_conflicts(
+    names: set[str], *, current_command: str | None = None, current_is_builtin: bool = False
+) -> set[str]:
+    conflicts: set[str] = set()
+    for name in names & COMMAND_RESERVED_NAMES:
+        owner = COMMAND_RESERVED_OWNERS[name]
+        if not current_is_builtin or owner != current_command:
+            conflicts.add(name)
+    return conflicts
+
+
+def _custom_reserved_conflicts(config, aliases: str | None = None) -> set[str]:
+    if config.command_type != "custom":
+        return set()
+    effective_aliases = config.aliases if aliases is None else aliases
+    return _reserved_conflicts(
+        {config.command_name.lower(), *_normalise_aliases(effective_aliases)}
+    )
 
 
 def _builtin_category_label(command_type: str, command_name: str) -> str | None:
@@ -54,10 +104,15 @@ def _command_metadata(command_type: str, command_name: str, min_role: str) -> di
             "public_visible": min_role in _VIEWER_ROLES,
             "display_order": len(BUILTIN_DEFS),
             "category_label": None,
+            "integration_kind": "internal",
+            "integration_label": "自訂回覆",
+            "capability_requirements": [],
+            "external_conditions": [],
         }
 
     audience = BUILTIN_AUDIENCES[command_name]
     preview = BUILTIN_PREVIEWS[command_name]
+    integration = BUILTIN_INTEGRATIONS[command_name]
     return {
         "description": BUILTIN_DESCRIPTIONS[command_name],
         "detail": BUILTIN_DETAILS[command_name],
@@ -72,6 +127,10 @@ def _command_metadata(command_type: str, command_name: str, min_role: str) -> di
         ),
         "display_order": _BUILTIN_ORDER[command_name],
         "category_label": _builtin_category_label(command_type, command_name),
+        "integration_kind": integration["kind"],
+        "integration_label": integration["label"],
+        "capability_requirements": integration["requirements"],
+        "external_conditions": integration["conditions"],
     }
 
 
@@ -107,21 +166,60 @@ class CommandConfigService:
         cooldown: int | None | UnsetType = _UNSET,
         min_role: str | None = None,
         aliases: str | None = None,
-    ) -> dict:
+    ) -> dict | None:
         """Update a command config and return it with usage count."""
-        cfg = await self.cmd_repo.upsert_config(
-            channel_id,
-            command_name,
-            enabled=enabled,
-            custom_response=custom_response,
-            cooldown=cooldown,
-            min_role=min_role,
-            aliases=aliases,
-        )
+        current = await self.cmd_repo.get_config(channel_id, command_name)
+        if current is None:
+            return None
+
+        if enabled is True:
+            namespace_conflicts = _custom_reserved_conflicts(current, aliases)
+            if namespace_conflicts:
+                raise CommandNameConflictError(context={"names": sorted(namespace_conflicts)})
+
+        normalised_aliases = aliases
+        if aliases is not None:
+            alias_list = _normalise_aliases(aliases)
+            requested_aliases = set(alias_list)
+            reserved = _reserved_conflicts(
+                requested_aliases,
+                current_command=current.command_name,
+                current_is_builtin=current.command_type == "builtin",
+            )
+            if reserved:
+                raise CommandNameConflictError(context={"names": sorted(reserved)})
+
+            other_configs = [
+                cfg
+                for cfg in await self.cmd_repo.list_configs(channel_id)
+                if cfg.command_name != current.command_name
+            ]
+            conflicts = requested_aliases & _config_namespace(other_configs)
+            if conflicts:
+                raise CommandNameConflictError(context={"names": sorted(conflicts)})
+            normalised_aliases = ",".join(alias_list)
+
+        try:
+            cfg = await self.cmd_repo.upsert_config(
+                channel_id,
+                command_name,
+                enabled=enabled,
+                custom_response=custom_response,
+                cooldown=cooldown,
+                min_role=min_role,
+                aliases=normalised_aliases,
+            )
+        except CommandNamespaceConflictError as exc:
+            raise CommandNameConflictError(context=exc.context) from exc
         return _serialize_command(cfg)
 
     async def toggle_command(self, channel_id: str, command_name: str, enabled: bool) -> dict:
         """Toggle a command's enabled state."""
+        if enabled:
+            current = await self.cmd_repo.get_config(channel_id, command_name)
+            conflicts = _custom_reserved_conflicts(current) if current else set()
+            if conflicts:
+                raise CommandNameConflictError(context={"names": sorted(conflicts)})
         cfg = await self.cmd_repo.upsert_config(channel_id, command_name, enabled=enabled)
         return _serialize_command(cfg)
 
@@ -136,16 +234,30 @@ class CommandConfigService:
         aliases: str | None = None,
     ) -> dict:
         """Create a new custom command."""
-        cfg = await self.cmd_repo.upsert_config(
+        name = _normalise_command_name(command_name)
+        alias_list = _normalise_aliases(aliases)
+        requested_names = {name, *alias_list}
+        reserved = _reserved_conflicts(requested_names)
+        if reserved:
+            raise CommandNameConflictError(context={"names": sorted(reserved)})
+
+        taken = _config_namespace(await self.cmd_repo.list_configs(channel_id))
+        conflicts = requested_names & taken
+        if conflicts:
+            raise CommandNameConflictError(context={"names": sorted(conflicts)})
+
+        cfg = await self.cmd_repo.try_insert_config(
             channel_id,
-            command_name,
+            name,
             command_type="custom",
             enabled=True,
             custom_response=custom_response,
             cooldown=cooldown,
             min_role=min_role,
-            aliases=aliases,
+            aliases=",".join(alias_list) or None,
         )
+        if cfg is None:
+            raise CommandNameConflictError(context={"names": [name]})
         return _serialize_command(cfg)
 
     async def delete_custom_command(self, channel_id: str, command_name: str) -> bool:
@@ -172,6 +284,7 @@ class CommandConfigService:
             for cfg in configs
             if cfg.enabled
             and cfg.min_role in _VIEWER_ROLES
+            and not _custom_reserved_conflicts(cfg)
             and (
                 cfg.command_type == "custom"
                 or (

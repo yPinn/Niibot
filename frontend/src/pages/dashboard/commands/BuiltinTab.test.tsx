@@ -33,6 +33,10 @@ function command(
     public_visible: minRole !== 'moderator',
     display_order: displayOrder,
     category_label: categoryLabel,
+    integration_kind: 'internal',
+    integration_label: 'Niibot 內部功能',
+    capability_requirements: [],
+    external_conditions: [],
   }
 }
 
@@ -72,5 +76,10 @@ describe('BuiltinTab', () => {
 
     const modRow = screen.getByRole('row', { name: /!so/ })
     expect(within(modRow).getByText('Mod')).toBeInTheDocument()
+    const badge = modRow.querySelector('img[src*="/moderator/"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge).toHaveAttribute('alt', '')
+    expect(screen.queryByRole('columnheader', { name: '外接能力' })).not.toBeInTheDocument()
+    expect(screen.queryByText('不需額外授權')).not.toBeInTheDocument()
   })
 })

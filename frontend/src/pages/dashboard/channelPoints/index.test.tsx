@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -141,6 +141,7 @@ const CHECKIN_SETTINGS = {
   success_template: '$(@user) 簽到成功，累積 $(count) 天！',
   duplicate_template: '$(@user) 今天已經簽到過了，目前累積 $(count) 天！',
   reply_delay_seconds: 0,
+  live_only: false,
   created_at: '2026-08-31T00:00:00Z',
   updated_at: '2026-08-31T00:00:00Z',
 }
@@ -335,12 +336,15 @@ describe('Channel Points page', () => {
     expect(await screen.findByRole('heading', { name: 'Check-in settings' })).toBeInTheDocument()
     expect(screen.getByText(/聊天指令與 Twitch 點數簽到共用/)).toBeInTheDocument()
     expect(screen.getByText('補償畫面比聊天室晚顯示的秒數；預設 5 秒。')).toBeInTheDocument()
+    const liveOnly = screen.getByRole('switch', { name: '僅限直播中簽到' })
+    expect(liveOnly).not.toBeChecked()
+    expect(screen.getByText('關閉時沿用自然日規則，離線也可簽到。')).toBeInTheDocument()
     expect(getCheckinSettings).toHaveBeenCalledOnce()
     expect(getCheckinLeaderboard).toHaveBeenCalledOnce()
     const todayOrderVariable = screen.getByRole('button', { name: '$(today_order)' })
     expect(todayOrderVariable).toBeInTheDocument()
     await user.hover(todayOrderVariable)
-    expect(screen.getByText('今天第幾位完成簽到')).toBeInTheDocument()
+    expect(screen.getByText('本簽到日第幾位完成簽到')).toBeInTheDocument()
 
     const leaderboard = screen.getByRole('region', { name: '簽到排行榜' })
     const [firstPlace] = within(leaderboard).getAllByRole('listitem')
@@ -351,14 +355,60 @@ describe('Channel Points page', () => {
 
     await user.click(screen.getByRole('combobox', { name: '時區' }))
     await user.click(screen.getByRole('option', { name: /東京/ }))
+    await user.click(liveOnly)
+    expect(liveOnly).toBeChecked()
+    expect(
+      screen.getByText('只有直播期間可簽到；跨午夜仍依開台日計一次，休息日不會中斷連續簽到。')
+    ).toBeInTheDocument()
+
+    const successTemplate = screen.getByRole('textbox', { name: '簽到成功訊息' })
+    await user.clear(successTemplate)
+    await user.type(successTemplate, ' ')
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('時區與兩種訊息模板都不可留空。')
+    expect(updateCheckinSettings).not.toHaveBeenCalled()
+    await user.clear(successTemplate)
+    await user.type(successTemplate, '$(@user) live $(count)')
+
+    const replyDelay = screen.getByRole('spinbutton', { name: '簽到回覆延遲秒數' })
+    await user.clear(replyDelay)
+    await user.type(replyDelay, '1.5')
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('回覆延遲需為 0 到 30 之間的整數秒數。')
+    expect(updateCheckinSettings).not.toHaveBeenCalled()
+    fireEvent.change(replyDelay, { target: { value: '-1' } })
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('回覆延遲需為 0 到 30 之間的整數秒數。')
+    expect(updateCheckinSettings).not.toHaveBeenCalled()
+    await user.clear(replyDelay)
+    await user.type(replyDelay, '31')
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('回覆延遲需為 0 到 30 之間的整數秒數。')
+    expect(updateCheckinSettings).not.toHaveBeenCalled()
+
+    await user.clear(replyDelay)
+    await user.type(replyDelay, '7')
+    await user.click(screen.getByRole('tab', { name: '已簽到訊息' }))
+    const duplicateTemplate = screen.getByRole('textbox', { name: '已簽到訊息' })
+    await user.clear(duplicateTemplate)
+    await user.type(duplicateTemplate, '$(@user) duplicate')
+
+    vi.mocked(updateCheckinSettings).mockRejectedValueOnce(new Error('save failed'))
+    await user.click(screen.getByRole('button', { name: '儲存設定' }))
+    await waitFor(() =>
+      expect(toastApiError).toHaveBeenCalledWith(expect.any(Error), '儲存簽到設定失敗')
+    )
+    expect(screen.getByRole('heading', { name: 'Check-in settings' })).toBeInTheDocument()
+
     await user.click(screen.getByRole('button', { name: '儲存設定' }))
 
     await waitFor(() =>
-      expect(updateCheckinSettings).toHaveBeenCalledWith({
+      expect(updateCheckinSettings).toHaveBeenLastCalledWith({
         timezone: 'Asia/Tokyo',
-        success_template: CHECKIN_SETTINGS.success_template,
-        duplicate_template: CHECKIN_SETTINGS.duplicate_template,
-        reply_delay_seconds: CHECKIN_SETTINGS.reply_delay_seconds,
+        success_template: '$(@user) live $(count)',
+        duplicate_template: '$(@user) duplicate',
+        reply_delay_seconds: 7,
+        live_only: true,
       })
     )
   })

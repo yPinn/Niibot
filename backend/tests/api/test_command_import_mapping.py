@@ -11,6 +11,7 @@ import pytest
 
 from services.command_import.mapping import (
     builtin_equivalent,
+    default_command_item,
     find_conflict,
     nightbot_role,
     normalize_command_name,
@@ -112,6 +113,15 @@ class TestNames:
     def test_builtin_alias_resolves_to_its_command(self):
         assert find_conflict("指令", set()) == "help"
 
+    @pytest.mark.parametrize(
+        ("alias", "command_name"),
+        [("標題", "title"), ("抽", "winner"), ("選", "choose"), ("刪", "del")],
+    )
+    def test_concise_builtin_alias_resolves_without_semantic_overlap(
+        self, alias: str, command_name: str
+    ) -> None:
+        assert find_conflict(alias, set()) == command_name
+
     def test_name_we_have_no_builtin_for_is_not_a_conflict(self):
         # We do not ship !points, so importing one is perfectly fine. The import
         # never required us to reimplement the other platform's commands.
@@ -121,12 +131,34 @@ class TestNames:
 
 class TestBuiltinEquivalents:
     def test_known_equivalents(self):
-        assert builtin_equivalent("followage") == "followage"
-        assert builtin_equivalent("!commands") == "help"
+        assert builtin_equivalent("followage", platform=SE) == "followage"
+        assert builtin_equivalent("!commands", platform=NB) == "help"
+
+    def test_equivalents_are_source_specific(self):
+        assert builtin_equivalent("winner", platform=NB) == "winner"
+        assert builtin_equivalent("winner", platform=SE) is None
+        assert builtin_equivalent("vanish", platform=SE) == "del"
+        assert builtin_equivalent("vanish", platform=NB) is None
 
     def test_platform_features_have_no_equivalent(self):
         for command in ("points", "songrequest", "duel", "openstore", "kappagen"):
-            assert builtin_equivalent(command) is None
+            assert builtin_equivalent(command, platform=SE) is None
+
+    def test_catalog_role_floor_keeps_source_mapping_warning(self):
+        item = default_command_item(
+            "marker",
+            key_prefix="test",
+            platform=NB,
+            source_enabled=True,
+            source_role="everyone",
+            source_cooldown=30,
+            cooldown_provided=True,
+            role_notes=["來源身分需要人工確認"],
+        )
+
+        assert item.min_role == "moderator"
+        assert any("安全下限" in note for note in item.notes)
+        assert any("人工確認" in note for note in item.notes)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +336,34 @@ class TestStreamElementsMapping:
         )
         assert item.aliases == ["tip", "donations"]
 
+    def test_conflicting_aliases_are_reported_in_preview_and_not_claimed(self):
+        (item,) = StreamElementsSource._map_custom(
+            se_command(
+                command="donate",
+                aliases=["uptime", "already-there", "safe-alias"],
+            ),
+            {"already-there"},
+        )
+
+        assert item.aliases == ["safe-alias"]
+        assert item.status is ImportStatus.REVIEW
+        assert any("uptime" in note for note in item.notes)
+        assert any("already-there" in note for note in item.notes)
+
+    def test_aliases_are_reserved_across_preview_rows(self):
+        taken: set[str] = set()
+        (first,) = StreamElementsSource._map_custom(
+            se_command(command="first", aliases=["shared"]), taken
+        )
+        (second,) = StreamElementsSource._map_custom(
+            se_command(command="second", aliases=["shared"]), taken
+        )
+
+        assert first.aliases == ["shared"]
+        assert second.aliases == []
+        assert second.status is ImportStatus.REVIEW
+        assert any("shared" in note for note in second.notes)
+
     def test_keywords_fan_out_into_a_trigger(self):
         command, trigger = StreamElementsSource._map_custom(
             se_command(command="bingbong", keywords=["bing bong", "bingbong!"]), set()
@@ -355,20 +415,75 @@ class TestStreamElementsMapping:
 
 
 class TestStreamElementsDefaults:
-    def test_disabled_defaults_are_skipped_entirely(self):
-        assert StreamElementsSource._map_default({"command": "points", "enabled": False}) is None
+    def test_disabled_defaults_remain_visible(self):
+        item = StreamElementsSource._map_default({"command": "points", "enabled": False})
+        assert item is not None
+        assert item.source_enabled is False
+        assert item.section is ImportSection.UNSUPPORTED
 
     def test_default_with_an_equivalent_maps_to_a_builtin(self):
-        item = StreamElementsSource._map_default({"command": "followage", "enabled": True})
+        item = StreamElementsSource._map_default(
+            {
+                "command": "followage",
+                "enabled": True,
+                "accessLevel": 300,
+                "cooldown": {"user": 30, "global": 5},
+            }
+        )
         assert item is not None
         assert item.section is ImportSection.BUILTIN
         assert item.builtin_target == "followage"
+        assert item.min_role == "subscriber"
+        assert item.cooldown == 30
+        assert item.status is ImportStatus.REVIEW
+        assert any(outcome.field == "min_role" for outcome in item.field_outcomes)
+
+    @pytest.mark.parametrize(
+        ("command", "expected_note"),
+        [
+            ("followage", "其他頻道"),
+            ("quote", "不會匯入"),
+        ],
+    )
+    def test_approximate_defaults_are_never_reported_as_lossless(
+        self, command: str, expected_note: str
+    ):
+        item = StreamElementsSource._map_default(
+            {
+                "command": command,
+                "enabled": True,
+                "accessLevel": 100,
+                "cooldown": {"user": 15, "global": 15},
+            }
+        )
+
+        assert item is not None
+        assert item.status is ImportStatus.REVIEW
+        assert any(expected_note in note for note in item.notes)
+        assert any(outcome.field == "semantics" for outcome in item.field_outcomes)
+
+    def test_zero_cooldown_is_preserved(self):
+        item = StreamElementsSource._map_default(
+            {
+                "command": "uptime",
+                "enabled": True,
+                "accessLevel": 100,
+                "cooldown": {"user": 0, "global": 0},
+            }
+        )
+        assert item is not None
+        assert item.cooldown == 0
 
     def test_platform_feature_is_listed_as_unsupported(self):
         item = StreamElementsSource._map_default({"command": "songrequest", "enabled": True})
         assert item is not None
         assert item.section is ImportSection.UNSUPPORTED
         assert item.builtin_target is None
+
+    def test_nightbot_only_default_is_not_cross_mapped(self):
+        item = StreamElementsSource._map_default({"command": "winner", "enabled": True})
+        assert item is not None
+        assert item.section is ImportSection.UNSUPPORTED
 
 
 # ---------------------------------------------------------------------------
@@ -426,6 +541,48 @@ class TestNightbotMapping:
         item = NightbotSource._map_custom(nb_command(name="!uptime"), set())
         assert item.status is ImportStatus.CONFLICT
 
-    def test_zero_cooldown_becomes_none(self):
+    def test_zero_cooldown_is_preserved(self):
         item = NightbotSource._map_custom(nb_command(coolDown=0), set())
-        assert item.cooldown is None
+        assert item.cooldown == 0
+
+
+class TestNightbotDefaults:
+    def test_disabled_defaults_remain_visible(self):
+        item = NightbotSource._map_default(
+            {"name": "!game", "enabled": False, "userLevel": "everyone", "coolDown": 5}
+        )
+        assert item is not None
+        assert item.source_enabled is False
+        assert item.section is ImportSection.BUILTIN
+
+    def test_marker_never_imports_below_niibot_safety_floor(self):
+        item = NightbotSource._map_default(
+            {"name": "!marker", "enabled": True, "userLevel": "everyone", "coolDown": 5}
+        )
+        assert item is not None
+        assert item.builtin_target == "marker"
+        assert item.min_role == "moderator"
+        assert item.cooldown == 5
+        assert item.status is ImportStatus.REVIEW
+        assert any(
+            outcome.field == "min_role" and outcome.action.value == "tightened"
+            for outcome in item.field_outcomes
+        )
+
+    def test_winner_requires_semantic_review(self):
+        item = NightbotSource._map_default(
+            {"name": "!winner", "enabled": True, "userLevel": "moderator", "coolDown": 10}
+        )
+        assert item is not None
+        assert item.section is ImportSection.BUILTIN
+        assert item.status is ImportStatus.REVIEW
+        assert any("10 分鐘" in note and "在線名單" in note for note in item.notes)
+        assert any(outcome.field == "semantics" for outcome in item.field_outcomes)
+
+    @pytest.mark.parametrize("name", ["game", "title"])
+    def test_channel_info_preserves_everyone_read_gate(self, name: str):
+        item = NightbotSource._map_default(
+            {"name": f"!{name}", "enabled": True, "userLevel": "everyone", "coolDown": 5}
+        )
+        assert item is not None
+        assert item.min_role == "everyone"

@@ -167,6 +167,8 @@ interface TwitchRoleBadgeProps {
   version?: string
   size?: BadgeSize
   className?: string
+  /** Hide the image from assistive technology when adjacent text carries the same label. */
+  decorative?: boolean
 }
 
 export function TwitchRoleBadge({
@@ -176,6 +178,7 @@ export function TwitchRoleBadge({
   version,
   size = 18,
   className,
+  decorative = false,
 }: TwitchRoleBadgeProps) {
   const accessibleLabel = label ?? getRoleTooltip(role, version)
   const resolvedSrc =
@@ -183,18 +186,20 @@ export function TwitchRoleBadge({
     (version
       ? `/twitch-badges/${role}/${version}/${SIZE_CONFIG[size].file}`
       : `/twitch-badges/${role}/${SIZE_CONFIG[size].file}`)
+  const image = (
+    <img
+      src={resolvedSrc}
+      alt={decorative ? '' : accessibleLabel}
+      width={size}
+      height={size}
+      draggable={false}
+      className={cn('object-contain shrink-0 rounded-[3px]', SIZE_CONFIG[size].img, className)}
+    />
+  )
+  if (decorative) return image
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <img
-          src={resolvedSrc}
-          alt={accessibleLabel}
-          width={size}
-          height={size}
-          draggable={false}
-          className={cn('object-contain shrink-0 rounded-[3px]', SIZE_CONFIG[size].img, className)}
-        />
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{image}</TooltipTrigger>
       <TooltipContent>{accessibleLabel}</TooltipContent>
     </Tooltip>
   )
@@ -213,7 +218,7 @@ interface TwitchRoleBadgeLabelProps {
 export function TwitchRoleBadgeLabel({ role, src, className }: TwitchRoleBadgeLabelProps) {
   return (
     <span className={cn('inline-flex items-center gap-1.5', className)}>
-      <TwitchRoleBadge role={role} src={src} size={18} />
+      <TwitchRoleBadge role={role} src={src} size={18} decorative />
       <span className="text-sub text-foreground">{ROLE_LABEL[role]}</span>
     </span>
   )

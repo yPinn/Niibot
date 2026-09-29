@@ -18,10 +18,16 @@ from __future__ import annotations
 import re
 
 from core.constants import MAX_RESPONSE_LENGTH
-from shared.builtin_commands import BUILTIN_ALIAS_MAP, BUILTIN_MAP
+from shared.builtin_commands import BUILTIN_ALIAS_MAP, BUILTIN_MAP, COMMAND_RESERVED_NAMES
 from shared.command_variables import unsupported_variables
 
-from .models import ImportItem, ImportSection, ImportStatus
+from .models import (
+    ImportFieldAction,
+    ImportFieldOutcome,
+    ImportItem,
+    ImportSection,
+    ImportStatus,
+)
 
 # ---------------------------------------------------------------------------
 # Permissions
@@ -80,51 +86,159 @@ def streamelements_role(access_level: int | None) -> tuple[str, list[str]]:
 # Builtin equivalents
 # ---------------------------------------------------------------------------
 
-# Deliberately short. A source default command only belongs here when Niibot
-# has a builtin that does substantially the same job — mapping !8ball onto
-# !fortune or !leaderboard onto !rank would quietly change what the command
-# does. Everything else is reported as "no equivalent", which is honest and
-# costs the user nothing: their platform's default commands are that
-# platform's features, not content they wrote.
-BUILTIN_EQUIVALENTS: dict[str, str] = {
-    "ping": "ping",
-    "followage": "followage",
-    "uptime": "uptime",
-    "commands": "help",
-    "so": "so",
-    "shoutout": "so",
-    "title": "title",
-    "game": "game",
-    "tags": "tags",
-    "marker": "marker",
-    "winner": "winner",
-    "quote": "quote",
-    "accountage": "accountage",
-    "vanish": "del",
+# Deliberately source-specific and short. The platforms reuse names for
+# different features, so a global name-only table can silently manufacture an
+# equivalence that does not exist (for example StreamElements has no !winner
+# default matching Nightbot's active-speaker picker).
+BUILTIN_EQUIVALENTS_BY_SOURCE: dict[str, dict[str, str]] = {
+    "nightbot": {
+        "commands": "help",
+        "game": "game",
+        "marker": "marker",
+        "tags": "tags",
+        "title": "title",
+        "winner": "winner",
+    },
+    "streamelements": {
+        "accountage": "accountage",
+        "commands": "help",
+        "followage": "followage",
+        "quote": "quote",
+        "uptime": "uptime",
+        "vanish": "del",
+    },
+}
+
+_PLATFORM_LABELS = {"nightbot": "Nightbot", "streamelements": "StreamElements"}
+_ROLE_ORDER = {"everyone": 0, "subscriber": 1, "vip": 2, "moderator": 3, "broadcaster": 4}
+
+_SEMANTIC_REVIEW: dict[tuple[str, str], str] = {
+    (
+        "nightbot",
+        "winner",
+    ): "Nightbot 從近 10 分鐘有發言的人抽選；Niibot 改從目前 Twitch 在線名單抽選",
+    (
+        "nightbot",
+        "commands",
+    ): "Nightbot !commands 的新增、編輯與刪除子指令不會轉換；Niibot !help 只提供指令列表",
+    (
+        "streamelements",
+        "followage",
+    ): "StreamElements 可查指定使用者與其他頻道；Niibot 只查發話者在目前頻道的追隨時間",
+    (
+        "streamelements",
+        "quote",
+    ): "只會啟用 Niibot 的空白語錄庫；StreamElements 已有語錄資料不會匯入，指定編號與移除子指令也不同",
 }
 
 
-def builtin_equivalent(source_command: str) -> str | None:
-    """Return the Niibot builtin matching a source default command, if any."""
-    return BUILTIN_EQUIVALENTS.get(source_command.lstrip("!").lower())
+def builtin_equivalent(source_command: str, *, platform: str) -> str | None:
+    """Return the source-specific Niibot builtin equivalent, if one exists."""
+    source = platform.lower()
+    return BUILTIN_EQUIVALENTS_BY_SOURCE.get(source, {}).get(source_command.lstrip("!").lower())
 
 
-def default_command_item(command: str, *, key_prefix: str, platform: str) -> ImportItem:
+def default_command_item(
+    command: str,
+    *,
+    key_prefix: str,
+    platform: str,
+    source_enabled: bool,
+    source_role: str,
+    source_cooldown: int | None,
+    cooldown_provided: bool,
+    role_notes: list[str] | None = None,
+    cooldown_notes: list[str] | None = None,
+) -> ImportItem:
     """Build the preview row for one of the source platform's default commands.
 
     Either it maps onto a Niibot builtin, or it is one of that platform's own
     features and gets listed as having no equivalent — never dropped, so the
     user can see what they are leaving behind.
     """
-    target = builtin_equivalent(command)
+    source = platform.lower()
+    platform_label = _PLATFORM_LABELS.get(source, platform)
+    target = builtin_equivalent(command, platform=source)
+    enabled_outcome = ImportFieldOutcome(
+        field="enabled",
+        action=ImportFieldAction.PRESERVED,
+        detail=f"保留來源狀態：{'啟用' if source_enabled else '停用'}",
+    )
     if target:
+        definition = BUILTIN_MAP[target]
+        catalog_role = str(definition.get("min_role", "everyone"))
+        role = source_role
+        outcomes = [enabled_outcome]
+        notes = [f"改為 Niibot 內建的 !{target}"]
+
+        if _ROLE_ORDER.get(role, 4) < _ROLE_ORDER[catalog_role]:
+            role = catalog_role
+            detail = f"來源為 {source_role}；Niibot 安全下限為 {catalog_role}，已收緊"
+            if role_notes:
+                detail = f"{detail}；{'；'.join(role_notes)}"
+            outcomes.append(ImportFieldOutcome("min_role", ImportFieldAction.TIGHTENED, detail))
+            notes.append(f"來源為 {source_role}；Niibot 安全下限為 {catalog_role}，已收緊")
+            notes.extend(role_notes or [])
+        elif role_notes:
+            detail = "；".join(role_notes)
+            outcomes.append(ImportFieldOutcome("min_role", ImportFieldAction.REVIEW, detail))
+            notes.extend(role_notes)
+        else:
+            outcomes.append(
+                ImportFieldOutcome(
+                    "min_role",
+                    ImportFieldAction.PRESERVED,
+                    f"保留最低身分：{role}",
+                )
+            )
+
+        if cooldown_provided:
+            cooldown = source_cooldown if source_cooldown is not None else 0
+            if cooldown_notes:
+                detail = "；".join(cooldown_notes)
+                outcomes.append(ImportFieldOutcome("cooldown", ImportFieldAction.REVIEW, detail))
+                notes.extend(cooldown_notes)
+            else:
+                outcomes.append(
+                    ImportFieldOutcome(
+                        "cooldown",
+                        ImportFieldAction.PRESERVED,
+                        f"保留冷卻：{cooldown} 秒",
+                    )
+                )
+        else:
+            cooldown = int(definition.get("cooldown", 0))
+            detail = f"來源未提供冷卻設定，沿用 Niibot 預設 {cooldown} 秒"
+            outcomes.append(ImportFieldOutcome("cooldown", ImportFieldAction.REVIEW, detail))
+            notes.append(detail)
+
+        semantic_note = _SEMANTIC_REVIEW.get((source, command))
+        if semantic_note:
+            outcomes.append(
+                ImportFieldOutcome("semantics", ImportFieldAction.REVIEW, semantic_note)
+            )
+            notes.append(semantic_note)
+
+        # If the old trigger remains a catalog alias (e.g. !vanish → !del),
+        # users can keep typing it. Otherwise make the renamed trigger explicit.
+        if command != target and BUILTIN_ALIAS_MAP.get(command) != target:
+            detail = f"觸發名稱由 !{command} 改為 !{target}"
+            outcomes.append(ImportFieldOutcome("command_name", ImportFieldAction.REVIEW, detail))
+            notes.append(detail)
+
+        needs_review = any(
+            outcome.action is not ImportFieldAction.PRESERVED for outcome in outcomes
+        )
         return ImportItem(
             key=f"{key_prefix}:default:{command}",
             section=ImportSection.BUILTIN,
-            status=ImportStatus.OK,
+            status=ImportStatus.REVIEW if needs_review else ImportStatus.OK,
             source_name=f"!{command}",
-            source_enabled=True,
-            notes=[f"改為啟用 Niibot 內建的 !{target}"],
+            source_enabled=source_enabled,
+            notes=notes,
+            field_outcomes=outcomes,
+            cooldown=cooldown,
+            min_role=role,
             builtin_target=target,
         )
     return ImportItem(
@@ -132,8 +246,16 @@ def default_command_item(command: str, *, key_prefix: str, platform: str) -> Imp
         section=ImportSection.UNSUPPORTED,
         status=ImportStatus.UNSUPPORTED,
         source_name=f"!{command}",
-        source_enabled=True,
-        notes=[f"這是 {platform} 的平台功能，Niibot 沒有對應的指令"],
+        source_enabled=source_enabled,
+        notes=[f"這是 {platform_label} 的平台功能，Niibot 沒有對應的指令"],
+        field_outcomes=[
+            enabled_outcome,
+            ImportFieldOutcome(
+                "semantics",
+                ImportFieldAction.DROPPED,
+                f"{platform_label} 平台功能無法在 Niibot 執行",
+            ),
+        ],
     )
 
 
@@ -196,6 +318,8 @@ def find_conflict(name: str, existing: set[str]) -> str | None:
         return key
     if key in BUILTIN_ALIAS_MAP:
         return BUILTIN_ALIAS_MAP[key]
+    if key in COMMAND_RESERVED_NAMES:
+        return key
     return None
 
 
@@ -309,7 +433,9 @@ def translate_variables(text: str, source: str) -> tuple[str, list[str], list[st
     the response relies on something Niibot cannot do, which makes the item
     unsupported rather than merely approximate.
     """
-    rules = _SE_RULES if source == "streamelements" else _NIGHTBOT_RULES
+    rules = (
+        _SE_RULES if source == "streamelements" else _NIGHTBOT_RULES if source == "nightbot" else []
+    )
     translated = text or ""
     for pattern, replacement in rules:
         translated = pattern.sub(replacement, translated)

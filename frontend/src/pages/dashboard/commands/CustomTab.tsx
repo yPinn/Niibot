@@ -18,7 +18,8 @@ import {
 } from '@/components/ui'
 import type { SortState } from '@/hooks/useSortState'
 
-import { formatCooldown, ROLE_LABELS } from './constants'
+import { CommandRoleLabel } from './CommandRoleLabel'
+import { formatCooldown } from './constants'
 import type { CustomRow, CustomSortKey } from './types'
 
 export interface CustomTabProps {
@@ -131,7 +132,7 @@ export function CustomTab({ customRows, sortState, defaults, onToggle, onEdit }:
                   {formatCooldown(row.data.cooldown, defaults)}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sub">
-                  {ROLE_LABELS[row.data.min_role] ?? row.data.min_role}
+                  <CommandRoleLabel role={row.data.min_role} compact />
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-right">
                   {row.data.usage_count}

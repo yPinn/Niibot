@@ -103,6 +103,11 @@ class TestCreateSession:
         assert "My Stream" in args
         assert "Chess" in args
         assert "g1" in args
+        sql = args[0]
+        assert "checkin_eligible" in sql
+        assert "checkin_timezone" in sql
+        assert "checkin_broadcast_day" in sql
+        assert "checkin_settings" in sql
 
     async def test_invalidates_active_session_cache(self):
         _clear_all_caches()
@@ -255,6 +260,20 @@ class TestCloseStateSessions:
 
         assert result == 0
 
+    async def test_excludes_channels_confirmed_live_by_helix(self):
+        pool, conn = _make_pool(fetch=[])
+        repo = AnalyticsRepository(pool)
+
+        await repo.close_stale_sessions(
+            max_hours=12,
+            live_channel_ids=frozenset({"live-b", "live-a"}),
+        )
+
+        sql, max_hours, live_channel_ids = conn.fetch.await_args.args
+        assert "channel_id <> ALL($2::text[])" in sql
+        assert max_hours == 12.0
+        assert live_channel_ids == ["live-a", "live-b"]
+
     async def test_clears_session_cache(self):
         _session_cache.set("active:ch123", {"id": 1})
         pool, _ = _make_pool(fetch=[])
@@ -328,6 +347,8 @@ class TestSyncSessionFromVod:
         result = await repo.sync_session_from_vod("ch123", _NOW, _LATER)
 
         assert result == 42
+        sql = conn.fetchval.await_args.args[0]
+        assert "checkin_eligible" not in sql
 
 
 # ---------------------------------------------------------------------------

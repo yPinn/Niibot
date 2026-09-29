@@ -11,7 +11,7 @@ router 標記為「（無獨立頁面）」。
 | -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | `/api/auth`                      | `auth_router`（掛在 `/api`） | Twitch OAuth、JWT cookie、用戶偏好                                                 | `/login`、`/activate`                                              |
 | `/api/tenants`                   | `tenants_router`             | 登入者可存取的工作區、role 與 capability                                           | （無獨立頁面，跨頁共用）                                           |
-| `/api/tenants/.../bot-accounts`  | `bot_accounts_router`        | Bot／實況主授權狀態、Owner invite、重查、移除與解除                                | Settings、`/bot-invite/:publicToken`、`/bot-auth/result`           |
+| `/api/tenants/.../bot-accounts`  | `bot_accounts_router`        | Bot／實況主授權狀態、Owner invite、sender 選擇、重查、移除與解除                   | Settings、`/bot-invite/:publicToken`、`/bot-auth/result`           |
 | `/api/tenants/.../roleplay-sets` | `roleplay_router`            | 租戶私有角色設定集的草稿、發布、啟用與封存                                         | （尚無頁面）                                                       |
 | `/api/public/bot-invites`        | `bot_accounts_router`        | 不需登入的安全 consent summary 與 decline                                          | 同上                                                               |
 | `/api/channels`                  | `channels_router`            | 監控頻道管理、Bot 啟停                                                             | Overview（`/`）                                                    |
@@ -89,17 +89,27 @@ router 標記為「（無獨立頁面）」。
   `X-Niibot-Action: bot-account-management`。
 - `POST /api/tenants/{channel_id}/bot-accounts/{bot_id}/reauthorize-invite`：Owner-only、expected-account reset。
 - `GET /api/tenants/{channel_id}/bot-accounts/invites/{invite_id}`：Owner-only status polling，不回 capability secret。
-- `GET/POST /api/public/bot-invites/{public_token}`：safe consent summary／decline；nonce 放 query。
+- `GET /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD 讀取 desired／active／ack 狀態。
+- `PUT /api/tenants/{channel_id}/bot-account-selection`：Owner/MOD 切換已核准 sender；需
+  `X-Niibot-Action: bot-account-management`。同一 Twitch identity 已作為 Niibot broadcaster 時回
+  `409 BOT_SELECTION.SAME_IDENTITY_UNSUPPORTED`，不允許雙角色進入 TwitchIO 的單一 user-ID credential slot。
+- `GET /api/public/bot-invites/{public_token}`：safe consent summary；nonce 放 query。回應包含由後端
+  Twitch app credential 查得的公開 `channel_name`、`display_name`、`avatar`；provider 暫時不可用時
+  使用既有 metadata fallback，瀏覽器不接觸 Twitch client secret 或 access token。
+- `POST /api/public/bot-invites/{public_token}/decline`：拒絕一次性 invite；nonce 放 query。
 - `GET /api/auth/twitch/bot/callback`：不建立 User、session、membership 或 tenant。
 - `GET /api/auth/twitch/collaborator/oauth|callback`：identity-only collaborator session。
 - `POST /api/admin/bot-accounts/system-default/reset-invite`：system owner-only Niibot token reset。
-- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要。
+- `GET /api/tenants/{channel_id}/broadcaster-authorization`：Owner/MOD 安全摘要；公開 login、display name、
+  `avatar` 由後端 Twitch app credential 更新，provider 暫時不可用時使用資料庫 fallback。
 - `POST /api/tenants/{channel_id}/broadcaster-authorization/check`：Owner-only 手動驗證。
 - `DELETE /api/tenants/{channel_id}/broadcaster-authorization`：Owner-only；停用頻道、撤銷 Owner sessions 並解除 token，
   但保留設定與歷史紀錄。
 
-授權檢查與解除 mutation 使用 `X-Niibot-Action: twitch-authorization-management`。仍在 Phase 4–5：`/members` manual MOD grants、
-`/collaboration-settings` 與 Twitch MOD sync。既有 private feature routers 尚未全數遷移到 `{channel_id}` path。
+Invite／reauthorize／selection mutation 使用 `X-Niibot-Action: bot-account-management`；授權檢查與解除 mutation
+使用 `X-Niibot-Action: twitch-authorization-management`。Public invite GET／decline／callback 回應均為 `no-store`、
+`no-referrer`、`noindex`。仍在 Phase 4–5：`/members` manual MOD grants、`/collaboration-settings` 與 Twitch MOD sync。
+既有 private feature routers 尚未全數遷移到 `{channel_id}` path。
 
 ## Canon Role-play authoring API
 
@@ -233,13 +243,13 @@ published revision（不再輪詢），並在 capability／preview 改變時中�
   由登入狀態決定，不接受 body 指定 `channel_id`。
 
 Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `channel:manage:redemptions`，因此上述 API
-不會建立、修改、完成、取消或退款 Twitch 獎勵；成本與單場限制須回 Twitch Dashboard 調整。同日重複兌換
+不會建立、修改、完成、取消或退款 Twitch 獎勵；成本與單場限制須回 Twitch Dashboard 調整。同簽到日重複兌換
 會被 Daily Check-in 唯一鍵阻止增加 count，但 Niibot 無法退回已消耗點數。
 
 ## Daily Check-in settings
 
-- `GET /api/checkin/settings`：讀取目前登入租戶的 IANA timezone、簽到成功模板、同日重複模板，
-  以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 5）。
+- `GET /api/checkin/settings`：讀取目前登入租戶的 IANA timezone、簽到成功模板、同簽到日重複模板、
+  `live_only`，以及 `reply_delay_seconds`（聊天回覆延遲秒數，補償 Twitch 廣播延遲，範圍 0–30，預設 5）。
 - `PATCH /api/checkin/settings`：部分更新上述欄位；body 嚴格禁止 `channel_id` 與未知欄位，mutation 必須帶
   `X-Niibot-Action: checkin-settings`。
 - `GET /api/checkin/collections`：讀取第一個有圖 catalog、目前抽卡範圍與全部 7 個 set／48 張卡片資料。
@@ -248,7 +258,14 @@ Channel Points 簽到只需 `channel:read:redemptions`。Niibot 不要求 `chann
 
 模板只接受 `$(@user)`、`$(user)`、`$(count)`、`$(streak)`、`$(today_order)`、`$(date)`；server 會同時驗證
 未知變數與 Twitch 500 字元的最壞輸出長度。`$(count)` 包含 carry-over，`$(streak)` 可接續匯入紀錄；
-`$(today_order)` 是頻道當地日期內的穩定簽到順序。聊天指令與 Channel Points `checkin` adapter 共用同一份 tenant 設定。
+`$(today_order)` 是該簽到日內的穩定順序，`$(date)` 是實際寫入的自然日或直播日。聊天指令與 Channel Points
+`checkin` adapter 共用同一份 tenant 設定。
+
+`live_only=false` 沿用 timezone 自然日，離線也可簽；`live_only=true` 只接受事件時間位於可信 live session 的
+請求，離線回 `stream_offline` 且沒有任何寫入。直播日以 session 開始時間按開台當下 timezone 凍結；跨午夜
+仍只算開台日一次，同直播日多場也只一次，直播中改 timezone 從下一場生效。live-only streak 跳過休息日，
+只在觀眾漏掉一個 eligible broadcast day 時重設；Channel Points 以 Twitch `redeemed_at` 判斷，不使用延遲
+處理時間。切換 `live_only` 只重建 streak projection，不改 ledger、累積天數、抽卡或 Overlay event。
 只有確實建立 check-in、draw 與 Overlay event 的 `recorded` 結果套用 reply delay；`duplicate` 沒有 draw／event
 且立即回覆。延遲是 in-process best-effort 校準，不等待或要求 Overlay ACK；OBS 離線也不會回滾已提交資料。
 前端 `/events` 只管理 EventSub 回覆；`/channel-points` 管理 reward → action 映射，並由每日簽到列開啟

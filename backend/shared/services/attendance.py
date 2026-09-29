@@ -8,11 +8,12 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from shared.checkin_templates import render_checkin_template, validate_checkin_template
 from shared.models.attendance import (
     CheckinLeaderboardEntry,
+    CheckinOutcome,
     CheckinRank,
     CheckinReply,
-    CheckinResult,
     CheckinSettings,
     CheckinStatus,
+    CheckinUnavailable,
 )
 from shared.repositories.attendance import AttendanceRepository
 
@@ -38,6 +39,7 @@ class AttendanceService:
         success_template: str | None = None,
         duplicate_template: str | None = None,
         reply_delay_seconds: int | None = None,
+        live_only: bool | None = None,
     ) -> CheckinSettings:
         current = await self.repository.get_or_create_settings(channel_id)
         next_timezone = timezone if timezone is not None else current.timezone
@@ -50,6 +52,7 @@ class AttendanceService:
         next_delay = (
             reply_delay_seconds if reply_delay_seconds is not None else current.reply_delay_seconds
         )
+        next_live_only = live_only if live_only is not None else current.live_only
 
         self._validate_settings(next_timezone, next_success, next_duplicate)
         return await self.repository.update_settings(
@@ -58,6 +61,7 @@ class AttendanceService:
             success_template=next_success,
             duplicate_template=next_duplicate,
             reply_delay_seconds=next_delay,
+            live_only=next_live_only,
         )
 
     @staticmethod
@@ -83,7 +87,7 @@ class AttendanceService:
         display_name: str | None,
         occurred_at: datetime | None = None,
         session_id: int | None = None,
-    ) -> CheckinResult:
+    ) -> CheckinOutcome:
         _, result = await self._perform_check_in(
             channel_id=channel_id,
             user_id=user_id,
@@ -112,6 +116,12 @@ class AttendanceService:
             occurred_at=occurred_at,
             session_id=session_id,
         )
+        if isinstance(result, CheckinUnavailable):
+            mention = result.display_name or result.username
+            return CheckinReply(
+                result=result,
+                message=f"@{mention} 目前未開台，開台後再簽到吧！",
+            )
         template = (
             settings.success_template
             if result.status is CheckinStatus.RECORDED
@@ -143,7 +153,7 @@ class AttendanceService:
         display_name: str | None,
         occurred_at: datetime | None,
         session_id: int | None,
-    ) -> tuple[CheckinSettings, CheckinResult]:
+    ) -> tuple[CheckinSettings, CheckinOutcome]:
         now = occurred_at or datetime.now(UTC)
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("occurred_at must be timezone-aware")
@@ -158,7 +168,7 @@ class AttendanceService:
             settings.duplicate_template,
         )
 
-        result = await self.repository.record_checkin(
+        recorded = await self.repository.record_checkin(
             channel_id=channel_id,
             user_id=user_id,
             username=username,
@@ -166,5 +176,17 @@ class AttendanceService:
             checkin_date=now.astimezone(timezone).date(),
             occurred_at=now,
             session_id=session_id,
+            require_live=settings.live_only,
         )
+        result: CheckinOutcome
+        if recorded is None:
+            result = CheckinUnavailable(
+                channel_id=channel_id,
+                user_id=user_id,
+                username=username,
+                display_name=display_name,
+                occurred_at=now,
+            )
+        else:
+            result = recorded
         return settings, result

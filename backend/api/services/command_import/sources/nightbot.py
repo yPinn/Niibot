@@ -142,12 +142,22 @@ class NightbotSource:
 
     @staticmethod
     def _map_default(raw: dict) -> ImportItem | None:
-        if not raw.get("enabled", True):
-            return None
         command = normalize_command_name(str(raw.get("name") or ""))
         if not command:
             return None
-        return default_command_item(command, key_prefix="nb", platform="Nightbot")
+        role, role_notes = nightbot_role(raw.get("userLevel"))
+        cooldown_provided = raw.get("coolDown") is not None
+        cooldown = int(raw.get("coolDown") or 0) if cooldown_provided else None
+        return default_command_item(
+            command,
+            key_prefix="nb",
+            platform=_SOURCE,
+            source_enabled=bool(raw.get("enabled", True)),
+            source_role=role,
+            source_cooldown=cooldown,
+            cooldown_provided=cooldown_provided,
+            role_notes=role_notes,
+        )
 
     @staticmethod
     def _map_custom(raw: dict, existing: set[str]) -> ImportItem:
@@ -195,7 +205,7 @@ class NightbotSource:
             command_name=name or None,
             response=response,
             original_response=original,
-            cooldown=cooldown or None,
+            cooldown=cooldown,
             min_role=role,
         )
 

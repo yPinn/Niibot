@@ -9,7 +9,6 @@ os.environ.setdefault("CLIENT_ID", "test-client-id")
 os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("FRONTEND_URL", "https://niibot.tv")
-os.environ.setdefault("BOT_ID", "bot-999")
 
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -42,7 +41,8 @@ async def _no_lifespan(app: FastAPI):
 
 
 @pytest.fixture(autouse=True)
-def _reset_settings_cache():
+def _reset_settings_cache(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BOT_ID", "bot-999")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -62,7 +62,11 @@ def _make_client(
     mock_authorization = authorization if authorization is not None else MagicMock()
     if authorization is None:
         mock_authorization.require_capability = AsyncMock()
-    mock_pool = AsyncMock()
+    mock_conn = AsyncMock()
+    mock_conn.fetchrow.return_value = None
+    mock_pool = MagicMock()
+    mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
 
     app.dependency_overrides[get_current_channel_id] = lambda: CHANNEL_ID
     app.dependency_overrides[get_twitch_api] = lambda: mock_api
@@ -109,7 +113,7 @@ class TestGetBotModStatus:
             r = client.get("/api/channels/twitch/mod-status")
 
         assert r.status_code == 200
-        assert r.json() == {"is_moderator": True}
+        assert r.json() == {"bot_user_id": "bot-999", "is_moderator": True}
 
     def test_returns_is_moderator_false(self):
         mock_api = MagicMock()
@@ -122,7 +126,7 @@ class TestGetBotModStatus:
             r = client.get("/api/channels/twitch/mod-status")
 
         assert r.status_code == 200
-        assert r.json() == {"is_moderator": False}
+        assert r.json() == {"bot_user_id": "bot-999", "is_moderator": False}
 
     def test_returns_403_with_reauth_header_when_token_missing(self):
         client = _make_client()
@@ -150,19 +154,24 @@ class TestGetBotModStatus:
         assert r.headers.get("x-reauth-required") is None
         assert r.json()["error"]["code"] == "TWITCH_AUTH.SCOPE_REQUIRED"
 
-    def test_passes_bot_id_from_settings_to_api(self):
+    def test_passes_active_bot_id_to_api(self):
         mock_api = MagicMock()
         mock_api.get_bot_mod_status = AsyncMock(return_value="no_mod")
         client = _make_client(twitch_api=mock_api)
 
-        with patch.object(
-            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        with (
+            patch.object(
+                cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+            ),
+            patch(
+                "routers.channels_router.resolve_bot_id",
+                AsyncMock(return_value="custom-bot-123"),
+            ),
         ):
             client.get("/api/channels/twitch/mod-status")
 
-        expected_bot_id = get_settings().bot_id
         mock_api.get_bot_mod_status.assert_awaited_once_with(
-            CHANNEL_ID, expected_bot_id, "valid-token"
+            CHANNEL_ID, "custom-bot-123", "valid-token"
         )
 
 
@@ -270,18 +279,23 @@ class TestGrantBotMod:
         assert r.status_code == 503
         assert r.json()["error"]["code"] == "TWITCH_AUTH.PROVIDER_UNAVAILABLE"
 
-    def test_passes_bot_id_and_channel_id_to_api(self):
+    def test_passes_active_bot_id_and_channel_id_to_api(self):
         mock_api = MagicMock()
         mock_api.add_moderator = AsyncMock(return_value=self._helix_response(204))
         client = _make_client(twitch_api=mock_api)
 
-        with patch.object(
-            cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+        with (
+            patch.object(
+                cs.ChannelService, "get_token_with_refresh", AsyncMock(return_value="valid-token")
+            ),
+            patch(
+                "routers.channels_router.resolve_bot_id",
+                AsyncMock(return_value="custom-bot-123"),
+            ),
         ):
             client.post("/api/channels/twitch/grant-mod")
 
-        expected_bot_id = get_settings().bot_id
-        mock_api.add_moderator.assert_awaited_once_with(CHANNEL_ID, expected_bot_id, "valid-token")
+        mock_api.add_moderator.assert_awaited_once_with(CHANNEL_ID, "custom-bot-123", "valid-token")
 
 
 # ============================================

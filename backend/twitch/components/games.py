@@ -46,7 +46,7 @@ class _ChamberState:
 class GamesComponent(BotComponent):
     COMMANDS: list[dict] = [
         {"command_name": "roll", "cooldown": 5, "aliases": "輪盤"},
-        {"command_name": "choose", "cooldown": 5, "aliases": "選擇"},
+        {"command_name": "choose", "cooldown": 5, "aliases": "選"},
     ]
 
     def __init__(self, bot: commands.Bot) -> None:
@@ -62,6 +62,13 @@ class GamesComponent(BotComponent):
         if channel_id not in self._chambers:
             self._chambers[channel_id] = _ChamberState()
         return self._chambers[channel_id]
+
+    async def _record_command(self, channel_id: str, command_name: str) -> None:
+        """Best-effort usage accounting; chat outcomes must not depend on analytics."""
+        try:
+            await self.cmd_repo.increment_usage_count(channel_id, command_name)
+        except Exception:
+            LOGGER.exception("[%s] Failed to record !%s usage", channel_id, command_name)
 
     @commands.command(name="roll", aliases=["輪盤"])
     async def roll(self, ctx: commands.Context[Bot]) -> None:
@@ -81,10 +88,12 @@ class GamesComponent(BotComponent):
 
         if not hit:
             await self._ctx_reply(ctx, "你平安度過今晚 BloodTrail")
+            await self._record_command(channel_id, "roll")
             return
 
         self._chambers[channel_id] = _ChamberState()
         await self._ctx_reply(ctx, "你被狼人選中，出局 ResidentSleeper")
+        await self._record_command(channel_id, "roll")
 
         if channel_id not in self.bot._bot_is_mod:
             LOGGER.warning("[%s] Roulette: bot is not mod, cannot timeout", channel_id)
@@ -123,13 +132,13 @@ class GamesComponent(BotComponent):
         except Exception:
             LOGGER.exception("[%s] Roulette timeout error", channel_id)
 
-    @commands.command(name="choose", aliases=["選擇"])
+    @commands.command(name="choose", aliases=["選"])
     async def choose(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:
         """從選項中隨機選一個。
 
         用法:
             !choose 紅 藍 綠
-            !選擇 pizza hamburger sushi
+            !選 pizza hamburger sushi
         """
         config = await check_command(self.cmd_repo, ctx, "choose", self.channel_repo)
         if not config:
@@ -150,8 +159,9 @@ class GamesComponent(BotComponent):
         picked = random.choice(options)
         user = ctx.chatter.display_name or ctx.chatter.name
         await self._ctx_reply(ctx, f"🎯 {user} 的選擇：{picked}")
+        await self._record_command(ctx.broadcaster.id, "choose")
 
-    @commands.command(name="winner", aliases=["幸運兒"])
+    @commands.command(name="winner", aliases=["抽"])
     async def winner(self, ctx: commands.Context[Bot]) -> None:
         """從目前聊天室在線名單隨機抽一位幸運兒（Mod 以上限定）。
 
@@ -199,6 +209,7 @@ class GamesComponent(BotComponent):
         picked = random.choice(candidates)
         name = picked.get("user_name") or picked.get("user_login") or "?"
         await self._ctx_reply(ctx, f"🎉 恭喜 @{name} 中獎了！")
+        await self._record_command(channel_id, "winner")
 
 
 async def setup(bot: commands.Bot) -> None:

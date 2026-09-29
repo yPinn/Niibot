@@ -36,8 +36,11 @@ from typing import TYPE_CHECKING
 import twitchio.ext.commands as commands
 
 from core.component import BotComponent
-from shared.builtin_commands import BUILTIN_MAP
-from shared.repositories.command_config import CommandConfigRepository
+from shared.builtin_commands import COMMAND_RESERVED_NAMES
+from shared.repositories.command_config import (
+    CommandConfigRepository,
+    CommandNamespaceConflictError,
+)
 from shared.trigger_matching import validate_regex_pattern
 
 if TYPE_CHECKING:
@@ -104,6 +107,27 @@ def _parse_bool(value: str) -> bool | None:
     return None
 
 
+def _normalise_command_aliases(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return list(
+        dict.fromkeys(
+            alias.strip().lstrip("!").lower() for alias in raw.split(",") if alias.strip()
+        )
+    )
+
+
+def _config_namespace(configs, *, exclude: str | None = None) -> set[str]:
+    names: set[str] = set()
+    for config in configs:
+        name = str(config.command_name).lower()
+        if name == exclude:
+            continue
+        names.add(name)
+        names.update(_normalise_command_aliases(config.aliases))
+    return names
+
+
 class CommandManagerComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
@@ -161,10 +185,26 @@ class CommandManagerComponent(BotComponent):
             if not cmd_name:
                 await self._ctx_reply(ctx, "用法：!cmd a !指令名 回覆文字")
                 return
-            if cmd_name in BUILTIN_MAP:
-                await self._ctx_reply(ctx, f"!{cmd_name} 已存在，請用 !cmd e 編輯")
+            if cmd_name in COMMAND_RESERVED_NAMES:
+                await self._ctx_reply(ctx, f"!{cmd_name} 已存在或為系統保留名稱，不能建立自訂指令")
                 return
-            aliases = options.get("alias")
+            alias_list = _normalise_command_aliases(options.get("alias"))
+            reserved_aliases = sorted(set(alias_list) & COMMAND_RESERVED_NAMES)
+            if reserved_aliases:
+                await self._ctx_reply(
+                    ctx,
+                    f"別名為系統保留名稱：{', '.join(f'!{name}' for name in reserved_aliases)}",
+                )
+                return
+            requested_names = {cmd_name, *alias_list}
+            existing_names = _config_namespace(await self.cmd_repo.list_configs(channel_id))
+            conflicts = sorted(requested_names & existing_names)
+            if conflicts:
+                await self._ctx_reply(
+                    ctx, f"指令名稱或別名衝突：{', '.join(f'!{name}' for name in conflicts)}"
+                )
+                return
+            aliases = ",".join(alias_list) or None
             # Atomic insert — avoids a check-then-insert race between concurrent !cmd a calls.
             config = await self.cmd_repo.try_insert_config(
                 channel_id,
@@ -291,7 +331,25 @@ class CommandManagerComponent(BotComponent):
             if "role" in options:
                 kwargs["min_role"] = ROLE_ALIASES.get(options["role"].lower(), "everyone")
             if "alias" in options:
-                kwargs["aliases"] = options["alias"]
+                alias_list = _normalise_command_aliases(options["alias"])
+                reserved_aliases = sorted(set(alias_list) & COMMAND_RESERVED_NAMES)
+                if reserved_aliases:
+                    await self._ctx_reply(
+                        ctx,
+                        f"別名為系統保留名稱：{', '.join(f'!{name}' for name in reserved_aliases)}",
+                    )
+                    return
+                existing_names = _config_namespace(
+                    await self.cmd_repo.list_configs(channel_id), exclude=cmd_name
+                )
+                conflicts = sorted(set(alias_list) & existing_names)
+                if conflicts:
+                    await self._ctx_reply(
+                        ctx,
+                        f"指令名稱或別名衝突：{', '.join(f'!{name}' for name in conflicts)}",
+                    )
+                    return
+                kwargs["aliases"] = ",".join(alias_list)
             if "enable" in options:
                 enabled = _parse_bool(options["enable"])
                 if enabled is None:
@@ -305,9 +363,13 @@ class CommandManagerComponent(BotComponent):
                 await self._ctx_reply(ctx, "請提供修改內容（-cd=N / -enable=on / 回覆文字）")
                 return
 
-            config = await self.cmd_repo.upsert_config(
-                channel_id, cmd_name, command_type="custom", **kwargs
-            )
+            try:
+                config = await self.cmd_repo.upsert_config(
+                    channel_id, cmd_name, command_type="custom", **kwargs
+                )
+            except CommandNamespaceConflictError:
+                await self._ctx_reply(ctx, "指令名稱或別名已被其他指令使用，請重新整理後再試")
+                return
 
             changes = []
             if response_text:

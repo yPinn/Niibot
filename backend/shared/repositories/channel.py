@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 import asyncpg
 
 from shared.cache import AsyncTTLCache, cached
-from shared.models.channel import Channel, DiscordUser, Token
+from shared.models.channel import Channel, DiscordUser, Token, TokenRuntimeMetadata
 from shared.twitch_token_crypto import (
     TwitchTokenEncryptionError,
     TwitchTokenEnvelopeError,
@@ -33,6 +33,10 @@ _discord_user_cache = AsyncTTLCache(maxsize=64, ttl=300, name="channel.discord_u
 # Short TTL: only feeds the log viewer's id -> login resolution, where a few
 # minutes of staleness costs nothing but a rename showing late.
 _channel_name_cache = AsyncTTLCache(maxsize=1, ttl=300, name="channel.name_map")
+
+
+class TwitchCredentialRoleConflictError(RuntimeError):
+    """The identity is already live in TwitchIO under the opposite token role."""
 
 
 class ChannelRepository:
@@ -76,6 +80,45 @@ class ChannelRepository:
     @staticmethod
     def invalidate_token(user_id: str, token_type: str = "broadcaster") -> None:
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
+
+    @staticmethod
+    async def _lock_and_check_runtime_role(
+        conn: asyncpg.Connection,
+        user_id: str,
+        token_type: str,
+    ) -> None:
+        await conn.fetchval(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            f"twitch-runtime-identity:{user_id}",
+        )
+        if token_type == "broadcaster":
+            conflict = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM tokens
+                     WHERE user_id = $1
+                       AND token_type = 'bot'
+                )
+                """,
+                user_id,
+            )
+        else:
+            conflict = await conn.fetchval(
+                """
+                SELECT EXISTS (
+                    SELECT 1
+                      FROM tokens
+                     WHERE user_id = $1
+                       AND token_type = 'broadcaster'
+                )
+                """,
+                user_id,
+            )
+        if conflict is True:
+            raise TwitchCredentialRoleConflictError(
+                f"Twitch identity {user_id} already has the opposite runtime credential role"
+            )
 
     @cached(
         cache=_token_cache,
@@ -124,8 +167,10 @@ class ChannelRepository:
             token, refresh
         )
         async with self.pool.acquire() as conn:
-            await conn.execute(
-                """
+            async with conn.transaction():
+                await self._lock_and_check_runtime_role(conn, user_id, token_type)
+                await conn.execute(
+                    """
                 INSERT INTO tokens (
                     user_id, token, refresh, scopes, token_type, encryption_version,
                     last_checked_at, last_validated_at, next_validation_at
@@ -148,14 +193,14 @@ class ChannelRepository:
                     validation_error_code = NULL,
                     credential_revision = tokens.credential_revision + 1,
                     updated_at         = NOW()
-                """,
-                user_id,
-                encrypted_token,
-                encrypted_refresh,
-                scopes,
-                token_type,
-                encryption_version,
-            )
+                    """,
+                    user_id,
+                    encrypted_token,
+                    encrypted_refresh,
+                    scopes,
+                    token_type,
+                    encryption_version,
+                )
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
 
     @asynccontextmanager
@@ -196,6 +241,8 @@ class ChannelRepository:
                SET next_validation_at = NOW() + INTERVAL '5 minutes'
              WHERE user_id = $1 AND token_type = $2
                AND credential_revision = $3
+               AND requires_reauth = FALSE
+               AND invalidated_at IS NULL
         """
         if connection is not None:
             result = await connection.execute(sql, user_id, token_type, expected_revision)
@@ -299,7 +346,12 @@ class ChannelRepository:
         _token_cache.invalidate(f"token:{user_id}:{token_type}")
         return str(result).endswith(" 1")
 
-    async def list_tokens(self, *, skip_invalid_envelopes: bool = False) -> list[Token]:
+    async def list_tokens(
+        self,
+        *,
+        skip_invalid_envelopes: bool = False,
+        runtime_eligible_only: bool = False,
+    ) -> list[Token]:
         """Return all tokens, optionally isolating rows missing their v1 envelope.
 
         Only the narrow envelope-format failure may be isolated. Missing keys,
@@ -311,7 +363,10 @@ class ChannelRepository:
                 "SELECT user_id, token, refresh, token_type, scopes, credential_revision, "
                 "encryption_version, "
                 "requires_reauth, reauth_notified_at, created_at, updated_at "
-                "FROM tokens"
+                "FROM tokens "
+                "WHERE NOT $1::boolean "
+                "   OR (requires_reauth = FALSE AND invalidated_at IS NULL)",
+                runtime_eligible_only,
             )
         tokens: list[Token] = []
         for row in rows:
@@ -327,6 +382,19 @@ class ChannelRepository:
                     row["token_type"],
                 )
         return tokens
+
+    async def list_runtime_token_metadata(self) -> list[TokenRuntimeMetadata]:
+        """Return eligible credential generations without reading token secrets."""
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, token_type, credential_revision
+                  FROM tokens
+                 WHERE requires_reauth = FALSE
+                   AND invalidated_at IS NULL
+                """
+            )
+        return [TokenRuntimeMetadata(**dict(row)) for row in rows]
 
     async def upsert_token(
         self,
@@ -347,6 +415,7 @@ class ChannelRepository:
         )
         async with self.pool.acquire() as conn:
             async with conn.transaction():
+                await self._lock_and_check_runtime_role(conn, user_id, token_type)
                 await conn.execute(
                     """
                     INSERT INTO tokens (

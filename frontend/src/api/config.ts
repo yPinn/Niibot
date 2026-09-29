@@ -59,6 +59,8 @@ export const API_ENDPOINTS = {
       join(`/api/tenants/${encodeURIComponent(channelId)}/active-roleplay`),
     botAccounts: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts`),
+    botAccountSelection: (channelId: string) =>
+      join(`/api/tenants/${encodeURIComponent(channelId)}/bot-account-selection`),
     botInvites: (channelId: string) =>
       join(`/api/tenants/${encodeURIComponent(channelId)}/bot-accounts/invites`),
     botInviteStatus: (channelId: string, inviteId: string) =>
@@ -131,6 +133,8 @@ export const API_ENDPOINTS = {
   },
   commandImport: {
     sources: join('/api/commands/import/sources'),
+    csvPreview: join('/api/commands/import/csv/preview'),
+    csvExport: join('/api/commands/import/csv/export'),
     streamelementsPreview: join('/api/commands/import/streamelements/preview'),
     nightbotOauth: join('/api/commands/import/nightbot/oauth'),
     preview: (importId: string) => join(`/api/commands/import/preview/${importId}`),
@@ -232,8 +236,17 @@ export const API_ENDPOINTS = {
   },
   streamSchedule: {
     settings: join('/api/stream-schedule/settings'),
+    twitchPublish: join('/api/stream-schedule/twitch-publish'),
+    twitchPublishRetry: join('/api/stream-schedule/twitch-publish/retry'),
     schedules: join('/api/stream-schedule/schedules'),
     schedule: (id: number) => join(`/api/stream-schedule/schedules/${id}`),
+    occurrenceExceptions: join('/api/stream-schedule/occurrences/exceptions'),
+    occurrenceCancel: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}/cancel`),
+    occurrenceRestore: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}`),
+    occurrenceReplace: (id: number, date: string) =>
+      join(`/api/stream-schedule/schedules/${id}/occurrences/${date}/replace`),
     segments: (scheduleId: number) => join(`/api/stream-schedule/schedules/${scheduleId}/segments`),
     segment: (id: number) => join(`/api/stream-schedule/segments/${id}`),
     gamesSearch: (query: string) =>

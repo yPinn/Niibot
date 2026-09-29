@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CommandConfig } from '@/api/commands'
@@ -25,6 +25,12 @@ const SUBAGE: CommandConfig = {
   public_visible: true,
   display_order: 5,
   category_label: '觀眾查詢',
+  integration_kind: 'twitch_capability',
+  integration_label: 'Twitch 訂閱資料',
+  capability_requirements: [
+    { capability_key: 'subscriptions', mode: 'all', requires_bot_moderator: false },
+  ],
+  external_conditions: [],
 }
 
 describe('CommandSheet', () => {
@@ -44,6 +50,22 @@ describe('CommandSheet', () => {
     expect(screen.getByRole('button', { name: '$(1|預設值)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '$(queryescape)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '$(pathescape)' })).toBeInTheDocument()
+  })
+
+  it('gives the badge role picker enough default width for localized labels', () => {
+    render(
+      <CommandSheet
+        open
+        editing={{ mode: 'create' }}
+        defaults={{ default_cooldown: 0 }}
+        onSaved={vi.fn()}
+        onDeleted={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '顯示進階設定' }))
+    expect(screen.getByRole('combobox', { name: '最低權限' })).toHaveClass('w-36')
   })
 
   it('explains builtin behavior, audience, usage, and public visibility before settings', () => {
@@ -69,5 +91,7 @@ describe('CommandSheet', () => {
     expect(feature).toHaveTextContent('!subage')
     expect(feature).toHaveTextContent('@小霓 累積訂閱 14 個月，目前是 T2 訂閱者')
     expect(feature).toHaveTextContent('示意內容，不會實際執行指令')
+    expect(feature).not.toHaveTextContent('外接能力')
+    expect(feature).not.toHaveTextContent('Twitch 訂閱資料')
   })
 })

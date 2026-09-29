@@ -16,10 +16,11 @@ Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.
 | `feature/*`、`fix/*` | 本機   | —                                                                    |
 
 - `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
-- `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
-  路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
+- `_deploy.yml` 是共用工作流，caller 傳 `environment`（`production` \| `staging`）與該 caller 已驗證的
+  完整 `deploy_sha`；路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
 - self-hosted runner 共用主機但不共用工作目錄：production 固定使用 `/Users/pinn/Niibot` 的 `main`，staging
-  固定使用 `/Users/pinn/Niibot-stg` 的 `staging`。部署前會驗證 worktree root 與目前分支，不符即中止。
+  固定使用 `/Users/pinn/Niibot-stg` 的 `staging`。部署前會驗證 worktree root、目前分支、40字元小寫 SHA
+  與 branch ancestry，再 reset 到 exact SHA；後續 diff、build metadata 與 health revision gate 都使用同一 commit。
 - Compose project、image、env 與資料目錄按環境隔離；全域 deploy concurrency 仍禁止兩個部署同時操作 Docker。
 - runner 上的 env 檔由 `scripts/env/ci.py` 依 `env.manifest.json` 解析 GitHub
   Secrets／Variables；`scripts/env/write_ci.sh` 是最小化的 workflow wrapper。
@@ -28,9 +29,14 @@ Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.
 `staging → main` promotion PR 與 merge 後 main push 不重跑相同 CI；main 不接受其他來源或 direct push。
 Hotfix 同樣先進 `staging` 完成驗證與部署，再 promotion 到 `main`，不得先改 main 再 backport。
 
-期望分支規則：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
-截至 2026-09-08，此 private Repo 使用 GitHub Free，GitHub API 回覆 branch protection 需升級方案或公開
-Repo，因此目前以「CI 紅燈不得合併」的人工作業維持；方案支援後再把上述規則設為平台強制。
+目前 active rulesets：`main` 必須經 PR、四項 required checks、禁止刪除與強推；`staging` 必須經 PR、
+三項 required checks、禁止刪除與強推，但維護者 `yPinn` 保留明確 solo direct-push bypass。單人維護階段
+approval count 為 0，兩邊都要求 discussion resolved。default branch 固定為 `main`，確保 production schedule
+總是從正式分支建立 run。
+
+Production manual dispatch 的 `force_all` 預設為 true，避免自上次 production deploy 累積多個 promotion 時
+只比較 `HEAD~1` 而漏建服務。只有明確指定單一 service 且確認其相依變更已部署時才關閉；weekly schedule
+一律 full rebuild。部署仍以 caller 的 immutable SHA 為準，不會在 CI 通過後改抓 branch 最新 HEAD。
 
 ### 同主機 worktree 一次性切換
 
@@ -162,7 +168,9 @@ curl -fsS http://127.0.0.1:18000/health
 
    命令只在所選 API container 內連線該環境 DB，輸出 30 分鐘有效的 invite URL 與到期時間；prod 會再次確認。
    將連結交給操作者並以指定 `BOT_ID` 帳號完成授權。invite URL 本身是一次性 bearer capability，不要寫入
-   log 或貼到公開頻道。callback 成功後 runtime 透過 `bot_token_updated` 即時換 token。
+   log 或貼到公開頻道。callback 成功後 runtime 透過 `bot_token_updated` 即時換 token；通知 channels 共用一條
+   reconnecting LISTEN connection，斷線重連會觸發 catch-up，另有 60–75 秒 jitter metadata reconcile 修補漏訊息。
+   `NOTIFY` 不是 durable queue，部署時必須連同 migration 138 與 151 套用，不能只更新 application image。
    stg/prod 不使用本機 OAuth script；`npm run nb -- twitch oauth --env dev` 只供 localhost 開發。
 
 若 Twitch runtime 回報 `Encrypted Twitch token is missing the v1 envelope`，代表至少一列資料標成
@@ -180,7 +188,8 @@ npm run nb -- stack prod exec api python -m scripts.twitch_ops.credentials \
 encryption key；若 repair 因 Fernet 驗證失敗而停止，應先確認部署載入的是原 key。
 
 Rollback：Phase 2 schema 是 expand-only，可先關閉前端入口並回滾 application；不要回滾已加密資料欄位或換掉 key。
-在同一 Twitch identity 同時作 broadcaster 與 Bot 前，授權 scopes 必須符合 union-scope 契約。
+目前不支援同一 Twitch identity 同時作 broadcaster 與 Bot；兩種 OAuth 寫入與 selection 都會在 identity advisory
+lock 內 fail closed。只有完成 canonical union CredentialBroker 與 refresh／concurrency 驗證後，才能解除這項限制。
 
 ## Stack 管理
 

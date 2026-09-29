@@ -1,8 +1,8 @@
 """Typed records for the stream schedule feature.
 
 Two-tier model: a StreamSchedule is the "plan" level (recurring weekday or
-one-off date, start time + duration) — the granularity that Phase 2 syncs to
-a Twitch Schedule segment. StreamScheduleSegment rows are sub-blocks inside a
+one-off date, start time + duration) — the granularity synced to one Twitch
+Schedule segment. StreamScheduleSegment rows are sub-blocks inside a
 plan (offset from the plan's start) that drive internal title/game auto-apply
 only; they are never synced to Twitch. See tasks/stream-schedule.md.
 """
@@ -17,6 +17,11 @@ from enum import StrEnum
 class ScheduleKind(StrEnum):
     RECURRING = "recurring"
     ONE_OFF = "one_off"
+
+
+class OccurrenceExceptionKind(StrEnum):
+    CANCELLED = "cancelled"
+    REPLACEMENT = "replacement"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,3 +58,63 @@ class StreamScheduleSegment:
     game_id: str | None = None
     game_name: str | None = None
     sort_order: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class StreamScheduleOccurrenceException:
+    id: int
+    channel_id: str
+    recurring_schedule_id: int
+    occurrence_date: date
+    kind: OccurrenceExceptionKind
+    replacement_schedule_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamSchedulePublishJob:
+    channel_id: str
+    generation: int
+    attempt_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class TwitchSchedulePublishState:
+    id: int
+    channel_id: str
+    schedule_id: int | None
+    twitch_segment_id: str | None
+    schedule_kind: ScheduleKind
+    identity_key: str | None
+    payload_fingerprint: str | None
+    status: str
+    error_code: str | None = None
+    attempt_count: int = 0
+    last_attempted_at: datetime | None = None
+    synced_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TwitchScheduleOccurrenceState:
+    id: int
+    channel_id: str
+    recurring_schedule_id: int
+    occurrence_date: date
+    twitch_segment_id: str | None
+    desired_state: str
+    status: str
+    error_code: str | None = None
+    last_attempted_at: datetime | None = None
+    synced_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamSchedulePublishOverview:
+    status: str
+    pending_count: int
+    synced_count: int
+    blocked_count: int
+    error_count: int
+    last_error_code: str | None = None
+    last_synced_at: datetime | None = None

@@ -13,21 +13,27 @@ from shared.models.attendance import (
     CheckinResult,
     CheckinSettings,
     CheckinStatus,
+    CheckinUnavailable,
 )
 from shared.services.attendance import AttendanceService
 
 
-def _settings(timezone: str = "Asia/Taipei") -> CheckinSettings:
+def _settings(timezone: str = "Asia/Taipei", *, live_only: bool = True) -> CheckinSettings:
     return CheckinSettings(
         channel_id="ch1",
         timezone=timezone,
         success_template="$(user) $(count)",
         duplicate_template="already",
+        live_only=live_only,
     )
 
 
 def test_new_checkin_settings_default_reply_delay_is_five_seconds() -> None:
     assert _settings().reply_delay_seconds == 5
+
+
+def test_new_checkin_settings_default_to_live_only() -> None:
+    assert _settings().live_only is True
 
 
 @pytest.mark.asyncio
@@ -111,6 +117,7 @@ class TestAttendanceService:
             success_template="$(@user) 第 $(count) 天",
             duplicate_template="$(@user) 今天已簽到",
             reply_delay_seconds=5,
+            live_only=True,
         )
 
     async def test_update_settings_updates_only_the_reply_delay(self):
@@ -128,6 +135,26 @@ class TestAttendanceService:
             success_template=current.success_template,
             duplicate_template=current.duplicate_template,
             reply_delay_seconds=5,
+            live_only=True,
+        )
+
+    async def test_update_settings_can_enable_live_only_without_changing_templates(self):
+        current = _settings(live_only=False)
+        updated = _settings(live_only=True)
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=current)
+        repo.update_settings = AsyncMock(return_value=updated)
+
+        result = await AttendanceService(repo).update_settings("ch1", live_only=True)
+
+        assert result.live_only is True
+        repo.update_settings.assert_awaited_once_with(
+            channel_id="ch1",
+            timezone=current.timezone,
+            success_template=current.success_template,
+            duplicate_template=current.duplicate_template,
+            reply_delay_seconds=current.reply_delay_seconds,
+            live_only=True,
         )
 
     async def test_update_settings_rejects_invalid_timezone_before_write(self):
@@ -154,7 +181,7 @@ class TestAttendanceService:
 
     async def test_uses_channel_timezone_for_calendar_day(self):
         repo = MagicMock()
-        repo.get_or_create_settings = AsyncMock(return_value=_settings())
+        repo.get_or_create_settings = AsyncMock(return_value=_settings(live_only=False))
         repo.record_checkin = AsyncMock(
             return_value=CheckinResult(
                 status=CheckinStatus.RECORDED,
@@ -180,7 +207,70 @@ class TestAttendanceService:
             occurred_at=now,
         )
 
-        assert repo.record_checkin.await_args.kwargs["checkin_date"] == date(2026, 8, 31)
+        assert repo.record_checkin.await_args.kwargs == {
+            "channel_id": "ch1",
+            "user_id": "u1",
+            "username": "alice",
+            "display_name": "Alice",
+            "checkin_date": date(2026, 8, 31),
+            "occurred_at": now,
+            "session_id": None,
+            "require_live": False,
+        }
+
+    async def test_live_only_delegates_session_and_broadcast_day_resolution(self):
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=_settings(live_only=True))
+        result = CheckinResult(
+            status=CheckinStatus.RECORDED,
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 30),
+            total_days=1,
+            checkin_id=1,
+            event_id=2,
+            occurred_at=datetime(2026, 8, 30, 16, 30, tzinfo=UTC),
+        )
+        repo.record_checkin = AsyncMock(return_value=result)
+        service = AttendanceService(repo)
+        now = datetime(2026, 8, 30, 16, 30, tzinfo=UTC)
+
+        outcome = await service.check_in(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=now,
+            session_id=42,
+        )
+
+        assert outcome is result
+        assert repo.record_checkin.await_args.kwargs["require_live"] is True
+        assert repo.record_checkin.await_args.kwargs["session_id"] == 42
+
+    async def test_live_only_offline_returns_explicit_outcome_and_immediate_reply(self):
+        repo = MagicMock()
+        repo.get_or_create_settings = AsyncMock(return_value=_settings(live_only=True))
+        repo.record_checkin = AsyncMock(return_value=None)
+        service = AttendanceService(repo)
+        now = datetime(2026, 8, 30, 16, 30, tzinfo=UTC)
+
+        outcome = await service.check_in_with_reply(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            occurred_at=now,
+        )
+
+        assert isinstance(outcome.result, CheckinUnavailable)
+        assert outcome.result.status is CheckinStatus.STREAM_OFFLINE
+        assert outcome.result.recorded is False
+        assert outcome.result.occurred_at == now
+        assert outcome.message == "@Alice 目前未開台，開台後再簽到吧！"
+        assert outcome.delay_seconds == 0
 
     async def test_rejects_naive_datetime(self):
         repo = MagicMock()

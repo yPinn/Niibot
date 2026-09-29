@@ -1,13 +1,21 @@
-import { API_ENDPOINTS } from './config'
-import { apiJson } from './errors'
+import { API_ENDPOINTS, apiFetch } from './config'
+import { ApiError, apiJson, NETWORK_ERROR, parseApiError } from './errors'
 
-export type ImportSourceName = 'nightbot' | 'streamelements'
+export type ImportSourceName = 'nightbot' | 'streamelements' | 'csv'
 
 /** Which part of the preview a row belongs to. */
 export type ImportSection = 'builtin' | 'custom' | 'trigger' | 'unsupported'
 
 /** How faithfully the row will survive the move. */
 export type ImportStatus = 'ok' | 'review' | 'conflict' | 'unsupported'
+
+export type ImportFieldAction = 'preserved' | 'tightened' | 'dropped' | 'review'
+
+export interface ImportFieldOutcome {
+  field: string
+  action: ImportFieldAction
+  detail: string
+}
 
 export interface ImportSourceInfo {
   source: ImportSourceName
@@ -23,6 +31,8 @@ export interface ImportItem {
   /** Whether the command was switched on over at the old bot. */
   source_enabled: boolean
   notes: string[]
+  /** Explicit per-field conversion result for defaults and approximate mappings. */
+  field_outcomes: ImportFieldOutcome[]
   command_name: string | null
   response: string | null
   original_response: string | null
@@ -51,6 +61,11 @@ export interface ImportResult {
   errors: string[]
 }
 
+export interface CommandCsvDownload {
+  blob: Blob
+  filename: string
+}
+
 export function getImportSources(): Promise<ImportSourceInfo[]> {
   return apiJson(
     API_ENDPOINTS.commandImport.sources,
@@ -65,6 +80,33 @@ export function previewStreamElements(): Promise<ImportPreview> {
     { credentials: 'include' },
     { fallback: '讀取 StreamElements 指令失敗' }
   )
+}
+
+export function previewCommandCsv(upload: File): Promise<ImportPreview> {
+  const body = new FormData()
+  body.set('upload', upload)
+  return apiJson(
+    API_ENDPOINTS.commandImport.csvPreview,
+    { method: 'POST', credentials: 'include', body },
+    { fallback: '讀取 CSV 指令失敗' }
+  )
+}
+
+export async function exportCommandCsv(): Promise<CommandCsvDownload> {
+  let response: Response
+  try {
+    response = await apiFetch(API_ENDPOINTS.commandImport.csvExport, { credentials: 'include' })
+  } catch {
+    throw new ApiError({
+      message: '網路連線出了問題，請檢查後再試',
+      status: 0,
+      code: NETWORK_ERROR,
+    })
+  }
+  if (!response.ok) throw await parseApiError(response, '匯出指令失敗')
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'niibot-commands.csv'
+  return { blob: await response.blob(), filename }
 }
 
 export function getNightbotOauthUrl(): Promise<{ oauth_url: string }> {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from collections.abc import Coroutine
 from dataclasses import dataclass, replace
@@ -26,8 +27,10 @@ from core.subscription_manager import SubscriptionManager, SubscriptionReconcile
 from shared.assistant import ASSISTANT_SCOPE_CHANGED_CHANNEL
 from shared.database import DatabaseManager
 from shared.log_context import bound_log_context
-from shared.pg_listener import pg_listen
+from shared.models.channel import TokenRuntimeMetadata
+from shared.pg_listener import pg_listen_many
 from shared.repositories.analytics import AnalyticsRepository
+from shared.repositories.bot_selection import BotSelectionRepository
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.command_config import (
     CommandConfigRepository,
@@ -55,6 +58,8 @@ _SUBSCRIPTION_RECONCILE_INTERVAL = 15 * 60
 _MOD_RECHECK_INTERVAL = 10 * 60
 _TOKEN_VALIDATION_MIN_INTERVAL = 1.0
 _TOKEN_VALIDATION_MAX_ATTEMPTS = 3
+_CREDENTIAL_RECONCILE_INTERVAL = 60.0
+_CREDENTIAL_RECONCILE_JITTER = 15.0
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,14 @@ class SharedChatSession:
     participants: tuple[tuple[str, str], ...]
     started_at: datetime
     our_channel_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RuntimeCredentialSource:
+    """Database row generation that owns one TwitchIO runtime credential."""
+
+    token_type: TwitchCredential
+    revision: int
 
 
 class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
@@ -97,6 +110,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self._bot_id = bot_id
 
         self.channels = ChannelRepository(token_database)
+        self.bot_selections = BotSelectionRepository(token_database)
         self.analytics = AnalyticsRepository(token_database)
         self.command_configs = CommandConfigRepository(token_database)
         self.redemption_configs = RedemptionConfigRepository(token_database)
@@ -120,8 +134,15 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         # paced through this process-wide gate.
         self._token_validation_gate = asyncio.Lock()
         self._next_token_validation_at = 0.0
-        self._runtime_credential_revisions: dict[str, int] = {}
-        self._pending_refresh_revisions: dict[tuple[str, str], int] = {}
+        self._runtime_credential_sources: dict[str, RuntimeCredentialSource] = {}
+        self._pending_refresh_sources: dict[tuple[str, str], RuntimeCredentialSource] = {}
+        self._credential_reconcile_lock = asyncio.Lock()
+        # BotAccountResolver owns process-global sender state. Selection
+        # convergence for different channels must therefore serialize the
+        # resolver snapshot, token load, acknowledgement, and stale discard.
+        self._bot_selection_reconcile_lock = asyncio.Lock()
+        self._runtime_credentials_ready = asyncio.Event()
+        self._runtime_credential_reconcile_requested = asyncio.Event()
         self.egress = TwitchEgressCoordinator()
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
@@ -179,6 +200,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             delete_subscription=self.delete_eventsub_subscription,
             needs_reauth=self._needs_reauth,
             scope_resolver=self._eventsub_scope_context,
+            bot_id_resolver=self.sender_for,
         )
         # Per-channel sender resolution (Phase 3 bot accounts) — every
         # channel resolves to the system default until a switch actually
@@ -253,7 +275,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
             return set(legacy_scopes)
         return set(scopes.split())
 
-    async def _eventsub_scope_context(self, channel_id: str) -> tuple[set[str], set[str], set[str]]:
+    async def _eventsub_scope_context(
+        self,
+        channel_id: str,
+        bot_user_id: str,
+    ) -> tuple[set[str], set[str], set[str]]:
         """Resolve grants before building one channel's EventSub plan.
 
         A missing credential yields no grants.  Legacy rows whose scope column
@@ -267,11 +293,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         broadcaster_scopes = await self._stored_token_scopes(
             channel_id, "broadcaster", BROADCASTER_SCOPES
         )
-        bot_scopes = (
-            await self._stored_token_scopes(self._bot_id, "bot", BOT_SCOPES)
-            if self._bot_id is not None
-            else set()
-        )
+        bot_scopes = await self._stored_token_scopes(bot_user_id, "bot", BOT_SCOPES)
         return broadcaster_scopes, bot_scopes, set()
 
     def sender_for(self, channel_id: str) -> str:
@@ -304,6 +326,11 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         """
         try:
             await asyncio.sleep(2)
+
+            # Resume only versions explicitly left in `switching`.  Failed
+            # desired state remains visible to the UI but is never adopted on
+            # restart without a new user request.
+            await self._resume_bot_selections()
 
             enabled_channels, results = await self._reconcile_enabled_subscriptions()
             LOGGER.info(f"Subscribing to {len(enabled_channels)} enabled channels...")
@@ -361,6 +388,96 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 LOGGER.warning("Periodic EventSub reconciliation failed: %s", exc)
             await asyncio.sleep(_SUBSCRIPTION_RECONCILE_INTERVAL)
 
+    async def _schedule_runtime_credential_reconcile(self) -> None:
+        """Coalesce listener reconnects into one durable catch-up request."""
+        self._runtime_credential_reconcile_requested.set()
+
+    async def _runtime_credential_reconcile_worker(self) -> None:
+        """Drain coalesced reconnect catch-up requests after startup load."""
+        await self._runtime_credentials_ready.wait()
+        while True:
+            try:
+                await self._runtime_credential_reconcile_requested.wait()
+                self._runtime_credential_reconcile_requested.clear()
+                await self._reconcile_runtime_credentials()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                LOGGER.warning("Twitch credential catch-up failed: %s", exc)
+
+    async def _periodic_credential_reconcile(self) -> None:
+        """Durable repair for missed NOTIFY and transient runtime reloads."""
+        await self._runtime_credentials_ready.wait()
+        while True:
+            try:
+                delay = _CREDENTIAL_RECONCILE_INTERVAL + random.uniform(
+                    0.0,
+                    _CREDENTIAL_RECONCILE_JITTER,
+                )
+                await asyncio.sleep(delay)
+                await self._reconcile_runtime_credentials()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                LOGGER.warning("Periodic Twitch credential reconciliation failed: %s", exc)
+
+    async def _reconcile_runtime_credentials(self) -> None:
+        """Converge TwitchIO's token store from non-secret DB generation metadata."""
+        async with self._bot_selection_reconcile_lock, self._credential_reconcile_lock:
+            metadata = await self.channels.list_runtime_token_metadata()
+            relevant_bot_ids = self.bots.relevant_bot_ids()
+            desired: dict[str, TokenRuntimeMetadata] = {}
+            for item in metadata:
+                expected_type: TwitchCredential = (
+                    "bot" if item.user_id in relevant_bot_ids else "broadcaster"
+                )
+                if item.token_type == expected_type:
+                    desired[item.user_id] = item
+
+            stale_user_ids = sorted(set(self._runtime_credential_sources) - set(desired))
+            if stale_user_ids:
+                await self._discard_runtime_token(*stale_user_ids)
+
+            for user_id in sorted(desired):
+                item = desired[user_id]
+                source = RuntimeCredentialSource(
+                    token_type=item.token_type,
+                    revision=item.credential_revision,
+                )
+                if self._runtime_credential_sources.get(user_id) == source:
+                    continue
+                try:
+                    await self._reload_runtime_credential(item)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "Runtime credential reconcile deferred for %s (%s): %s",
+                        user_id,
+                        item.token_type,
+                        exc,
+                    )
+
+    async def _reload_runtime_credential(self, item: TokenRuntimeMetadata) -> None:
+        token_type: TwitchCredential = "bot" if item.token_type == "bot" else "broadcaster"
+        self.channels.invalidate_token(item.user_id, token_type)
+        if token_type == "broadcaster":
+            async with self._channel_lock(item.user_id):
+                await self._handle_new_token_locked(item.user_id)
+            return
+
+        token_obj = await self.channels.get_token(item.user_id, "bot")
+        if token_obj is None or token_obj.credential_revision != item.credential_revision:
+            return
+        await self.add_token(
+            token_obj.token,
+            token_obj.refresh,
+            persist=False,
+            expected_user_id=item.user_id,
+            expected_token_type="bot",
+            expected_revision=item.credential_revision,
+        )
+        if item.user_id == self._bot_id:
+            await self._reconcile_enabled_subscriptions()
+
     # ------------------------------------------------------------------
     # Setup
     # ------------------------------------------------------------------
@@ -378,28 +495,24 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
 
         for coro in (
             self._bootstrap_channels(),
-            pg_listen(self._database_url, "new_token", self._handle_new_token),
-            pg_listen(self._database_url, "token_reauth", self._handle_token_reauth),
-            pg_listen(
+            pg_listen_many(
                 self._database_url,
-                "bot_token_updated",
-                self._handle_bot_token_updated,
-            ),
-            pg_listen(
-                self._database_url,
-                "bot_selection_changed",
-                self._handle_bot_selection_changed,
-            ),
-            pg_listen(self._database_url, "channel_toggle", self._handle_channel_toggle),
-            pg_listen(self._database_url, "config_change", self._handle_config_change),
-            pg_listen(
-                self._database_url,
-                ASSISTANT_SCOPE_CHANGED_CHANNEL,
-                self._handle_assistant_scope_changed,
+                {
+                    "new_token": self._handle_new_token,
+                    "token_reauth": self._handle_token_reauth,
+                    "bot_token_updated": self._handle_bot_token_updated,
+                    "bot_selection_changed": self._handle_bot_selection_changed,
+                    "channel_toggle": self._handle_channel_toggle,
+                    "config_change": self._handle_config_change,
+                    ASSISTANT_SCOPE_CHANGED_CHANNEL: self._handle_assistant_scope_changed,
+                },
+                on_connected=self._schedule_runtime_credential_reconcile,
             ),
             self._pool_heartbeat_loop(),
             self._periodic_cache_refresh(),
             self._periodic_subscription_reconcile(),
+            self._runtime_credential_reconcile_worker(),
+            self._periodic_credential_reconcile(),
         ):
             self._spawn_background(coro)
 
@@ -528,45 +641,45 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
     async def event_token_refreshed(self, payload: _TokenRefreshedPayload) -> None:
         if not payload.user_id:
             return
-        expected_revision = self._pending_refresh_revisions.pop(
-            (payload.user_id, payload.token), None
-        )
-        if expected_revision is None:
+        source = self._pending_refresh_sources.pop((payload.user_id, payload.token), None)
+        if source is None:
             LOGGER.warning(
-                "[%s] Ignoring token refresh without a captured credential revision",
+                "[%s] Ignoring token refresh without a captured credential source",
                 self._ch(payload.user_id),
             )
             return
         scopes_str = " ".join(list(payload.scopes)) if payload.scopes else None
-        token_type = "bot" if payload.user_id in self.bots.relevant_bot_ids() else "broadcaster"
         updated = await self.channels.rotate_token_if_revision(
             payload.user_id,
             payload.token,
             payload.refresh_token,
             scopes=scopes_str,
-            token_type=token_type,
-            expected_revision=expected_revision,
+            token_type=source.token_type,
+            expected_revision=source.revision,
         )
         if not updated:
             current = self.tokens.get(payload.user_id)
             if (
-                self._runtime_credential_revisions.get(payload.user_id) == expected_revision
+                self._runtime_credential_sources.get(payload.user_id) == source
                 and current
                 and current["token"] == payload.token
             ):
                 await self.remove_token(payload.user_id)
-                self._runtime_credential_revisions.pop(payload.user_id, None)
+                self._runtime_credential_sources.pop(payload.user_id, None)
             LOGGER.warning(
                 "[%s] Ignoring stale token refresh from credential revision %d",
                 self._ch(payload.user_id),
-                expected_revision,
+                source.revision,
             )
             return
-        self._runtime_credential_revisions[payload.user_id] = expected_revision + 1
+        self._runtime_credential_sources[payload.user_id] = replace(
+            source,
+            revision=source.revision + 1,
+        )
         LOGGER.debug("[%s] Token refreshed and persisted", self._ch(payload.user_id))
         self._buffer_token_refresh_log(payload.user_id)
         if (
-            not self.bots.is_bot_identity(payload.user_id)
+            source.token_type != "bot"
             and payload.user_id not in self._bot_is_mod
             and payload.user_id not in self._needs_reauth
         ):
@@ -897,9 +1010,9 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
 
         def capture(user_id: str, payload: Any) -> None:
             access_token = getattr(payload, "access_token", None)
-            revision = self._runtime_credential_revisions.get(user_id)
-            if access_token and revision is not None:
-                self._pending_refresh_revisions[(user_id, access_token)] = revision
+            source = self._runtime_credential_sources.get(user_id)
+            if access_token and source is not None:
+                self._pending_refresh_sources[(user_id, access_token)] = source
             dispatch(user_id, payload)
 
         http._dispatch_event = capture
@@ -1013,6 +1126,12 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         for user_id in user_ids:
             if user_id:
                 await self.remove_token(user_id)
+                self._runtime_credential_sources.pop(user_id, None)
+                stale_refreshes = [
+                    key for key in self._pending_refresh_sources if key[0] == user_id
+                ]
+                for key in stale_refreshes:
+                    self._pending_refresh_sources.pop(key, None)
 
     @staticmethod
     def _runtime_credential_error(
@@ -1067,11 +1186,24 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 )
                 if not reserved:
                     raise RuntimeError(f"stale Twitch credential revision for {expected_user_id}")
+                source = RuntimeCredentialSource(
+                    token_type=expected_token_type,
+                    revision=expected_revision,
+                )
                 # Set before TwitchIO validation: add_token may proactively
                 # refresh a near-expiry token and dispatch the refresh event
                 # before this coroutine regains control.
-                self._runtime_credential_revisions[expected_user_id] = expected_revision
-                resp = await self._validate_runtime_token(token, refresh)
+                previous_source = self._runtime_credential_sources.get(expected_user_id)
+                self._runtime_credential_sources[expected_user_id] = source
+                try:
+                    resp = await self._validate_runtime_token(token, refresh)
+                except BaseException:
+                    if self._runtime_credential_sources.get(expected_user_id) == source:
+                        if previous_source is None:
+                            self._runtime_credential_sources.pop(expected_user_id, None)
+                        else:
+                            self._runtime_credential_sources[expected_user_id] = previous_source
+                    raise
 
                 required = set(required_core_scopes(expected_token_type))
                 identity_matches = resp.user_id == expected_user_id
@@ -1079,7 +1211,6 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 scopes_match = required.issubset(set(resp.scopes))
                 if not identity_matches or not client_matches:
                     await self._discard_runtime_token(expected_user_id, resp.user_id)
-                    self._runtime_credential_revisions.pop(expected_user_id, None)
                     reason = "identity_mismatch" if not identity_matches else "client_mismatch"
                     raise self._runtime_credential_error(token, refresh, reason)
                 if scopes_match:
@@ -1090,12 +1221,9 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                         connection=validation_conn,
                     )
                     if not recorded:
-                        refreshed_revision = self._runtime_credential_revisions.get(
-                            expected_user_id
-                        )
-                        if refreshed_revision != expected_revision + 1:
+                        refreshed_source = self._runtime_credential_sources.get(expected_user_id)
+                        if refreshed_source != replace(source, revision=expected_revision + 1):
                             await self._discard_runtime_token(expected_user_id)
-                            self._runtime_credential_revisions.pop(expected_user_id, None)
                             raise RuntimeError(
                                 f"stale Twitch credential revision for {expected_user_id}"
                             )
@@ -1142,7 +1270,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         # which decides whether a given 'bot'-typed row gets loaded at all.
         await self.bots.load_all()
 
-        tokens = await self.channels.list_tokens(skip_invalid_envelopes=True)
+        tokens = await self.channels.list_tokens(
+            skip_invalid_envelopes=True,
+            runtime_eligible_only=True,
+        )
         relevant_bot_ids = self.bots.relevant_bot_ids()
 
         for tok in tokens:
@@ -1228,6 +1359,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
                 await self.add_channel_to_db(tok.user_id, user_info.login or "unknown")
             except Exception as e:
                 LOGGER.error("Failed to add channel for user_id %s: %s", tok.user_id, e)
+
+        ready = getattr(self, "_runtime_credentials_ready", None)
+        if ready is not None:
+            ready.set()
 
     # ------------------------------------------------------------------
     # Utility

@@ -14,6 +14,22 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Content-Type-Options: nosniff
 X-Frame-Options: SAMEORIGIN
 
+/bot-invite/*
+
+# Invite URLs carry one-time capabilities in the path and query string.
+
+Cache-Control: no-store
+Referrer-Policy: no-referrer
+X-Robots-Tag: noindex, nofollow
+
+/bot-auth/*
+
+# OAuth result pages must not be indexed or retained by shared caches.
+
+Cache-Control: no-store
+Referrer-Policy: no-referrer
+X-Robots-Tag: noindex, nofollow
+
 /images/tarot/decks/*
 
 # Deck versions are immutable; changing artwork requires a new deck id or version directory.

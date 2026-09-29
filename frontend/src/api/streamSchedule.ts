@@ -2,6 +2,7 @@ import { API_ENDPOINTS } from './config'
 import { apiJson } from './errors'
 
 export type ScheduleKind = 'recurring' | 'one_off'
+export type OccurrenceExceptionKind = 'cancelled' | 'replacement'
 
 export interface StreamScheduleSettings {
   channel_id: string
@@ -14,6 +15,16 @@ export interface StreamScheduleSettings {
 export interface StreamScheduleSettingsUpdate {
   timezone?: string
   enabled?: boolean
+}
+
+export interface StreamSchedulePublishStatus {
+  status: 'idle' | 'pending' | 'synced' | 'blocked' | 'error'
+  pending_count: number
+  synced_count: number
+  blocked_count: number
+  error_count: number
+  last_error_code: string | null
+  last_synced_at: string | null
 }
 
 export interface StreamSchedule {
@@ -37,6 +48,8 @@ export interface StreamScheduleCreate {
   start_time: string
   duration_minutes: number
   title_template?: string
+  game_id?: string
+  game_name?: string
 }
 
 export interface StreamScheduleUpdate {
@@ -76,6 +89,22 @@ export interface StreamScheduleSegmentUpdate {
   sort_order?: number
 }
 
+export interface StreamScheduleOccurrenceException {
+  id: number
+  channel_id: string
+  recurring_schedule_id: number
+  occurrence_date: string
+  kind: OccurrenceExceptionKind
+  replacement_schedule_id: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface StreamScheduleReplacement {
+  exception: StreamScheduleOccurrenceException
+  schedule: StreamSchedule
+}
+
 export interface StreamScheduleGameSearchResult {
   id: string
   name: string
@@ -87,6 +116,26 @@ export function getStreamScheduleSettings(): Promise<StreamScheduleSettings> {
     API_ENDPOINTS.streamSchedule.settings,
     { credentials: 'include' },
     { fallback: '載入排程設定失敗' }
+  )
+}
+
+export function getStreamSchedulePublishStatus(): Promise<StreamSchedulePublishStatus> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.twitchPublish,
+    { credentials: 'include' },
+    { fallback: '載入 Twitch 行程表同步狀態失敗' }
+  )
+}
+
+export function retryStreamSchedulePublish(): Promise<{ status: 'queued' }> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.twitchPublishRetry,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-Niibot-Action': 'stream-schedule-publish-retry' },
+    },
+    { fallback: '重新同步 Twitch 行程表失敗' }
   )
 }
 
@@ -113,6 +162,58 @@ export function getStreamSchedules(): Promise<StreamSchedule[]> {
     API_ENDPOINTS.streamSchedule.schedules,
     { credentials: 'include' },
     { fallback: '載入排程失敗' }
+  )
+}
+
+export function getStreamScheduleOccurrenceExceptions(): Promise<
+  StreamScheduleOccurrenceException[]
+> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.occurrenceExceptions,
+    { credentials: 'include' },
+    { fallback: '載入本次調整失敗' }
+  )
+}
+
+export function cancelStreamScheduleOccurrence(
+  scheduleId: number,
+  date: string
+): Promise<StreamScheduleOccurrenceException> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.occurrenceCancel(scheduleId, date),
+    {
+      method: 'POST',
+      headers: { 'X-Niibot-Action': 'stream-schedule-occurrence-cancel' },
+      credentials: 'include',
+    },
+    { fallback: '取消本次排程失敗' }
+  )
+}
+
+export function restoreStreamScheduleOccurrence(scheduleId: number, date: string): Promise<void> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.occurrenceRestore(scheduleId, date),
+    {
+      method: 'DELETE',
+      headers: { 'X-Niibot-Action': 'stream-schedule-occurrence-restore' },
+      credentials: 'include',
+    },
+    { fallback: '恢復本次排程失敗' }
+  )
+}
+
+export function replaceStreamScheduleOccurrence(
+  scheduleId: number,
+  date: string
+): Promise<StreamScheduleReplacement> {
+  return apiJson(
+    API_ENDPOINTS.streamSchedule.occurrenceReplace(scheduleId, date),
+    {
+      method: 'POST',
+      headers: { 'X-Niibot-Action': 'stream-schedule-occurrence-replace' },
+      credentials: 'include',
+    },
+    { fallback: '建立本次調整失敗' }
   )
 }
 

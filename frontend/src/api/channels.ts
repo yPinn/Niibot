@@ -103,6 +103,7 @@ export async function updateChannelDefaults(
 // ---- Bot Mod Status ----
 
 export interface ModStatusResponse {
+  bot_user_id: string
   is_moderator: boolean
 }
 
@@ -113,8 +114,17 @@ export interface GrantModResponse {
 
 export type ModStatusResult = { ok: true; data: ModStatusResponse } | { ok: false; status: number }
 
-export async function getBotModStatus(): Promise<ModStatusResult> {
-  return apiCache.fetch(CACHE_KEYS.BOT_MOD_STATUS, fetchBotModStatus, { ttl: 60_000 })
+export async function getBotModStatus(expectedBotUserId?: string): Promise<ModStatusResult> {
+  const result = await apiCache.fetch(CACHE_KEYS.BOT_MOD_STATUS, fetchBotModStatus, {
+    ttl: 60_000,
+  })
+  if (result.ok && expectedBotUserId && result.data.bot_user_id !== expectedBotUserId) {
+    return apiCache.fetch(CACHE_KEYS.BOT_MOD_STATUS, fetchBotModStatus, {
+      ttl: 60_000,
+      forceRefresh: true,
+    })
+  }
+  return result
 }
 
 async function fetchBotModStatus(): Promise<ModStatusResult> {

@@ -33,7 +33,8 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _MultiSubscribe = Callable[[list[eventsub.SubscriptionPayload]], Awaitable[Any]]
 _ListSubscriptions = Callable[[], Awaitable[list[Any]]]
 _DeleteSubscription = Callable[[str], Awaitable[Any]]
-_ScopeResolver = Callable[[str], Awaitable[tuple[set[str], set[str], set[str]]]]
+_ScopeResolver = Callable[[str, str], Awaitable[tuple[set[str], set[str], set[str]]]]
+_BotIdResolver = Callable[[str], str]
 _Sleep = Callable[[float], Awaitable[None]]
 _Clock = Callable[[], float]
 _Jitter = Callable[[], float]
@@ -106,6 +107,7 @@ class SubscriptionManager:
         delete_subscription: _DeleteSubscription,
         needs_reauth: set[str],
         scope_resolver: _ScopeResolver | None = None,
+        bot_id_resolver: _BotIdResolver | None = None,
         request_rate: float = _DEFAULT_REQUEST_RATE,
         chunk_size: int = _DEFAULT_CHUNK_SIZE,
         max_retries: int = _DEFAULT_MAX_RETRIES,
@@ -126,6 +128,7 @@ class SubscriptionManager:
         self._delete_subscription = delete_subscription
         self._needs_reauth = needs_reauth
         self._scope_resolver = scope_resolver
+        self._bot_id_resolver = bot_id_resolver
         self._request_rate = request_rate
         self._chunk_size = chunk_size
         self._max_retries = max_retries
@@ -251,15 +254,24 @@ class SubscriptionManager:
                 break
         return successes, errors
 
-    async def _desired_for_channel(self, channel_id: str) -> list[eventsub.SubscriptionPayload]:
+    async def _desired_for_channel(
+        self,
+        channel_id: str,
+        *,
+        bot_id: str | None = None,
+    ) -> list[eventsub.SubscriptionPayload]:
+        resolved_bot_id = bot_id or (
+            self._bot_id_resolver(channel_id) if self._bot_id_resolver else self._bot_id
+        )
         if self._scope_resolver is None:
-            return get_channel_subscriptions(channel_id, self._bot_id)
+            return get_channel_subscriptions(channel_id, resolved_bot_id)
         broadcaster_scopes, bot_scopes, enabled_capabilities = await self._scope_resolver(
-            channel_id
+            channel_id,
+            resolved_bot_id,
         )
         return get_channel_subscriptions(
             channel_id,
-            self._bot_id,
+            resolved_bot_id,
             broadcaster_scopes=broadcaster_scopes,
             bot_scopes=bot_scopes,
             enabled_capabilities=enabled_capabilities,
@@ -288,6 +300,7 @@ class SubscriptionManager:
         channel_ids: list[str],
         *,
         prune_unmatched: bool,
+        bot_id_overrides: dict[str, str] | None = None,
     ) -> dict[str, SubscriptionReconcileResult]:
         unique_ids = list(dict.fromkeys(channel_ids))
         desired_by_key: dict[_SubscriptionKey, tuple[str, eventsub.SubscriptionPayload]] = {}
@@ -297,7 +310,10 @@ class SubscriptionManager:
         plan_errors: dict[str, str] = {}
         for channel_id in unique_ids:
             try:
-                desired = await self._desired_for_channel(channel_id)
+                desired = await self._desired_for_channel(
+                    channel_id,
+                    bot_id=(bot_id_overrides or {}).get(channel_id),
+                )
             except Exception as exc:
                 plan_errors[channel_id] = f"plan:{type(exc).__name__}"
                 self._dirty_channels.add(channel_id)
@@ -350,16 +366,9 @@ class SubscriptionManager:
             if prune_unmatched or belongs_to_target:
                 delete_candidates.extend(subscriptions)
 
-        delete_errors: list[str] = []
-        deleted = 0
-        for subscription in delete_candidates:
-            try:
-                await self._delete_remote(subscription.id)
-                deleted += 1
-            except Exception as exc:
-                delete_errors.append(f"delete:{subscription.id}:{type(exc).__name__}")
-                LOGGER.warning("Failed to delete obsolete EventSub %s: %s", subscription.id, exc)
-
+        # Create the new desired set before deleting the old identity-bound
+        # subscriptions.  A sender switch must be rollback-safe: if any
+        # required new subscription fails, the existing chat path stays live.
         missing = [
             subscription
             for key, (_, subscription) in desired_by_key.items()
@@ -409,9 +418,55 @@ class SubscriptionManager:
                     if key in desired_by_key:
                         kept_remote[key] = subscription
             except Exception as exc:
-                delete_errors.append(f"conflict_refetch:{type(exc).__name__}")
+                create_error = f"conflict_refetch:{type(exc).__name__}"
 
         present_keys = set(kept_remote) | set(created_by_key)
+        preliminary_errors: dict[str, list[str]] = {}
+        preliminary_converged: dict[str, bool] = {}
+        for channel_id in unique_ids:
+            channel_desired = desired_keys[channel_id]
+            channel_deferred = channel_desired & deferred_keys
+            channel_errors = [
+                self._error_text(error)
+                for error in real_errors
+                if _subscription_key(error.subscription) in channel_desired
+            ]
+            if channel_id in plan_errors:
+                channel_errors.append(plan_errors[channel_id])
+            if create_error and channel_desired - set(kept_remote):
+                channel_errors.append(create_error)
+            required = channel_desired - channel_deferred
+            preliminary_errors[channel_id] = channel_errors
+            preliminary_converged[channel_id] = (
+                required.issubset(present_keys) and not channel_errors
+            )
+
+        delete_errors: dict[str, list[str]] = {channel_id: [] for channel_id in unique_ids}
+        deleted: dict[str, int] = {channel_id: 0 for channel_id in unique_ids}
+        for subscription in delete_candidates:
+            owning_channels = {
+                channel_id
+                for channel_id in unique_ids
+                if _belongs_to_channel(subscription, channel_id)
+            }
+            if owning_channels and not all(
+                preliminary_converged[channel_id] for channel_id in owning_channels
+            ):
+                continue
+            try:
+                await self._delete_remote(subscription.id)
+                for channel_id in owning_channels:
+                    deleted[channel_id] += 1
+            except Exception as exc:
+                error = f"delete:{subscription.id}:{type(exc).__name__}"
+                for channel_id in owning_channels:
+                    delete_errors[channel_id].append(error)
+                LOGGER.warning(
+                    "Failed to delete obsolete EventSub %s: %s",
+                    subscription.id,
+                    exc,
+                )
+
         if prune_unmatched:
             stale_local = self._subscribed - target_ids
             self._subscribed.difference_update(stale_local)
@@ -422,16 +477,8 @@ class SubscriptionManager:
         for channel_id in unique_ids:
             channel_desired = desired_keys[channel_id]
             channel_deferred = channel_desired & deferred_keys
-            channel_errors = [
-                self._error_text(error)
-                for error in real_errors
-                if _subscription_key(error.subscription) in channel_desired
-            ]
-            channel_errors.extend(delete_errors)
-            if channel_id in plan_errors:
-                channel_errors.append(plan_errors[channel_id])
-            if create_error and channel_desired - set(kept_remote):
-                channel_errors.append(create_error)
+            channel_errors = list(preliminary_errors[channel_id])
+            channel_errors.extend(delete_errors[channel_id])
             required = channel_desired - channel_deferred
             converged = required.issubset(present_keys) and not channel_errors
             ids = [
@@ -469,7 +516,7 @@ class SubscriptionManager:
                 desired=len(channel_desired),
                 adopted=len(channel_desired & set(kept_remote)),
                 created=len(channel_desired & set(created_by_key)),
-                deleted=deleted,
+                deleted=deleted[channel_id],
                 deferred=len(channel_deferred),
                 errors=tuple(channel_errors),
                 converged=converged,
@@ -481,6 +528,21 @@ class SubscriptionManager:
     ) -> dict[str, SubscriptionReconcileResult]:
         async with self._mutation_lock:
             return await self._reconcile_locked(list(channel_ids), prune_unmatched=True)
+
+    async def reconcile_sender(
+        self,
+        channel_id: str,
+        bot_id: str,
+    ) -> SubscriptionReconcileResult:
+        """Converge one channel on an explicit candidate before it becomes active."""
+        async with self._mutation_lock:
+            return (
+                await self._reconcile_locked(
+                    [channel_id],
+                    prune_unmatched=False,
+                    bot_id_overrides={channel_id: bot_id},
+                )
+            )[channel_id]
 
     async def subscribe(self, channel_id: str) -> SubscriptionReconcileResult:
         async with self._mutation_lock:

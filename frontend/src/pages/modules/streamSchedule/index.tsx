@@ -1,9 +1,17 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import {
+  cancelStreamScheduleOccurrence,
+  getStreamScheduleOccurrenceExceptions,
+  getStreamSchedulePublishStatus,
   getStreamSchedules,
   getStreamScheduleSettings,
+  replaceStreamScheduleOccurrence,
+  restoreStreamScheduleOccurrence,
+  retryStreamSchedulePublish,
   type StreamSchedule,
+  type StreamScheduleOccurrenceException,
+  type StreamSchedulePublishStatus,
   type StreamScheduleSettings,
   updateStreamSchedule,
 } from '@/api/streamSchedule'
@@ -13,15 +21,22 @@ import { Icon, SlideUp } from '@/components/primitives'
 import { TableEmptyRow } from '@/components/TableEmptyRow'
 import { TableShell } from '@/components/TableShell'
 import { TableSkeletonRows } from '@/components/TableSkeletonRows'
+import { TwitchCapabilityAlert } from '@/components/TwitchCapabilityAlert'
 import {
   Alert,
   AlertDescription,
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Badge,
   Button,
   Card,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Switch,
@@ -31,19 +46,37 @@ import {
   TableHeader,
   TableRow,
   Tabs,
-  TabsContent,
   TabsList,
   TabsTrigger,
 } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useOptimisticToggle } from '@/hooks/useOptimisticToggle'
+import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
+import { toastApiError } from '@/lib/toast-error'
 
+import {
+  addDays,
+  calendarDate,
+  firstSegment,
+  minutesInTimeZone,
+  resolveSchedulesForDate,
+  timeStrToMinutes,
+  toDateStr,
+  todayInTimeZone,
+} from './calendar'
 import { CalendarView } from './CalendarView'
 import { WEEKDAY_LABELS } from './constants'
+import {
+  NextScheduleCard,
+  NextScheduleCardEmpty,
+  NextScheduleCardSkeleton,
+} from './NextScheduleCard'
 import { ScheduleSheet } from './ScheduleSheet'
 import { SettingsSheet } from './SettingsSheet'
 import { crossesMidnight, endTimeFor } from './time'
+import { TwitchPublishStatus } from './TwitchPublishStatus'
 import type { EditingState } from './types'
+import { useSegmentPreview } from './useSegmentPreview'
 
 function formatTimeRange(startTime: string, durationMinutes: number): string {
   const start = startTime.slice(0, 5)
@@ -53,23 +86,26 @@ function formatTimeRange(startTime: string, durationMinutes: number): string {
 }
 
 interface ScheduleTableProps {
-  kind: 'recurring' | 'one_off'
   schedules: StreamSchedule[]
   onToggle: (schedule: StreamSchedule) => void
   onEdit: (schedule: StreamSchedule) => void
 }
 
-function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps) {
-  const rows = schedules.filter(s => s.kind === kind)
-  if (rows.length === 0) {
+function ScheduleTable({ schedules, onToggle, onEdit }: ScheduleTableProps) {
+  const rows = [...schedules].sort((a, b) => {
+    const aKey = a.kind === 'recurring' ? `${a.weekday}-${a.start_time}` : `${a.specific_date}`
+    const bKey = b.kind === 'recurring' ? `${b.weekday}-${b.start_time}` : `${b.specific_date}`
+    return aKey.localeCompare(bKey)
+  })
+  if (schedules.length === 0) {
     return (
       <TableShell>
         <TableBody>
           <TableEmptyRow
             colSpan={5}
             icon="fa-solid fa-calendar"
-            title={kind === 'recurring' ? '尚無每週固定排程' : '尚無單次排程'}
-            description="點擊「新增排程」開始設定"
+            title="尚無排程"
+            description="新增第一筆排程"
           />
         </TableBody>
       </TableShell>
@@ -79,9 +115,7 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
     <TableShell>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[12%] text-center">
-            {kind === 'recurring' ? '星期' : '日期'}
-          </TableHead>
+          <TableHead className="w-[20%] text-center">類型</TableHead>
           <TableHead className="w-[20%] text-center">時段</TableHead>
           <TableHead className="text-center">標題</TableHead>
           <TableHead className="w-[8%] text-center">狀態</TableHead>
@@ -92,9 +126,14 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
         {rows.map(schedule => (
           <TableRow key={schedule.id}>
             <TableCell className="font-medium">
-              {kind === 'recurring'
-                ? WEEKDAY_LABELS[schedule.weekday ?? 0]
-                : schedule.specific_date}
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{schedule.kind === 'recurring' ? '固定' : '單次'}</Badge>
+                <span>
+                  {schedule.kind === 'recurring'
+                    ? WEEKDAY_LABELS[schedule.weekday ?? 0]
+                    : schedule.specific_date}
+                </span>
+              </div>
             </TableCell>
             <TableCell className="font-mono text-sub">
               {formatTimeRange(schedule.start_time, schedule.duration_minutes)}
@@ -103,7 +142,11 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
               {schedule.title_template || '—'}
             </TableCell>
             <TableCell className="text-center">
-              <Switch checked={schedule.enabled} onCheckedChange={() => onToggle(schedule)} />
+              <Switch
+                aria-label={`${schedule.title_template || '排程'}狀態`}
+                checked={schedule.enabled}
+                onCheckedChange={() => onToggle(schedule)}
+              />
             </TableCell>
             <TableCell className="text-right">
               <Button
@@ -111,6 +154,7 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
                 size="icon"
                 className="size-8"
                 onClick={() => onEdit(schedule)}
+                aria-label="編輯排程"
               >
                 <Icon icon="fa-solid fa-pen" wrapperClassName="size-3.5" />
               </Button>
@@ -122,26 +166,85 @@ function ScheduleTable({ kind, schedules, onToggle, onEdit }: ScheduleTableProps
   )
 }
 
+function NextScheduleSummary({
+  schedules,
+  exceptions,
+  timezone,
+  loading,
+}: {
+  schedules: StreamSchedule[]
+  exceptions: StreamScheduleOccurrenceException[]
+  timezone: string
+  loading: boolean
+}) {
+  const next = useMemo(() => {
+    const now = new Date()
+    const today = todayInTimeZone(timezone, now)
+    const todayDate = calendarDate(today)
+    const nowMinutes = minutesInTimeZone(now, timezone)
+    for (let offset = 0; offset <= 366; offset += 1) {
+      const date = toDateStr(addDays(todayDate, offset))
+      const candidates = resolveSchedulesForDate(schedules, date, timezone, exceptions)
+      const upcoming = candidates.find(schedule => {
+        if (offset > 0) return true
+        return timeStrToMinutes(schedule.start_time) >= nowMinutes
+      })
+      if (upcoming) return { date, schedule: upcoming }
+    }
+    return null
+  }, [exceptions, schedules, timezone])
+  const preview = useSegmentPreview(next?.schedule.id ?? null)
+  useEffect(() => {
+    preview.load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [next?.schedule.id])
+  const opening = firstSegment(preview.segments ?? [])
+
+  if (loading) return <NextScheduleCardSkeleton />
+  if (!next) return <NextScheduleCardEmpty />
+  return (
+    <NextScheduleCard
+      date={next.date}
+      schedule={next.schedule}
+      opening={opening}
+      timezone={timezone}
+    />
+  )
+}
+
 export default function StreamSchedule() {
-  useDocumentTitle('Stream Schedule')
+  useDocumentTitle('直播排程')
+  const { capability } = useTwitchCapabilities()
+  const scheduleCapability = capability('stream_schedule')
 
   const [settings, setSettings] = useState<StreamScheduleSettings | null>(null)
+  const [publishStatus, setPublishStatus] = useState<StreamSchedulePublishStatus | null>(null)
+  const [publishRetrying, setPublishRetrying] = useState(false)
   const [schedules, setSchedules] = useState<StreamSchedule[]>([])
+  const [exceptions, setExceptions] = useState<StreamScheduleOccurrenceException[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [displayMode, setDisplayMode] = useState<'list' | 'calendar'>('list')
+  const [displayMode, setDisplayMode] = useState<'week' | 'month' | 'list'>('week')
+  const [scopePrompt, setScopePrompt] = useState<{
+    schedule: StreamSchedule
+    date: string
+  } | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
       setError(null)
-      const [settingsData, schedulesData] = await Promise.all([
+      const [settingsData, schedulesData, exceptionData, publishData] = await Promise.all([
         getStreamScheduleSettings(),
         getStreamSchedules(),
+        getStreamScheduleOccurrenceExceptions(),
+        getStreamSchedulePublishStatus().catch(() => null),
       ])
       setSettings(settingsData)
       setSchedules(schedulesData)
+      setExceptions(exceptionData)
+      setPublishStatus(publishData)
     } catch {
       setError('無法載入排程設定')
     } finally {
@@ -157,7 +260,10 @@ export default function StreamSchedule() {
   const { toggle: handleToggle } = useOptimisticToggle<StreamSchedule>({
     setState: setSchedules,
     getId: s => s.id,
-    toggleFn: (s, enabled) => updateStreamSchedule(s.id, { enabled }).then(() => {}),
+    toggleFn: (s, enabled) =>
+      updateStreamSchedule(s.id, { enabled }).then(() => {
+        setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+      }),
     messages: { on: '排程已啟用', off: '排程已停用', error: '切換排程狀態失敗' },
   })
 
@@ -166,58 +272,140 @@ export default function StreamSchedule() {
       const exists = prev.some(s => s.id === schedule.id)
       return exists ? prev.map(s => (s.id === schedule.id ? schedule : s)) : [...prev, schedule]
     })
-    setEditing(prev => (prev ? { mode: 'edit', schedule } : prev))
+    setEditing(prev =>
+      prev ? { mode: 'edit', schedule, justCreated: prev.mode === 'create' } : prev
+    )
+    setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
   }
 
   const handleDeleted = (id: number) => {
     setSchedules(prev => prev.filter(s => s.id !== id))
+    setExceptions(prev => prev.filter(item => item.replacement_schedule_id !== id))
     setEditing(null)
+    setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+  }
+
+  const handlePublishRetry = async () => {
+    setPublishRetrying(true)
+    try {
+      await retryStreamSchedulePublish()
+      setPublishStatus(prev =>
+        prev ? { ...prev, status: 'pending', last_error_code: null, error_count: 0 } : prev
+      )
+    } catch (error) {
+      toastApiError(error, '重新同步 Twitch 行程表失敗')
+    } finally {
+      setPublishRetrying(false)
+    }
+  }
+
+  const upsertException = (exception: StreamScheduleOccurrenceException) => {
+    setExceptions(prev => [
+      ...prev.filter(
+        item =>
+          item.recurring_schedule_id !== exception.recurring_schedule_id ||
+          item.occurrence_date !== exception.occurrence_date
+      ),
+      exception,
+    ])
+  }
+
+  const handleOccurrenceScope = async (scope: 'occurrence' | 'series') => {
+    if (!scopePrompt) return
+    const target = scopePrompt
+    setScopePrompt(null)
+    if (scope === 'series') {
+      setEditing({ mode: 'edit', schedule: target.schedule })
+      return
+    }
+    try {
+      const replacement = await replaceStreamScheduleOccurrence(target.schedule.id, target.date)
+      handleSaved(replacement.schedule)
+      upsertException(replacement.exception)
+      setEditing({ mode: 'edit', schedule: replacement.schedule, calendarDate: target.date })
+    } catch (error) {
+      toastApiError(error, '建立本次調整失敗')
+    }
+  }
+
+  const handleRestoreOccurrence = async (schedule: StreamSchedule, date: string) => {
+    try {
+      await restoreStreamScheduleOccurrence(schedule.id, date)
+      setExceptions(prev =>
+        prev.filter(
+          item => item.recurring_schedule_id !== schedule.id || item.occurrence_date !== date
+        )
+      )
+      setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+    } catch (error) {
+      toastApiError(error, '恢復本次排程失敗')
+    }
+  }
+
+  const handleCancelOccurrence = async () => {
+    if (!scopePrompt) return
+    const target = scopePrompt
+    setScopePrompt(null)
+    try {
+      upsertException(await cancelStreamScheduleOccurrence(target.schedule.id, target.date))
+      setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+    } catch (error) {
+      toastApiError(error, '取消本次排程失敗')
+    }
   }
 
   return (
     <PageMain>
-      <PageHeader
-        title="Stream Schedule"
-        description="設定固定行程的標題與遊戲分類，開台時自動套用"
-      >
+      <PageHeader title="直播排程" description="規劃開台時間、標題與分類">
         <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
           <Icon icon="fa-solid fa-gear" wrapperClassName="mr-1.5 size-3" />
-          排程設定
+          設定
+        </Button>
+        <Button size="sm" onClick={() => setEditing({ mode: 'create' })}>
+          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+          新增排程
         </Button>
       </PageHeader>
 
       {settings && !settings.enabled && (
         <Alert>
-          <AlertDescription>
-            「自動套用排程」目前已關閉，開台不會自動改標題或分類，可以到「排程設定」重新開啟。
-          </AlertDescription>
+          <AlertDescription>自動套用已關閉；排程仍可查看與編輯。</AlertDescription>
         </Alert>
       )}
+
+      {scheduleCapability && <TwitchCapabilityAlert capabilities={[scheduleCapability]} />}
+
+      <TwitchPublishStatus
+        value={publishStatus}
+        capabilityAvailable={scheduleCapability?.available ?? true}
+        retrying={publishRetrying}
+        onRetry={handlePublishRetry}
+      />
 
       <SlideUp inView>
         <Card>
           <CardHeader>
-            <CardTitle>排程列表</CardTitle>
-            <CardDescription>
-              可以設定「每週固定」或「單次」的排程；同一天兩種都有的話，單次排程優先
-            </CardDescription>
-            <CardAction className="flex items-center gap-2">
+            <CardTitle>行程</CardTitle>
+            <CardAction>
               <Tabs
                 value={displayMode}
-                onValueChange={v => setDisplayMode(v as 'list' | 'calendar')}
+                onValueChange={v => setDisplayMode(v as 'week' | 'month' | 'list')}
               >
                 <TabsList>
-                  <TabsTrigger value="list">列表</TabsTrigger>
-                  <TabsTrigger value="calendar">日曆</TabsTrigger>
+                  <TabsTrigger value="week">週</TabsTrigger>
+                  <TabsTrigger value="month">月</TabsTrigger>
+                  <TabsTrigger value="list">清單</TabsTrigger>
                 </TabsList>
               </Tabs>
-              <Button size="sm" onClick={() => setEditing({ mode: 'create' })}>
-                <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-                新增排程
-              </Button>
             </CardAction>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-section">
+            <NextScheduleSummary
+              schedules={schedules}
+              exceptions={exceptions}
+              timezone={settings?.timezone ?? 'Asia/Taipei'}
+              loading={loading}
+            />
             {loading ? (
               <TableSkeletonRows
                 count={4}
@@ -227,12 +415,17 @@ export default function StreamSchedule() {
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
-            ) : displayMode === 'calendar' ? (
+            ) : displayMode !== 'list' ? (
               <CalendarView
                 schedules={schedules}
-                onEditSchedule={(s, dateStr) =>
-                  setEditing({ mode: 'edit', schedule: s, calendarDate: dateStr })
-                }
+                exceptions={exceptions}
+                timezone={settings?.timezone ?? 'Asia/Taipei'}
+                mode={displayMode}
+                onEditSchedule={(schedule, dateStr) => {
+                  if (schedule.kind === 'recurring') setScopePrompt({ schedule, date: dateStr })
+                  else setEditing({ mode: 'edit', schedule, calendarDate: dateStr })
+                }}
+                onRestoreOccurrence={handleRestoreOccurrence}
                 onCreateForDate={dateStr =>
                   setEditing({
                     mode: 'create',
@@ -241,40 +434,11 @@ export default function StreamSchedule() {
                 }
               />
             ) : (
-              <Tabs defaultValue="recurring">
-                <TabsList>
-                  <TabsTrigger value="recurring">
-                    每週固定
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {schedules.filter(s => s.kind === 'recurring').length}
-                    </Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="one_off">
-                    單次排程
-                    <Badge variant="secondary" className="ml-1.5 px-1.5 text-label">
-                      {schedules.filter(s => s.kind === 'one_off').length}
-                    </Badge>
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="recurring">
-                  <ScheduleTable
-                    kind="recurring"
-                    schedules={schedules}
-                    onToggle={handleToggle}
-                    onEdit={s => setEditing({ mode: 'edit', schedule: s })}
-                  />
-                </TabsContent>
-
-                <TabsContent value="one_off">
-                  <ScheduleTable
-                    kind="one_off"
-                    schedules={schedules}
-                    onToggle={handleToggle}
-                    onEdit={s => setEditing({ mode: 'edit', schedule: s })}
-                  />
-                </TabsContent>
-              </Tabs>
+              <ScheduleTable
+                schedules={schedules}
+                onToggle={handleToggle}
+                onEdit={s => setEditing({ mode: 'edit', schedule: s })}
+              />
             )}
           </CardContent>
         </Card>
@@ -282,17 +446,43 @@ export default function StreamSchedule() {
 
       <ScheduleSheet
         editing={editing}
+        timezone={settings?.timezone ?? 'Asia/Taipei'}
         onSaved={handleSaved}
         onDeleted={handleDeleted}
+        onOccurrenceCancelled={upsertException}
         onClose={() => setEditing(null)}
       />
 
       <SettingsSheet
         open={settingsOpen}
         settings={settings}
-        onSaved={setSettings}
+        onSaved={value => {
+          setSettings(value)
+          setPublishStatus(prev => (prev ? { ...prev, status: 'pending' } : prev))
+        }}
         onClose={() => setSettingsOpen(false)}
       />
+
+      <AlertDialog open={!!scopePrompt} onOpenChange={open => !open && setScopePrompt(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>調整排程</AlertDialogTitle>
+            <AlertDialogDescription>選擇要修改的範圍，或取消這次排程。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="sm:justify-between sm:gap-4">
+            <AlertDialogCancel>關閉</AlertDialogCancel>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="destructive" onClick={handleCancelOccurrence}>
+                取消這次
+              </Button>
+              <Button variant="outline" onClick={() => handleOccurrenceScope('series')}>
+                修改每週
+              </Button>
+              <Button onClick={() => handleOccurrenceScope('occurrence')}>只改這次</Button>
+            </div>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageMain>
   )
 }

@@ -110,6 +110,11 @@ function SettingsSheetForm({ settings, onSaved, onClose }: SettingsSheetFormProp
               ))}
             </SelectContent>
           </Select>
+          {timezone !== settings.timezone && (
+            <p className="text-label text-muted-foreground">
+              既有排程鐘點不變，改用 {timezone} 判定。
+            </p>
+          )}
           {showCheckinHint && (
             <button
               type="button"

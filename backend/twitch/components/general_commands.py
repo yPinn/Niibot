@@ -29,8 +29,9 @@ def _format_schedule_reply(upcoming: UpcomingSchedule) -> str:
         when = _WEEKDAY_LABELS[upcoming.date.weekday()]
 
     parts = [f"{when} {upcoming.schedule.start_time.strftime('%H:%M')} 開始"]
-    if upcoming.schedule.title_template:
-        parts.append(upcoming.schedule.title_template)
+    opening = min(upcoming.segments, key=lambda segment: segment.offset_minutes, default=None)
+    if opening and opening.title_template:
+        parts.append(opening.title_template)
     first_game = next((s.game_name for s in upcoming.segments if s.game_name), None)
     if first_game:
         parts.append(f"預計玩 {first_game}")
@@ -95,7 +96,7 @@ class GeneralCommandsComponent(BotComponent):
             await self._ctx_reply(ctx, f"Pong! @{ctx.chatter.display_name}")
         await self._record_command(ctx, "ping")
 
-    @commands.command(aliases=["commands", "指令"])
+    @commands.command(aliases=["指令"])
     async def help(self, ctx: commands.Context) -> None:
         """Show available commands.
 
@@ -186,7 +187,7 @@ class GeneralCommandsComponent(BotComponent):
         )
         await self._record_command(ctx, "condemn")
 
-    @commands.command(name="del", aliases=["刪除", "vanish"])
+    @commands.command(name="del", aliases=["刪", "vanish"])
     async def delete_own_messages(self, ctx: commands.Context) -> None:
         """清除自己最近的聊天室留言（等同自我 timeout 1 秒）。用法: !del
 

@@ -15,6 +15,9 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',
+      // This is a critical-module gate, not whole-frontend coverage. Keep the
+      // list explicit and add new auth/stream/cache/data-transform modules as
+      // they become release-critical.
       include: [
         // config.ts excluded: API_ENDPOINTS contains 15+ URL-builder arrow fns that
         // are never called in tests. assertTrustedOAuthUrl and apiFetch ARE tested

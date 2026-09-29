@@ -213,7 +213,6 @@ class ChannelPointsComponent(commands.Component):
         user_id = str(payload.user.id)
         username = payload.user.name or user_id
         display_name = payload.user.display_name or None
-        session_id = self.bot.sessions.session_id(channel_id) or None
 
         try:
             outcome = await self.attendance.check_in_with_reply(
@@ -221,7 +220,7 @@ class ChannelPointsComponent(commands.Component):
                 user_id=user_id,
                 username=username,
                 display_name=display_name,
-                session_id=session_id,
+                occurred_at=payload.redeemed_at,
             )
             if outcome.delay_seconds > 0:
                 await asyncio.sleep(outcome.delay_seconds)

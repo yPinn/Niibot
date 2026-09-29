@@ -96,6 +96,7 @@ class ChannelDefaultsUpdate(BaseModel):
 
 
 class ModStatusResponse(BaseModel):
+    bot_user_id: str
     is_moderator: bool
 
 
@@ -211,20 +212,22 @@ async def toggle_channel(
 @router.get("/twitch/mod-status", response_model=ModStatusResponse)
 async def get_bot_mod_status(
     channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
     settings: Settings = Depends(get_settings),
 ) -> ModStatusResponse:
     """Check whether the bot currently holds moderator status in the caller's channel."""
-    bot_id = settings.bot_id
-    if not bot_id:
+    system_bot_id = settings.bot_id
+    if not system_bot_id:
         raise BotNotConfiguredError()
     await authorization.require_capability(
         channel_id=channel_id,
-        system_bot_id=bot_id,
+        system_bot_id=system_bot_id,
         capability_key="moderator_management",
     )
+    bot_id = await resolve_bot_id(pool, channel_id, system_bot_id=system_bot_id)
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
         raise TwitchCredentialInvalidError()
@@ -235,26 +238,28 @@ async def get_bot_mod_status(
         raise TwitchScopeRequiredError(fields={"capability": "moderator_management"})
     if status == "provider_unavailable":
         raise TwitchProviderUnavailableError()
-    return ModStatusResponse(is_moderator=status == "mod")
+    return ModStatusResponse(bot_user_id=bot_id, is_moderator=status == "mod")
 
 
 @router.post("/twitch/grant-mod", response_model=GrantModResponse)
 async def grant_bot_mod(
     channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
     channel_service: ChannelService = Depends(get_channel_service),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
     authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
     settings: Settings = Depends(get_settings),
 ) -> GrantModResponse:
     """Grant the bot moderator status in the caller's channel."""
-    bot_id = settings.bot_id
-    if not bot_id:
+    system_bot_id = settings.bot_id
+    if not system_bot_id:
         raise BotNotConfiguredError()
     await authorization.require_capability(
         channel_id=channel_id,
-        system_bot_id=bot_id,
+        system_bot_id=system_bot_id,
         capability_key="moderator_management",
     )
+    bot_id = await resolve_bot_id(pool, channel_id, system_bot_id=system_bot_id)
     token = await channel_service.get_token_with_refresh(channel_id, twitch_api)
     if not token:
         raise TwitchCredentialInvalidError()

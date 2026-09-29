@@ -7,8 +7,8 @@ from dataclasses import asdict
 from urllib.parse import quote as _url_quote
 
 import httpx
-from fastapi import APIRouter, Depends
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
 from core.config import Settings, get_settings
@@ -23,6 +23,7 @@ from services.command_import.service import (
     load_preview,
     stash_preview,
 )
+from services.command_import.sources.csv_file import MAX_CSV_BYTES, CommandCsvError
 from services.command_import.sources.nightbot import NightbotAuthError, NightbotSource
 from services.command_import.sources.streamelements import ChannelNotOnStreamElementsError
 from services.oauth_service import decode_oauth_state, encode_oauth_state
@@ -58,6 +59,11 @@ class SourceChannelNotFoundError(NotFoundError):
 class PreviewExpiredError(NotFoundError):
     code = "COMMAND_IMPORT.PREVIEW_EXPIRED"
     user_message = "匯入清單已經過期，請重新讀取一次"
+
+
+class CommandCsvInvalidError(InvalidInputError):
+    code = "COMMAND_IMPORT.CSV_INVALID"
+    user_message = "指令檔無法辨識，請檢查欄位與內容"
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +139,7 @@ async def list_sources(
     """Which import sources this deployment can offer."""
     nightbot_ready = bool(settings.nightbot_client_id and settings.nightbot_client_secret)
     return [
+        ImportSourceInfo(source="csv", available=True),
         ImportSourceInfo(source="streamelements", available=True),
         ImportSourceInfo(
             source="nightbot",
@@ -140,6 +147,42 @@ async def list_sources(
             reason=None if nightbot_ready else "尚未設定 Nightbot 應用程式金鑰",
         ),
     ]
+
+
+@router.post("/csv/preview", response_model=ImportPreviewResponse)
+async def preview_csv(
+    upload: UploadFile = File(...),
+    ctx: TenantContext = Depends(_require_tenant),
+    service: CommandImportService = Depends(_service),
+) -> ImportPreviewResponse:
+    """Preview a bounded UTF-8 command CSV without executing its contents."""
+    if not upload.filename:
+        raise CommandCsvInvalidError(user_message="CSV 檔名不可為空")
+    content = await upload.read(MAX_CSV_BYTES + 1)
+    try:
+        preview = await service.preview_csv(ctx.channel_id, upload.filename, content)
+    except CommandCsvError as exc:
+        raise CommandCsvInvalidError(user_message=str(exc)) from exc
+    import_id = stash_preview(ctx.user_id, preview)
+    LOGGER.info("command_import_preview", extra={"source": "csv"})
+    return _to_response(import_id, preview)
+
+
+@router.get("/csv/export")
+async def export_csv(
+    ctx: TenantContext = Depends(_require_tenant),
+    service: CommandImportService = Depends(_service),
+) -> Response:
+    """Download custom commands in Niibot's portable CSV contract."""
+    content = await service.export_csv(ctx.channel_id)
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="niibot-commands.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/streamelements/preview", response_model=ImportPreviewResponse)

@@ -63,14 +63,14 @@ class TestApplyIfChanged:
         component.bot.fetch_users.assert_awaited_once()
         user = component.bot.fetch_users.return_value[0]
         user.modify_channel.assert_awaited_once_with(game_id="123")
-        assert component._last_applied_segment[CHANNEL_ID] == 1
+        assert component._last_applied_segment[CHANNEL_ID] == (1, "", "123")
 
     @pytest.mark.asyncio
     async def test_poll_skips_when_segment_unchanged(
         self, component: StreamScheduleManagerComponent
     ) -> None:
         component.service.resolve_for_channel = AsyncMock(return_value=_resolved(segment_id=1))
-        component._last_applied_segment[CHANNEL_ID] = 1
+        component._last_applied_segment[CHANNEL_ID] = (1, "", "123")
 
         await component._apply_if_changed(CHANNEL_ID, force=False)
 
@@ -81,12 +81,31 @@ class TestApplyIfChanged:
         self, component: StreamScheduleManagerComponent
     ) -> None:
         component.service.resolve_for_channel = AsyncMock(return_value=_resolved(segment_id=2))
-        component._last_applied_segment[CHANNEL_ID] = 1
+        component._last_applied_segment[CHANNEL_ID] = (1, "", "123")
 
         await component._apply_if_changed(CHANNEL_ID, force=False)
 
         component.bot.fetch_users.assert_awaited_once()
-        assert component._last_applied_segment[CHANNEL_ID] == 2
+        assert component._last_applied_segment[CHANNEL_ID] == (2, "", "123")
+
+    @pytest.mark.asyncio
+    async def test_poll_reapplies_when_same_segment_payload_changes(
+        self, component: StreamScheduleManagerComponent
+    ) -> None:
+        component.service.resolve_for_channel = AsyncMock(
+            return_value=_resolved(segment_id=1, title="old", game_id="123")
+        )
+        await component._apply_if_changed(CHANNEL_ID, force=True)
+        component.bot.fetch_users.reset_mock()
+        component.bot.fetch_users.return_value[0].modify_channel.reset_mock()
+        component.service.resolve_for_channel.return_value = _resolved(
+            segment_id=1, title="updated", game_id="456"
+        )
+
+        await component._apply_if_changed(CHANNEL_ID, force=False)
+
+        user = component.bot.fetch_users.return_value[0]
+        user.modify_channel.assert_awaited_once_with(title="updated", game_id="456")
 
     @pytest.mark.asyncio
     async def test_scope_error_marks_reauth_instead_of_raising(
@@ -113,7 +132,7 @@ class TestApplyIfChanged:
         self, component: StreamScheduleManagerComponent
     ) -> None:
         component.service.resolve_for_channel = AsyncMock(return_value=None)
-        component._last_applied_segment[CHANNEL_ID] = 1
+        component._last_applied_segment[CHANNEL_ID] = (1, "", "123")
 
         await component._apply_if_changed(CHANNEL_ID, force=False)
 

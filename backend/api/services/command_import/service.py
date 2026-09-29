@@ -9,11 +9,17 @@ import asyncpg
 import httpx
 
 from services.command_config_service import CommandConfigService
+from shared.builtin_commands import COMMAND_RESERVED_NAMES
 from shared.cache import AsyncTTLCache
 from shared.repositories.command_config import CommandConfigRepository
 from shared.repositories.message_trigger import MessageTriggerRepository
 
 from .models import ImportItem, ImportPreview, ImportResult, ImportSection, ImportStatus
+from .sources.csv_file import (
+    CommandCsvExportRow,
+    encode_command_csv,
+    parse_command_csv,
+)
 from .sources.nightbot import NightbotSource
 from .sources.streamelements import StreamElementsSource
 
@@ -67,7 +73,7 @@ class CommandImportService:
 
     async def existing_names(self, channel_id: str) -> set[str]:
         """Every command name and alias already taken on this channel."""
-        taken: set[str] = set()
+        taken: set[str] = set(COMMAND_RESERVED_NAMES)
         for cfg in await self.cmd_repo.list_configs(channel_id):
             taken.add(cfg.command_name.lower())
             for alias in (cfg.aliases or "").split(","):
@@ -91,6 +97,32 @@ class CommandImportService:
             return await source.fetch_preview(token, await self.existing_names(channel_id))
         finally:
             await source.revoke(token)
+
+    async def preview_csv(self, channel_id: str, filename: str, data: bytes) -> ImportPreview:
+        """Build a bounded preview for the portable CSV contract."""
+        return parse_command_csv(
+            data,
+            existing=await self.existing_names(channel_id),
+            source_channel=filename,
+        )
+
+    async def export_csv(self, channel_id: str) -> bytes:
+        """Export custom commands in the same portable contract we import."""
+        rows = [
+            CommandCsvExportRow(
+                command=config.command_name,
+                response=config.custom_response or "",
+                enabled=config.enabled,
+                min_role=config.min_role,
+                cooldown=config.cooldown,
+                aliases="|".join(
+                    alias.strip() for alias in (config.aliases or "").split(",") if alias.strip()
+                ),
+            )
+            for config in await self.cmd_repo.list_configs(channel_id)
+            if config.command_type == "custom"
+        ]
+        return encode_command_csv(rows)
 
     def _nightbot(self) -> NightbotSource:
         from core.config import get_settings
@@ -159,7 +191,13 @@ class CommandImportService:
         if item.section is ImportSection.BUILTIN:
             if not item.builtin_target:
                 return False
-            await self.commands.toggle_command(channel_id, item.builtin_target, enabled)
+            patch: dict[str, object] = {
+                "enabled": enabled,
+                "min_role": item.min_role,
+            }
+            if item.cooldown is not None:
+                patch["cooldown"] = item.cooldown
+            await self.commands.update_command(channel_id, item.builtin_target, **patch)
             return True
 
         if item.section is ImportSection.TRIGGER:
@@ -192,7 +230,7 @@ class CommandImportService:
         name = (item.command_name or "").lower()
         if not name or not item.response or name in taken:
             return False
-        aliases = [a for a in item.aliases if a not in taken]
+        aliases = [a for a in item.aliases if a not in taken and a not in COMMAND_RESERVED_NAMES]
         command = await self.cmd_repo.try_insert_config(
             channel_id,
             name,
@@ -216,15 +254,12 @@ def default_selection(preview: ImportPreview, *, enabled: bool = False) -> dict[
     contents yet, and a silent overwrite is the one outcome no import should
     ever produce.
 
-    Builtin rows are the one exception, preticked regardless of *enabled*: a
-    builtin row only exists because the source platform had that default
-    command switched on (``_map_default`` drops disabled ones) and Niibot
-    already ships a working equivalent, not new content to review. Someone
-    fully switching platforms should not have to manually re-enable every
-    command their old bot was already running.
+    Builtin rows are selected for import but retain their source on/off state.
+    This makes disabled defaults visible and reproducible instead of silently
+    dropping them or unexpectedly enabling them.
     """
     return {
-        item.key: (True if item.section is ImportSection.BUILTIN else enabled)
+        item.key: (item.source_enabled if item.section is ImportSection.BUILTIN else enabled)
         for item in preview.items
         if item.status in (ImportStatus.OK, ImportStatus.REVIEW)
     }

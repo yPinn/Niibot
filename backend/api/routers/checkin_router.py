@@ -116,6 +116,7 @@ class CheckinSettingsResponse(BaseModel):
     success_template: str
     duplicate_template: str
     reply_delay_seconds: int
+    live_only: bool
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -138,6 +139,7 @@ class CheckinSettingsUpdate(BaseModel):
     success_template: str | None = Field(default=None, min_length=1, max_length=500)
     duplicate_template: str | None = Field(default=None, min_length=1, max_length=500)
     reply_delay_seconds: int | None = Field(default=None, ge=0, le=30)
+    live_only: bool | None = None
 
 
 class CheckinCollectionCardResponse(BaseModel):
@@ -421,6 +423,7 @@ async def update_checkin_settings(
             success_template=body.success_template,
             duplicate_template=body.duplicate_template,
             reply_delay_seconds=body.reply_delay_seconds,
+            live_only=body.live_only,
         )
     except ValueError:
         LOGGER.info("checkin_settings_validation_failed")

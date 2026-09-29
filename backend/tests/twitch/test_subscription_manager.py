@@ -195,7 +195,7 @@ class TestSubscribe:
 
         await mgr.subscribe("123")
 
-        resolver.assert_awaited_once_with("123")
+        resolver.assert_awaited_once_with("123", "bot-1")
         sent = [sub for call in mgr._multi_subscribe.await_args_list for sub in call.args[0]]
         sent_types = {sub.type for sub in sent}
         assert "channel.chat.message" in sent_types
@@ -413,6 +413,156 @@ class TestDesiredStateReconciliation:
 
         assert not mgr.is_subscribed("disabled-channel")
         assert "disabled-channel" not in mgr._sub_ids
+
+    async def test_sender_switch_builds_plan_with_requested_bot_identity(self):
+        resolver = AsyncMock(
+            return_value=(
+                set(BROADCASTER_CORE_SCOPES),
+                set(BOT_CORE_SCOPES),
+                set(),
+            )
+        )
+        mgr = SubscriptionManager(
+            bot_id="bot-1",
+            multi_subscribe=AsyncMock(side_effect=lambda subscriptions: _ok_for(subscriptions)),
+            list_subscriptions=AsyncMock(return_value=[]),
+            delete_subscription=AsyncMock(),
+            needs_reauth=set(),
+            scope_resolver=resolver,
+            request_rate=float("inf"),
+            chunk_size=100,
+            sleep=AsyncMock(),
+        )
+
+        result = await mgr.reconcile_sender("123", "bot-2")
+
+        assert result.converged
+        resolver.assert_awaited_once_with("123", "bot-2")
+        sent = [sub for call in mgr._multi_subscribe.await_args_list for sub in call.args[0]]
+        chat = next(sub for sub in sent if sub.type == "channel.chat.message")
+        assert chat.condition["user_id"] == "bot-2"
+
+    async def test_sender_switch_failure_preserves_old_bot_bound_subscriptions(self):
+        old_plan = get_channel_subscriptions("123", "bot-1")
+        remote = [_remote(sub, f"old-{index}") for index, sub in enumerate(old_plan)]
+        mgr = SubscriptionManager(
+            bot_id="bot-1",
+            multi_subscribe=AsyncMock(
+                side_effect=lambda subscriptions: _except_type(
+                    subscriptions, "channel.chat.message", 500
+                )
+            ),
+            list_subscriptions=AsyncMock(return_value=remote),
+            delete_subscription=AsyncMock(),
+            needs_reauth=set(),
+            request_rate=float("inf"),
+            chunk_size=100,
+            sleep=AsyncMock(),
+        )
+
+        result = await mgr.reconcile_sender("123", "bot-2")
+
+        assert not result.converged
+        mgr._delete_subscription.assert_not_awaited()
+
+    async def test_sender_switch_creates_new_subscriptions_before_deleting_old_identity(self):
+        events: list[str] = []
+        old_plan = get_channel_subscriptions("123", "bot-1")
+        remote = [_remote(sub, f"old-{index}") for index, sub in enumerate(old_plan)]
+
+        async def create(subscriptions):
+            events.append("create")
+            return _ok_for(subscriptions)
+
+        async def delete(_subscription_id):
+            events.append("delete")
+
+        mgr = SubscriptionManager(
+            bot_id="bot-1",
+            multi_subscribe=AsyncMock(side_effect=create),
+            list_subscriptions=AsyncMock(return_value=remote),
+            delete_subscription=AsyncMock(side_effect=delete),
+            needs_reauth=set(),
+            request_rate=float("inf"),
+            chunk_size=100,
+            sleep=AsyncMock(),
+        )
+
+        result = await mgr.reconcile_sender("123", "bot-2")
+
+        assert result.converged
+        assert events[0] == "create"
+        assert "delete" in events
+
+    async def test_reconcile_failure_only_preserves_obsolete_subscriptions_for_its_channel(self):
+        first_plan = get_channel_subscriptions("123", "bot-1")
+        second_plan = get_channel_subscriptions("456", "bot-1")
+        first_chat = next(sub for sub in first_plan if sub.type == "channel.chat.message")
+        remote = [
+            *[
+                _remote(sub, f"first-{index}")
+                for index, sub in enumerate(first_plan)
+                if sub is not first_chat
+            ],
+            *[_remote(sub, f"second-{index}") for index, sub in enumerate(second_plan)],
+            _remote(
+                next(
+                    sub
+                    for sub in get_channel_subscriptions("123", "old-bot")
+                    if sub.type == "channel.chat.message"
+                ),
+                "old-first-chat",
+            ),
+            _remote(
+                next(
+                    sub
+                    for sub in get_channel_subscriptions("456", "old-bot")
+                    if sub.type == "channel.chat.message"
+                ),
+                "old-second-chat",
+            ),
+        ]
+        mgr = _make_manager(
+            list_subscriptions=AsyncMock(return_value=remote),
+            multi_subscribe=AsyncMock(
+                side_effect=lambda subscriptions: _except_type(
+                    subscriptions, "channel.chat.message", 500
+                )
+            ),
+            chunk_size=100,
+        )
+
+        results = await mgr.reconcile_all(["123", "456"])
+
+        assert not results["123"].converged
+        assert results["456"].converged
+        deleted = {call.args[0] for call in mgr._delete_subscription.await_args_list}
+        assert "old-first-chat" not in deleted
+        assert "old-second-chat" in deleted
+
+    async def test_delete_failure_is_reported_only_for_owning_channel(self):
+        first_plan = get_channel_subscriptions("123", "bot-1")
+        second_plan = get_channel_subscriptions("456", "bot-1")
+        remote = [
+            *[_remote(sub, f"first-{index}") for index, sub in enumerate(first_plan)],
+            *[_remote(sub, f"second-{index}") for index, sub in enumerate(second_plan)],
+            _remote(first_plan[0], "duplicate-first"),
+            _remote(second_plan[0], "duplicate-second"),
+        ]
+
+        async def delete(subscription_id: str) -> None:
+            if subscription_id == "duplicate-first":
+                raise RuntimeError("provider unavailable")
+
+        mgr = _make_manager(list_subscriptions=AsyncMock(return_value=remote))
+        mgr._delete_subscription.side_effect = delete
+
+        results = await mgr.reconcile_all(["123", "456"])
+
+        assert not results["123"].converged
+        assert results["123"].errors == ("delete:duplicate-first:RuntimeError",)
+        assert results["456"].converged
+        assert results["456"].errors == ()
 
 
 class TestResubscribeFollow:

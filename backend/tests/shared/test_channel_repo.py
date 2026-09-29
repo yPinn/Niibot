@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from cryptography.fernet import Fernet
 
+from shared.models.channel import TokenRuntimeMetadata
 from shared.repositories.channel import (
     ChannelRepository,
+    TwitchCredentialRoleConflictError,
     _channel_cache,
     _discord_user_cache,
     _enabled_channels_cache,
@@ -348,14 +350,17 @@ class TestListTokens:
         assert result == []
 
     async def test_returns_token_list(self):
-        pool, _ = _make_pool(fetch=[_TOKEN_ROW])
+        pool, conn = _make_pool(fetch=[_TOKEN_ROW])
         repo = ChannelRepository(pool)
 
-        result = await repo.list_tokens()
+        result = await repo.list_tokens(runtime_eligible_only=True)
 
         assert len(result) == 1
         assert result[0].user_id == "u1"
         assert result[0].scopes == "channel:bot channel:read:redemptions"
+        sql = conn.fetch.await_args.args[0]
+        assert "requires_reauth = FALSE" in sql
+        assert "invalidated_at IS NULL" in sql
 
     async def test_can_isolate_a_version_one_row_missing_its_envelope(self, caplog):
         malformed = {
@@ -390,7 +395,56 @@ class TestListTokens:
 
 
 @pytest.mark.asyncio
+class TestListRuntimeTokenMetadata:
+    async def test_lists_only_runtime_eligible_metadata_without_secrets(self):
+        pool, conn = _make_pool(
+            fetch=[
+                {
+                    "user_id": "bot-1",
+                    "token_type": "bot",
+                    "credential_revision": 8,
+                }
+            ]
+        )
+        repo = ChannelRepository(pool)
+
+        result = await repo.list_runtime_token_metadata()
+
+        assert result == [TokenRuntimeMetadata("bot-1", "bot", 8)]
+        sql = conn.fetch.await_args.args[0]
+        assert "requires_reauth = FALSE" in sql
+        assert "invalidated_at IS NULL" in sql
+        assert " refresh" not in sql.lower()
+        assert "encryption_version" not in sql.lower()
+
+
+@pytest.mark.asyncio
 class TestUpsertToken:
+    async def test_broadcaster_write_is_blocked_while_identity_has_bot_credential(self):
+        pool, conn = _make_pool(execute="INSERT 0 1")
+        conn.fetchval.return_value = True
+        repo = ChannelRepository(pool)
+
+        with pytest.raises(TwitchCredentialRoleConflictError):
+            await repo.upsert_token(
+                "bot-b",
+                "tok",
+                "ref",
+                channel_name="bot_b",
+                token_type="broadcaster",
+            )
+
+        assert any(
+            "twitch-runtime-identity:bot-b" in str(call.args)
+            for call in conn.fetchval.await_args_list
+        )
+        assert any(
+            "token_type = 'bot'" in str(call.args[0]) for call in conn.fetchval.await_args_list
+        )
+        assert all(
+            "INSERT INTO tokens" not in call.args[0] for call in conn.execute.await_args_list
+        )
+
     async def test_invalidates_token_channel_and_enabled_caches(self):
         _token_cache.set("token:u1:broadcaster", _TOKEN_ROW)
         _channel_cache.set("channel:u1", _CHANNEL_ROW)

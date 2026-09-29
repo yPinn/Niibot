@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -91,6 +91,182 @@ def _collection_repo(draw: CollectionDraw | None = None) -> MagicMock:
 
 @pytest.mark.asyncio
 class TestRecordCheckin:
+    async def test_live_only_rejects_when_no_session_covers_event_time(self):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = None
+        collection_repo = _collection_repo()
+        repo = AttendanceRepository(pool, collection_repository=collection_repo)
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=_DAY,
+            occurred_at=_NOW,
+            require_live=True,
+        )
+
+        assert result is None
+        session_call = conn.fetchrow.await_args_list[0]
+        normalized_sql = " ".join(session_call.args[0].split())
+        assert "FROM stream_sessions" in normalized_sql
+        assert "channel_id = $1" in normalized_sql
+        assert "started_at <= $2" in normalized_sql
+        assert "ended_at IS NULL OR ended_at >= $2" in normalized_sql
+        assert "checkin_eligible" in normalized_sql
+        assert "FOR SHARE" in normalized_sql
+        assert session_call.args[1:] == ("ch1", _NOW, None)
+        collection_repo.draw_for_checkin.assert_not_awaited()
+        assert all(
+            "INSERT INTO viewer_checkins" not in call.args[0]
+            for call in conn.fetchrow.await_args_list
+        )
+
+    @pytest.mark.parametrize("session_id", [None, 99])
+    async def test_live_only_rejects_missing_wrong_channel_or_ended_session(self, session_id):
+        pool, conn = _pool()
+        conn.fetchrow.return_value = None
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name=None,
+            checkin_date=_DAY,
+            occurred_at=_NOW,
+            session_id=session_id,
+            require_live=True,
+        )
+
+        assert result is None
+        assert conn.fetchrow.await_args_list[0].args[3] == session_id
+
+    async def test_live_only_uses_session_start_day_across_midnight(self):
+        pool, conn = _pool()
+        after_midnight = datetime(2026, 8, 30, 16, 30, tzinfo=UTC)
+        broadcast_day = date(2026, 8, 30)
+        checkin_row = {
+            **_checkin_row(),
+            "checkin_date": broadcast_day,
+            "created_at": after_midnight,
+        }
+        conn.fetchrow.side_effect = [
+            {"id": 42, "checkin_broadcast_day": broadcast_day},
+            None,
+            checkin_row,
+            {"id": 90},
+        ]
+        conn.fetchval.return_value = 1
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=date(2026, 8, 31),
+            occurred_at=after_midnight,
+            require_live=True,
+        )
+
+        assert result is not None
+        assert result.status is CheckinStatus.RECORDED
+        assert result.checkin_date == broadcast_day
+        insert_call = next(
+            call
+            for call in conn.fetchrow.await_args_list
+            if "INSERT INTO viewer_checkins" in call.args[0]
+        )
+        assert insert_call.args[5:8] == (broadcast_day, 42, after_midnight)
+
+    async def test_live_only_second_stream_on_same_day_is_duplicate(self):
+        pool, conn = _pool()
+        second_stream_event_at = datetime(2026, 8, 30, 8, 0, tzinfo=UTC)
+        existing = {**_checkin_row(), "session_id": 10}
+        conn.fetchrow.side_effect = [
+            {"id": 20, "checkin_broadcast_day": _DAY},
+            None,
+            None,
+            existing,
+        ]
+        conn.fetchval.return_value = 1
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=_DAY,
+            occurred_at=second_stream_event_at,
+            session_id=20,
+            require_live=True,
+        )
+
+        assert result is not None
+        assert result.status is CheckinStatus.ALREADY_CHECKED_IN
+        assert result.checkin_date == _DAY
+        insert_call = next(
+            call
+            for call in conn.fetchrow.await_args_list
+            if "INSERT INTO viewer_checkins" in call.args[0]
+        )
+        assert insert_call.args[5:7] == (_DAY, 20)
+
+    async def test_live_only_streak_uses_the_previous_eligible_broadcast_day(self):
+        pool, conn = _pool()
+        previous_broadcast_day = _DAY - timedelta(days=4)
+        conn.fetchrow.side_effect = [
+            {"id": 42, "checkin_broadcast_day": _DAY},
+            None,
+            _checkin_row(),
+            {"id": 90},
+        ]
+
+        async def fetchval(sql, *_args):
+            if "MAX(checkin_broadcast_day)" in sql:
+                return previous_broadcast_day
+            if "INSERT INTO viewer_daily_checkin_streaks" in sql:
+                return 4
+            return 1
+
+        conn.fetchval.side_effect = fetchval
+        repo = AttendanceRepository(pool, collection_repository=_collection_repo())
+
+        result = await repo.record_checkin(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            checkin_date=_DAY,
+            occurred_at=_NOW,
+            session_id=42,
+            require_live=True,
+        )
+
+        assert result is not None
+        assert result.current_streak == 4
+        previous_day_call = next(
+            call
+            for call in conn.fetchval.await_args_list
+            if "MAX(checkin_broadcast_day)" in call.args[0]
+        )
+        assert "checkin_eligible" in previous_day_call.args[0]
+        assert "ended_at IS NOT NULL" in previous_day_call.args[0]
+        assert previous_day_call.args[1:] == ("ch1", _DAY)
+        streak_call = next(
+            call
+            for call in conn.fetchval.await_args_list
+            if "INSERT INTO viewer_daily_checkin_streaks" in call.args[0]
+        )
+        streak_sql = " ".join(streak_call.args[0].split())
+        assert "last_checkin_date = $4" in streak_sql
+        assert "last_checkin_date > EXCLUDED.last_checkin_date" in streak_sql
+        assert "EXCLUDED.last_checkin_date - 1" not in streak_sql
+        assert streak_call.args[1:] == ("ch1", "u1", _DAY, previous_broadcast_day)
+
     async def test_carryover_same_day_is_duplicate_without_fake_ledger_or_draw(self):
         pool, conn = _pool()
         conn.fetchrow.return_value = {
@@ -320,6 +496,7 @@ class TestCheckinSettings:
             "success_template": "$(@user) 簽到成功，累積 $(count) 天！",
             "duplicate_template": "$(@user) 今天已經簽到過了！",
             "reply_delay_seconds": 0,
+            "live_only": False,
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -330,17 +507,20 @@ class TestCheckinSettings:
         assert settings.channel_id == "ch1"
         assert settings.timezone == "Asia/Taipei"
         assert settings.reply_delay_seconds == 0
+        assert settings.live_only is False
         assert "ON CONFLICT" in conn.execute.await_args.args[0]
         assert "WHERE channel_id = $1" in conn.fetchrow.await_args.args[0]
 
     async def test_update_settings_upserts_only_the_requested_channel(self):
         pool, conn = _pool()
+        conn.fetchval.return_value = False
         conn.fetchrow.return_value = {
             "channel_id": "ch1",
             "timezone": "Asia/Tokyo",
             "success_template": "$(user) checked in $(count)",
             "duplicate_template": "$(user) already checked in",
             "reply_delay_seconds": 5,
+            "live_only": False,
             "created_at": _NOW,
             "updated_at": _NOW,
         }
@@ -352,10 +532,12 @@ class TestCheckinSettings:
             success_template="$(user) checked in $(count)",
             duplicate_template="$(user) already checked in",
             reply_delay_seconds=5,
+            live_only=False,
         )
 
         assert settings.channel_id == "ch1"
         assert settings.reply_delay_seconds == 5
+        assert settings.live_only is False
         sql, *args = conn.fetchrow.await_args.args
         assert "INSERT INTO checkin_settings" in sql
         assert "ON CONFLICT (channel_id)" in sql
@@ -366,7 +548,41 @@ class TestCheckinSettings:
             "$(user) checked in $(count)",
             "$(user) already checked in",
             5,
+            False,
         ]
+
+    async def test_update_settings_rebuilds_streaks_when_live_policy_changes(self):
+        pool, conn = _pool()
+        conn.fetchval.return_value = False
+        conn.fetchrow.return_value = {
+            "channel_id": "ch1",
+            "timezone": "Asia/Taipei",
+            "success_template": "$(user) $(count)",
+            "duplicate_template": "already",
+            "reply_delay_seconds": 5,
+            "live_only": True,
+            "created_at": _NOW,
+            "updated_at": _NOW,
+        }
+        repo = AttendanceRepository(pool)
+
+        with patch(
+            "shared.repositories.attendance.rebuild_checkin_streaks",
+            new_callable=AsyncMock,
+        ) as rebuild:
+            await repo.update_settings(
+                channel_id="ch1",
+                timezone="Asia/Taipei",
+                success_template="$(user) $(count)",
+                duplicate_template="already",
+                reply_delay_seconds=5,
+                live_only=True,
+            )
+
+        lock_call = conn.execute.await_args_list[0]
+        assert "pg_advisory_xact_lock(hashtextextended($1, 0))" in lock_call.args[0]
+        assert lock_call.args[1] == "checkin-import:ch1"
+        rebuild.assert_awaited_once_with(conn, "ch1")
 
 
 @pytest.mark.asyncio

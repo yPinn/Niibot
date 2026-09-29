@@ -64,6 +64,7 @@ def _make_ctx(
 def component() -> GamesComponent:
     comp = GamesComponent(_make_bot(is_mod=True))
     comp._ctx_reply = AsyncMock()
+    comp.cmd_repo.increment_usage_count = AsyncMock()
     return comp
 
 
@@ -85,6 +86,7 @@ async def _winner(component: GamesComponent, ctx: MagicMock, **kwargs) -> None:
 def _make_roulette_component(*, is_mod: bool = True) -> GamesComponent:
     comp = GamesComponent(_make_bot(is_mod=is_mod))
     comp._ctx_reply = AsyncMock()
+    comp.cmd_repo.increment_usage_count = AsyncMock()
     token = MagicMock()
     token.token = "fake_token"
     comp.channel_repo.get_token = AsyncMock(return_value=token)
@@ -146,7 +148,8 @@ class TestBuiltinRegistration:
     def test_choose_aliases(self) -> None:
         from shared.builtin_commands import BUILTIN_ALIAS_MAP
 
-        assert BUILTIN_ALIAS_MAP.get("選擇") == "choose"
+        assert BUILTIN_ALIAS_MAP.get("選") == "choose"
+        assert "選擇" not in BUILTIN_ALIAS_MAP
 
     def test_roll_has_description(self) -> None:
         from shared.builtin_commands import BUILTIN_DESCRIPTIONS, PUBLIC_DESCRIPTIONS
@@ -168,7 +171,8 @@ class TestBuiltinRegistration:
     def test_winner_aliases(self) -> None:
         from shared.builtin_commands import BUILTIN_ALIAS_MAP
 
-        assert BUILTIN_ALIAS_MAP.get("幸運兒") == "winner"
+        assert BUILTIN_ALIAS_MAP.get("抽") == "winner"
+        assert "幸運兒" not in BUILTIN_ALIAS_MAP
 
     def test_winner_has_description(self) -> None:
         from shared.builtin_commands import BUILTIN_DESCRIPTIONS
@@ -208,6 +212,27 @@ class TestChamberState:
 
 
 class TestRoulette:
+    @pytest.mark.asyncio
+    async def test_valid_pull_records_usage_once(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx()
+        _inject_chamber(comp, ctx.broadcaster.id, hit=False)
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _roll(comp, ctx)
+
+        comp.cmd_repo.increment_usage_count.assert_awaited_once_with("ch_test", "roll")
+
+    @pytest.mark.asyncio
+    async def test_broadcaster_rejection_does_not_record_usage(self) -> None:
+        comp = _make_roulette_component()
+        ctx = _make_ctx(broadcaster=True)
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _roll(comp, ctx)
+
+        comp.cmd_repo.increment_usage_count.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_timeout_mutation_uses_coordinator_once(self) -> None:
         comp = _make_roulette_component()
@@ -366,6 +391,20 @@ class TestRoulette:
 
 class TestChoose:
     @pytest.mark.asyncio
+    async def test_valid_choice_records_usage_once(self, component: GamesComponent) -> None:
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _choose(component, _make_ctx(), args="red blue")
+
+        component.cmd_repo.increment_usage_count.assert_awaited_once_with("ch_test", "choose")
+
+    @pytest.mark.asyncio
+    async def test_invalid_choice_does_not_record_usage(self, component: GamesComponent) -> None:
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _choose(component, _make_ctx(), args="only")
+
+        component.cmd_repo.increment_usage_count.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_disabled_command_no_reply(self, component: GamesComponent) -> None:
         with patch(PATCH_CHECK, return_value=None):
             ctx = _make_ctx()
@@ -455,6 +494,29 @@ class TestChoose:
 
 
 class TestWinner:
+    @pytest.mark.asyncio
+    async def test_successful_pick_records_usage_once(self) -> None:
+        comp = _make_roulette_component()
+        comp.bot._coordinated_helix_get.return_value = MagicMock(
+            status_code=200,
+            json=MagicMock(return_value={"data": [{"user_id": "u1", "user_name": "Viewer"}]}),
+        )
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _winner(comp, _make_ctx())
+
+        comp.cmd_repo.increment_usage_count.assert_awaited_once_with("ch_test", "winner")
+
+    @pytest.mark.asyncio
+    async def test_failed_pick_does_not_record_usage(self) -> None:
+        comp = _make_roulette_component()
+        comp.channel_repo.get_token = AsyncMock(return_value=None)
+
+        with patch(PATCH_CHECK, return_value=MagicMock()):
+            await _winner(comp, _make_ctx())
+
+        comp.cmd_repo.increment_usage_count.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_chatter_read_uses_coordinator(self) -> None:
         comp = _make_roulette_component()

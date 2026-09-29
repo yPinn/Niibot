@@ -15,17 +15,12 @@ export function minutesToTime(totalMinutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-/** Minutes from start to end, wrapping past midnight when end <= start
- * (e.g. 23:00 → 02:00 is a 180-minute overnight stream, not negative). Note
- * end === start wraps to a full 1440 here (a schedule's own start/end can
- * legitimately mean "runs the full day") — offsetFromStart below is the
- * variant for when equal times should mean zero instead, e.g. converting a
- * segment's picked clock time back to "minutes after the schedule's start",
- * where equal-to-start means the go-live segment (offset 0), not a segment a
- * full day later. */
+/** Minutes from start to end, wrapping past midnight when end is earlier
+ * (e.g. 23:00 → 02:00 is a 180-minute overnight stream). Equal times are
+ * invalid for schedules and return zero so the form can show that error. */
 export function durationBetween(start: string, end: string): number {
   const diff = timeToMinutes(end) - timeToMinutes(start)
-  return diff > 0 ? diff : diff + 1440
+  return diff === 0 ? 0 : diff > 0 ? diff : diff + 1440
 }
 
 /** Minutes from a schedule's start to a clock time within its window —

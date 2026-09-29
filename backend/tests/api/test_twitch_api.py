@@ -9,6 +9,9 @@ status-code branching are all exercised for real.
 
 from __future__ import annotations
 
+import json
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
@@ -18,6 +21,7 @@ from services.twitch_api import (
     TokenRevocationResult,
     TokenValidationResult,
     TwitchAPIClient,
+    TwitchScheduleAPIError,
     TwitchUsersLookupError,
 )
 
@@ -358,6 +362,211 @@ class TestHelixGet:
 
         assert resp is not None and resp.status_code == 200
         assert mock.paths("GET") == ["/helix/users", "/helix/users"]
+
+
+@pytest.mark.asyncio
+class TestStreamScheduleAPI:
+    @pytest.mark.parametrize(
+        ("status", "kwargs", "code", "retryable"),
+        [
+            (401, {"missing_scope": True}, "missing_scope", False),
+            (401, {}, "unauthorized", False),
+            (429, {}, "rate_limited", True),
+            (503, {}, "provider_unavailable", True),
+            (400, {}, "invalid_request", False),
+            (418, {}, "provider_rejected", False),
+        ],
+    )
+    async def test_schedule_status_classification(self, status, kwargs, code, retryable):
+        error = TwitchAPIClient._error_for_status(status, **kwargs)
+
+        assert error.code == code
+        assert error.retryable is retryable
+
+    async def test_create_segment_uses_broadcaster_token_and_publishable_body(self):
+        mock = _MockAPI().route(
+            "POST",
+            "/helix/schedule/segment",
+            httpx.Response(200, json={"data": {"segments": [{"id": "remote-1"}]}}),
+        )
+        api = mock.client()
+
+        segment = await api.create_channel_stream_schedule_segment(
+            "channel-1",
+            "broadcaster-token",
+            start_time="2026-09-30T12:00:00Z",
+            timezone="Asia/Taipei",
+            duration_minutes=120,
+            is_recurring=True,
+            title="晚間直播",
+            category_id="509658",
+        )
+
+        request = mock.requests[-1]
+        assert segment["id"] == "remote-1"
+        assert request.headers["authorization"] == "Bearer broadcaster-token"
+        assert request.url.params["broadcaster_id"] == "channel-1"
+        assert json.loads(request.content) == {
+            "start_time": "2026-09-30T12:00:00Z",
+            "timezone": "Asia/Taipei",
+            "duration": "120",
+            "is_recurring": True,
+            "title": "晚間直播",
+            "category_id": "509658",
+        }
+
+    async def test_update_segment_can_restore_a_cancelled_occurrence(self):
+        mock = _MockAPI().route(
+            "PATCH",
+            "/helix/schedule/segment",
+            httpx.Response(200, json={"data": {"segments": [{"id": "occurrence-1"}]}}),
+        )
+
+        await mock.client().update_channel_stream_schedule_segment(
+            "channel-1",
+            "occurrence-1",
+            "token",
+            is_canceled=False,
+        )
+
+        request = mock.requests[-1]
+        assert dict(request.url.params) == {
+            "broadcaster_id": "channel-1",
+            "id": "occurrence-1",
+        }
+        assert json.loads(request.content) == {"is_canceled": False}
+
+    async def test_update_segment_serializes_all_mutable_fields(self):
+        mock = _MockAPI().route(
+            "PATCH",
+            "/helix/schedule/segment",
+            httpx.Response(200, json={"data": {"segments": [{"id": "occurrence-1"}]}}),
+        )
+
+        await mock.client().update_channel_stream_schedule_segment(
+            "channel-1",
+            "occurrence-1",
+            "token",
+            start_time="2026-10-01T12:00:00Z",
+            timezone="Asia/Taipei",
+            duration_minutes=90,
+            title="更新標題",
+            category_id="509658",
+            is_canceled=True,
+        )
+
+        assert json.loads(mock.requests[-1].content) == {
+            "start_time": "2026-10-01T12:00:00Z",
+            "timezone": "Asia/Taipei",
+            "duration": "90",
+            "title": "更新標題",
+            "category_id": "509658",
+            "is_canceled": True,
+        }
+
+    async def test_get_schedule_passes_occurrence_anchor(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/schedule",
+            httpx.Response(
+                200,
+                json={
+                    "data": {"segments": [{"id": "occurrence-1"}]},
+                    "pagination": {},
+                },
+            ),
+        )
+
+        segments = await mock.client().get_channel_stream_schedule(
+            "channel-1", "token", start_time="2026-10-01T00:00:00Z"
+        )
+
+        assert segments == [{"id": "occurrence-1"}]
+        assert mock.requests[-1].url.params["start_time"] == "2026-10-01T00:00:00Z"
+
+    async def test_get_schedule_treats_missing_schedule_as_empty(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/schedule",
+            httpx.Response(404, json={"message": "The broadcaster has no schedule"}),
+        )
+
+        segments = await mock.client().get_channel_stream_schedule("channel-1", "token")
+
+        assert segments == []
+
+    async def test_get_schedule_classifies_missing_scope_and_transport_failure(self):
+        mock = _MockAPI().route(
+            "GET",
+            "/helix/schedule",
+            httpx.Response(401, json={"message": "Missing required scope"}),
+        )
+        api = mock.client()
+
+        with pytest.raises(TwitchScheduleAPIError, match="missing_scope"):
+            await api.get_channel_stream_schedule("channel-1", "token")
+
+        api._helix_get = AsyncMock(return_value=None)
+        with pytest.raises(TwitchScheduleAPIError, match="provider_unavailable"):
+            await api.get_channel_stream_schedule("channel-1", "token")
+
+    async def test_mutation_transport_and_malformed_success_are_sanitized(self):
+        api = _MockAPI().client()
+        api._http.request = AsyncMock(side_effect=RuntimeError("private transport detail"))
+
+        with pytest.raises(TwitchScheduleAPIError, match="provider_unavailable"):
+            await api.delete_channel_stream_schedule_segment("channel-1", "remote-1", "token")
+
+        mock = _MockAPI().route(
+            "POST",
+            "/helix/schedule/segment",
+            httpx.Response(200, json={"data": {"segments": []}}),
+        )
+        with pytest.raises(TwitchScheduleAPIError, match="invalid_response"):
+            await mock.client().create_channel_stream_schedule_segment(
+                "channel-1",
+                "token",
+                start_time="2026-09-30T12:00:00Z",
+                timezone="Asia/Taipei",
+                duration_minutes=60,
+                is_recurring=True,
+            )
+
+    async def test_mutation_error_is_classified_without_exposing_provider_message(self):
+        mock = _MockAPI().route(
+            "POST",
+            "/helix/schedule/segment",
+            httpx.Response(403, json={"message": "private upstream detail"}),
+        )
+
+        with pytest.raises(TwitchScheduleAPIError) as error:
+            await mock.client().create_channel_stream_schedule_segment(
+                "channel-1",
+                "token",
+                start_time="2026-09-30T12:00:00Z",
+                timezone="Asia/Taipei",
+                duration_minutes=60,
+                is_recurring=False,
+            )
+
+        assert error.value.code == "non_recurring_unsupported"
+        assert error.value.retryable is False
+        assert "private upstream detail" not in str(error.value)
+
+    async def test_delete_stale_segment_is_classified_as_not_found(self):
+        mock = _MockAPI().route(
+            "DELETE",
+            "/helix/schedule/segment",
+            httpx.Response(400, json={"message": "The segment id is not valid"}),
+        )
+
+        with pytest.raises(TwitchScheduleAPIError) as error:
+            await mock.client().delete_channel_stream_schedule_segment(
+                "channel-1", "stale-segment", "token"
+            )
+
+        assert error.value.code == "segment_not_found"
+        assert error.value.retryable is False
 
 
 # ---------------------------------------------------------------------------

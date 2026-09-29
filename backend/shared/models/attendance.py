@@ -13,6 +13,7 @@ from shared.models.collection import CollectionDraw
 class CheckinStatus(StrEnum):
     RECORDED = "recorded"
     ALREADY_CHECKED_IN = "already_checked_in"
+    STREAM_OFFLINE = "stream_offline"
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +23,7 @@ class CheckinSettings:
     success_template: str
     duplicate_template: str
     reply_delay_seconds: int = 5
+    live_only: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -66,8 +68,28 @@ class CheckinResult:
 
 
 @dataclass(frozen=True, slots=True)
+class CheckinUnavailable:
+    channel_id: str
+    user_id: str
+    username: str
+    display_name: str | None
+    occurred_at: datetime
+
+    @property
+    def status(self) -> CheckinStatus:
+        return CheckinStatus.STREAM_OFFLINE
+
+    @property
+    def recorded(self) -> bool:
+        return False
+
+
+type CheckinOutcome = CheckinResult | CheckinUnavailable
+
+
+@dataclass(frozen=True, slots=True)
 class CheckinReply:
-    result: CheckinResult
+    result: CheckinOutcome
     message: str
     delay_seconds: int = 0
 

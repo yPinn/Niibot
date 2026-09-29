@@ -8,12 +8,14 @@ import {
   createBotInvite,
   declineBotInvite,
   disconnectBroadcasterAuthorization,
+  getBotAccountSelection,
   getBotInviteStatus,
   getBroadcasterAuthorization,
   getPublicBotInvite,
   getTwitchCapabilities,
   listBotAccounts,
   unlinkBotAccount,
+  updateBotAccountSelection,
 } from './botAccounts'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -63,6 +65,39 @@ describe('bot account APIs', () => {
       method: 'POST',
       credentials: 'include',
       headers: { 'X-Niibot-Action': 'bot-account-management' },
+    })
+  })
+
+  it('reads and updates the tenant bot selection with an explicit action header', async () => {
+    const selection = {
+      desired_bot_user_id: 'bot-b',
+      active_bot_user_id: 'niibot',
+      selection_version: 2,
+      acked_version: 1,
+      status: 'switching' as const,
+      error_code: null,
+    }
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(selection))
+      .mockResolvedValueOnce(jsonResponse(selection))
+
+    await getBotAccountSelection('channel/a')
+    await updateBotAccountSelection('channel/a', 'bot-b')
+
+    expect(fetchMock.mock.calls.map(call => requestUrl(call[0]).pathname)).toEqual([
+      '/api/tenants/channel%2Fa/bot-account-selection',
+      '/api/tenants/channel%2Fa/bot-account-selection',
+    ])
+    expect(fetchMock.mock.calls[0][1]).toEqual({ credentials: 'include' })
+    expect(fetchMock.mock.calls[1][1]).toEqual({
+      method: 'PUT',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Niibot-Action': 'bot-account-management',
+      },
+      body: JSON.stringify({ bot_user_id: 'bot-b' }),
     })
   })
 

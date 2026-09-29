@@ -39,6 +39,7 @@ _SETTINGS = CheckinSettings(
     timezone="Asia/Taipei",
     success_template="$(@user) 簽到成功，累積 $(count) 天！",
     duplicate_template="$(@user) 今天已經簽到過了，目前累積 $(count) 天！",
+    live_only=False,
     created_at=_NOW,
     updated_at=_NOW,
 )
@@ -122,6 +123,7 @@ def test_get_settings_uses_authenticated_tenant() -> None:
     assert response.status_code == 200
     assert response.json()["channel_id"] == CHANNEL_ID
     assert response.json()["timezone"] == "Asia/Taipei"
+    assert response.json()["live_only"] is False
     service.get_settings.assert_awaited_once_with(CHANNEL_ID)
 
 
@@ -163,6 +165,7 @@ def test_patch_settings_uses_authenticated_tenant_and_action_header() -> None:
         success_template="$(@user) 第 $(count) 天",
         duplicate_template="$(@user) 今天已簽到",
         reply_delay_seconds=None,
+        live_only=None,
     )
 
 
@@ -182,6 +185,27 @@ def test_patch_settings_forwards_the_configured_reply_delay() -> None:
         success_template=None,
         duplicate_template=None,
         reply_delay_seconds=5,
+        live_only=None,
+    )
+
+
+def test_patch_settings_forwards_live_only() -> None:
+    service = _service()
+
+    response = _make_client(service).patch(
+        "/api/checkin/settings",
+        json={"live_only": True},
+        headers=_ACTION_HEADERS,
+    )
+
+    assert response.status_code == 200
+    service.update_settings.assert_awaited_once_with(
+        CHANNEL_ID,
+        timezone=None,
+        success_template=None,
+        duplicate_template=None,
+        reply_delay_seconds=None,
+        live_only=True,
     )
 
 

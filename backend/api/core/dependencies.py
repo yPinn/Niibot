@@ -17,6 +17,7 @@ from services import (
 )
 from services.admission_service import AdmissionService
 from services.bot_account_service import BotAccountService
+from services.bot_selection_service import BotSelectionService
 from services.game_queue_service import GameQueueService
 from services.identity_service import IdentityService
 from services.message_trigger_service import MessageTriggerService
@@ -33,6 +34,7 @@ from shared.repositories.attendance import AttendanceRepository
 from shared.repositories.community_overlay import CommunityOverlayRepository
 from shared.repositories.roleplay import RoleplayRepository
 from shared.repositories.stream_schedule import StreamScheduleRepository
+from shared.repositories.stream_schedule_publish import StreamSchedulePublishRepository
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.community_overlay import CommunityOverlayService
@@ -128,6 +130,12 @@ def get_stream_schedule_service(
     return StreamScheduleService(StreamScheduleRepository(pool))
 
 
+def get_stream_schedule_publish_repository(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+) -> StreamSchedulePublishRepository:
+    return StreamSchedulePublishRepository(pool)
+
+
 def get_community_overlay_service(
     pool: asyncpg.Pool = Depends(get_db_pool),
 ) -> CommunityOverlayService:
@@ -220,6 +228,21 @@ def get_twitch_authorization_service(
         twitch_api=twitch_api,
         token_encryption_key=settings.twitch_token_encryption_key,
         client_id=settings.client_id,
+    )
+
+
+def get_bot_selection_service(
+    pool: asyncpg.Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+) -> BotSelectionService:
+    settings = get_settings()
+    return BotSelectionService(
+        pool,
+        authorization=authorization,
+        twitch_api=twitch_api,
+        token_encryption_key=settings.twitch_token_encryption_key,
+        system_bot_id=settings.bot_id or "",
     )
 
 

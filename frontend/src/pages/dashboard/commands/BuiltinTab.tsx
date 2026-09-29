@@ -21,7 +21,8 @@ import type { SortState } from '@/hooks/useSortState'
 import { groupByCategory } from '@/lib/groupByCategory'
 import { applyDir, nameSort, ROLE_ORDER } from '@/lib/sort'
 
-import { formatCooldown, ROLE_LABELS } from './constants'
+import { CommandRoleLabel } from './CommandRoleLabel'
+import { formatCooldown } from './constants'
 import type { SortKey } from './types'
 
 const COLUMN_COUNT = 7
@@ -128,7 +129,7 @@ export function BuiltinTab({ commands, sortState, defaults, onToggle, onEdit }: 
               {formatCooldown(cmd.cooldown, defaults)}
             </TableCell>
             <TableCell className="hidden md:table-cell text-sub">
-              {ROLE_LABELS[cmd.min_role] || cmd.min_role}
+              <CommandRoleLabel role={cmd.min_role} compact />
             </TableCell>
             <TableCell className="hidden md:table-cell text-right">{cmd.usage_count}</TableCell>
             <TableCell className="text-center">

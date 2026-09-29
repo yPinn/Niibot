@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +15,28 @@ const mockSearch = vi.mocked(searchStreamScheduleGames)
 
 function Harness({ initial }: { initial: GameValue | null }) {
   return <GamePicker value={initial} onChange={vi.fn()} />
+}
+
+function ControlledHarness({
+  initial,
+  onChange,
+  onPendingSelectionChange,
+}: {
+  initial: GameValue | null
+  onChange: (value: GameValue | null) => void
+  onPendingSelectionChange: (pending: boolean) => void
+}) {
+  const [value, setValue] = useState(initial)
+  return (
+    <GamePicker
+      value={value}
+      onChange={next => {
+        setValue(next)
+        onChange(next)
+      }}
+      onPendingSelectionChange={onPendingSelectionChange}
+    />
+  )
 }
 
 describe('GamePicker', () => {
@@ -49,6 +72,50 @@ describe('GamePicker', () => {
 
     expect(onChange).toHaveBeenCalledWith({ id: '509658', name: 'Just Chatting' })
     expect(input).toHaveValue('Just Chatting')
+  })
+
+  it('clears a previous selection as soon as its visible text is edited', async () => {
+    const onChange = vi.fn()
+    const onPendingSelectionChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <ControlledHarness
+        initial={{ id: '509658', name: 'Just Chatting' }}
+        onChange={onChange}
+        onPendingSelectionChange={onPendingSelectionChange}
+      />
+    )
+
+    const input = screen.getByRole('combobox', { name: '遊戲分類（選填）' })
+    await user.type(input, ' 2')
+
+    expect(onChange).toHaveBeenCalledWith(null)
+    expect(onPendingSelectionChange).toHaveBeenCalledWith(true)
+    expect(screen.getByText('請從搜尋結果選擇分類')).toBeInTheDocument()
+  })
+
+  it('supports choosing a search result from the keyboard', async () => {
+    mockSearch.mockResolvedValue([{ id: '509658', name: 'Just Chatting', box_art_url: null }])
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(<GamePicker value={null} onChange={onChange} />)
+
+    const input = screen.getByRole('combobox', { name: '遊戲分類（選填）' })
+    await user.type(input, 'just')
+    await screen.findByRole('option', { name: 'Just Chatting' })
+    await user.keyboard('{ArrowDown}{Enter}')
+
+    expect(onChange).toHaveBeenCalledWith({ id: '509658', name: 'Just Chatting' })
+    expect(input).toHaveValue('Just Chatting')
+  })
+
+  it('shows an explicit empty result instead of silently closing the picker', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial={null} />)
+
+    await user.type(screen.getByRole('combobox', { name: '遊戲分類（選填）' }), 'not-a-game')
+
+    expect(await screen.findByText('找不到符合的 Twitch 分類')).toBeInTheDocument()
   })
 
   it('shows a clear button once a game is selected, which clears the value', async () => {

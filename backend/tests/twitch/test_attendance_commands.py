@@ -13,6 +13,7 @@ from shared.models.attendance import (
     CheckinReply,
     CheckinResult,
     CheckinStatus,
+    CheckinUnavailable,
 )
 
 PATCH_CHECK = "twitch.components.attendance.check_command"
@@ -125,6 +126,43 @@ class TestCheckinCommand:
             ctx, "@Alice 今天已經簽到過了，目前累積 3 天！"
         )
         component._record_command.assert_awaited_once_with(ctx, "checkin")
+
+    async def test_offline_checkin_uses_domain_reply_without_reporting_failure(self) -> None:
+        component = _component()
+        component.attendance.check_in_with_reply.return_value = CheckinReply(
+            result=CheckinUnavailable(
+                channel_id="ch1",
+                user_id="u1",
+                username="alice",
+                display_name="Alice",
+                occurred_at=_NOW,
+            ),
+            message="@Alice 目前未開台，開台後再簽到吧！",
+        )
+        ctx = _ctx()
+
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _checkin(component, ctx)
+
+        component._ctx_reply.assert_awaited_once_with(ctx, "@Alice 目前未開台，開台後再簽到吧！")
+        component._record_command.assert_awaited_once_with(ctx, "checkin")
+
+    async def test_session_sync_lag_allows_repository_to_resolve_active_session(self) -> None:
+        component = _component()
+        component.bot.sessions.session_id.return_value = None
+        ctx = _ctx()
+
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _checkin(component, ctx)
+
+        component.attendance.check_in_with_reply.assert_awaited_once_with(
+            channel_id="ch1",
+            user_id="u1",
+            username="alice",
+            display_name="Alice",
+            session_id=None,
+        )
+        component._ctx_reply.assert_awaited_once_with(ctx, "@Alice 簽到成功，累積 3 天！")
 
     async def test_database_failure_never_reports_success_or_usage(self) -> None:
         component = _component()

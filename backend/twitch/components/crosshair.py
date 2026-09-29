@@ -1,11 +1,11 @@
-"""Crosshair bot commands: !xhc and subcommands.
+"""Crosshair bot commands: !crosshairs / !xhc and subcommands.
 
 Syntax:
-    !xhc                      — 顯示準星收藏頁面連結（所有人）
-    !xhc <名稱>               — 查詢並分享準星代碼（所有人，15s cooldown）
-    !xhc a <名稱> <代碼>       — 新增準星（Mod+）
-    !xhc e <名稱> <新代碼>     — 編輯準星代碼（Mod+）
-    !xhc d <名稱>             — 刪除準星（Mod+）
+    !crosshairs / !xhc               — 顯示準星收藏頁面連結（所有人）
+    !crosshairs <名稱>                — 查詢並分享準星代碼（所有人，15s cooldown）
+    !crosshairs a <名稱> <代碼>        — 新增準星（Mod+）
+    !crosshairs e <名稱> <新代碼>      — 編輯準星代碼（Mod+）
+    !crosshairs d <名稱>              — 刪除準星（Mod+）
 
 <名稱> may contain spaces; <代碼> is always the last whitespace-delimited token
 since Valorant crosshair codes contain no spaces.
@@ -28,8 +28,6 @@ if TYPE_CHECKING:
     from core.bot import Bot
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
-
-FRONTEND_URL = get_settings().frontend_url.rstrip("/")
 
 _VIEWER_SHARE_COOLDOWN = 15  # seconds
 
@@ -66,6 +64,7 @@ def _split_name_code(args: str) -> tuple[str, str] | None:
 class CrosshairComponent(BotComponent):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot: Bot = bot  # type: ignore[assignment]
+        self.frontend_url = get_settings().frontend_url.rstrip("/")
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self.xhair_repo = CrosshairRepository(self.bot.token_database)  # type: ignore[attr-defined]
@@ -90,10 +89,10 @@ class CrosshairComponent(BotComponent):
         except Exception as e:
             LOGGER.error(f"Failed to record command usage: {e}")
 
-    # ── !xhc ──────────────────────────────────────────────────────────────────
+    # ── !crosshairs / !xhc ────────────────────────────────────────────────────
 
     @commands.group(
-        name="xhc", aliases=["crosshairs", "準星"], invoke_fallback=True, case_insensitive=True
+        name="crosshairs", aliases=["xhc", "準星"], invoke_fallback=True, case_insensitive=True
     )
     async def xhc(self, ctx: commands.Context) -> None:
         """Show crosshairs page link, or look up a crosshair by name."""
@@ -112,7 +111,7 @@ class CrosshairComponent(BotComponent):
 
         if not name:
             channel_name = ctx.channel.name
-            await self._ctx_reply(ctx, f"準星收藏： {FRONTEND_URL}/{channel_name}/crosshairs")
+            await self._ctx_reply(ctx, f"準星收藏： {self.frontend_url}/{channel_name}/crosshairs")
             await self._record_command(ctx, "crosshairs")
             return
 

@@ -9,7 +9,7 @@ import logging
 
 import asyncpg
 
-from shared.repositories.channel import ChannelRepository
+from shared.repositories.channel import ChannelRepository, TwitchCredentialRoleConflictError
 from shared.twitch_scopes import required_core_scopes
 
 from .twitch_api import TwitchAPIClient
@@ -129,6 +129,12 @@ class ChannelService:
             )
             LOGGER.info(f"Successfully synced token and channel for: {username} ({user_id})")
             return True
+        except TwitchCredentialRoleConflictError:
+            LOGGER.warning(
+                "Rejected broadcaster credential for Bot identity %s",
+                user_id,
+            )
+            raise
         except Exception:
             LOGGER.exception("Error in save_token for user %s", user_id)
             return False

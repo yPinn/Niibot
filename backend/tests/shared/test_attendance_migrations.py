@@ -118,3 +118,36 @@ def test_checkin_reply_delay_default_becomes_five_without_rewriting_rows() -> No
 
     assert "ALTER COLUMN reply_delay_seconds SET DEFAULT 5" in sql
     assert "UPDATE checkin_settings" not in sql
+
+
+def test_live_only_defaults_on_for_new_channels_without_changing_existing_channels() -> None:
+    sql = (_VERSIONS / "145_add_checkin_live_only.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN live_only BOOLEAN NOT NULL DEFAULT TRUE" in sql
+    assert "UPDATE checkin_settings SET live_only = FALSE" in sql
+    assert "INSERT INTO checkin_settings (channel_id, live_only)" in sql
+    assert "SELECT channel_id, FALSE FROM channels" in sql
+    assert "ON CONFLICT (channel_id) DO NOTHING" in sql
+
+
+def test_broadcast_day_duplicate_template_preserves_channel_customizations() -> None:
+    sql = (_VERSIONS / "146_update_checkin_duplicate_broadcast_day.sql").read_text(encoding="utf-8")
+
+    expected = "$(@user) 本直播日已經簽到過了，目前累積 $(count) 天！"
+    previous = "$(@user) 今天已經簽到過了，目前累積 $(count) 天！"
+    assert "ALTER COLUMN duplicate_template" in sql
+    assert expected in sql
+    assert f"WHERE duplicate_template = '{previous}'" in sql
+
+
+def test_broadcast_days_are_snapshotted_only_for_observed_live_sessions() -> None:
+    sql = (_VERSIONS / "148_add_stream_session_checkin_days.sql").read_text(encoding="utf-8")
+
+    assert "ADD COLUMN checkin_eligible BOOLEAN NOT NULL DEFAULT FALSE" in sql
+    assert "ADD COLUMN checkin_timezone TEXT" in sql
+    assert "ADD COLUMN checkin_broadcast_day DATE" in sql
+    assert "attendance_snapshot_count > 0" in sql
+    assert "FROM stream_events" in sql
+    assert "FROM viewer_checkins" in sql
+    assert "checkin_broadcast_day" in sql
+    assert "idx_stream_sessions_checkin_days" in sql

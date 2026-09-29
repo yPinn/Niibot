@@ -154,11 +154,13 @@ PromptCompiler → BoundedRouter → OutputProcessor → Twitch / Discord render
 Owner Settings ─▶ 建立 30 分鐘 invite URL ─▶ 朋友以 Bot Twitch 帳號授權
   └─ HMAC state + DB nonce／expiry／row lock
       └─ encrypted bot token + tenant mapping + audit（單一 transaction）
-          └─ system Niibot reset 時 pg_notify('bot_token_updated') 熱載入
+          └─ Owner／MOD 選擇 sender ─▶ desired/version NOTIFY
+              └─ runtime token／scope／MOD／EventSub preflight ─▶ active ack 或保留舊 sender
 ```
 
 Bot callback 永不建立 Dashboard session／membership／tenant；自訂 Bot 只透過
-`channel_bot_accounts` 對邀請 tenant 可見。Per-tenant sender 仍待 Phase 3。
+`channel_bot_accounts` 對邀請 tenant 可見。Per-tenant sender 已採 desired／active 狀態機；只有 runtime preflight
+完成並 ack 後才成為 active，失敗時不切斷原 sender。
 
 ### 聊天指令觸發
 

@@ -72,6 +72,11 @@ def _stream(channel_id="ch1", started_at=None, title="T", game_name="G", game_id
     )
 
 
+async def _stream_results(*streams):
+    for stream in streams:
+        yield stream
+
+
 class TestEnsureSession:
     pytestmark = pytest.mark.asyncio
 
@@ -180,6 +185,38 @@ class TestStreamEvents:
         svc.end_session = AsyncMock()
         await svc.on_stream_offline("ch1")
         svc.end_session.assert_not_awaited()
+
+
+class TestVerifyLoop:
+    pytestmark = pytest.mark.asyncio
+
+    async def test_protects_helix_live_channels_from_stale_cleanup(self):
+        analytics = _analytics()
+        channels = MagicMock()
+        channels.list_enabled_channels = AsyncMock(
+            return_value=[SimpleNamespace(channel_id="live", channel_name="Live")]
+        )
+        client = MagicMock()
+        client.fetch_streams = lambda **_: _stream_results(_stream("live"))
+        svc = _make_service(analytics=analytics, channels=channels, client=client)
+        svc._active["live"] = 42
+
+        sleep_calls = 0
+
+        async def _one_iteration(_seconds):
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls >= 2:
+                raise asyncio.CancelledError()
+
+        with patch("core.session_service.asyncio.sleep", new=_one_iteration):
+            with pytest.raises(asyncio.CancelledError):
+                await svc._verify_loop()
+
+        analytics.close_stale_sessions.assert_awaited_once_with(
+            max_hours=12,
+            live_channel_ids=frozenset({"live"}),
+        )
 
 
 class TestWatchTimeTokenFlow:
