@@ -112,4 +112,34 @@ describe('Bot authorization public pages', () => {
     expect(screen.getByText('你可以關閉這個頁面。')).toBeInTheDocument()
     expect(screen.queryByText(/Dashboard/)).not.toBeInTheDocument()
   })
+
+  it.each([
+    ['authorization_denied', '你已取消 Twitch 授權。'],
+    ['provider_unavailable', 'Twitch 授權暫時無法使用。'],
+    ['bot_invite_wrong_account', '請使用指定的 Bot 帳號完成授權。'],
+    ['bot_account_missing_scopes', 'Bot 權限未完整授予。'],
+  ])('shows only actionable bot authorization failure copy for %s', (reason, message) => {
+    render(
+      <MemoryRouter initialEntries={[`/bot-auth/result?status=error&reason=${reason}`]}>
+        <BotAuthorizationResult />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByRole('heading', { name: 'Bot 授權未完成' })).toBeInTheDocument()
+    expect(screen.getByText(message)).toBeInTheDocument()
+  })
+
+  it.each(['invalid_scope', 'missing_code', 'token_exchange_failed', 'secret-provider-value'])(
+    'keeps internal bot authorization detail %s out of user-facing copy',
+    reason => {
+      render(
+        <MemoryRouter initialEntries={[`/bot-auth/result?status=error&reason=${reason}`]}>
+          <BotAuthorizationResult />
+        </MemoryRouter>
+      )
+
+      expect(screen.getByText('Bot 授權未完成，請重新取得授權連結。')).toBeInTheDocument()
+      expect(screen.queryByText(reason)).not.toBeInTheDocument()
+    }
+  )
 })

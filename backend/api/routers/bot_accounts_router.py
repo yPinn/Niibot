@@ -51,6 +51,13 @@ _callback_limiter = RateLimiter(max_calls=30, period=60.0)
 _authorization_check_limiter = RateLimiter(max_calls=10, period=60.0)
 _authorization_remove_limiter = RateLimiter(max_calls=5, period=60.0)
 _BOT_CALLBACK_PATH = "/api/auth/twitch/bot/callback"
+_PROVIDER_OAUTH_ERROR_REASONS = {
+    "access_denied": "authorization_denied",
+    "invalid_scope": "invalid_scope",
+    "missing_scope": "invalid_scope",
+    "server_error": "provider_unavailable",
+    "temporarily_unavailable": "provider_unavailable",
+}
 
 
 class BotInviteCreateResponse(BaseModel):
@@ -154,6 +161,13 @@ def _result_redirect(settings: Settings, *, status_value: str, reason: str | Non
     if reason:
         query["reason"] = reason
     return f"{settings.frontend_url}/bot-auth/result?{urlencode(query)}"
+
+
+def _provider_oauth_failure_reason(error: str | None) -> str:
+    """Collapse untrusted provider errors into a small, non-sensitive catalog."""
+    if error is None:
+        return "missing_code"
+    return _PROVIDER_OAUTH_ERROR_REASONS.get(error.strip().lower(), "provider_error")
 
 
 def _account_response(
@@ -552,7 +566,9 @@ async def bot_oauth_callback(
     _callback_limiter.require(_request_ip(request))
     error_url = _result_redirect(settings, status_value="error", reason="authorization_failed")
     if error or not code:
-        return RedirectResponse(error_url)
+        reason = _provider_oauth_failure_reason(error)
+        LOGGER.warning("Bot OAuth callback rejected before code exchange: reason=%s", reason)
+        return RedirectResponse(_result_redirect(settings, status_value="error", reason=reason))
 
     decoded_state = decode_oauth_state(state, secret=settings.jwt_secret_key)
     capability = decoded_state.get("uid")
@@ -608,8 +624,11 @@ async def bot_oauth_callback(
     except AppError as exc:
         reason = exc.code.lower().replace(".", "_")
         return RedirectResponse(_result_redirect(settings, status_value="error", reason=reason))
-    except Exception:
-        LOGGER.exception("Bot OAuth callback failed after token exchange")
+    except Exception as exc:
+        LOGGER.error(
+            "Bot OAuth callback failed after token exchange: exception_type=%s",
+            type(exc).__name__,
+        )
         return RedirectResponse(error_url)
 
     return RedirectResponse(_result_redirect(settings, status_value="success"))
