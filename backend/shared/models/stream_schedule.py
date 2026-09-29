@@ -19,6 +19,11 @@ class ScheduleKind(StrEnum):
     ONE_OFF = "one_off"
 
 
+class OccurrenceExceptionKind(StrEnum):
+    CANCELLED = "cancelled"
+    REPLACEMENT = "replacement"
+
+
 @dataclass(frozen=True, slots=True)
 class StreamScheduleSettings:
     channel_id: str
@@ -53,3 +58,15 @@ class StreamScheduleSegment:
     game_id: str | None = None
     game_name: str | None = None
     sort_order: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class StreamScheduleOccurrenceException:
+    id: int
+    channel_id: str
+    recurring_schedule_id: int
+    occurrence_date: date
+    kind: OccurrenceExceptionKind
+    replacement_schedule_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

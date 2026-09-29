@@ -22,7 +22,7 @@ from core.dependencies import (
 from services.tenant_service import TenantContext
 from services.twitch_api import TwitchAPIClient
 from shared.errors import InvalidInputError, NotFoundError
-from shared.models.stream_schedule import ScheduleKind
+from shared.models.stream_schedule import OccurrenceExceptionKind, ScheduleKind
 from shared.services.stream_schedule_service import StreamScheduleService
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -84,6 +84,24 @@ class StreamScheduleResponse(BaseModel):
     updated_at: datetime | None = None
 
 
+class StreamScheduleOccurrenceExceptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    channel_id: str
+    recurring_schedule_id: int
+    occurrence_date: date
+    kind: OccurrenceExceptionKind
+    replacement_schedule_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class StreamScheduleReplacementResponse(BaseModel):
+    exception: StreamScheduleOccurrenceExceptionResponse
+    schedule: StreamScheduleResponse
+
+
 class StreamScheduleCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -91,8 +109,10 @@ class StreamScheduleCreate(BaseModel):
     weekday: int | None = Field(default=None, ge=0, le=6)
     specific_date: date | None = None
     start_time: time
-    duration_minutes: int = Field(ge=1, le=1440)
-    title_template: str = Field(default="", max_length=500)
+    duration_minutes: int = Field(ge=30, le=1380)
+    title_template: str = Field(default="", max_length=140)
+    game_id: str | None = Field(default=None, max_length=64)
+    game_name: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def validate_kind_fields(self) -> StreamScheduleCreate:
@@ -102,6 +122,8 @@ class StreamScheduleCreate(BaseModel):
         else:
             if self.specific_date is None or self.weekday is not None:
                 raise ValueError("one-off schedules require specific_date and no weekday")
+        if (self.game_id is None) != (self.game_name is None):
+            raise ValueError("game_id and game_name must be provided together")
         return self
 
 
@@ -109,8 +131,8 @@ class StreamScheduleUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     start_time: time | None = None
-    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
-    title_template: str | None = Field(default=None, max_length=500)
+    duration_minutes: int | None = Field(default=None, ge=30, le=1380)
+    title_template: str | None = Field(default=None, max_length=140)
     enabled: bool | None = None
 
 
@@ -130,8 +152,8 @@ class StreamScheduleSegmentResponse(BaseModel):
 class StreamScheduleSegmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    offset_minutes: int = Field(ge=0, le=1440)
-    title_template: str = Field(default="", max_length=500)
+    offset_minutes: int = Field(ge=0, le=1379)
+    title_template: str = Field(default="", max_length=140)
     # Pre-resolved from GET /games/search — the frontend's picker already
     # confirmed this is a real Twitch category, so no server-side re-resolution.
     # Both unset means no game for this segment.
@@ -149,8 +171,8 @@ class StreamScheduleSegmentCreate(BaseModel):
 class StreamScheduleSegmentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    offset_minutes: int | None = Field(default=None, ge=0, le=1440)
-    title_template: str | None = Field(default=None, max_length=500)
+    offset_minutes: int | None = Field(default=None, ge=0, le=1379)
+    title_template: str | None = Field(default=None, max_length=140)
     # None (both fields) = leave the segment's game unchanged; "" (both fields)
     # = explicitly clear it; matching non-empty values = set to that game.
     game_id: str | None = Field(default=None, max_length=64)
@@ -215,6 +237,77 @@ async def list_stream_schedules(
     return [StreamScheduleResponse.model_validate(s) for s in schedules]
 
 
+@router.get(
+    "/occurrences/exceptions",
+    response_model=list[StreamScheduleOccurrenceExceptionResponse],
+)
+async def list_stream_schedule_occurrence_exceptions(
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: StreamScheduleService = Depends(get_stream_schedule_service),
+) -> list[StreamScheduleOccurrenceExceptionResponse]:
+    exceptions = await service.list_occurrence_exceptions(
+        tenant.channel_id, start_date=start_date, end_date=end_date
+    )
+    return [StreamScheduleOccurrenceExceptionResponse.model_validate(item) for item in exceptions]
+
+
+@router.post(
+    "/schedules/{schedule_id}/occurrences/{occurrence_date}/cancel",
+    response_model=StreamScheduleOccurrenceExceptionResponse,
+)
+async def cancel_stream_schedule_occurrence(
+    schedule_id: int,
+    occurrence_date: date,
+    _action: Literal["stream-schedule-occurrence-cancel"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: StreamScheduleService = Depends(get_stream_schedule_service),
+) -> StreamScheduleOccurrenceExceptionResponse:
+    exception = await service.cancel_occurrence(tenant.channel_id, schedule_id, occurrence_date)
+    if exception is None:
+        raise StreamScheduleNotFoundError(context={"schedule_id": schedule_id})
+    return StreamScheduleOccurrenceExceptionResponse.model_validate(exception)
+
+
+@router.delete(
+    "/schedules/{schedule_id}/occurrences/{occurrence_date}",
+    status_code=204,
+)
+async def restore_stream_schedule_occurrence(
+    schedule_id: int,
+    occurrence_date: date,
+    _action: Literal["stream-schedule-occurrence-restore"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: StreamScheduleService = Depends(get_stream_schedule_service),
+) -> None:
+    restored = await service.restore_occurrence(tenant.channel_id, schedule_id, occurrence_date)
+    if not restored:
+        raise StreamScheduleNotFoundError(context={"schedule_id": schedule_id})
+
+
+@router.post(
+    "/schedules/{schedule_id}/occurrences/{occurrence_date}/replace",
+    response_model=StreamScheduleReplacementResponse,
+    status_code=201,
+)
+async def replace_stream_schedule_occurrence(
+    schedule_id: int,
+    occurrence_date: date,
+    _action: Literal["stream-schedule-occurrence-replace"] = Header(alias="X-Niibot-Action"),
+    tenant: TenantContext = Depends(require_self_tenant_access),
+    service: StreamScheduleService = Depends(get_stream_schedule_service),
+) -> StreamScheduleReplacementResponse:
+    replacement = await service.create_replacement(tenant.channel_id, schedule_id, occurrence_date)
+    if replacement is None:
+        raise StreamScheduleNotFoundError(context={"schedule_id": schedule_id})
+    exception, schedule = replacement
+    return StreamScheduleReplacementResponse(
+        exception=StreamScheduleOccurrenceExceptionResponse.model_validate(exception),
+        schedule=StreamScheduleResponse.model_validate(schedule),
+    )
+
+
 @router.post("/schedules", response_model=StreamScheduleResponse, status_code=201)
 async def create_stream_schedule(
     body: StreamScheduleCreate,
@@ -231,6 +324,8 @@ async def create_stream_schedule(
             start_time=body.start_time,
             duration_minutes=body.duration_minutes,
             title_template=body.title_template,
+            game_id=body.game_id,
+            game_name=body.game_name,
         )
     except ValueError:
         LOGGER.info("stream_schedule_create_validation_failed")

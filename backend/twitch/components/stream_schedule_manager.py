@@ -41,9 +41,9 @@ class StreamScheduleManagerComponent(commands.Component):
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
         self.service = StreamScheduleService(StreamScheduleRepository(bot.token_database))
-        # channel_id -> segment id last applied, so the poll only calls the API
-        # again when the resolved segment actually changes.
-        self._last_applied_segment: dict[str, int] = {}
+        # Include mutable payload fields so an in-place edit to the active
+        # segment is applied on the next poll even though its id is unchanged.
+        self._last_applied_segment: dict[str, tuple[int, str, str | None]] = {}
 
     def refresh_pool(self, pool) -> None:
         self.service = StreamScheduleService(StreamScheduleRepository(pool))
@@ -84,7 +84,8 @@ class StreamScheduleManagerComponent(commands.Component):
             return
 
         segment = resolved.segment
-        if not force and self._last_applied_segment.get(channel_id) == segment.id:
+        fingerprint = (segment.id, segment.title_template, segment.game_id)
+        if not force and self._last_applied_segment.get(channel_id) == fingerprint:
             return
 
         kwargs: dict[str, str] = {}
@@ -100,7 +101,7 @@ class StreamScheduleManagerComponent(commands.Component):
         if not kwargs:
             # Segment defines neither a title nor a game — nothing to apply, but
             # still record it so the poll doesn't retry every tick.
-            self._last_applied_segment[channel_id] = segment.id
+            self._last_applied_segment[channel_id] = fingerprint
             return
 
         try:
@@ -109,7 +110,7 @@ class StreamScheduleManagerComponent(commands.Component):
                 LOGGER.warning(f"[{self.bot._ch(channel_id)}] Could not fetch broadcaster")  # type: ignore[attr-defined]
                 return
             await users[0].modify_channel(**kwargs)
-            self._last_applied_segment[channel_id] = segment.id
+            self._last_applied_segment[channel_id] = fingerprint
             LOGGER.info(
                 f"[{self.bot._ch(channel_id)}] Applied schedule segment {segment.id}: {kwargs}"  # type: ignore[attr-defined]
             )

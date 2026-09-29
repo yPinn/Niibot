@@ -30,11 +30,14 @@ from routers.stream_schedule_router import StreamScheduleCreate
 from routers.stream_schedule_router import router as _stream_schedule_router
 from services.tenant_service import TenantContext
 from shared.models.stream_schedule import (
+    OccurrenceExceptionKind,
     ScheduleKind,
     StreamSchedule,
+    StreamScheduleOccurrenceException,
     StreamScheduleSegment,
     StreamScheduleSettings,
 )
+from shared.repositories.stream_schedule import StreamScheduleConflictError
 
 CHANNEL_ID = "channel-123"
 _SETTINGS_HEADERS = {"X-Niibot-Action": "stream-schedule-settings"}
@@ -44,6 +47,9 @@ _DELETE_HEADERS = {"X-Niibot-Action": "stream-schedule-delete"}
 _SEG_CREATE_HEADERS = {"X-Niibot-Action": "stream-schedule-segment-create"}
 _SEG_UPDATE_HEADERS = {"X-Niibot-Action": "stream-schedule-segment-update"}
 _SEG_DELETE_HEADERS = {"X-Niibot-Action": "stream-schedule-segment-delete"}
+_OCC_CANCEL_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-cancel"}
+_OCC_RESTORE_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-restore"}
+_OCC_REPLACE_HEADERS = {"X-Niibot-Action": "stream-schedule-occurrence-replace"}
 _NOW = datetime(2026, 9, 21, tzinfo=UTC)
 
 _SETTINGS = StreamScheduleSettings(
@@ -64,6 +70,13 @@ _SCHEDULE = StreamSchedule(
 _SEGMENT = StreamScheduleSegment(
     id=1, channel_id=CHANNEL_ID, schedule_id=1, offset_minutes=0, title_template="聊天"
 )
+_EXCEPTION = StreamScheduleOccurrenceException(
+    id=1,
+    channel_id=CHANNEL_ID,
+    recurring_schedule_id=1,
+    occurrence_date=date(2026, 9, 21),
+    kind=OccurrenceExceptionKind.CANCELLED,
+)
 
 
 @asynccontextmanager
@@ -83,6 +96,10 @@ def _service() -> MagicMock:
     service.add_segment = AsyncMock(return_value=_SEGMENT)
     service.update_segment = AsyncMock(return_value=_SEGMENT)
     service.delete_segment = AsyncMock(return_value=True)
+    service.list_occurrence_exceptions = AsyncMock(return_value=[_EXCEPTION])
+    service.cancel_occurrence = AsyncMock(return_value=_EXCEPTION)
+    service.restore_occurrence = AsyncMock(return_value=True)
+    service.create_replacement = AsyncMock(return_value=(_EXCEPTION, _SCHEDULE))
     return service
 
 
@@ -164,11 +181,62 @@ class TestSchedules:
                 "start_time": "20:00:00",
                 "duration_minutes": 180,
                 "title_template": "週一開台",
+                "game_id": "509658",
+                "game_name": "Just Chatting",
             },
             headers=_CREATE_HEADERS,
         )
         assert response.status_code == 201
-        service.create_schedule.assert_awaited_once()
+        service.create_schedule.assert_awaited_once_with(
+            CHANNEL_ID,
+            kind=ScheduleKind.RECURRING,
+            weekday=0,
+            specific_date=None,
+            start_time=time(20, 0),
+            duration_minutes=180,
+            title_template="週一開台",
+            game_id="509658",
+            game_name="Just Chatting",
+        )
+
+    def test_create_schedule_rejects_mismatched_opening_game(self) -> None:
+        service = _service()
+        response = _make_client(service).post(
+            "/api/stream-schedule/schedules",
+            json={
+                "kind": "recurring",
+                "weekday": 0,
+                "start_time": "20:00:00",
+                "duration_minutes": 180,
+                "game_id": "509658",
+            },
+            headers=_CREATE_HEADERS,
+        )
+        assert response.status_code == 422
+        service.create_schedule.assert_not_awaited()
+
+    def test_create_schedule_conflict_returns_409_with_time_fields(self) -> None:
+        service = _service()
+        service.create_schedule = AsyncMock(
+            side_effect=StreamScheduleConflictError(
+                fields={"date": "2026-09-21", "start_time": "20:00"}
+            )
+        )
+        response = _make_client(service).post(
+            "/api/stream-schedule/schedules",
+            json={
+                "kind": "recurring",
+                "weekday": 0,
+                "start_time": "20:00:00",
+                "duration_minutes": 180,
+            },
+            headers=_CREATE_HEADERS,
+        )
+        assert response.status_code == 409
+        assert response.json()["error"]["fields"] == {
+            "date": "2026-09-21",
+            "start_time": "20:00",
+        }
 
     def test_create_schedule_rejects_recurring_with_specific_date(self) -> None:
         service = _service()
@@ -347,6 +415,42 @@ class TestSegments:
         service.delete_segment.assert_awaited_once_with(CHANNEL_ID, 1)
 
 
+class TestOccurrences:
+    def test_list_exceptions(self) -> None:
+        service = _service()
+        response = _make_client(service).get("/api/stream-schedule/occurrences/exceptions")
+        assert response.status_code == 200
+        assert response.json()[0]["kind"] == "cancelled"
+
+    def test_cancel_occurrence(self) -> None:
+        service = _service()
+        response = _make_client(service).post(
+            "/api/stream-schedule/schedules/1/occurrences/2026-09-21/cancel",
+            headers=_OCC_CANCEL_HEADERS,
+        )
+        assert response.status_code == 200
+        service.cancel_occurrence.assert_awaited_once_with(CHANNEL_ID, 1, date(2026, 9, 21))
+
+    def test_restore_occurrence(self) -> None:
+        service = _service()
+        response = _make_client(service).delete(
+            "/api/stream-schedule/schedules/1/occurrences/2026-09-21",
+            headers=_OCC_RESTORE_HEADERS,
+        )
+        assert response.status_code == 204
+        service.restore_occurrence.assert_awaited_once_with(CHANNEL_ID, 1, date(2026, 9, 21))
+
+    def test_clone_occurrence_to_replacement(self) -> None:
+        service = _service()
+        response = _make_client(service).post(
+            "/api/stream-schedule/schedules/1/occurrences/2026-09-21/replace",
+            headers=_OCC_REPLACE_HEADERS,
+        )
+        assert response.status_code == 201
+        assert response.json()["schedule"]["id"] == 1
+        service.create_replacement.assert_awaited_once_with(CHANNEL_ID, 1, date(2026, 9, 21))
+
+
 class TestScheduleCreateValidation:
     """Direct pydantic-model tests for the kind/weekday/specific_date consistency rule."""
 
@@ -380,6 +484,34 @@ class TestScheduleCreateValidation:
             duration_minutes=60,
         )
         assert model.specific_date == date(2026, 9, 21)
+
+    @pytest.mark.parametrize("duration", [29, 1381])
+    def test_duration_outside_publishable_bounds_rejected(self, duration: int) -> None:
+        with pytest.raises(ValidationError):
+            StreamScheduleCreate(
+                kind=ScheduleKind.RECURRING,
+                weekday=0,
+                start_time=time(20, 0),
+                duration_minutes=duration,
+            )
+
+    def test_opening_title_is_limited_to_140_characters(self) -> None:
+        model = StreamScheduleCreate(
+            kind=ScheduleKind.RECURRING,
+            weekday=0,
+            start_time=time(20, 0),
+            duration_minutes=60,
+            title_template="a" * 140,
+        )
+        assert len(model.title_template) == 140
+        with pytest.raises(ValidationError):
+            StreamScheduleCreate(
+                kind=ScheduleKind.RECURRING,
+                weekday=0,
+                start_time=time(20, 0),
+                duration_minutes=60,
+                title_template="a" * 141,
+            )
 
 
 class TestGameSearch:

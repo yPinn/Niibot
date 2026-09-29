@@ -92,11 +92,11 @@ def _upcoming(
                 channel_id="ch_test",
                 schedule_id=1,
                 offset_minutes=0,
-                title_template="",
+                title_template=title,
                 game_name=game_name,
             )
         ]
-        if game_name
+        if title or game_name
         else []
     )
     return UpcomingSchedule(
@@ -220,6 +220,16 @@ class TestSchedule:
         comp._ctx_reply.assert_awaited_once_with(
             ctx, "今天 20:00 開始，週一固定台，預計玩 Just Chatting"
         )
+
+    async def test_opening_segment_title_wins_over_legacy_schedule_title(self):
+        comp = _make_component()
+        ctx = _make_ctx()
+        upcoming = _upcoming(days_from_today=0, title="開場新標題")
+        object.__setattr__(upcoming.schedule, "title_template", "舊標題")
+        comp.schedule_service.describe_upcoming = AsyncMock(return_value=upcoming)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _schedule_cmd(comp, ctx)
+        comp._ctx_reply.assert_awaited_once_with(ctx, "今天 20:00 開始，開場新標題")
 
     async def test_tomorrow_with_no_title_or_game(self):
         comp = _make_component()

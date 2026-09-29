@@ -29,8 +29,9 @@ def _format_schedule_reply(upcoming: UpcomingSchedule) -> str:
         when = _WEEKDAY_LABELS[upcoming.date.weekday()]
 
     parts = [f"{when} {upcoming.schedule.start_time.strftime('%H:%M')} 開始"]
-    if upcoming.schedule.title_template:
-        parts.append(upcoming.schedule.title_template)
+    opening = min(upcoming.segments, key=lambda segment: segment.offset_minutes, default=None)
+    if opening and opening.title_template:
+        parts.append(opening.title_template)
     first_game = next((s.game_name for s in upcoming.segments if s.game_name), None)
     if first_game:
         parts.append(f"預計玩 {first_game}")
