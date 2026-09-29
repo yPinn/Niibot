@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
@@ -12,6 +13,7 @@ os.environ.setdefault("CLIENT_SECRET", "test-client-secret")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 os.environ.setdefault("BOT_ID", "bot-test")
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -336,6 +338,140 @@ def test_bot_callback_rejects_tampered_state_before_token_exchange():
     assert response.status_code in {302, 303, 307}
     assert "status=error" in response.headers["location"]
     twitch.exchange_code_for_token.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "safe_reason"),
+    [
+        ("access_denied", "authorization_denied"),
+        ("invalid_scope", "invalid_scope"),
+        ("missing_scope", "invalid_scope"),
+        ("server_error", "provider_unavailable"),
+        ("temporarily_unavailable", "provider_unavailable"),
+    ],
+)
+def test_bot_callback_classifies_provider_error_without_reflecting_oauth_details(
+    caplog, provider_error, safe_reason
+):
+    service = MagicMock()
+    twitch = MagicMock()
+    twitch.exchange_code_for_token = AsyncMock()
+
+    with caplog.at_level(logging.WARNING, logger="routers.bot_accounts_router"):
+        response = _client(service, twitch).get(
+            "/api/auth/twitch/bot/callback",
+            params={
+                "error": provider_error,
+                "error_description": "provider-secret-description",
+                "state": "sensitive-oauth-state",
+            },
+            follow_redirects=False,
+        )
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"].endswith(
+        f"/bot-auth/result?status=error&reason={safe_reason}"
+    )
+    assert "provider-secret-description" not in response.headers["location"]
+    assert "sensitive-oauth-state" not in response.headers["location"]
+    assert "provider-secret-description" not in caplog.text
+    assert "sensitive-oauth-state" not in caplog.text
+    assert safe_reason in caplog.text
+    twitch.exchange_code_for_token.assert_not_awaited()
+
+
+def test_bot_callback_collapses_unknown_provider_error_without_logging_raw_value(caplog):
+    service = MagicMock()
+    twitch = MagicMock()
+    twitch.exchange_code_for_token = AsyncMock()
+
+    with caplog.at_level(logging.WARNING, logger="routers.bot_accounts_router"):
+        response = _client(service, twitch).get(
+            "/api/auth/twitch/bot/callback",
+            params={"error": "secret-provider-value", "state": "sensitive-oauth-state"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"].endswith(
+        "/bot-auth/result?status=error&reason=provider_error"
+    )
+    assert "secret-provider-value" not in response.headers["location"]
+    assert "secret-provider-value" not in caplog.text
+    assert "sensitive-oauth-state" not in caplog.text
+    assert "provider_error" in caplog.text
+    twitch.exchange_code_for_token.assert_not_awaited()
+
+
+def test_bot_callback_reports_missing_code_without_logging_state(caplog):
+    service = MagicMock()
+    twitch = MagicMock()
+    twitch.exchange_code_for_token = AsyncMock()
+
+    with caplog.at_level(logging.WARNING, logger="routers.bot_accounts_router"):
+        response = _client(service, twitch).get(
+            "/api/auth/twitch/bot/callback",
+            params={"state": "sensitive-oauth-state"},
+            follow_redirects=False,
+        )
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"].endswith(
+        "/bot-auth/result?status=error&reason=missing_code"
+    )
+    assert "sensitive-oauth-state" not in response.headers["location"]
+    assert "sensitive-oauth-state" not in caplog.text
+    assert "missing_code" in caplog.text
+    twitch.exchange_code_for_token.assert_not_awaited()
+
+
+def test_bot_callback_does_not_log_sensitive_exception_messages_after_exchange(caplog):
+    service = MagicMock()
+    service.authorize_invite = AsyncMock(
+        side_effect=RuntimeError("access-secret refresh-secret sensitive-oauth-state")
+    )
+    twitch = MagicMock()
+    twitch.exchange_code_for_token = AsyncMock(
+        return_value=(
+            True,
+            None,
+            {
+                "user_id": "bot-b",
+                "access_token": "access-secret",
+                "refresh_token": "refresh-secret",
+                "scopes": " ".join(BOT_SCOPES),
+            },
+        )
+    )
+    twitch.get_user_info = AsyncMock(
+        return_value={
+            "id": "bot-b",
+            "name": "bot_b",
+            "display_name": "Bot B",
+            "avatar": None,
+        }
+    )
+    state = encode_oauth_state(
+        "bot_authorization",
+        f"11111111-2222-3333-4444-555555555555.{_STATE_NONCE}",
+        secret="test-jwt-secret-key-for-auth-router-tests",
+    )
+
+    with caplog.at_level(logging.ERROR, logger="routers.bot_accounts_router"):
+        response = _client(service, twitch).get(
+            "/api/auth/twitch/bot/callback",
+            params={"code": "oauth-code", "state": state},
+            follow_redirects=False,
+        )
+
+    assert response.status_code in {302, 303, 307}
+    assert response.headers["location"].endswith(
+        "/bot-auth/result?status=error&reason=authorization_failed"
+    )
+    assert "access-secret" not in caplog.text
+    assert "refresh-secret" not in caplog.text
+    assert "sensitive-oauth-state" not in caplog.text
+    assert "RuntimeError" in caplog.text
 
 
 def test_owner_can_recheck_one_tenant_bot_authorization():
