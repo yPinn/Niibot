@@ -295,6 +295,7 @@ async def test_success_encrypts_token_and_atomically_maps_only_invite_tenant():
     )
     assert account_lock_index < token_write_index
     token_write = next(args for args in statements if "INSERT INTO tokens" in args[0])
+    assert "$7::timestamptz + INTERVAL '55 minutes'" in token_write[0]
     assert "access-secret" not in token_write[1:]
     assert "refresh-secret" not in token_write[1:]
     assert decrypt_twitch_token(token_write[2], version=1, key=_KEY) == "access-secret"
