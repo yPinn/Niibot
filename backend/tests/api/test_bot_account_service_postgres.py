@@ -236,6 +236,7 @@ async def test_bot_selection_versions_concurrent_requests_and_guards_runtime_ack
     finally:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM tokens WHERE user_id = ANY($1::text[])", bot_ids)
+            await conn.execute("DELETE FROM channel_bot_settings WHERE channel_id = $1", channel_id)
             await conn.execute(
                 "DELETE FROM bot_accounts WHERE platform_user_id = ANY($1::text[])", bot_ids
             )

@@ -38,7 +38,7 @@ _CONCISE_ALIAS_MIGRATION = (
 
 
 @pytest.mark.skipif(not _DATABASE_URL, reason="NIIBOT_TEST_DATABASE_URL is not configured")
-async def test_builtin_materialisation_preserves_catalog_role_and_cooldown() -> None:
+async def test_builtin_materialisation_preserves_catalog_defaults() -> None:
     assert _DATABASE_URL is not None
     pool = await asyncpg.create_pool(_DATABASE_URL, min_size=1, max_size=1)
     channel_id = f"test-command-config-{uuid4().hex}"
@@ -58,7 +58,7 @@ async def test_builtin_materialisation_preserves_catalog_role_and_cooldown() -> 
         await repository.increment_usage_count(channel_id, "condemn")
         condemn = await repository.get_config(channel_id, "condemn")
         assert condemn is not None
-        assert condemn.enabled is True
+        assert condemn.enabled is False
         assert condemn.min_role == "moderator"
         assert condemn.cooldown == 5
         assert condemn.usage_count == 1
@@ -225,6 +225,7 @@ async def test_namespace_repair_disables_conflicts_without_deleting_data() -> No
             SELECT command_name, enabled, custom_response
             FROM command_configs
             WHERE channel_id = $1
+              AND command_type = 'custom'
             ORDER BY command_name
             """,
             channel_id,
