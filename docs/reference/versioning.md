@@ -46,8 +46,8 @@ And transforms it to the display format:
 
 ## Release Process
 
-1. Merge all related PRs into `main`
-2. Tag the commit (two segments only, no patch):
+1. 讓 release candidate 在 `staging` 通過完整 CI／coverage／staging deploy，再以 promotion PR 合併到 `main`
+2. Tag 該已驗證的 `main` commit（two segments only, no patch）：
 
    ```bash
    git tag v1.4

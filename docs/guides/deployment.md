@@ -16,10 +16,11 @@ Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.
 | `feature/*`、`fix/*` | 本機   | —                                                                    |
 
 - `deploy-staging.yml` 保留供手動 `workflow_dispatch`（例如臨時起 staging bot 測試）。
-- `_deploy.yml` 是共用工作流，caller 只傳 `environment`（`production` \| `staging`）；
-  路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
+- `_deploy.yml` 是共用工作流，caller 傳 `environment`（`production` \| `staging`）與該 caller 已驗證的
+  完整 `deploy_sha`；路徑／埠／suffix／預設服務集由內部 `Resolve environment config` step 依環境推導。
 - self-hosted runner 共用主機但不共用工作目錄：production 固定使用 `/Users/pinn/Niibot` 的 `main`，staging
-  固定使用 `/Users/pinn/Niibot-stg` 的 `staging`。部署前會驗證 worktree root 與目前分支，不符即中止。
+  固定使用 `/Users/pinn/Niibot-stg` 的 `staging`。部署前會驗證 worktree root、目前分支、40字元小寫 SHA
+  與 branch ancestry，再 reset 到 exact SHA；後續 diff、build metadata 與 health revision gate 都使用同一 commit。
 - Compose project、image、env 與資料目錄按環境隔離；全域 deploy concurrency 仍禁止兩個部署同時操作 Docker。
 - runner 上的 env 檔由 `scripts/env/ci.py` 依 `env.manifest.json` 解析 GitHub
   Secrets／Variables；`scripts/env/write_ci.sh` 是最小化的 workflow wrapper。
@@ -28,9 +29,14 @@ Discord 的兩套 Application、Portal 權限與 command promotion 見 [discord.
 `staging → main` promotion PR 與 merge 後 main push 不重跑相同 CI；main 不接受其他來源或 direct push。
 Hotfix 同樣先進 `staging` 完成驗證與部署，再 promotion 到 `main`，不得先改 main 再 backport。
 
-期望分支規則：`main` 需 PR + 1 approval、禁止直推；`staging` 需 PR、允許 solo 直推。
-截至 2026-09-08，此 private Repo 使用 GitHub Free，GitHub API 回覆 branch protection 需升級方案或公開
-Repo，因此目前以「CI 紅燈不得合併」的人工作業維持；方案支援後再把上述規則設為平台強制。
+目前 active rulesets：`main` 必須經 PR、四項 required checks、禁止刪除與強推；`staging` 必須經 PR、
+三項 required checks、禁止刪除與強推，但維護者 `yPinn` 保留明確 solo direct-push bypass。單人維護階段
+approval count 為 0，兩邊都要求 discussion resolved。default branch 固定為 `main`，確保 production schedule
+總是從正式分支建立 run。
+
+Production manual dispatch 的 `force_all` 預設為 true，避免自上次 production deploy 累積多個 promotion 時
+只比較 `HEAD~1` 而漏建服務。只有明確指定單一 service 且確認其相依變更已部署時才關閉；weekly schedule
+一律 full rebuild。部署仍以 caller 的 immutable SHA 為準，不會在 CI 通過後改抓 branch 最新 HEAD。
 
 ### 同主機 worktree 一次性切換
 
