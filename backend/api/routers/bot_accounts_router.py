@@ -85,6 +85,7 @@ class BotInviteCreateResponse(BaseModel):
 class PublicBotInviteResponse(BaseModel):
     channel_name: str
     display_name: str | None
+    avatar: str | None
     purpose: str
     status: str
     expires_at: str
@@ -158,6 +159,7 @@ class BroadcasterAuthorizationResponse(AuthorizationHealthResponse):
     channel_id: str
     channel_name: str
     display_name: str | None
+    avatar: str | None
     enabled: bool
 
 
@@ -185,6 +187,31 @@ def _selection_response(state) -> BotSelectionResponse:
         acked_version=state.acked_version,
         status=state.status,
         error_code=state.last_error_code,
+    )
+
+
+async def _resolve_public_twitch_identity(
+    twitch_api: TwitchAPIClient,
+    *,
+    user_id: str,
+    login: str,
+    display_name: str | None,
+    avatar: str | None,
+) -> tuple[str, str | None, str | None]:
+    """Refresh public identity fields without making the primary read depend on Helix."""
+    try:
+        profile = await twitch_api.get_user_info(user_id)
+    except Exception:
+        LOGGER.warning("Unable to refresh Twitch profile for %s", user_id, exc_info=True)
+        profile = None
+    return (
+        str(profile.get("name")) if profile and profile.get("name") else login,
+        (
+            str(profile.get("display_name"))
+            if profile and profile.get("display_name")
+            else display_name
+        ),
+        str(profile.get("avatar")) if profile and profile.get("avatar") else avatar,
     )
 
 
@@ -387,9 +414,24 @@ async def get_broadcaster_authorization(
     channel_id: str,
     _tenant: TenantContext = Depends(require_tenant_access),
     authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
 ) -> BroadcasterAuthorizationResponse:
     summary = await authorization.get_broadcaster_summary(channel_id=channel_id)
-    return BroadcasterAuthorizationResponse(**summary.__dict__)
+    channel_name, display_name, avatar = await _resolve_public_twitch_identity(
+        twitch_api,
+        user_id=summary.channel_id,
+        login=summary.channel_name,
+        display_name=summary.display_name,
+        avatar=summary.avatar,
+    )
+    return BroadcasterAuthorizationResponse(
+        **{
+            **summary.__dict__,
+            "channel_name": channel_name,
+            "display_name": display_name,
+            "avatar": avatar,
+        }
+    )
 
 
 @router.get(
@@ -589,6 +631,13 @@ async def get_public_bot_invite(
         public_token=public_token,
         state_nonce=nonce,
     )
+    channel_name, display_name, avatar = await _resolve_public_twitch_identity(
+        twitch_api,
+        user_id=invite.profile_user_id,
+        login=invite.channel_name,
+        display_name=invite.display_name,
+        avatar=invite.avatar,
+    )
     oauth_url = None
     if invite.status == "pending":
         state_value = encode_oauth_state(
@@ -602,8 +651,9 @@ async def get_public_bot_invite(
             redirect_path=_BOT_CALLBACK_PATH,
         )
     return PublicBotInviteResponse(
-        channel_name=invite.channel_name,
-        display_name=invite.display_name,
+        channel_name=channel_name,
+        display_name=display_name,
+        avatar=avatar,
         purpose=invite.purpose,
         status=invite.status,
         expires_at=invite.expires_at.isoformat(),

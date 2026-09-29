@@ -69,6 +69,7 @@ class BroadcasterAuthorizationSummary:
     channel_id: str
     channel_name: str
     display_name: str | None
+    avatar: str | None
     enabled: bool
     status: AuthorizationStatus
     last_checked_at: datetime | None
@@ -718,6 +719,7 @@ class TwitchAuthorizationService:
             row = await conn.fetchrow(
                 """
                 SELECT channel.channel_id, channel.channel_name, channel.display_name,
+                       channel_owner.avatar,
                        channel.enabled, token.user_id AS token_user_id, token.requires_reauth,
                        token.last_checked_at, token.last_validated_at,
                        token.invalidated_at, token.validation_error_code
@@ -725,6 +727,8 @@ class TwitchAuthorizationService:
                   LEFT JOIN tokens token
                     ON token.user_id = channel.channel_id
                    AND token.token_type = 'broadcaster'
+                  LEFT JOIN users channel_owner
+                    ON channel_owner.id = channel.owner_user_id
                  WHERE channel.channel_id = $1
                 """,
                 channel_id,
@@ -740,6 +744,7 @@ class TwitchAuthorizationService:
             channel_id=str(row["channel_id"]),
             channel_name=str(row["channel_name"]),
             display_name=row["display_name"],
+            avatar=row["avatar"],
             enabled=bool(row["enabled"]),
             status=status,
             last_checked_at=row["last_checked_at"],

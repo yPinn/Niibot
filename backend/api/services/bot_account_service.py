@@ -60,8 +60,10 @@ class BotAccountSummary:
 @dataclass(frozen=True)
 class PublicBotInviteSummary:
     invite_id: str
+    profile_user_id: str
     channel_name: str
     display_name: str | None
+    avatar: str | None
     purpose: BotInvitePurpose
     status: Literal["pending", "authorized", "declined", "expired"]
     expires_at: datetime
@@ -243,11 +245,34 @@ class BotAccountService:
                        invite.state_nonce_hash,
                        invite.status,
                        invite.expires_at,
-                       channel.channel_name,
-                       channel.display_name
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(invite.expected_bot_user_id, invite.channel_id)
+                           ELSE invite.channel_id
+                       END AS profile_user_id,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(bot.login, invite.expected_bot_user_id,
+                                         channel.channel_name)
+                           ELSE channel.channel_name
+                       END AS channel_name,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN COALESCE(NULLIF(bot.display_name, ''), bot.login,
+                                         invite.expected_bot_user_id, channel.display_name,
+                                         channel.channel_name)
+                           ELSE channel.display_name
+                       END AS display_name,
+                       CASE
+                           WHEN invite.purpose = 'system_default_reset'
+                           THEN bot.avatar
+                           ELSE NULL
+                       END AS avatar
                   FROM bot_oauth_invites invite
                   JOIN channels channel
                     ON channel.channel_id = invite.channel_id
+                  LEFT JOIN bot_accounts bot
+                    ON bot.platform_user_id = invite.expected_bot_user_id
                  WHERE invite.public_token_hash = $1
                 """,
                 _sha256(public_token),
@@ -262,8 +287,10 @@ class BotAccountService:
             status = "expired"
         return PublicBotInviteSummary(
             invite_id=str(invite["invite_id"]),
+            profile_user_id=str(invite["profile_user_id"]),
             channel_name=str(invite["channel_name"]),
             display_name=invite["display_name"],
+            avatar=invite["avatar"],
             purpose=str(invite["purpose"]),  # type: ignore[arg-type]
             status=status,  # type: ignore[arg-type]
             expires_at=invite["expires_at"],

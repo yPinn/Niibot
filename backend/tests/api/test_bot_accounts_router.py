@@ -251,14 +251,24 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     service.get_public_invite = AsyncMock(
         return_value=PublicBotInviteSummary(
             invite_id="11111111-2222-3333-4444-555555555555",
+            profile_user_id="channel-a",
             channel_name="alice",
             display_name="Alice",
+            avatar=None,
             purpose="link_new",
             status="pending",
             expires_at=_NOW + timedelta(minutes=20),
         )
     )
     twitch = MagicMock()
+    twitch.get_user_info = AsyncMock(
+        return_value={
+            "id": "channel-a",
+            "name": "alice_live",
+            "display_name": "Alice Live",
+            "avatar": "https://static-cdn.jtvnw.net/jtv_user_pictures/alice.png",
+        }
+    )
     twitch.generate_oauth_url.return_value = "https://id.twitch.tv/oauth2/authorize?safe=1"
 
     response = _client(service, twitch).get(f"/api/public/bot-invites/opaque?nonce={_STATE_NONCE}")
@@ -268,8 +278,9 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     assert response.headers["referrer-policy"] == "no-referrer"
     assert response.headers["x-robots-tag"] == "noindex, nofollow"
     assert response.json() == {
-        "channel_name": "alice",
-        "display_name": "Alice",
+        "channel_name": "alice_live",
+        "display_name": "Alice Live",
+        "avatar": "https://static-cdn.jtvnw.net/jtv_user_pictures/alice.png",
         "purpose": "link_new",
         "status": "pending",
         "expires_at": response.json()["expires_at"],
@@ -279,6 +290,7 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     service.get_public_invite.assert_awaited_once_with(
         public_token="opaque", state_nonce=_STATE_NONCE
     )
+    twitch.get_user_info.assert_awaited_once_with("channel-a")
     _, kwargs = twitch.generate_oauth_url.call_args
     assert kwargs["scopes"] == BOT_SCOPES
     assert kwargs["redirect_path"] == "/api/auth/twitch/bot/callback"
@@ -287,6 +299,36 @@ def test_public_consent_summary_contains_only_safe_tenant_and_scope_data():
     )
     assert decoded["uid"] == f"11111111-2222-3333-4444-555555555555.{_STATE_NONCE}"
     assert "opaque" not in decoded["uid"]
+    assert "profile_user_id" not in response.json()
+    assert "access_token" not in response.json()
+    assert "client_secret" not in response.json()
+
+
+def test_public_consent_summary_falls_back_when_twitch_profile_is_unavailable():
+    service = MagicMock()
+    service.get_public_invite = AsyncMock(
+        return_value=PublicBotInviteSummary(
+            invite_id="11111111-2222-3333-4444-555555555555",
+            profile_user_id="bot-test",
+            channel_name="niibot_",
+            display_name="Niibot",
+            avatar="https://cached.example/niibot.png",
+            purpose="system_default_reset",
+            status="pending",
+            expires_at=_NOW + timedelta(minutes=20),
+        )
+    )
+    twitch = MagicMock()
+    twitch.get_user_info = AsyncMock(return_value=None)
+    twitch.generate_oauth_url.return_value = "https://id.twitch.tv/oauth2/authorize?safe=1"
+
+    response = _client(service, twitch).get(f"/api/public/bot-invites/opaque?nonce={_STATE_NONCE}")
+
+    assert response.status_code == 200
+    assert response.json()["channel_name"] == "niibot_"
+    assert response.json()["display_name"] == "Niibot"
+    assert response.json()["avatar"] == "https://cached.example/niibot.png"
+    twitch.get_user_info.assert_awaited_once_with("bot-test")
 
 
 def test_public_decline_response_disables_storage_referrers_and_indexing():
@@ -707,6 +749,7 @@ def test_tenant_can_read_broadcaster_authorization_summary():
             channel_id="channel-a",
             channel_name="alice",
             display_name="Alice",
+            avatar="https://cached.example/alice.png",
             enabled=True,
             status="valid",
             last_checked_at=_NOW,
@@ -714,14 +757,55 @@ def test_tenant_can_read_broadcaster_authorization_summary():
             error_code=None,
         )
     )
+    twitch = MagicMock()
+    twitch.get_user_info = AsyncMock(
+        return_value={
+            "id": "channel-a",
+            "name": "alice_live",
+            "display_name": "Alice Live",
+            "avatar": "https://static-cdn.jtvnw.net/jtv_user_pictures/alice.png",
+        }
+    )
 
-    response = _client(service, authorization=authorization).get(
+    response = _client(service, twitch=twitch, authorization=authorization).get(
         "/api/tenants/channel-a/broadcaster-authorization"
     )
 
     assert response.status_code == 200
     assert response.json()["status"] == "valid"
-    assert response.json()["channel_name"] == "alice"
+    assert response.json()["channel_name"] == "alice_live"
+    assert response.json()["display_name"] == "Alice Live"
+    assert response.json()["avatar"] == ("https://static-cdn.jtvnw.net/jtv_user_pictures/alice.png")
+    assert "access_token" not in response.json()
+    twitch.get_user_info.assert_awaited_once_with("channel-a")
+
+
+def test_broadcaster_authorization_keeps_cached_identity_when_twitch_is_unavailable():
+    service = MagicMock()
+    authorization = MagicMock()
+    authorization.get_broadcaster_summary = AsyncMock(
+        return_value=BroadcasterAuthorizationSummary(
+            channel_id="channel-a",
+            channel_name="alice",
+            display_name="Alice",
+            avatar="https://cached.example/alice.png",
+            enabled=True,
+            status="valid",
+            last_checked_at=_NOW,
+            last_validated_at=_NOW,
+            error_code=None,
+        )
+    )
+    twitch = MagicMock()
+    twitch.get_user_info = AsyncMock(return_value=None)
+
+    response = _client(service, twitch=twitch, authorization=authorization).get(
+        "/api/tenants/channel-a/broadcaster-authorization"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Alice"
+    assert response.json()["avatar"] == "https://cached.example/alice.png"
 
 
 def test_owner_rechecks_broadcaster_against_runtime_core_only():

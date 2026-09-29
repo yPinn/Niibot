@@ -112,6 +112,7 @@ async def test_missing_encryption_key_still_allows_broadcaster_summary_reads():
         "channel_id": "channel-1",
         "channel_name": "alice",
         "display_name": "Alice",
+        "avatar": "https://cached.example/alice.png",
         "enabled": True,
         "token_user_id": "channel-1",
         "requires_reauth": False,
@@ -130,6 +131,7 @@ async def test_missing_encryption_key_still_allows_broadcaster_summary_reads():
     summary = await service.get_broadcaster_summary(channel_id="channel-1")
 
     assert summary.channel_name == "alice"
+    assert summary.avatar == "https://cached.example/alice.png"
     assert summary.status == "not_checked"
 
 
@@ -646,6 +648,7 @@ async def test_existing_unchecked_broadcaster_token_is_not_mislabeled_as_disconn
         "channel_id": "channel-1",
         "channel_name": "alice",
         "display_name": "Alice",
+        "avatar": None,
         "enabled": True,
         "token_user_id": "channel-1",
         "requires_reauth": False,

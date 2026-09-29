@@ -396,8 +396,10 @@ async def test_public_invite_requires_both_capabilities_and_returns_safe_summary
     conn.fetchrow.return_value = {
         **_invite_row(),
         "invite_id": _invite_row()["id"],
+        "profile_user_id": "channel-a",
         "channel_name": "alice",
         "display_name": "Alice",
+        "avatar": None,
     }
     service = BotAccountService(_pool_with(conn), token_encryption_key=_KEY)
 
@@ -407,6 +409,8 @@ async def test_public_invite_requires_both_capabilities_and_returns_safe_summary
     )
 
     assert summary.channel_name == "alice"
+    assert summary.profile_user_id == "channel-a"
+    assert summary.avatar is None
     sql, token_hash = conn.fetchrow.await_args.args
     assert "public_token_hash = $1" in sql
     assert token_hash == hashlib.sha256(b"opaque").hexdigest()
@@ -415,14 +419,42 @@ async def test_public_invite_requires_both_capabilities_and_returns_safe_summary
     conn.fetchrow.return_value = {
         **_invite_row(),
         "invite_id": _invite_row()["id"],
+        "profile_user_id": "channel-a",
         "channel_name": "alice",
         "display_name": "Alice",
+        "avatar": None,
     }
     with pytest.raises(BotInviteNotFoundError):
         await service.get_public_invite(
             public_token="opaque",
             state_nonce="wrong-nonce",
         )
+
+
+@pytest.mark.asyncio
+async def test_system_reset_public_invite_targets_the_expected_bot_profile():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {
+        **_invite_row(purpose="system_default_reset", expected_bot_user_id="bot-test"),
+        "invite_id": _invite_row()["id"],
+        "profile_user_id": "bot-test",
+        "channel_name": "niibot_",
+        "display_name": "Niibot",
+        "avatar": "https://cached.example/niibot.png",
+    }
+    service = BotAccountService(_pool_with(conn), token_encryption_key=_KEY)
+
+    summary = await service.get_public_invite(
+        public_token="opaque",
+        state_nonce=_STATE_NONCE,
+    )
+
+    assert summary.profile_user_id == "bot-test"
+    assert summary.channel_name == "niibot_"
+    assert summary.avatar == "https://cached.example/niibot.png"
+    sql = conn.fetchrow.await_args.args[0]
+    assert "expected_bot_user_id" in sql
+    assert "LEFT JOIN bot_accounts" in sql
 
 
 @pytest.mark.asyncio

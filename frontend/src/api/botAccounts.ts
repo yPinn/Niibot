@@ -59,6 +59,7 @@ export interface BroadcasterAuthorization extends AuthorizationHealth {
   channel_id: string
   channel_name: string
   display_name: string | null
+  avatar: string | null
   enabled: boolean
 }
 
@@ -104,6 +105,7 @@ export interface BotInviteStatus {
 export interface PublicBotInvite {
   channel_name: string
   display_name: string | null
+  avatar: string | null
   purpose: 'link_new' | 'reauthorize' | 'system_default_reset'
   status: BotInviteState
   expires_at: string
