@@ -165,9 +165,14 @@ def _game(game_id: str, name: str) -> SimpleNamespace:
 
 
 def _stub_search(comp: ChannelInfoComponent, results: list) -> None:
-    comp.bot.search_categories = MagicMock(
-        return_value=MagicMock(flatten=AsyncMock(return_value=results))
-    )
+    # twitchio returns an HTTPAsyncIterator: only `async for` / `await` work on
+    # it. Use a real async generator so a call to a non-existent method (it has
+    # no .flatten()) fails here instead of in production.
+    async def _iterate():
+        for item in results:
+            yield item
+
+    comp.bot.search_categories = MagicMock(side_effect=lambda *a, **kw: _iterate())
 
 
 async def test_game_write_requires_moderator(comp):
