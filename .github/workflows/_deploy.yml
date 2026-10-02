@@ -419,13 +419,26 @@ jobs:
             echo "API revision: OK ($EXPECTED_COMMIT)"
           fi
 
+          # `compose up` returns once the container has started, not once its
+          # process has bound the port, so retry (like the API check above)
+          # instead of failing the deploy on the first connection refused.
           check_private_health() {
             service="$1"; port="$2"
-            if $COMPOSE_CMD ps --status running --services | grep -qx "$service"; then
-              $COMPOSE_CMD exec -T "$service" python -c \
-                "import urllib.request; urllib.request.urlopen('http://localhost:${port}/health').read()"
-              echo "$service: OK"
-            fi
+            $COMPOSE_CMD ps --status running --services | grep -qx "$service" || return 0
+            deadline=$((SECONDS + 60))
+            until $COMPOSE_CMD exec -T "$service" python -c \
+              "import urllib.request; urllib.request.urlopen('http://localhost:${port}/health').read()" \
+              > /dev/null 2>&1; do
+              if [ $SECONDS -ge $deadline ]; then
+                echo "ERROR: $service did not respond within 60s"
+                $COMPOSE_CMD ps
+                $COMPOSE_CMD logs "$service" --tail=30
+                exit 1
+              fi
+              echo "Waiting for $service... (${SECONDS}s elapsed)"
+              sleep 3
+            done
+            echo "$service: OK"
           }
           check_private_health discord-bot 8080
           check_private_health twitch-bot 4344
