@@ -10,11 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from twitch.components.channel_info import (
-    ChannelInfoComponent,
-    _closest_category,
-    _fallback_queries,
-)
+from twitch.components.channel_info import ChannelInfoComponent
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,6 +52,7 @@ def comp() -> ChannelInfoComponent:
     c = ChannelInfoComponent(_make_bot())
     c._ctx_reply = AsyncMock()
     c.cmd_repo.increment_usage_count = AsyncMock()
+    _stub_top(c, [])
     return c
 
 
@@ -168,6 +165,16 @@ def _game(game_id: str, name: str) -> SimpleNamespace:
     return SimpleNamespace(id=game_id, name=name)
 
 
+def _stub_top(comp: ChannelInfoComponent, games: list) -> None:
+    """Top categories by viewership, as a real async iterator (HTTPAsyncIterator)."""
+
+    async def _iterate():
+        for item in games:
+            yield item
+
+    comp.bot.fetch_top_games = MagicMock(side_effect=lambda **kw: _iterate())
+
+
 def _stub_search(comp: ChannelInfoComponent, results: list) -> None:
     # twitchio returns an HTTPAsyncIterator: only `async for` / `await` work on
     # it. Use a real async generator so a call to a non-existent method (it has
@@ -270,7 +277,7 @@ async def test_game_typo_falls_back_to_shorter_query(comp):
     ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="516575")
     assert _searched(comp)[0] == "valrant"
     assert "VALORANT" in comp._ctx_reply.await_args[0][1]
-    assert "valrant" in comp._ctx_reply.await_args[0][1]  # says it was a loose match
+    assert "比對" not in comp._ctx_reply.await_args[0][1]  # reply stays concise
 
 
 async def test_game_fallback_picks_closest_not_first(comp):
@@ -305,18 +312,62 @@ async def test_game_not_found_only_after_every_fallback_is_empty(comp):
     assert 1 < len(_searched(comp)) <= 9  # full query + bounded fallbacks
 
 
-async def test_fallback_queries_words_then_prefixes_down_to_one_char():
-    assert _fallback_queries("valrant") == ["valran", "valra", "valr", "val", "va", "v"]
-    assert _fallback_queries("Lgue Legends")[:2] == ["Legends", "Lgue"]
-    assert _fallback_queries("x") == []
+_LOL = _game("21779", "League of Legends")
+_VALORANT = _game("516575", "VALORANT")
+_CS = _game("32399", "Counter-Strike")
+_TOP = [_game("509658", "Just Chatting"), _LOL, _VALORANT, _CS]
 
 
-async def test_closest_category_prefers_prefix_then_similarity_then_rank():
-    names = [_game("1", "Dota 2"), _game("2", "Valheim"), _game("3", "VALORANT")]
-    assert _closest_category("valo", names).id == "3"  # prefix beats rank
-    assert _closest_category("valrant", names).id == "3"  # no prefix: most similar
-    tie = [_game("1", "Alpha"), _game("2", "Alpha")]
-    assert _closest_category("alpha", tie).id == "1"  # equal: keep Twitch order
+@pytest.mark.parametrize(
+    ("typed", "search_results", "expected"),
+    [
+        # Twitch search ranks a text match first; popularity must win.
+        ("val", [_game("1", "Valkyrie Profile"), _VALORANT], "516575"),
+        ("LoL", [_game("2", "LOL"), _LOL], "21779"),
+        ("lol", [_game("2", "LOL")], "21779"),  # popular game missing from search
+        ("cs", [_game("3", "CS:GO Gunsmith")], "32399"),
+        ("valorant", [_VALORANT], "516575"),
+    ],
+)
+async def test_game_prefers_popular_categories(comp, typed, search_results, expected):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_top(comp, _TOP)
+    _stub_search(comp, search_results)
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game=typed)
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id=expected)
+
+
+async def test_game_obscure_exact_name_still_works(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_top(comp, _TOP)
+    _stub_search(comp, [_game("9", "Hollow Knight: Silksong"), _game("8", "Hollow Knight")])
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="hollow knight")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="8")
+
+
+async def test_game_top_games_are_cached(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_top(comp, _TOP)
+    _stub_search(comp, [_LOL])
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="lol")
+        await _call("game", comp, ctx, new_game="lol")
+    comp.bot.fetch_top_games.assert_called_once()
+
+
+async def test_game_works_without_popularity_data(comp):
+    ctx = _make_ctx(is_moderator=True)
+    comp.bot.fetch_top_games = MagicMock(side_effect=RuntimeError("helix down"))
+    _stub_search(comp, [_game("21779", "League of Legends")])
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="league")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="21779")
 
 
 async def test_game_write_not_found(comp):
