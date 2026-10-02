@@ -24,6 +24,7 @@ from core.config import get_settings
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
 from utils.command_failure import command_failure_notifier
+from utils.command_input import clean_text, parse_login
 from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
@@ -132,17 +133,21 @@ class ViewerStatsComponent(BotComponent):
     # ------------------------------------------------------------------
 
     @commands.command(name="followage", aliases=["追隨時間"])
-    async def followage(self, ctx: commands.Context) -> None:
-        """查詢自己追隨這個頻道多久。用法: !followage / !追隨時間"""
+    async def followage(self, ctx: commands.Context, *, target: str | None = None) -> None:
+        """查詢自己或指定使用者追隨這個頻道多久。用法: !followage [使用者]"""
         if not await self._guard(ctx, "followage"):
             return
 
         channel_id = ctx.channel.id
+        asker_name = ctx.chatter.display_name or ctx.chatter.name
         user_id = ctx.chatter.id
-        name = ctx.chatter.display_name or ctx.chatter.name
+        # Whose follow age we report. Defaults to the asker; `@name` looks up
+        # someone else (follow status is public on Twitch, unlike !subage).
+        subject = asker_name
+        wants_other = bool(clean_text(target))
 
-        if user_id == channel_id:
-            await self._ctx_reply(ctx, f"@{name} 這是你自己的頻道 KappaPride")
+        if not wants_other and user_id == channel_id:
+            await self._ctx_reply(ctx, f"@{asker_name} 這是你自己的頻道 KappaPride")
             await self._record(ctx, "followage")
             return
 
@@ -150,6 +155,24 @@ class ViewerStatsComponent(BotComponent):
         if not token:
             await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
             return
+
+        if wants_other:
+            login = parse_login(target)
+            if login is None:
+                await self._ctx_reply(
+                    ctx, "請輸入使用者登入名稱（英數與底線），例如 !followage @someone"
+                )
+                return
+            # Typing your own name is just the self lookup, no extra API call.
+            if login != (ctx.chatter.name or "").lower():
+                resolved = await self._resolve_user(ctx, login, token)
+                if resolved is None:
+                    return
+                user_id, subject = resolved
+                if user_id == channel_id:
+                    await self._ctx_reply(ctx, f"@{subject} 是這個頻道的實況主 KappaPride")
+                    await self._record(ctx, "followage")
+                    return
 
         try:
             resp = await self._helix_get(
@@ -174,11 +197,37 @@ class ViewerStatsComponent(BotComponent):
 
         data = resp.json().get("data", [])
         if not data:
-            await self._ctx_reply(ctx, f"@{name} 還沒追隨這個頻道喔")
+            await self._ctx_reply(ctx, f"@{subject} 還沒追隨這個頻道喔")
         else:
             followed_at = datetime.fromisoformat(data[0]["followed_at"].replace("Z", "+00:00"))
-            await self._ctx_reply(ctx, f"@{name} 已追隨 {_humanise_since(followed_at)}")
+            await self._ctx_reply(ctx, f"@{subject} 已追隨 {_humanise_since(followed_at)}")
         await self._record(ctx, "followage")
+
+    async def _resolve_user(
+        self, ctx: commands.Context, login: str, token: str
+    ) -> tuple[str, str] | None:
+        """Resolve a login to (user_id, display_name); replies and returns None
+        when the user doesn't exist or the lookup fails."""
+        try:
+            resp = await self._helix_get(
+                "users",
+                {"login": login},
+                token,
+                token_for=self.bot.sender_for(ctx.channel.id),
+            )
+        except Exception as e:
+            LOGGER.warning("[%s] followage user lookup error: %s", ctx.channel.name, e)
+            await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
+            return None
+        if resp.status_code != 200:
+            LOGGER.warning("[%s] followage user lookup %s", ctx.channel.name, resp.status_code)
+            await self._notify_failure(ctx, "followage", "查詢失敗，請稍後再試")
+            return None
+        data = resp.json().get("data", [])
+        if not data:
+            await self._ctx_reply(ctx, f"找不到使用者：{login}")
+            return None
+        return data[0]["id"], data[0].get("display_name") or data[0].get("login") or login
 
     # ------------------------------------------------------------------
     # !subage
@@ -335,7 +384,12 @@ class ViewerStatsComponent(BotComponent):
             return
 
         channel_id = ctx.channel.id
-        login = (target or "").strip().lstrip("@").lower()
+        login = parse_login(target)
+        if clean_text(target) and login is None:
+            await self._ctx_reply(
+                ctx, "請輸入使用者登入名稱（英數與底線），例如 !accountage @someone"
+            )
+            return
         params = {"login": login} if login else {"id": ctx.chatter.id}
 
         token = await self._bot_token(channel_id)
@@ -362,8 +416,8 @@ class ViewerStatsComponent(BotComponent):
 
         data = resp.json().get("data", [])
         if not data:
-            if target:
-                await self._ctx_reply(ctx, f"找不到使用者：{target}")
+            if login:
+                await self._ctx_reply(ctx, f"找不到使用者：{login}")
             else:
                 await self._notify_failure(ctx, "accountage", "查詢失敗，請稍後再試")
             return

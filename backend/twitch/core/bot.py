@@ -1518,8 +1518,10 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         staleness check or the fire-and-forget task bookkeeping. Assumes the
         caller has already confirmed no check is in-flight.
         """
-        last_checked = self._mod_checked_at.get(channel_id, 0.0)
-        if time.monotonic() - last_checked < _MOD_RECHECK_INTERVAL:
+        # None, not 0.0: monotonic() counts from boot, so on a freshly started
+        # host "now - 0.0" is under the interval and would skip the first check.
+        last_checked = self._mod_checked_at.get(channel_id)
+        if last_checked is not None and time.monotonic() - last_checked < _MOD_RECHECK_INTERVAL:
             return
         self._spawn_background(self._check_bot_mod_status(channel_id))
 

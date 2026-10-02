@@ -106,6 +106,15 @@ async def test_numeric_arg_looks_up_by_number(comp):
     comp.quote_repo.get_random.assert_not_called()
 
 
+@pytest.mark.parametrize("typed", ["#3", "3;", "３", " '3' "])
+async def test_number_arg_tolerates_typos(comp, typed):
+    ctx = _make_ctx()
+    comp.quote_repo.get_by_number.return_value = _QUOTE
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call(comp, ctx, args=typed)
+    comp.quote_repo.get_by_number.assert_awaited_once_with("chan-1", 3)
+
+
 async def test_lookup_failure_is_generic(comp):
     ctx = _make_ctx()
     comp.quote_repo.get_random.side_effect = RuntimeError("boom")
@@ -173,6 +182,14 @@ async def test_del_removes_quote_as_moderator(comp):
         await _call(comp, ctx, args="del 3")
     comp.quote_repo.delete.assert_awaited_once_with("chan-1", 3)
     assert "已刪除語錄 #3" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_del_tolerates_hash_prefix(comp):
+    ctx = _make_ctx(is_moderator=True)
+    comp.quote_repo.delete.return_value = True
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call(comp, ctx, args="del #3;")
+    comp.quote_repo.delete.assert_awaited_once_with("chan-1", 3)
 
 
 async def test_del_not_found(comp):

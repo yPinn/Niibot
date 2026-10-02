@@ -10,6 +10,7 @@ from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
 from shared.repositories.stream_schedule import StreamScheduleRepository
 from shared.services.stream_schedule_service import StreamScheduleService, UpcomingSchedule
+from utils.command_input import clean_text, parse_login
 from utils.substitution import substitute_variables
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -36,6 +37,23 @@ def _format_schedule_reply(upcoming: UpcomingSchedule) -> str:
     if first_game:
         parts.append(f"預計玩 {first_game}")
     return "，".join(parts)
+
+
+def _shoutout_failure_reply(error: Exception) -> str:
+    """Map a Send Shoutout failure to the cause the mod can actually act on.
+
+    Twitch only allows a shoutout to a channel that is live with viewers, so a
+    400 is usually "target offline", not a bot permission problem.
+    """
+    status = getattr(error, "status", None) or getattr(error, "status_code", None)
+    detail = f"{error} {getattr(error, 'extra', '')}".lower()
+    if status == 429:
+        return "推薦太頻繁了，請稍後再試（每 2 分鐘一次）"
+    if status == 400 and ("live" in detail or "viewer" in detail):
+        return "對方目前沒有在直播（或沒有觀眾），無法推薦"
+    if status in (401, 403):
+        return "推薦失敗，請確認機器人是否為版主"
+    return "推薦失敗，請稍後再試"
 
 
 class GeneralCommandsComponent(BotComponent):
@@ -237,9 +255,15 @@ class GeneralCommandsComponent(BotComponent):
         if not config:
             return
 
-        login = (target or "").strip().lstrip("@").lower()
-        if not login:
+        if not clean_text(target):
             await self._ctx_reply(ctx, "用法： !so <頻道名>")
+            return
+        # Accepts `name`, `@name` and twitch.tv URLs. A display name Twitch can't
+        # resolve to a login (e.g. CJK) is rejected, never guessed: a shoutout
+        # goes out publicly, so a wrong channel is worse than no shoutout.
+        login = parse_login(target)
+        if login is None:
+            await self._ctx_reply(ctx, "請輸入頻道登入名稱（英數與底線）或 twitch.tv 網址")
             return
 
         channel_id = ctx.channel.id
@@ -267,12 +291,8 @@ class GeneralCommandsComponent(BotComponent):
             LOGGER.info(f"[{ctx.channel.name}] !so → {login} by {ctx.chatter.name}")
             await self._record_command(ctx, "so")
         except Exception as e:
-            status = getattr(e, "status", None) or getattr(e, "status_code", None)
-            if status == 429:
-                await self._ctx_reply(ctx, "推薦太頻繁了，請稍後再試（每 2 分鐘一次）")
-            else:
-                LOGGER.error(f"[{ctx.channel.name}] !so failed: {e}")
-                await self._ctx_reply(ctx, "推薦失敗，請確認機器人是否為版主")
+            LOGGER.warning(f"[{ctx.channel.name}] !so failed: {e}")
+            await self._ctx_reply(ctx, _shoutout_failure_reply(e))
 
 
 async def setup(bot: commands.Bot) -> None:

@@ -62,6 +62,18 @@ def test_tarot_reply_formatter_preserves_details_within_twitch_limit() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("typed", [";感情", "感情'", " 「感情」 "])
+async def test_topic_ignores_stray_symbols(typed: str) -> None:
+    component = _component()
+    ctx = _ctx()
+
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _tarot(component, ctx, typed)
+
+    component._get_daily_card.assert_called_once_with("u1", "love")
+
+
+@pytest.mark.asyncio
 async def test_command_replies_and_publishes_complete_tarot_overlay_event() -> None:
     component = _component()
     ctx = _ctx()

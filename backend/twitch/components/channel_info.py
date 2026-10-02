@@ -8,7 +8,7 @@ write path is checked inline with has_role(). All four need the broadcaster's
 own channel:manage:broadcast scope for their write/marker call (Twitch has no
 moderator-token equivalent for Modify Channel Information or Create Stream
 Marker); missing/expired scope surfaces the same reauth chat prompt used by
-!subcount et al. Reads (fetch_channel_info, fetch_games) need no scope at all.
+!subcount et al. Reads (fetch_channel_info, search_categories) need no scope at all.
 """
 
 from __future__ import annotations
@@ -22,9 +22,12 @@ from core.component import BotComponent
 from core.guards import check_command, has_role
 from shared.repositories.command_config import CommandConfigRepository
 from utils.command_failure import command_failure_notifier
+from utils.command_input import clean_text, split_tags
 from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
+    from twitchio import Game
+
     from core.bot import Bot
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -32,6 +35,23 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _MAX_TAGS = 10
 _MAX_TAG_LEN = 25
 _MAX_MARKER_DESC_LEN = 140
+_CLEAR_TAGS_WORDS = frozenset({"clear", "清空"})
+_GAME_SEARCH_LIMIT = 10
+
+
+def _pick_category(query: str, candidates: list[Game]) -> Game | None:
+    """Resolve a typed category to a Helix search result.
+
+    A case-insensitive exact name wins; otherwise take Twitch's top-ranked
+    result, which is already ordered by relevance/popularity (the same ranking
+    its own category picker shows). The caller echoes the resolved name back,
+    so a loose match is visible to chat rather than silent.
+    """
+    wanted = query.strip().casefold()
+    for game in candidates:
+        if game.name.casefold() == wanted:
+            return game
+    return candidates[0] if candidates else None
 
 
 class ChannelInfoComponent(BotComponent):
@@ -114,21 +134,26 @@ class ChannelInfoComponent(BotComponent):
         if not config:
             return
 
+        # `!game ;` (only stray symbols) reads like a bare `!game`, not a write.
+        new_game = clean_text(new_game)
         if new_game:
             if not has_role(ctx.chatter, "moderator"):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改分類")
                 return
             try:
-                games = await self.bot.fetch_games(names=[new_game])
+                candidates = await self.bot.search_categories(
+                    new_game, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
+                ).flatten()
             except Exception as e:
                 LOGGER.warning("[%s] !game lookup failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "查詢分類失敗，請稍後再試")
                 return
-            if not games:
+            game = _pick_category(new_game, candidates)
+            if game is None:
                 await self._ctx_reply(ctx, f"找不到分類：{new_game}")
                 return
             try:
-                await ctx.broadcaster.modify_channel(game_id=games[0].id)
+                await ctx.broadcaster.modify_channel(game_id=game.id)
             except Exception as e:
                 if is_scope_error(e):
                     await self._notify_reauth(ctx)
@@ -136,7 +161,7 @@ class ChannelInfoComponent(BotComponent):
                 LOGGER.warning("[%s] !game modify failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "修改分類失敗，請稍後再試")
                 return
-            await self._ctx_reply(ctx, f"分類已更新為：{games[0].name}")
+            await self._ctx_reply(ctx, f"分類已更新為：{game.name}")
             await self._record_command(ctx, "game")
             return
 
@@ -155,7 +180,7 @@ class ChannelInfoComponent(BotComponent):
 
     @commands.command(name="tags", aliases=["標籤"])
     async def tags(self, ctx: commands.Context, *, new_tags: str | None = None) -> None:
-        """查詢或修改頻道標籤。用法: !tags [標籤1,標籤2,...]（修改需要 Mod 以上，
+        """查詢或修改頻道標籤。用法: !tags [標籤1 標籤2 ...|clear]（空格或逗號分隔；修改需要 Mod 以上，
         最多 10 個、每個限 25 字，Twitch 的硬性限制）"""
         config = await check_command(
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="tags"
@@ -167,7 +192,16 @@ class ChannelInfoComponent(BotComponent):
             if not has_role(ctx.chatter, "moderator"):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改標籤")
                 return
-            parsed = [t.strip() for t in new_tags.split(",") if t.strip()]
+            if clean_text(new_tags).casefold() in _CLEAR_TAGS_WORDS:
+                parsed: list[str] = []
+            else:
+                parsed = split_tags(new_tags)
+                if not parsed:
+                    # Typo-only input must not silently wipe the channel's tags.
+                    await self._ctx_reply(
+                        ctx, "用法：!tags 標籤1 標籤2 ...（清空請用 !tags clear）"
+                    )
+                    return
             if len(parsed) > _MAX_TAGS:
                 await self._ctx_reply(ctx, f"最多只能設定 {_MAX_TAGS} 個標籤")
                 return
@@ -176,6 +210,12 @@ class ChannelInfoComponent(BotComponent):
                 await self._ctx_reply(
                     ctx, f"標籤過長（上限 {_MAX_TAG_LEN} 字）：{'、'.join(too_long)}"
                 )
+                return
+            # Twitch rejects spaces and special characters, so name them up front
+            # instead of surfacing a generic "modify failed".
+            invalid = [t for t in parsed if not t.isalnum()]
+            if invalid:
+                await self._ctx_reply(ctx, f"標籤只能包含文字與數字：{'、'.join(invalid)}")
                 return
             try:
                 await ctx.broadcaster.modify_channel(tags=parsed)

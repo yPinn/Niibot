@@ -13,6 +13,7 @@ import twitchio.ext.commands as commands
 from core.component import BotComponent
 from core.guards import check_command
 from shared.repositories.command_config import CommandConfigRepository
+from utils.command_input import clean_text, parse_riot_id
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -225,8 +226,8 @@ class TftComponent(BotComponent):
         return data
 
     @commands.command(name="tft", aliases=["戰棋"])
-    async def tft(self, ctx: commands.Context["Bot"], user_id: str | None = None) -> None:
-        """查詢 TFT 排行榜（!tft 顯示門檻，!tft 玩家名#tag 查玩家）"""
+    async def tft(self, ctx: commands.Context["Bot"], *, user_id: str | None = None) -> None:
+        """查詢 TFT 排行榜（!tft 顯示門檻，!tft 玩家名#tag 查玩家，名稱可含空格）"""
         config = await check_command(self.cmd_repo, ctx, "tft", self.channel_repo)
         if not config:
             return
@@ -236,6 +237,9 @@ class TftComponent(BotComponent):
         except Exception as e:
             LOGGER.debug("usage count failed for tft: %s", e)
 
+        # Keyword-only so a Riot ID with spaces ("Foo Bar#TW2") isn't cut at the
+        # first word; normalised so `＃`, stray `;'` and spacing around `#` work.
+        wants_player = bool(clean_text(user_id))
         LOGGER.debug(f"!tft command - {ctx.chatter.name} query: {user_id or 'threshold'}")
 
         data = await self.get_leaderboard_data()
@@ -246,25 +250,22 @@ class TftComponent(BotComponent):
         entries = data.get("entries", [])
         thresholds = data.get("thresholds", [0, 0])
 
-        if user_id is None:
+        if not wants_player:
             c_lp = thresholds[0] if thresholds else 0
             gm_lp = thresholds[1] if len(thresholds) > 1 else 0
             await self._ctx_reply(ctx, f"[TW] 菁英：{c_lp} LP | 宗師：{gm_lp} LP")
             return
 
-        if "#" not in user_id:
+        riot_id = parse_riot_id(user_id)
+        if riot_id is None:
             await self._ctx_reply(ctx, "請使用正確格式：!tft <玩家名稱>#<tag>")
             return
-
-        parts = user_id.split("#", 1)
-        username, tag = parts[0], parts[1] if len(parts) > 1 else ""
-        if not username or not tag:
-            await self._ctx_reply(ctx, "請使用正確格式：!tft <玩家名稱>#<tag>")
-            return
+        username, tag = riot_id
+        riot_label = f"{username}#{tag}"
 
         # 步驟 1：先從排行榜查找
         for player in entries:
-            if player.get("playerName", "").lower() == user_id.lower():
+            if player.get("playerName", "").lower() == riot_label.lower():
                 rank_num = player.get("num")
                 rank_data = player.get("rank", [None, 0])
                 tier = rank_data[0] if len(rank_data) > 0 else None
@@ -272,7 +273,7 @@ class TftComponent(BotComponent):
 
                 tier_display = TIER_TRANSLATION.get(tier, tier) if tier else "未知段位"
                 await self._ctx_reply(ctx, f"{tier_display} {lp} LP | [TW] #{rank_num}")
-                LOGGER.debug(f"Query success (leaderboard) - {user_id}")
+                LOGGER.debug(f"Query success (leaderboard) - {riot_label}")
                 return
 
         # 步驟 2：查詢個人頁面
@@ -307,10 +308,10 @@ class TftComponent(BotComponent):
                 lp_change_info = f" | 最近：{lp_sign}{last_match_lp} LP"
 
             await self._ctx_reply(ctx, f"{tier_display} {lp} LP{rank_info}{lp_change_info}")
-            LOGGER.debug(f"Query success (player page) - {user_id}")
+            LOGGER.debug(f"Query success (player page) - {riot_label}")
             return
 
-        await self._ctx_reply(ctx, f"找不到玩家：{user_id}")
+        await self._ctx_reply(ctx, f"找不到玩家：{riot_label}")
 
 
 async def setup(bot: commands.Bot) -> None:

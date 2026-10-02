@@ -6,6 +6,7 @@ TwitchIO Command descriptor. `check_command` and `ctx.broadcaster` are mocked.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -158,29 +159,87 @@ async def test_game_read_reports_unset(comp):
 # --------------------------------------------------------------------------- #
 
 
+def _game(game_id: str, name: str) -> SimpleNamespace:
+    # MagicMock(name=...) sets the mock's repr name, not a `.name` attribute.
+    return SimpleNamespace(id=game_id, name=name)
+
+
+def _stub_search(comp: ChannelInfoComponent, results: list) -> None:
+    comp.bot.search_categories = MagicMock(
+        return_value=MagicMock(flatten=AsyncMock(return_value=results))
+    )
+
+
 async def test_game_write_requires_moderator(comp):
     ctx = _make_ctx(is_moderator=False)
+    _stub_search(comp, [])
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("game", comp, ctx, new_game="Just Chatting")
     assert "Mod" in comp._ctx_reply.await_args[0][1]
-    comp.bot.fetch_games.assert_not_called()
+    comp.bot.search_categories.assert_not_called()
 
 
 async def test_game_write_updates_as_moderator(comp):
     ctx = _make_ctx(is_moderator=True)
-    comp.bot.fetch_games = AsyncMock(return_value=[MagicMock(id="509658", name="Just Chatting")])
+    _stub_search(comp, [_game("509658", "Just Chatting")])
     ctx.broadcaster.modify_channel = AsyncMock()
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("game", comp, ctx, new_game="just chatting")
-    comp.bot.fetch_games.assert_awaited_once_with(names=["just chatting"])
+    comp.bot.search_categories.assert_called_once()
+    assert comp.bot.search_categories.call_args.args == ("just chatting",)
     ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="509658")
     assert "Just Chatting" in comp._ctx_reply.await_args[0][1]
     comp.cmd_repo.increment_usage_count.assert_awaited_once_with("chan-1", "game")
 
 
+async def test_game_write_fuzzy_query_takes_top_ranked_result(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search(
+        comp,
+        [_game("21779", "League of Legends"), _game("1", "League of Legends: Wild Rift")],
+    )
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="league")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="21779")
+    assert "League of Legends" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_game_write_exact_name_beats_search_rank(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search(comp, [_game("1", "Valorant Mobile"), _game("516575", "VALORANT")])
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="valorant")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="516575")
+
+
+@pytest.mark.parametrize("typed", [";lol'", "  `lol`  ", "「lol」"])
+async def test_game_write_strips_stray_symbols_from_query(comp, typed):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search(comp, [_game("21779", "League of Legends")])
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game=typed)
+    assert comp.bot.search_categories.call_args.args == ("lol",)
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="21779")
+
+
+async def test_game_stray_symbols_only_reads_current_game(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search(comp, [])
+    ctx.broadcaster.fetch_channel_info = AsyncMock(
+        return_value=MagicMock(game_name="Just Chatting")
+    )
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game=";'")
+    comp.bot.search_categories.assert_not_called()
+    assert "Just Chatting" in comp._ctx_reply.await_args[0][1]
+
+
 async def test_game_write_not_found(comp):
     ctx = _make_ctx(is_moderator=True)
-    comp.bot.fetch_games = AsyncMock(return_value=[])
+    _stub_search(comp, [])
     with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
         await _call("game", comp, ctx, new_game="不存在的分類")
     assert "找不到分類" in comp._ctx_reply.await_args[0][1]
@@ -189,7 +248,7 @@ async def test_game_write_not_found(comp):
 
 async def test_game_write_scope_error_triggers_reauth(comp):
     ctx = _make_ctx(is_moderator=True)
-    comp.bot.fetch_games = AsyncMock(return_value=[MagicMock(id="1", name="G")])
+    _stub_search(comp, [_game("1", "G")])
     err = RuntimeError("Request failed with status 401: Missing scope: channel:manage:broadcast")
     err.status = 401
     ctx.broadcaster.modify_channel = AsyncMock(side_effect=err)
@@ -263,6 +322,54 @@ async def test_tags_write_rejects_too_long(comp):
         await _call("tags", comp, ctx, new_tags=too_long)
     assert "標籤過長" in comp._ctx_reply.await_args[0][1]
     ctx.broadcaster.modify_channel.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("typed", "expected"),
+    [
+        ("中文 聊天 New", ["中文", "聊天", "New"]),
+        ("中文，聊天、New", ["中文", "聊天", "New"]),
+        ("#中文 #聊天", ["中文", "聊天"]),
+        (";中文 聊天'", ["中文", "聊天"]),
+        ("English english", ["English"]),
+    ],
+)
+async def test_tags_write_normalises_separators_and_symbols(comp, typed, expected):
+    ctx = _make_ctx(is_moderator=True)
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("tags", comp, ctx, new_tags=typed)
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(tags=expected)
+
+
+@pytest.mark.parametrize("typed", [";", ",", "' ;"])
+async def test_tags_write_symbol_only_does_not_clear(comp, typed):
+    ctx = _make_ctx(is_moderator=True)
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("tags", comp, ctx, new_tags=typed)
+    ctx.broadcaster.modify_channel.assert_not_called()
+    assert "用法" in comp._ctx_reply.await_args[0][1]
+
+
+@pytest.mark.parametrize("typed", ["clear", "CLEAR", "清空", "clear;"])
+async def test_tags_write_clear_keyword_clears(comp, typed):
+    ctx = _make_ctx(is_moderator=True)
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("tags", comp, ctx, new_tags=typed)
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(tags=[])
+    assert "已清空" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_tags_write_names_invalid_characters(comp):
+    ctx = _make_ctx(is_moderator=True)
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("tags", comp, ctx, new_tags="ok C++ 中;文")
+    ctx.broadcaster.modify_channel.assert_not_called()
+    reply = comp._ctx_reply.await_args[0][1]
+    assert "C++" in reply and "ok" not in reply
 
 
 # --------------------------------------------------------------------------- #
