@@ -141,9 +141,13 @@ class ChannelInfoComponent(BotComponent):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改分類")
                 return
             try:
-                candidates = await self.bot.search_categories(
-                    new_game, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
-                ).flatten()
+                # HTTPAsyncIterator: consume with `async for` (it has no .flatten()).
+                candidates = [
+                    found
+                    async for found in self.bot.search_categories(
+                        new_game, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
+                    )
+                ]
             except Exception as e:
                 LOGGER.warning("[%s] !game lookup failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "查詢分類失敗，請稍後再試")
