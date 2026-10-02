@@ -261,6 +261,23 @@ async def test_message_blocked_when_bot_not_mod(bot):
 
 
 @pytest.mark.asyncio
+async def test_message_blocked_rechecks_on_freshly_booted_host(bot):
+    """monotonic() counts from boot; a never-checked channel must still be
+    rechecked when the host has been up for less than the recheck interval."""
+    bot._bot_is_mod = set()
+    payload = _make_payload(source_broadcaster=None, text="!hello")
+
+    with (
+        patch("twitch.core.bot.time.monotonic", return_value=5.0),
+        patch("twitch.core.bot.commands.AutoBot.event_message", new=AsyncMock()),
+    ):
+        await bot.event_message(payload)
+        await asyncio.sleep(0)
+
+    bot._check_bot_mod_status.assert_awaited_once_with("123")
+
+
+@pytest.mark.asyncio
 async def test_message_blocked_skips_recheck_when_recently_checked(bot):
     """No background recheck is scheduled while the last check is still fresh."""
     bot._bot_is_mod = set()
