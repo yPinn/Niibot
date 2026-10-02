@@ -16,6 +16,7 @@ from core.component import BotComponent
 from core.guards import check_command, has_role
 from shared.repositories.command_config import CommandConfigRepository
 from shared.repositories.quote import QuoteRepository
+from utils.command_input import parse_number
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -96,26 +97,27 @@ class QuoteComponent(BotComponent):
         if not has_role(ctx.chatter, "moderator"):
             await self._ctx_reply(ctx, "只有 Mod 以上可以刪除語錄")
             return
-        if not raw_number.isdigit():
+        number = parse_number(raw_number)
+        if number is None:
             await self._ctx_reply(ctx, "用法：!quote del <編號>")
             return
 
         try:
-            deleted = await self.quote_repo.delete(channel_id, int(raw_number))
+            deleted = await self.quote_repo.delete(channel_id, number)
         except Exception as e:
             LOGGER.warning("[%s] !quote del failed: %s", ctx.channel.name, e)
             await self._ctx_reply(ctx, "刪除語錄失敗，請稍後再試")
             return
-        await self._ctx_reply(
-            ctx, f"已刪除語錄 #{raw_number}" if deleted else f"找不到語錄 #{raw_number}"
-        )
+        await self._ctx_reply(ctx, f"已刪除語錄 #{number}" if deleted else f"找不到語錄 #{number}")
         await self._record_command(ctx, "quote")
 
     async def _show(self, ctx: commands.Context, channel_id: str, text: str) -> None:
+        # `!quote #3` / `!quote 3;` still mean quote 3; anything else is random.
+        number = parse_number(text)
         try:
             found = (
-                await self.quote_repo.get_by_number(channel_id, int(text))
-                if text.isdigit()
+                await self.quote_repo.get_by_number(channel_id, number)
+                if number is not None
                 else await self.quote_repo.get_random(channel_id)
             )
         except Exception as e:

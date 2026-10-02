@@ -22,6 +22,7 @@ from core.component import BotComponent
 from core.guards import check_command, has_role
 from shared.repositories.command_config import CommandConfigRepository
 from utils.command_failure import command_failure_notifier
+from utils.command_input import clean_text, split_tags
 from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _MAX_TAGS = 10
 _MAX_TAG_LEN = 25
 _MAX_MARKER_DESC_LEN = 140
+_CLEAR_TAGS_WORDS = frozenset({"clear", "清空"})
 _GAME_SEARCH_LIMIT = 10
 
 
@@ -132,6 +134,8 @@ class ChannelInfoComponent(BotComponent):
         if not config:
             return
 
+        # `!game ;` (only stray symbols) reads like a bare `!game`, not a write.
+        new_game = clean_text(new_game)
         if new_game:
             if not has_role(ctx.chatter, "moderator"):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改分類")
@@ -176,7 +180,7 @@ class ChannelInfoComponent(BotComponent):
 
     @commands.command(name="tags", aliases=["標籤"])
     async def tags(self, ctx: commands.Context, *, new_tags: str | None = None) -> None:
-        """查詢或修改頻道標籤。用法: !tags [標籤1,標籤2,...]（修改需要 Mod 以上，
+        """查詢或修改頻道標籤。用法: !tags [標籤1 標籤2 ...|clear]（空格或逗號分隔；修改需要 Mod 以上，
         最多 10 個、每個限 25 字，Twitch 的硬性限制）"""
         config = await check_command(
             self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="tags"
@@ -188,7 +192,16 @@ class ChannelInfoComponent(BotComponent):
             if not has_role(ctx.chatter, "moderator"):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改標籤")
                 return
-            parsed = [t.strip() for t in new_tags.split(",") if t.strip()]
+            if clean_text(new_tags).casefold() in _CLEAR_TAGS_WORDS:
+                parsed: list[str] = []
+            else:
+                parsed = split_tags(new_tags)
+                if not parsed:
+                    # Typo-only input must not silently wipe the channel's tags.
+                    await self._ctx_reply(
+                        ctx, "用法：!tags 標籤1 標籤2 ...（清空請用 !tags clear）"
+                    )
+                    return
             if len(parsed) > _MAX_TAGS:
                 await self._ctx_reply(ctx, f"最多只能設定 {_MAX_TAGS} 個標籤")
                 return
@@ -197,6 +210,12 @@ class ChannelInfoComponent(BotComponent):
                 await self._ctx_reply(
                     ctx, f"標籤過長（上限 {_MAX_TAG_LEN} 字）：{'、'.join(too_long)}"
                 )
+                return
+            # Twitch rejects spaces and special characters, so name them up front
+            # instead of surfacing a generic "modify failed".
+            invalid = [t for t in parsed if not t.isalnum()]
+            if invalid:
+                await self._ctx_reply(ctx, f"標籤只能包含文字與數字：{'、'.join(invalid)}")
                 return
             try:
                 await ctx.broadcaster.modify_channel(tags=parsed)
