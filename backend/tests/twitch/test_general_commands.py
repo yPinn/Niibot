@@ -146,6 +146,70 @@ class TestShoutoutGate:
 
 
 @pytest.mark.asyncio
+class TestShoutoutInput:
+    @pytest.mark.parametrize(
+        "typed",
+        ["somechannel", "@SomeChannel", ";somechannel'", "https://www.twitch.tv/SomeChannel"],
+    )
+    async def test_normalises_to_login(self, typed):
+        comp = _make_component()
+        ctx = _make_ctx(moderator=True)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _shoutout(comp, ctx, typed)
+        ctx.bot.fetch_users.assert_awaited_once_with(logins=["somechannel"])
+        ctx.broadcaster.send_shoutout.assert_awaited_once()
+
+    @pytest.mark.parametrize("typed", [";", "' ;"])
+    async def test_symbols_only_gets_usage_hint(self, typed):
+        comp = _make_component()
+        ctx = _make_ctx(moderator=True)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _shoutout(comp, ctx, typed)
+        assert "用法" in comp._ctx_reply.await_args[0][1]
+        ctx.bot.fetch_users.assert_not_awaited()
+
+    @pytest.mark.parametrize("typed", ["小明", "小明_abc"])
+    async def test_non_login_name_is_rejected_not_guessed(self, typed):
+        comp = _make_component()
+        ctx = _make_ctx(moderator=True)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _shoutout(comp, ctx, typed)
+        assert "登入名稱" in comp._ctx_reply.await_args[0][1]
+        ctx.bot.fetch_users.assert_not_awaited()
+        ctx.broadcaster.send_shoutout.assert_not_awaited()
+
+
+def _http_error(status: int, message: str = "") -> Exception:
+    err = RuntimeError(f"Request failed with status {status}: {message}")
+    err.status = status  # type: ignore[attr-defined]
+    return err
+
+
+@pytest.mark.asyncio
+class TestShoutoutFailure:
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (_http_error(429), "太頻繁"),
+            (
+                _http_error(400, "The broadcaster is not streaming live or does not have viewers."),
+                "沒有在直播",
+            ),
+            (_http_error(403, "Missing moderator permission"), "版主"),
+            (_http_error(500), "稍後再試"),
+        ],
+    )
+    async def test_reply_names_the_actual_cause(self, error, expected):
+        comp = _make_component()
+        ctx = _make_ctx(moderator=True)
+        ctx.broadcaster.send_shoutout = AsyncMock(side_effect=error)
+        with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+            await _shoutout(comp, ctx, "somechannel")
+        assert expected in comp._ctx_reply.await_args[0][1]
+        comp._record_command.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 class TestDel:
     async def test_blocked_when_check_command_denies(self):
         comp = _make_component()
