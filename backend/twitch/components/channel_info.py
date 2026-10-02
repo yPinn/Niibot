@@ -14,6 +14,7 @@ Marker); missing/expired scope surfaces the same reauth chat prompt used by
 from __future__ import annotations
 
 import logging
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 import twitchio.ext.commands as commands
@@ -37,6 +38,7 @@ _MAX_TAG_LEN = 25
 _MAX_MARKER_DESC_LEN = 140
 _CLEAR_TAGS_WORDS = frozenset({"clear", "清空"})
 _GAME_SEARCH_LIMIT = 10
+_GAME_FALLBACK_MAX_SEARCHES = 8
 
 
 def _pick_category(query: str, candidates: list[Game]) -> Game | None:
@@ -52,6 +54,46 @@ def _pick_category(query: str, candidates: list[Game]) -> Game | None:
         if game.name.casefold() == wanted:
             return game
     return candidates[0] if candidates else None
+
+
+def _fallback_queries(query: str) -> list[str]:
+    """Shorter search terms to retry when the full query finds nothing.
+
+    Twitch's search has no typo tolerance: "valrant" returns nothing while
+    "val" finds Valorant. Try each word (longest first), then prefixes cut from
+    the end (where typos tend to be), ending on 3 / 2 / 1 characters.
+    """
+    text = query.strip()
+    seen = {text.casefold()}
+    terms: list[str] = []
+
+    def add(term: str) -> None:
+        term = term.strip()
+        if term and term.casefold() not in seen:
+            seen.add(term.casefold())
+            terms.append(term)
+
+    for word in sorted(text.split(), key=len, reverse=True):
+        if len(word) >= 2:
+            add(word)
+    near_end = range(len(text) - 1, max(len(text) - 5, 0), -1)
+    for length in sorted({*near_end, 3, 2, 1}, reverse=True):
+        if 0 < length < len(text):
+            add(text[:length])
+    return terms
+
+
+def _closest_category(query: str, pool: list[Game]) -> Game:
+    """Pick the category most similar to what was typed: names that start with
+    the query first, then by similarity. Ties keep Twitch's ranking (max() takes
+    the first), so a more popular category wins an equal match."""
+    wanted = query.strip().casefold()
+
+    def score(game: Game) -> tuple[bool, float]:
+        name = game.name.casefold()
+        return name.startswith(wanted), SequenceMatcher(None, wanted, name).ratio()
+
+    return max(pool, key=score)
 
 
 class ChannelInfoComponent(BotComponent):
@@ -125,6 +167,29 @@ class ChannelInfoComponent(BotComponent):
     # !game
     # ------------------------------------------------------------------
 
+    async def _search_categories(self, query: str) -> list[Game]:
+        # HTTPAsyncIterator: consume with `async for` (it has no .flatten()).
+        return [
+            found
+            async for found in self.bot.search_categories(
+                query, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
+            )
+        ]
+
+    async def _find_category(self, query: str) -> Game | None:
+        """Always resolve to the closest category; None only if Twitch returns
+        nothing for the query and every shorter fallback term."""
+        if candidates := await self._search_categories(query):
+            return _pick_category(query, candidates)
+
+        pool: dict[str, Game] = {}
+        for term in _fallback_queries(query)[:_GAME_FALLBACK_MAX_SEARCHES]:
+            for found in await self._search_categories(term):
+                pool.setdefault(found.id, found)
+            if pool:
+                break
+        return _closest_category(query, list(pool.values())) if pool else None
+
     @commands.command(name="game", aliases=["分類"])
     async def game(self, ctx: commands.Context, *, new_game: str | None = None) -> None:
         """查詢或修改頻道目前分類。用法: !game [分類名稱]（修改需要 Mod 以上）"""
@@ -141,14 +206,11 @@ class ChannelInfoComponent(BotComponent):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改分類")
                 return
             try:
-                candidates = await self.bot.search_categories(
-                    new_game, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
-                ).flatten()
+                game = await self._find_category(new_game)
             except Exception as e:
                 LOGGER.warning("[%s] !game lookup failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "查詢分類失敗，請稍後再試")
                 return
-            game = _pick_category(new_game, candidates)
             if game is None:
                 await self._ctx_reply(ctx, f"找不到分類：{new_game}")
                 return
@@ -161,7 +223,10 @@ class ChannelInfoComponent(BotComponent):
                 LOGGER.warning("[%s] !game modify failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "修改分類失敗，請稍後再試")
                 return
-            await self._ctx_reply(ctx, f"分類已更新為：{game.name}")
+            matched = (
+                "" if game.name.casefold() == new_game.casefold() else f"（依「{new_game}」比對）"
+            )
+            await self._ctx_reply(ctx, f"分類已更新為：{game.name}{matched}")
             await self._record_command(ctx, "game")
             return
 

@@ -10,7 +10,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from twitch.components.channel_info import ChannelInfoComponent
+from twitch.components.channel_info import (
+    ChannelInfoComponent,
+    _closest_category,
+    _fallback_queries,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -165,9 +169,14 @@ def _game(game_id: str, name: str) -> SimpleNamespace:
 
 
 def _stub_search(comp: ChannelInfoComponent, results: list) -> None:
-    comp.bot.search_categories = MagicMock(
-        return_value=MagicMock(flatten=AsyncMock(return_value=results))
-    )
+    # twitchio returns an HTTPAsyncIterator: only `async for` / `await` work on
+    # it. Use a real async generator so a call to a non-existent method (it has
+    # no .flatten()) fails here instead of in production.
+    async def _iterate():
+        for item in results:
+            yield item
+
+    comp.bot.search_categories = MagicMock(side_effect=lambda *a, **kw: _iterate())
 
 
 async def test_game_write_requires_moderator(comp):
@@ -235,6 +244,79 @@ async def test_game_stray_symbols_only_reads_current_game(comp):
         await _call("game", comp, ctx, new_game=";'")
     comp.bot.search_categories.assert_not_called()
     assert "Just Chatting" in comp._ctx_reply.await_args[0][1]
+
+
+def _stub_search_by_query(comp: ChannelInfoComponent, by_query: dict[str, list]) -> None:
+    """Per-query results (real async iterators); unlisted queries find nothing."""
+
+    async def _iterate(query: str):
+        for item in by_query.get(query, []):
+            yield item
+
+    comp.bot.search_categories = MagicMock(side_effect=lambda query, **kw: _iterate(query))
+
+
+def _searched(comp: ChannelInfoComponent) -> list[str]:
+    return [c.args[0] for c in comp.bot.search_categories.call_args_list]
+
+
+async def test_game_typo_falls_back_to_shorter_query(comp):
+    ctx = _make_ctx(is_moderator=True)
+    # Twitch has no typo tolerance: the full typo finds nothing, "val" does.
+    _stub_search_by_query(comp, {"val": [_game("516575", "VALORANT"), _game("2", "Valheim")]})
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="valrant")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="516575")
+    assert _searched(comp)[0] == "valrant"
+    assert "VALORANT" in comp._ctx_reply.await_args[0][1]
+    assert "valrant" in comp._ctx_reply.await_args[0][1]  # says it was a loose match
+
+
+async def test_game_fallback_picks_closest_not_first(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search_by_query(
+        comp,
+        {"Leage": [_game("1", "Leagues of Fun"), _game("2", "League of Legends")]},
+    )
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="Leage of Legends")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="2")
+
+
+async def test_game_multiword_typo_retries_each_word(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search_by_query(comp, {"Legends": [_game("2", "League of Legends")]})
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="Lgue Legends")
+    ctx.broadcaster.modify_channel.assert_awaited_once_with(game_id="2")
+
+
+async def test_game_not_found_only_after_every_fallback_is_empty(comp):
+    ctx = _make_ctx(is_moderator=True)
+    _stub_search_by_query(comp, {})
+    ctx.broadcaster.modify_channel = AsyncMock()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("game", comp, ctx, new_game="zzzzzzzz")
+    assert "找不到分類" in comp._ctx_reply.await_args[0][1]
+    ctx.broadcaster.modify_channel.assert_not_called()
+    assert 1 < len(_searched(comp)) <= 9  # full query + bounded fallbacks
+
+
+async def test_fallback_queries_words_then_prefixes_down_to_one_char():
+    assert _fallback_queries("valrant") == ["valran", "valra", "valr", "val", "va", "v"]
+    assert _fallback_queries("Lgue Legends")[:2] == ["Legends", "Lgue"]
+    assert _fallback_queries("x") == []
+
+
+async def test_closest_category_prefers_prefix_then_similarity_then_rank():
+    names = [_game("1", "Dota 2"), _game("2", "Valheim"), _game("3", "VALORANT")]
+    assert _closest_category("valo", names).id == "3"  # prefix beats rank
+    assert _closest_category("valrant", names).id == "3"  # no prefix: most similar
+    tie = [_game("1", "Alpha"), _game("2", "Alpha")]
+    assert _closest_category("alpha", tie).id == "1"  # equal: keep Twitch order
 
 
 async def test_game_write_not_found(comp):
