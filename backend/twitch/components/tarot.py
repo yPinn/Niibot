@@ -17,6 +17,7 @@ from shared.tarot_reading import (
     get_daily_tarot_draw,
     normalize_tarot_category,
 )
+from utils.command_input import clean_text
 
 if TYPE_CHECKING:
     from core.bot import Bot
@@ -105,7 +106,7 @@ class TarotComponent(BotComponent):
         if not config:
             return
 
-        raw_category = (args or "").strip()
+        raw_category = clean_text(args)
         category = normalize_tarot_category(raw_category)
         if category is None:
             await self._ctx_reply(ctx, format_tarot_topic_error(raw_category))
