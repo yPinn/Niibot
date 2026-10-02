@@ -136,6 +136,74 @@ async def test_followage_not_following(comp):
     assert "還沒追隨" in comp._ctx_reply.await_args[0][1]
 
 
+def _followed_at(days: int) -> str:
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+
+
+async def test_followage_looks_up_another_user(comp):
+    ctx = _make_ctx()
+    comp._helix_get.side_effect = [
+        _resp(200, {"data": [{"id": "other-1", "login": "other", "display_name": "Other"}]}),
+        _resp(200, {"data": [{"followed_at": _followed_at(10)}]}),
+    ]
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target=";@Other'")
+    (users_path, users_params, _), (follow_path, follow_params, _) = (
+        c.args for c in comp._helix_get.await_args_list
+    )
+    assert (users_path, users_params) == ("users", {"login": "other"})
+    assert follow_path == "channels/followers"
+    assert follow_params["user_id"] == "other-1"
+    msg = comp._ctx_reply.await_args[0][1]
+    assert "@Other" in msg and "已追隨" in msg
+
+
+async def test_followage_own_name_skips_user_lookup(comp):
+    ctx = _make_ctx()  # chatter.name == "viewer"
+    comp._helix_get.return_value = _resp(200, {"data": [{"followed_at": _followed_at(3)}]})
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target="@Viewer")
+    comp._helix_get.assert_awaited_once()
+    assert comp._helix_get.await_args[0][1]["user_id"] == "viewer-9"
+
+
+async def test_followage_unknown_user(comp):
+    ctx = _make_ctx()
+    comp._helix_get.return_value = _resp(200, {"data": []})
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target="ghost")
+    assert "找不到使用者：ghost" in comp._ctx_reply.await_args[0][1]
+    comp._helix_get.assert_awaited_once()
+
+
+async def test_followage_streamer_target(comp):
+    ctx = _make_ctx(channel_id="chan-1")
+    comp._helix_get.return_value = _resp(
+        200, {"data": [{"id": "chan-1", "login": "streamer", "display_name": "Streamer"}]}
+    )
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target="streamer")
+    assert "實況主" in comp._ctx_reply.await_args[0][1]
+    comp._helix_get.assert_awaited_once()
+
+
+async def test_followage_non_login_target_gets_hint(comp):
+    ctx = _make_ctx()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target="小明")
+    assert "登入名稱" in comp._ctx_reply.await_args[0][1]
+    comp._helix_get.assert_not_called()
+
+
+async def test_followage_symbols_only_means_self(comp):
+    ctx = _make_ctx()
+    comp._helix_get.return_value = _resp(200, {"data": []})
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("followage", comp, ctx, target=" ;' ")
+    assert comp._helix_get.await_args[0][1]["user_id"] == "viewer-9"
+    assert "還沒追隨" in comp._ctx_reply.await_args[0][1]
+
+
 async def test_followage_disabled_command_is_silent(comp):
     ctx = _make_ctx()
     with patch(PATCH_CHECK, AsyncMock(return_value=None)):
@@ -256,6 +324,25 @@ async def test_accountage_reports_target_user(comp):
     path, params, _token = comp._helix_get.await_args[0]
     assert params == {"login": "other"}
     assert "Other" in comp._ctx_reply.await_args[0][1]
+
+
+async def test_accountage_normalises_target(comp):
+    ctx = _make_ctx()
+    created = (datetime.now(UTC) - timedelta(days=10)).isoformat().replace("+00:00", "Z")
+    comp._helix_get.return_value = _resp(
+        200, {"data": [{"display_name": "Other", "created_at": created}]}
+    )
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx, target=";@Other'")
+    assert comp._helix_get.await_args[0][1] == {"login": "other"}
+
+
+async def test_accountage_non_login_target_gets_hint(comp):
+    ctx = _make_ctx()
+    with patch(PATCH_CHECK, AsyncMock(return_value=MagicMock())):
+        await _call("accountage", comp, ctx, target="小明")
+    assert "登入名稱" in comp._ctx_reply.await_args[0][1]
+    comp._helix_get.assert_not_called()
 
 
 async def test_accountage_user_not_found(comp):
