@@ -8,7 +8,7 @@ write path is checked inline with has_role(). All four need the broadcaster's
 own channel:manage:broadcast scope for their write/marker call (Twitch has no
 moderator-token equivalent for Modify Channel Information or Create Stream
 Marker); missing/expired scope surfaces the same reauth chat prompt used by
-!subcount et al. Reads (fetch_channel_info, fetch_games) need no scope at all.
+!subcount et al. Reads (fetch_channel_info, search_categories) need no scope at all.
 """
 
 from __future__ import annotations
@@ -25,6 +25,8 @@ from utils.command_failure import command_failure_notifier
 from utils.reauth import is_scope_error
 
 if TYPE_CHECKING:
+    from twitchio import Game
+
     from core.bot import Bot
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
@@ -32,6 +34,22 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _MAX_TAGS = 10
 _MAX_TAG_LEN = 25
 _MAX_MARKER_DESC_LEN = 140
+_GAME_SEARCH_LIMIT = 10
+
+
+def _pick_category(query: str, candidates: list[Game]) -> Game | None:
+    """Resolve a typed category to a Helix search result.
+
+    A case-insensitive exact name wins; otherwise take Twitch's top-ranked
+    result, which is already ordered by relevance/popularity (the same ranking
+    its own category picker shows). The caller echoes the resolved name back,
+    so a loose match is visible to chat rather than silent.
+    """
+    wanted = query.strip().casefold()
+    for game in candidates:
+        if game.name.casefold() == wanted:
+            return game
+    return candidates[0] if candidates else None
 
 
 class ChannelInfoComponent(BotComponent):
@@ -119,16 +137,19 @@ class ChannelInfoComponent(BotComponent):
                 await self._ctx_reply(ctx, "只有 Mod 以上可以修改分類")
                 return
             try:
-                games = await self.bot.fetch_games(names=[new_game])
+                candidates = await self.bot.search_categories(
+                    new_game, first=_GAME_SEARCH_LIMIT, max_results=_GAME_SEARCH_LIMIT
+                ).flatten()
             except Exception as e:
                 LOGGER.warning("[%s] !game lookup failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "查詢分類失敗，請稍後再試")
                 return
-            if not games:
+            game = _pick_category(new_game, candidates)
+            if game is None:
                 await self._ctx_reply(ctx, f"找不到分類：{new_game}")
                 return
             try:
-                await ctx.broadcaster.modify_channel(game_id=games[0].id)
+                await ctx.broadcaster.modify_channel(game_id=game.id)
             except Exception as e:
                 if is_scope_error(e):
                     await self._notify_reauth(ctx)
@@ -136,7 +157,7 @@ class ChannelInfoComponent(BotComponent):
                 LOGGER.warning("[%s] !game modify failed: %s", ctx.channel.name, e)
                 await self._notify_failure(ctx, "game", "修改分類失敗，請稍後再試")
                 return
-            await self._ctx_reply(ctx, f"分類已更新為：{games[0].name}")
+            await self._ctx_reply(ctx, f"分類已更新為：{game.name}")
             await self._record_command(ctx, "game")
             return
 
