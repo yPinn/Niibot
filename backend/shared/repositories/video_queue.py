@@ -7,6 +7,7 @@ clips) live in ``shared.video_sources``.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
@@ -19,21 +20,20 @@ from shared.models.video_queue import (
     VideoQueueRankingEntry,
     VideoQueueSettings,
 )
-from shared.video_sources import build_watch_url
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
-def format_now_playing(entry: VideoQueueEntry) -> str:
-    """Render the !np chat line for the currently playing entry.
+@dataclass(frozen=True)
+class SkipResult:
+    """Outcome of ``skip_current_atomic``.
 
-    No remaining time: it is stale the moment the message is sent, and a
-    viewer reading it seconds later is told the wrong number. The overlay
-    already shows a live countdown for anyone who needs one.
+    ``skipped`` is False only for a conditional skip whose expected entry was
+    no longer the one playing; ``next_entry`` is the row actually promoted.
     """
-    url = build_watch_url(entry.video_type, entry.video_id, entry.start_seconds)
-    title_part = f"「{entry.title}」 " if entry.title else " "
-    return f"▶{title_part}{url} | 點播者：{entry.requested_by}"
+
+    skipped: bool
+    next_entry: VideoQueueEntry | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +89,7 @@ END_REASONS = (
     "autoplay_blocked",
     "startup_timeout",
     "dashboard_skip",
+    "chat_skip",
     "play_now",
     "removed",
     "cleared",
@@ -542,33 +543,91 @@ class VideoQueueRepository:
                 )
                 return result == "UPDATE 1"
 
-    async def skip_current_atomic(self, channel_id: str) -> None:
+    async def skip_current_atomic(
+        self,
+        channel_id: str,
+        *,
+        expected_entry_id: int | None = None,
+        end_reason: str = "dashboard_skip",
+    ) -> SkipResult:
         """Atomically mark the current playing entry as skipped and promote the next queued entry.
 
         Both operations run inside a single transaction to prevent a race condition
         where a concurrent advance_queue call (from the overlay) could promote the
-        same queued entry while the dashboard skip is in flight.
+        same queued entry while the skip is in flight.
+
+        With ``expected_entry_id`` the skip is conditional: callers look up the
+        current entry first, and the overlay may have advanced in between. Without
+        the condition such a caller would skip the *next* video — someone else's
+        request — so nothing changes and ``skipped`` is False instead.
         """
+        if end_reason not in END_REASONS:
+            raise ValueError(f"Unsupported end reason: {end_reason}")
+        skip_sql = (
+            "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+            "end_reason = $2, "
+            "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
+            "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
+            "WHERE channel_id = $1 AND status = 'playing'"
+        )
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
-                    "end_reason = 'dashboard_skip', "
-                    "played_seconds = CASE WHEN playback_started_at IS NULL THEN NULL ELSE "
-                    "GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (NOW() - playback_started_at)))::integer) END "
-                    "WHERE channel_id = $1 AND status = 'playing'",
-                    channel_id,
-                )
-                await conn.execute(
+                if expected_entry_id is None:
+                    await conn.execute(skip_sql, channel_id, end_reason)
+                else:
+                    result = await conn.execute(
+                        f"{skip_sql} AND id = $3", channel_id, end_reason, expected_entry_id
+                    )
+                    if int(result.split()[-1]) == 0:
+                        return SkipResult(skipped=False)
+                row = await conn.fetchrow(
                     "UPDATE video_queue "
                     "SET status = 'playing', started_at = NOW() "
                     "WHERE id = ("
                     "    SELECT id FROM video_queue "
                     "    WHERE channel_id = $1 AND status = 'queued' "
                     "    ORDER BY priority DESC, created_at ASC LIMIT 1"
-                    ")",
+                    f") RETURNING {_ENTRY_COLUMNS}",
                     channel_id,
                 )
+        return SkipResult(skipped=True, next_entry=VideoQueueEntry(**dict(row)) if row else None)
+
+    async def get_queue_position(self, entry_id: int, channel_id: str) -> int | None:
+        """1-based place of a queued entry in play order (priority DESC, created_at ASC).
+
+        None when the entry is no longer queued (e.g. the overlay already
+        promoted it to playing).
+        """
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT COUNT(*) FROM video_queue q, ("
+                "    SELECT priority, created_at FROM video_queue "
+                "    WHERE id = $1 AND channel_id = $2 AND status = 'queued'"
+                ") e "
+                "WHERE q.channel_id = $2 AND q.status = 'queued' "
+                "AND (q.priority > e.priority "
+                "     OR (q.priority = e.priority AND q.created_at <= e.created_at)) "
+                "HAVING COUNT(*) > 0",
+                entry_id,
+                channel_id,
+            )
+
+    async def cancel_queued(self, entry_id: int, channel_id: str) -> bool:
+        """Remove an entry only while it is still waiting (``!vq remove``).
+
+        Unlike ``mark_skipped`` this never touches a playing row: a viewer
+        cancelling their request must not end a video the overlay promoted in
+        the meantime — that is ``!vq skip``'s job.
+        """
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE video_queue SET status = 'skipped', ended_at = NOW(), "
+                "end_reason = 'removed' "
+                "WHERE id = $1 AND channel_id = $2 AND status = 'queued'",
+                entry_id,
+                channel_id,
+            )
+            return int(result.split()[-1]) > 0
 
     async def play_immediately(self, entry_id: int, channel_id: str) -> bool:
         """Skip the currently playing video and start playing this entry immediately.
