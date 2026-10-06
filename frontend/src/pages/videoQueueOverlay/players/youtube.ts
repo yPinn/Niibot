@@ -44,6 +44,11 @@ function mount(ctx: MountContext): () => void {
     handleVideoEnd,
   } = ctx
 
+  // Window model (same as Twitch VOD): play `duration_seconds` from
+  // `start_seconds`. Without a segment, start is 0 and duration the whole video.
+  const start = current.start_seconds || 0
+  const segmentEnd = current.duration_seconds ? start + current.duration_seconds : null
+
   let readyCount = 0
   let allStarted = false
   let fallbackTimer = 0 as ReturnType<typeof setTimeout>
@@ -62,12 +67,13 @@ function mount(ctx: MountContext): () => void {
       return
     }
 
-    // Seek all players to the correct position when joining mid-video (>2s in)
+    // Seek to the segment start, plus how far in a late-joining overlay is.
+    // playerVars.start already cues the start; only seek when it's off by >2s.
     if (joinElapsed > 2) {
       for (const ref of [playerRef]) {
         if (ref.current)
           try {
-            ref.current.seekTo(joinElapsed, true)
+            ref.current.seekTo(start + joinElapsed, true)
           } catch {
             /* ignore */
           }
@@ -85,10 +91,10 @@ function mount(ctx: MountContext): () => void {
     progressRef.current = setInterval(() => {
       if (!playerRef.current) return
       const t = playerRef.current.getCurrentTime()
-      setElapsed(t)
-      // ENDED fallback: polling check to catch missed onStateChange ENDED events
+      setElapsed(Math.max(0, t - start))
+      // Segment end, plus an ENDED fallback for missed onStateChange events.
       const d = playerRef.current.getDuration()
-      if (d > 0 && t >= d - 0.5) {
+      if ((segmentEnd !== null && t >= segmentEnd) || (d > 0 && t >= d - 0.5)) {
         clearInterval(progressRef.current ?? undefined)
         progressRef.current = null
         handleVideoEnd(currentId)
@@ -118,6 +124,7 @@ function mount(ctx: MountContext): () => void {
       controls: 0,
       rel: 0,
       iv_load_policy: 3,
+      start: Math.floor(start + joinElapsed),
       // Begin muted while the iframe initializes, then apply the explicit
       // preview/OBS mute state through the official API in onReady.
       mute: 1,
@@ -128,9 +135,12 @@ function mount(ctx: MountContext): () => void {
         if (muted || volumePercent === 0) event.target.mute()
         else event.target.unMute()
         const duration = event.target.getDuration()
-        // Report duration to backend (fallback for entries where API returned null)
-        if (duration > 0 && !current.duration_seconds && username && overlayKey && !isPreview) {
-          reportVideoMetadata(username, currentId, Math.round(duration), overlayKey).catch(() => {})
+        // Report duration to backend (fallback for entries where API returned
+        // null) — as the segment length, since that's what duration_seconds holds.
+        if (duration > start && !current.duration_seconds && username && overlayKey && !isPreview) {
+          reportVideoMetadata(username, currentId, Math.round(duration - start), overlayKey).catch(
+            () => {}
+          )
         }
         onPlayerReady()
       },

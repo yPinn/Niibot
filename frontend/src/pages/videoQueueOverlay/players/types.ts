@@ -24,6 +24,7 @@ export interface YTPlayerOptions {
     rel?: 0 | 1
     mute?: 0 | 1
     iv_load_policy?: 1 | 3
+    start?: number
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void

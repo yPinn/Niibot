@@ -19,7 +19,14 @@ function buildSteps(twitchRewardsUrl: string, onNavigate: () => void): SetupStep
       icon: 'fa-brands fa-twitch',
       title: '在 Twitch 建立獎勵',
       description: '觀眾點播的入口，要先在 Twitch 那邊設定好。',
-      items: ['新增自訂獎勵，設定名稱與點數', '確認獎勵已啟用'],
+      items: [
+        '新增自訂獎勵，設定名稱與點數',
+        <>
+          勾選「需要觀眾輸入文字」，說明可填{' '}
+          <GuideValue>貼上網址，可加時間，例：1:30-4:00</GuideValue>
+        </>,
+        '確認獎勵已啟用',
+      ],
       action: (
         <Button variant="outline" size="sm" asChild>
           <a href={twitchRewardsUrl} target="_blank" rel="noopener noreferrer">

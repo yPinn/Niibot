@@ -14,7 +14,7 @@ import {
 } from '@/components/ui'
 
 import { PlatformBadge, SourceBadge } from './QueueTable'
-import { formatDuration, thumbnailUrl, watchUrl } from './utils'
+import { formatDuration, segmentLabel, thumbnailUrl, watchUrl } from './utils'
 
 function Thumb({ entry, className }: { entry: VideoQueueEntry; className?: string }) {
   const [failed, setFailed] = useState(false)
@@ -156,6 +156,11 @@ export function NowPlayingCard({
             <div className="flex items-center gap-1.5 text-sub text-muted-foreground min-w-0">
               <span className="truncate">{current.requested_by}</span>
               <SourceBadge source={current.source} />
+              {segmentLabel(current) && (
+                <span className="shrink-0 text-label tabular-nums">
+                  片段 {segmentLabel(current)}
+                </span>
+              )}
             </div>
             <div className="flex flex-col gap-1.5 pt-1">
               <Progress segments={[{ value: progress }]} aria-label="播放進度" />

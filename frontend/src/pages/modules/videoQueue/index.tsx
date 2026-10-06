@@ -46,7 +46,13 @@ import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
 import type { RulesDraft } from './RulesCard'
 import { SettingsCard } from './SettingsCard'
 import { SetupGuideSheet } from './SetupGuideSheet'
-import { QUEUE_PAGE_SIZE, REDEMPTION_DURATION_OPTIONS, snapToOption, watchUrl } from './utils'
+import {
+  QUEUE_PAGE_SIZE,
+  REDEMPTION_DURATION_OPTIONS,
+  requeueText,
+  snapToOption,
+  watchUrl,
+} from './utils'
 import { VideoQueuePageSkeleton } from './VideoQueuePageSkeleton'
 
 const EMPTY_DRAFT: RulesDraft = {
@@ -143,7 +149,7 @@ export default function VideoQueue() {
 
   const handleRequeue = async (entry: VideoQueueHistoryEntry) => {
     try {
-      await addUrlAndRefreshQueue(watchUrl(entry.video_type, entry.video_id, entry.start_seconds))
+      await addUrlAndRefreshQueue(requeueText(entry))
       toast.success('已重新加入佇列')
     } catch (e) {
       toastApiError(e, '重新點播失敗')
