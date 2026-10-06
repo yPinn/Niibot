@@ -29,16 +29,12 @@ from shared.repositories.video_queue import (
 from shared.repositories.vip import VipRepository
 from shared.services.attendance import AttendanceService
 from shared.services.video_queue_admission import (
-    AdmissionReason,
     AdmissionRejected,
     VideoQueueAdmissionService,
 )
 from shared.services.vip import VipService, add_calendar_months
-from shared.video_sources import (
-    fetch_video_metadata,
-    resolve_video_url,
-    unplayable_message,
-)
+from shared.video_queue_messages import UNAVAILABLE, accepted_message, rejection_message
+from shared.video_sources import fetch_video_metadata, resolve_video_url
 from utils.event_render import mention_vars, render_template
 from utils.reauth import is_scope_error
 
@@ -812,72 +808,22 @@ class ChannelPointsComponent(commands.Component):
                     ),
                 )
             except AdmissionRejected as error:
-                reason = error.reason
-                details = error.details
-                if reason in {AdmissionReason.DISABLED, AdmissionReason.SOURCE_DISABLED}:
-                    message = "影片佇列目前已關閉"
-                elif reason is AdmissionReason.INVALID_URL:
-                    message = (
-                        "請輸入有效的 YouTube、Twitch Clip/VOD、Bilibili 或 Instagram Reel 連結"
-                    )
-                elif reason is AdmissionReason.DUPLICATE:
-                    message = "該影片已在佇列中"
-                elif reason is AdmissionReason.QUEUE_FULL:
-                    message = f"佇列已滿（{details['queue_size']}/{details['max_queue_size']}）"
-                elif reason is AdmissionReason.USER_LIMIT:
-                    message = f"每人上限 {details['max_per_user']} 首，請等待您的影片播放後再點播"
-                elif reason is AdmissionReason.USER_COOLDOWN:
-                    remaining = int(details["remaining_seconds"])
-                    minutes, seconds = divmod(remaining, 60)
-                    time_text = f"{minutes}:{seconds:02d}" if minutes else f"{seconds} 秒"
-                    message = f"點播冷卻中，請等待 {time_text}"
-                elif reason is AdmissionReason.NOT_PLAYABLE:
-                    message = unplayable_message(str(details.get("unplayable_reason") or ""))
-                elif reason is AdmissionReason.METADATA_UNVERIFIABLE:
-                    field = details.get("field")
-                    message = (
-                        "無法驗證影片時長，請稍後再試"
-                        if field == "duration_seconds"
-                        else "無法驗證影片資訊，請稍後再試"
-                    )
-                elif reason is AdmissionReason.MIN_VIEWS:
-                    message = (
-                        f"影片觀看次數不足（{int(details['view_count']):,} 次 < "
-                        f"{int(details['min_view_count']):,} 次），無法加入佇列"
-                    )
-                elif reason is AdmissionReason.TOO_LONG:
-                    duration = int(details["duration_seconds"])
-                    limit = int(details["limit_seconds"])
-                    vid_m, vid_s = divmod(duration, 60)
-                    max_m, max_s = divmod(limit, 60)
-                    message = f"影片長度 {vid_m}:{vid_s:02d} 超過上限 {max_m}:{max_s:02d}"
-                elif reason is AdmissionReason.REPLAY_COOLDOWN:
-                    message = f"這部影片在 {details['hours']} 小時內播過了"
-                elif reason is AdmissionReason.BLOCKED:
-                    message = "這部影片在封鎖清單中"
-                else:
-                    message = "點播失敗，佇列狀態已變更，請重試"
+                message = rejection_message(error.reason, error.details)
                 await self._reply(broadcaster, f"@{user_name} {message}")
                 return
 
-            title = result.metadata.title
-            duration_seconds = result.metadata.duration_seconds
-            title_part = f"「{title}」" if title else ""
-            dur_part = (
-                f"({duration_seconds // 60}:{duration_seconds % 60:02d})"
-                if duration_seconds
-                else ""
-            )
-            info = " ".join(filter(None, [title_part, dur_part]))
             await self._reply(
                 broadcaster,
-                f"@{user_name} {info + ' ' if info else ''}已加入影片佇列！({result.position}/{result.settings.max_queue_size})",
+                f"@{user_name} "
+                + accepted_message(
+                    result.metadata.title, result.resolved.video_id, result.position
+                ),
             )
             LOGGER.info(
                 "[%s] VideoQueue: %s added '%s' (position %s)",
                 broadcaster.name,
                 user_name,
-                title or result.resolved.video_id,
+                result.metadata.title or result.resolved.video_id,
                 result.position,
             )
 
@@ -886,6 +832,11 @@ class ChannelPointsComponent(commands.Component):
                 await self.bot._mark_reauth_required(str(broadcaster.id))  # type: ignore[attr-defined]
                 return
             LOGGER.error("[%s] VideoQueue error: %s", broadcaster.name, e)
+            # The viewer already spent points: never leave them without an answer.
+            try:
+                await self._reply(broadcaster, f"@{user_name} {UNAVAILABLE}")
+            except Exception:
+                LOGGER.debug("[%s] VideoQueue error reply failed", broadcaster.name)
 
 
 async def setup(bot: commands.Bot) -> None:

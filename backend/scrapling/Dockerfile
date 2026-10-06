@@ -7,7 +7,11 @@ COPY scrapling/pyproject.toml scrapling/uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.12.12-slim-bookworm
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+# The deploy passes the UTC date: a changed value rebuilds this layer, so the
+# build host's layer cache can't pin an old Debian security patch level.
+ARG SECURITY_REFRESH=manual
+RUN echo "security refresh: ${SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH" \

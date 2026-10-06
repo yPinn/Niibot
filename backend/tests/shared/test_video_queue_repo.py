@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 
-from shared.models.video_queue import VideoQueueBlocklistEntry, VideoQueueEntry
+from shared.models.video_queue import VideoQueueBlocklistEntry
 from shared.repositories.video_queue import (
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
@@ -17,7 +17,6 @@ from shared.repositories.video_queue import (
     _blocklist_cache,
     _blocklist_match,
     _settings_cache,
-    format_now_playing,
 )
 from shared.video_sources import (
     TwitchMediaInfo,
@@ -132,41 +131,6 @@ _BLOCKLIST_ROW = {
 # ---------------------------------------------------------------------------
 # Pure utility functions
 # ---------------------------------------------------------------------------
-
-
-class TestFormatNowPlaying:
-    @staticmethod
-    def _entry(**overrides) -> VideoQueueEntry:
-        base = {
-            "id": 1,
-            "channel_id": "ch1",
-            "video_id": "dQw4w9WgXcQ",
-            "requested_by": "viewer",
-            "source": "chat",
-            "status": "playing",
-            "video_type": "youtube",
-            "title": "Never Gonna Give You Up",
-            "duration_seconds": 213,
-            "started_at": datetime(2026, 1, 1, tzinfo=UTC),
-        }
-        return VideoQueueEntry(**{**base, **overrides})
-
-    def test_includes_title_link_and_requester(self):
-        line = format_now_playing(self._entry())
-        assert "「Never Gonna Give You Up」" in line
-        assert "dQw4w9WgXcQ" in line
-        assert "點播者：viewer" in line
-
-    def test_omits_remaining_time(self):
-        # A countdown is stale the moment the message is sent — a viewer
-        # reading it seconds later would be told the wrong number.
-        line = format_now_playing(self._entry())
-        assert "剩餘" not in line
-
-    def test_untitled_entry_still_renders(self):
-        line = format_now_playing(self._entry(title=None))
-        assert "「" not in line
-        assert "點播者：viewer" in line
 
 
 class TestExtractYoutubeId:
@@ -1488,50 +1452,134 @@ class TestAdvanceQueue:
 @pytest.mark.asyncio
 class TestSkipCurrentAtomic:
     async def test_uses_transaction(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
         repo = VideoQueueRepository(pool)
 
         await repo.skip_current_atomic("ch1")
 
         conn.transaction.assert_called_once()
 
-    async def test_calls_two_updates(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+    async def test_skip_then_promote(self):
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
         repo = VideoQueueRepository(pool)
 
         await repo.skip_current_atomic("ch1")
 
-        assert conn.execute.call_count == 2
+        skip_sql: str = conn.execute.call_args.args[0]
+        assert "skipped" in skip_sql
+        assert "status = 'playing'" in skip_sql
+        promote_sql: str = conn.fetchrow.call_args.args[0]
+        assert "SET status = 'playing'" in promote_sql
+        assert "status = 'queued'" in promote_sql
+        assert "RETURNING" in promote_sql
 
-    async def test_first_update_marks_skipped(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+    async def test_defaults_to_dashboard_skip_reason(self):
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
         repo = VideoQueueRepository(pool)
 
         await repo.skip_current_atomic("ch1")
 
-        first_call_sql: str = conn.execute.call_args_list[0][0][0]
-        assert "skipped" in first_call_sql
-        assert "playing" in first_call_sql
-        assert "end_reason = 'dashboard_skip'" in first_call_sql
+        assert conn.execute.call_args.args[1:] == ("ch1", "dashboard_skip")
 
-    async def test_second_update_promotes_queued(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+    async def test_chat_skip_reason_is_recorded(self):
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
         repo = VideoQueueRepository(pool)
 
-        await repo.skip_current_atomic("ch1")
+        await repo.skip_current_atomic("ch1", end_reason="chat_skip")
 
-        second_call_sql: str = conn.execute.call_args_list[1][0][0]
-        assert "playing" in second_call_sql
-        assert "queued" in second_call_sql
+        assert conn.execute.call_args.args[2] == "chat_skip"
+
+    async def test_rejects_unknown_end_reason(self):
+        pool, _ = _make_pool(execute="UPDATE 1", fetchrow=None)
+        repo = VideoQueueRepository(pool)
+
+        with pytest.raises(ValueError):
+            await repo.skip_current_atomic("ch1", end_reason="bogus")
+
+    async def test_returns_the_promoted_entry(self):
+        row = {**_ENTRY_ROW, "id": 9, "status": "playing", "title": "Next"}
+        pool, _ = _make_pool(execute="UPDATE 1", fetchrow=row)
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.skip_current_atomic("ch1")
+
+        assert result.skipped is True
+        assert result.next_entry is not None
+        assert result.next_entry.id == 9
+
+    async def test_empty_queue_reports_no_next_entry(self):
+        pool, _ = _make_pool(execute="UPDATE 1", fetchrow=None)
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.skip_current_atomic("ch1")
+
+        assert result.skipped is True
+        assert result.next_entry is None
+
+    async def test_conditional_skip_targets_the_expected_entry(self):
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
+        repo = VideoQueueRepository(pool)
+
+        await repo.skip_current_atomic("ch1", expected_entry_id=5)
+
+        assert "AND id = $3" in conn.execute.call_args.args[0]
+        assert conn.execute.call_args.args[3] == 5
+
+    async def test_conditional_skip_is_a_noop_when_the_video_already_changed(self):
+        """Regression: looking up the current entry and then skipping "whatever
+        is playing" would end the *next* video — someone else's request — if
+        the overlay advanced in between."""
+        pool, conn = _make_pool(execute="UPDATE 0", fetchrow=None)
+        repo = VideoQueueRepository(pool)
+
+        result = await repo.skip_current_atomic("ch1", expected_entry_id=5)
+
+        assert result.skipped is False
+        conn.fetchrow.assert_not_awaited()
 
     async def test_channel_id_is_scoped(self):
-        pool, conn = _make_pool(execute="UPDATE 1")
+        pool, conn = _make_pool(execute="UPDATE 1", fetchrow=None)
         repo = VideoQueueRepository(pool)
 
         await repo.skip_current_atomic("ch_target")
 
-        for call in conn.execute.call_args_list:
-            assert "ch_target" in call[0]
+        assert "ch_target" in conn.execute.call_args.args
+        assert "ch_target" in conn.fetchrow.call_args.args
+
+
+@pytest.mark.asyncio
+class TestQueuePositionAndCancel:
+    async def test_position_counts_entries_ahead_in_play_order(self):
+        pool, conn = _make_pool(fetchval=3)
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.get_queue_position(7, "ch1") == 3
+        sql = conn.fetchval.call_args.args[0]
+        assert "q.priority > e.priority" in sql
+        assert "q.created_at <= e.created_at" in sql
+        assert conn.fetchval.call_args.args[1:] == (7, "ch1")
+
+    async def test_position_is_none_once_no_longer_queued(self):
+        pool, _ = _make_pool(fetchval=None)
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.get_queue_position(7, "ch1") is None
+
+    async def test_cancel_only_touches_a_waiting_entry(self):
+        pool, conn = _make_pool(execute="UPDATE 1")
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.cancel_queued(7, "ch1") is True
+        sql = conn.execute.call_args.args[0]
+        assert "status = 'queued'" in sql
+        assert "'playing'" not in sql
+        assert "end_reason = 'removed'" in sql
+
+    async def test_cancel_reports_when_nothing_changed(self):
+        pool, _ = _make_pool(execute="UPDATE 0")
+        repo = VideoQueueRepository(pool)
+
+        assert await repo.cancel_queued(7, "ch1") is False
 
 
 # ---------------------------------------------------------------------------
@@ -1754,6 +1802,55 @@ class TestFetchYtInfo:
 
         assert result.playable is False
         assert result.unplayable_reason == expected
+
+    @pytest.mark.parametrize("live_state", ["live", "upcoming"])
+    async def test_live_and_upcoming_streams_are_unplayable(self, live_state):
+        """Regression: a live stream reports `P0D` (read as an unknown length),
+        which slipped past every length gate and stalled the overlay."""
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Live",
+                        "thumbnails": {},
+                        "liveBroadcastContent": live_state,
+                    },
+                    "contentDetails": {"duration": "P0D", "contentRating": {}},
+                    "statistics": {"viewCount": "10"},
+                    "status": {"embeddable": True, "privacyStatus": "public"},
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info(f"livevideo{live_state[:2]}", api_key="fake_key")
+
+        assert result.playable is False
+        assert result.unplayable_reason == "live"
+
+    async def test_finished_stream_is_an_ordinary_video(self):
+        from unittest.mock import patch
+
+        payload = {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "VOD",
+                        "thumbnails": {},
+                        "liveBroadcastContent": "none",
+                    },
+                    "contentDetails": {"duration": "PT2H", "contentRating": {}},
+                    "statistics": {"viewCount": "10"},
+                    "status": {"embeddable": True, "privacyStatus": "public"},
+                }
+            ]
+        }
+        with patch("aiohttp.ClientSession", return_value=_yt_resp(payload)):
+            result = await fetch_yt_info("endedstream", api_key="fake_key")
+
+        assert result.playable is True
+        assert result.duration_seconds == 7200
 
 
 # ---------------------------------------------------------------------------

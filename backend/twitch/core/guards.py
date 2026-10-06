@@ -78,8 +78,26 @@ def is_on_cooldown(
 
 def record_cooldown(channel_id: str, command_name: str) -> None:
     """Record cooldown timestamp after successful command execution."""
+    _record_raw(f"{channel_id}:{command_name}")
+
+
+def try_acquire_cooldown(key: str, seconds: int) -> bool:
+    """Check-and-record a raw cooldown key; False while ``key`` is still cooling down.
+
+    For throttles that aren't a configurable command cooldown — e.g. a
+    per-user key ("{channel}:vq:user:{user_id}") so one viewer can't spend the
+    bot's chat budget for everyone. Shares the tracker (and its eviction).
+    """
+    last = _cooldown_tracker.get(key)
+    if last and (datetime.now(UTC) - last).total_seconds() < seconds:
+        return False
+    _record_raw(key)
+    return True
+
+
+def _record_raw(key: str) -> None:
     global _cooldown_call_count
-    _cooldown_tracker[f"{channel_id}:{command_name}"] = datetime.now(UTC)
+    _cooldown_tracker[key] = datetime.now(UTC)
     _cooldown_call_count += 1
     if _cooldown_call_count >= _EVICT_INTERVAL:
         _cooldown_call_count = 0

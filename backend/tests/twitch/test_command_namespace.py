@@ -9,6 +9,7 @@ from twitch.components.general_commands import GeneralCommandsComponent
 from twitch.components.quotes import QuoteComponent
 from twitch.components.tarot import TarotComponent
 from twitch.components.tft import TftComponent
+from twitch.components.video_queue import VideoQueueComponent
 from twitch.components.viewer_stats import ViewerStatsComponent
 
 from shared.builtin_commands import BUILTIN_DEFS
@@ -21,6 +22,7 @@ _RUNTIME_COMMANDS = [
     GeneralCommandsComponent.ping,
     GeneralCommandsComponent.delete_own_messages,
     AttendanceComponent.rank,
+    VideoQueueComponent.cmd_np,
     ViewerStatsComponent.followage,
     ViewerStatsComponent.subage,
     ViewerStatsComponent.accountage,

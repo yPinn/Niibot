@@ -66,3 +66,20 @@ def test_rankings_migration_tracks_real_playback_and_provider_scoped_blocks():
     assert "COALESCE(video_type, '*')" in sql
     assert "kind IN ('video', 'creator')" in sql
     assert "'youtube', 'twitch_clip', 'twitch_vod', 'bilibili', 'instagram_reel'" in sql
+
+
+def test_chat_skip_end_reason_matches_the_repository_allowlist():
+    from shared.repositories.video_queue import END_REASONS
+
+    sql = (_VERSIONS / "153_video_queue_chat_skip_end_reason.sql").read_text(encoding="utf-8")
+    assert "DROP CONSTRAINT IF EXISTS chk_video_queue_end_reason" in sql
+    for reason in END_REASONS:
+        assert f"'{reason}'" in sql, f"{reason} missing from the end_reason CHECK"
+
+
+def test_np_catalog_migration_moves_legacy_custom_rows_aside():
+    sql = (_VERSIONS / "154_np_builtin_catalog.sql").read_text(encoding="utf-8")
+    assert "command.command_type = 'custom'" in sql
+    assert "lower(command.command_name) = 'np'" in sql
+    assert "'__legacy_'" in sql
+    assert "enabled = FALSE" in sql

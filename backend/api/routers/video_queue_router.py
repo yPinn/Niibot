@@ -689,12 +689,18 @@ async def skip_current(
     _: None = Depends(require_activated),
     channel_id: str = Depends(get_current_channel_id),
     pool: Pool = Depends(get_db_pool),
+    expected_entry_id: int | None = Query(default=None),
 ) -> PublicVideoQueueState:
-    """Skip the currently playing video."""
+    """Skip the currently playing video.
+
+    ``expected_entry_id`` makes the skip conditional on that entry still being
+    the one playing (the dashboard view can be a few seconds stale); a mismatch
+    is a no-op and the response carries the current state.
+    """
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-        await repo.skip_current_atomic(channel_id)
+        await repo.skip_current_atomic(channel_id, expected_entry_id=expected_entry_id)
         LOGGER.info("Channel %s skipped video queue entry", channel_id)
         return await _build_public_state(channel_id, repo, settings_repo)
     except Exception:

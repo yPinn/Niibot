@@ -37,6 +37,7 @@ _EXPECTED_CATALOG = [
     ("ping", "common", True, ("alive",)),
     ("del", "common", False, ("刪", "vanish")),
     ("rank", "viewer", True, ("排名",)),
+    ("np", "viewer", True, ("影片",)),
     ("followage", "viewer", False, ("追隨時間",)),
     ("subage", "viewer", False, ("訂閱資訊",)),
     ("accountage", "viewer", False, ("帳號年齡",)),
@@ -66,6 +67,7 @@ _EXPECTED_DESCRIPTIONS = {
     "ping": "確認 Niibot 是否在線",
     "del": "清除自己最近的聊天室留言",
     "rank": "查看累積簽到排名",
+    "np": "查看正在播放的點播影片",
     "followage": "查看自己追隨頻道多久",
     "subage": "查看累積訂閱月數與目前方案",
     "accountage": "查看 Twitch 帳號建立時間",
@@ -95,6 +97,7 @@ _EXPECTED_PUBLIC_DESCRIPTIONS = {
     "ping": "確認 Niibot 是否在線",
     "del": "清除自己最近的聊天室留言",
     "rank": "查看累積簽到排名",
+    "np": "查看正在播放的點播影片",
     "followage": "查看自己追隨頻道多久",
     "subage": "查看累積訂閱月數與目前方案",
     "accountage": "查看 Twitch 帳號建立時間；用法：!accountage [使用者]",
@@ -265,11 +268,11 @@ def test_runtime_only_commands_are_reserved_from_custom_commands() -> None:
         "cmd",
         "gq",
         "comp",
-        "np",
-        "影片",
         "vq",
     }
     assert RUNTIME_ONLY_COMMAND_NAMES <= COMMAND_RESERVED_NAMES
+    # np moved into the catalog; its names must stay reserved through it.
+    assert {"np", "影片"} <= COMMAND_RESERVED_NAMES
 
 
 def test_external_default_compatibility_name_is_reserved() -> None:
