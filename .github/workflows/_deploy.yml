@@ -306,7 +306,8 @@ jobs:
           docker compose -f compose.yaml -f ${COMPOSE_ENV_FILE} \
             ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} build $PULL_FLAG $SERVICES \
             --build-arg "APP_VERSION=${{ steps.meta.outputs.version }}" \
-            --build-arg "GIT_COMMIT=${{ steps.meta.outputs.commit }}"
+            --build-arg "GIT_COMMIT=${{ steps.meta.outputs.commit }}" \
+            --build-arg "SECURITY_REFRESH=$(date -u +%F)"
 
       - name: Scan images for CVEs
         run: |

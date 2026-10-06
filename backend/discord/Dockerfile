@@ -7,8 +7,12 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-cache --no-install-project --no-dev
 
 FROM python:3.12.12-slim-bookworm
+# The deploy passes the UTC date: a changed value rebuilds this layer, so the
+# build host's layer cache can't pin an old Debian security patch level.
+ARG SECURITY_REFRESH=manual
 # hadolint ignore=DL3008,DL3009
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
+RUN echo "security refresh: ${SECURITY_REFRESH}" \
+    && apt-get update && apt-get upgrade -y --no-install-recommends && apt-get install -y --no-install-recommends \
     fonts-noto-cjk \
     fonts-noto-core \
     curl \
