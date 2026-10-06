@@ -83,6 +83,9 @@ BUILTIN_DEFS: list[dict] = [
     #    ChiwaBot 的同名指令衝突，交由實況主自行啟用）───────────────────────
     # rank 讀取每日簽到 ledger 的累積天數排名，與後台簽到排行榜同一套排序 → 預設開。
     {"command_name": "rank", "category": "viewer", "cooldown": 15, "aliases": "排名"},
+    # np 讀 Niibot 影片點播的正在播放 → 預設開（移入目錄前就一直對所有人開放）。
+    # 同指令下的 !vq 刻意不進目錄：點播固定 Mod 以上，見 video_queue.py。
+    {"command_name": "np", "category": "viewer", "cooldown": 10, "aliases": "影片"},
     {
         "command_name": "followage",
         "category": "viewer",
@@ -248,8 +251,9 @@ RUNTIME_ONLY_COMMAND_NAMES: frozenset[str] = frozenset(
         "cmd",
         "gq",
         "comp",
-        "np",
-        "影片",
+        # !vq stays runtime-only on purpose: requesting is fixed to moderator+
+        # (the paid ladder is donation > channel points > free), so a dashboard
+        # min_role would misleadingly read "everyone".
         "vq",
     }
 )
@@ -286,6 +290,7 @@ BUILTIN_DESCRIPTIONS: dict[str, str] = {
     "ping": "確認 Niibot 是否在線",
     "del": "清除自己最近的聊天室留言",
     "rank": "查看累積簽到排名",
+    "np": "查看正在播放的點播影片",
     "followage": "查看自己追隨頻道多久",
     "subage": "查看累積訂閱月數與目前方案",
     "accountage": "查看 Twitch 帳號建立時間",
@@ -320,6 +325,7 @@ BUILTIN_AUDIENCES: dict[str, str] = {
     "followage": "viewer",
     "subage": "viewer",
     "rank": "viewer",
+    "np": "viewer",
     "bits": "viewer",
     "accountage": "viewer",
     "quote": "viewer",
@@ -349,6 +355,7 @@ BUILTIN_USAGE: dict[str, str] = {
     "followage": "!followage",
     "subage": "!subage",
     "rank": "!rank",
+    "np": "!np ｜ !影片",
     "bits": "!bits",
     "accountage": "!accountage [使用者]",
     "quote": "!quote [編號] ｜ !quote add <內容> ｜ !quote del <編號>",
@@ -376,6 +383,7 @@ BUILTIN_DETAILS: dict[str, str] = {
     "ping": "回覆 Pong 與觸發者名稱。",
     "del": "將自己 timeout 1 秒以清除最近留言；Niibot 需為 Mod。",
     "rank": "回覆自己的累積簽到名次。",
+    "np": "回覆影片點播正在播放的標題、連結與點播者。",
     "followage": "回覆自己追隨此頻道的時間。",
     "subage": "回覆累積訂閱月數、方案與禮物訂閱狀態。",
     "accountage": "回覆自己或指定使用者的帳號建立日期與帳齡。",
@@ -453,6 +461,7 @@ BUILTIN_INTEGRATIONS: dict[str, dict] = {
         capability_key="subscriptions",
     ),
     "rank": _integration("internal", "Niibot 簽到資料"),
+    "np": _integration("internal", "Niibot 影片點播"),
     "bits": _integration(
         "twitch_capability",
         "Twitch Bits 資料",
@@ -549,6 +558,10 @@ BUILTIN_PREVIEWS: dict[str, dict[str, str]] = {
         "output": "@小霓 累積訂閱 14 個月，目前是 T2 訂閱者。",
     },
     "rank": {"input": "!rank", "output": "@小霓 在 132 人中排到【第 8 名】，累積簽到 12 天！"},
+    "np": {
+        "input": "!np",
+        "output": "▶「新歌 MV」 https://youtu.be/dQw4w9WgXcQ | 點播：小霓",
+    },
     "bits": {
         "input": "!bits",
         "output": "@小霓 累積贊助 1,250 Bits，目前排名第 6 名。",
@@ -599,6 +612,7 @@ PUBLIC_DESCRIPTIONS: dict[str, str] = {
     "ping": "確認 Niibot 是否在線",
     "del": "清除自己最近的聊天室留言",
     "rank": "查看累積簽到排名",
+    "np": "查看正在播放的點播影片",
     "followage": "查看自己追隨頻道多久",
     "subage": "查看累積訂閱月數與目前方案",
     "accountage": "查看 Twitch 帳號建立時間；用法：!accountage [使用者]",
