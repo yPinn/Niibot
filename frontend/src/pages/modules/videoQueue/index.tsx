@@ -332,7 +332,7 @@ export default function VideoQueue() {
 
   const handleSkip = async () => {
     try {
-      setState(await skipCurrentVideo())
+      setState(await skipCurrentVideo(state?.current?.id))
       toast.success('已跳過當前影片')
     } catch (e) {
       toastApiError(e, '跳過失敗')

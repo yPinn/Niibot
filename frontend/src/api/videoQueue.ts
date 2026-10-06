@@ -219,8 +219,15 @@ export async function advanceVideoQueueFromDashboard(
   return response.json()
 }
 
-export async function skipCurrentVideo(): Promise<PublicVideoQueueState> {
-  const response = await apiFetch(API_ENDPOINTS.videoQueue.skip, {
+/** `expectedEntryId` makes the skip conditional on that entry still playing —
+ *  the dashboard view can be a few seconds stale, and a mismatch is a no-op
+ *  rather than skipping whatever started in the meantime. */
+export async function skipCurrentVideo(expectedEntryId?: number): Promise<PublicVideoQueueState> {
+  const url =
+    expectedEntryId === undefined
+      ? API_ENDPOINTS.videoQueue.skip
+      : `${API_ENDPOINTS.videoQueue.skip}?expected_entry_id=${expectedEntryId}`
+  const response = await apiFetch(url, {
     method: 'DELETE',
     credentials: 'include',
   })
