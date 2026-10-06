@@ -53,6 +53,8 @@ export interface TwitchPlayerInstance {
   getCurrentTime(): number
   getDuration(): number
   getEnded(): boolean
+  /** ID of the video now loaded (may carry a leading `v`); '' before load. */
+  getVideo(): string
   addEventListener(event: string, cb: () => void): void
   destroy(): void
 }

@@ -15,6 +15,7 @@ function makePlayer() {
     getCurrentTime: vi.fn(() => 0),
     getDuration: vi.fn(() => 0),
     getEnded: vi.fn(() => false),
+    getVideo: vi.fn(() => 'v123456'),
     addEventListener: vi.fn(),
     destroy: vi.fn(),
   }
@@ -128,6 +129,40 @@ describe('twitchVodStrategy', () => {
     const cleanup = twitchVodStrategy.mount(c)
     vi.advanceTimersByTime(1000)
 
+    expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
+    if (typeof cleanup === 'function') cleanup()
+  })
+
+  it('advances when Twitch autoplays a different VOD after the end', () => {
+    vi.useFakeTimers()
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+
+    const cleanup = twitchVodStrategy.mount(c)
+    vi.advanceTimersByTime(1000)
+    expect(c.handleVideoEnd).not.toHaveBeenCalled()
+
+    // ENDED missed; the player moved on to an unrelated VOD from 0.
+    player.getVideo.mockReturnValue('v999')
+    player.getCurrentTime.mockReturnValue(3)
+    vi.advanceTimersByTime(1000)
+    expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
+    if (typeof cleanup === 'function') cleanup()
+  })
+
+  it('still ends on the window when getVideo is unavailable', () => {
+    vi.useFakeTimers()
+    const player = makePlayer()
+    player.getVideo.mockImplementation(() => {
+      throw new Error('not supported')
+    })
+    installTwitch(player)
+    const c = ctx()
+    player.getCurrentTime.mockReturnValue(90 + 600)
+
+    const cleanup = twitchVodStrategy.mount(c)
+    vi.advanceTimersByTime(1000)
     expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
     if (typeof cleanup === 'function') cleanup()
   })

@@ -111,6 +111,20 @@ function mount(ctx: MountContext): (() => void) | void {
     } catch {
       return
     }
+    let loaded = ''
+    try {
+      loaded = player.getVideo().replace(/^v/, '')
+    } catch {
+      /* older embed without getVideo — the window check below still applies */
+    }
+    // A VOD's length is fixed when the player loads it (an in-progress VOD
+    // included); once that end is reached Twitch autoplays an unrelated VOD.
+    // If ENDED was missed, played time would restart near 0 and never reach
+    // the window — stop as soon as a different video is loaded instead.
+    if (loaded && loaded !== current.video_id) {
+      finish()
+      return
+    }
     setElapsed(played)
     if (played >= windowSeconds) finish()
   }, 1000)
