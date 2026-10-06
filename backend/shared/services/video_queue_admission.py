@@ -31,6 +31,10 @@ from shared.video_sources import (
 )
 
 AdmissionSource = Literal["chat", "redemption", "donation", "dashboard"]
+# Who is behind a chat submission. Only chat distinguishes actors: a redemption
+# is paid with points (same rules for everyone), donation has no stable viewer
+# identity, and the dashboard is always the broadcaster.
+AdmissionActor = Literal["viewer", "moderator", "broadcaster"]
 ResolveVideo = Callable[[str], Awaitable[ResolvedVideo | None]]
 FetchMetadata = Callable[[ResolvedVideo], Awaitable[VideoMetadata]]
 ResolveRequester = Callable[[], Awaitable[str]]
@@ -48,6 +52,10 @@ class AdmissionPolicy:
     source_duration_field: str | None = None
     atomic_limited_insert: bool = True
     resolve_before_settings: bool = False
+    # None = the source's tier in SOURCE_PRIORITY.
+    priority: int | None = None
+    # Whether to look up the new entry's place in line for the reply.
+    report_position: bool = True
 
 
 ADMISSION_POLICIES: dict[AdmissionSource, AdmissionPolicy] = {
@@ -71,8 +79,35 @@ ADMISSION_POLICIES: dict[AdmissionSource, AdmissionPolicy] = {
         False,
         atomic_limited_insert=False,
         resolve_before_settings=True,
+        report_position=False,
     ),
 }
+
+# Chat submissions by actor. Safety gates (playability, length, content
+# blocklist) apply to everyone; only the audience-fairness gates differ.
+CHAT_ACTOR_POLICIES: dict[AdmissionActor, AdmissionPolicy] = {
+    "viewer": ADMISSION_POLICIES["chat"],
+    # Dashboard-like trust for fairness gates, but a mod still cannot push the
+    # queue past capacity, and queues in normal chat order (no jumping).
+    "moderator": AdmissionPolicy(True, False, False, False),
+    # Same trust and queue tier as a dashboard add.
+    "broadcaster": AdmissionPolicy(
+        False,
+        False,
+        False,
+        False,
+        atomic_limited_insert=False,
+        priority=SOURCE_PRIORITY["dashboard"],
+    ),
+}
+
+
+def policy_for(source: AdmissionSource, actor: AdmissionActor = "viewer") -> AdmissionPolicy:
+    if source == "chat":
+        return CHAT_ACTOR_POLICIES[actor]
+    if actor != "viewer":
+        raise ValueError(f"actor {actor!r} only applies to chat submissions")
+    return ADMISSION_POLICIES[source]
 
 
 class AdmissionReason(StrEnum):
@@ -112,7 +147,9 @@ class AdmissionResult:
     settings: VideoQueueSettings
     resolved: ResolvedVideo
     metadata: VideoMetadata
-    position: int
+    # 1-based place in play order; None when not reported (dashboard) or the
+    # overlay promoted the entry to playing before the lookup.
+    position: int | None
 
 
 class VideoQueueAdmissionService:
@@ -136,6 +173,7 @@ class VideoQueueAdmissionService:
         resolve: ResolveVideo,
         fetch_metadata: FetchMetadata,
         requested_by_id: str | None = None,
+        actor: AdmissionActor = "viewer",
     ) -> AdmissionResult:
         """Run admission and emit one structured outcome without logging raw URLs."""
         try:
@@ -147,6 +185,7 @@ class VideoQueueAdmissionService:
                 resolve=resolve,
                 fetch_metadata=fetch_metadata,
                 requested_by_id=requested_by_id,
+                actor=actor,
             )
         except AdmissionRejected as error:
             LOGGER.info(
@@ -154,6 +193,7 @@ class VideoQueueAdmissionService:
                 extra={
                     "channel_id": channel_id,
                     "source": source,
+                    "actor": actor,
                     "reason": error.reason.value,
                 },
             )
@@ -163,6 +203,7 @@ class VideoQueueAdmissionService:
             extra={
                 "channel_id": channel_id,
                 "source": source,
+                "actor": actor,
                 "video_type": result.resolved.video_type,
                 "entry_id": result.entry.id,
             },
@@ -179,8 +220,10 @@ class VideoQueueAdmissionService:
         resolve: ResolveVideo,
         fetch_metadata: FetchMetadata,
         requested_by_id: str | None = None,
+        actor: AdmissionActor = "viewer",
     ) -> AdmissionResult:
-        policy = ADMISSION_POLICIES[source]
+        policy = policy_for(source, actor)
+        priority = SOURCE_PRIORITY[source] if policy.priority is None else policy.priority
         requester_name: str | None = requested_by if isinstance(requested_by, str) else None
         requester_resolver: ResolveRequester | None = (
             requested_by if not isinstance(requested_by, str) else None
@@ -332,7 +375,7 @@ class VideoQueueAdmissionService:
                 is_vertical=metadata.is_vertical,
                 thumbnail_url=metadata.thumbnail_url,
                 video_type=resolved.video_type,
-                priority=SOURCE_PRIORITY[source],
+                priority=priority,
                 start_seconds=resolved.start_seconds,
                 creator_id=metadata.creator_id,
                 creator_name=metadata.creator_name,
@@ -351,13 +394,15 @@ class VideoQueueAdmissionService:
                 is_vertical=metadata.is_vertical,
                 thumbnail_url=metadata.thumbnail_url,
                 video_type=resolved.video_type,
-                priority=SOURCE_PRIORITY[source],
+                priority=priority,
                 start_seconds=resolved.start_seconds,
                 creator_id=metadata.creator_id,
                 creator_name=metadata.creator_name,
             )
 
         position = (
-            await self.queue.get_queue_size(channel_id) if policy.atomic_limited_insert else -1
+            await self.queue.get_queue_position(entry.id, channel_id)
+            if policy.report_position
+            else None
         )
         return AdmissionResult(entry, settings, resolved, metadata, position)
