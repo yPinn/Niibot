@@ -1,0 +1,191 @@
+"""Chat copy for the Video Queue — `!vq` / `!np` replies and redemption results.
+
+One module so the chat command and the channel-points redemption say exactly
+the same thing (the redemption path only prefixes ``@user``). House style:
+short but polite, only a successful request carries an emote, and no technical
+detail — a viewer needs to know how to request and what the limits are.
+
+Every title that reaches chat goes through ``_clean_title`` and every message
+through ``_fit``: provider titles run up to ~140 characters (Twitch) and a
+Twitch chat message over 500 characters is rejected outright, i.e. the viewer
+would get no reply at all.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+
+from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.services.video_queue_admission import AdmissionReason
+from shared.video_sources import (
+    UNPLAYABLE_INVALID_PAGE,
+    UNPLAYABLE_INVALID_TIMESTAMP,
+    UNPLAYABLE_LIVE,
+    UNPLAYABLE_NOT_VIDEO,
+    build_watch_url,
+)
+
+TWITCH_MESSAGE_LIMIT = 500
+TITLE_MAX = 60
+LIST_TITLE_MAX = 30
+LIST_PREVIEW_COUNT = 3
+
+NOTHING_PLAYING = "目前沒有播放中的影片"
+QUEUE_EMPTY = "目前沒有待播影片"
+NO_OWN_REQUEST = "你目前沒有待播中的點播"
+NOT_OWN_REQUEST = "只能取消自己點的影片"
+SKIP_RACED = "影片已換，未跳過"
+UNAVAILABLE = "暫時無法點播，請稍後再試"
+PAUSED = "目前暫停點播"
+
+_SORRY = "抱歉，這部影片無法點播"
+
+# Unplayable reasons the requester can act on keep their own line; the rest
+# (private, age-restricted, not embeddable, removed, …) collapse into one —
+# the viewer can't fix them, so the cause is noise. The dashboard keeps the
+# detailed wording from shared.video_sources.unplayable_message.
+_UNPLAYABLE: dict[str, str] = {
+    UNPLAYABLE_INVALID_TIMESTAMP: "時間點超出影片長度，請確認連結",
+    UNPLAYABLE_INVALID_PAGE: "找不到指定的分P，請確認連結",
+    UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片，請確認連結",
+    UNPLAYABLE_LIVE: "直播進行中無法點播，結束後可點播重播",
+}
+
+
+def _fit(message: str) -> str:
+    if len(message) <= TWITCH_MESSAGE_LIMIT:
+        return message
+    return message[: TWITCH_MESSAGE_LIMIT - 1] + "…"
+
+
+def _clean_title(entry_title: str | None, fallback: str, limit: int = TITLE_MAX) -> str:
+    # Collapse newlines/runs of whitespace: chat is single-line.
+    title = " ".join((entry_title or "").split()) or fallback
+    return title if len(title) <= limit else title[: limit - 1] + "…"
+
+
+def _entry_title(entry: VideoQueueEntry, limit: int = TITLE_MAX) -> str:
+    return _clean_title(entry.title, entry.video_id, limit)
+
+
+def format_clock(seconds: int) -> str:
+    """``90`` → ``1:30``; under a minute → ``45 秒``."""
+    minutes, secs = divmod(max(0, int(seconds)), 60)
+    return f"{minutes}:{secs:02d}" if minutes else f"{secs} 秒"
+
+
+def format_length(seconds: int) -> str:
+    """``600`` → ``10 分鐘``; ``90`` → ``1 分 30 秒``."""
+    minutes, secs = divmod(max(0, int(seconds)), 60)
+    if not minutes:
+        return f"{secs} 秒"
+    return f"{minutes} 分鐘" if not secs else f"{minutes} 分 {secs} 秒"
+
+
+def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str]) -> str:
+    if reason in (AdmissionReason.DISABLED, AdmissionReason.SOURCE_DISABLED):
+        return PAUSED
+    if reason is AdmissionReason.INVALID_URL:
+        return "不支援此連結，請使用 YouTube／Twitch／Bilibili／IG Reel"
+    if reason is AdmissionReason.DUPLICATE:
+        return "這部影片已在待播中"
+    if reason is AdmissionReason.QUEUE_FULL:
+        return "待播已滿，請稍後再試"
+    if reason is AdmissionReason.USER_LIMIT:
+        return f"每人最多點 {details['max_per_user']} 首，請等播完再點"
+    if reason is AdmissionReason.USER_COOLDOWN:
+        return f"請於 {format_clock(int(details['remaining_seconds']))} 後再點播"
+    if reason is AdmissionReason.MIN_VIEWS:
+        return f"影片觀看數需達 {int(details['min_view_count']):,} 以上"
+    if reason is AdmissionReason.TOO_LONG:
+        return f"影片長度請在 {format_length(int(details['limit_seconds']))}內"
+    if reason is AdmissionReason.REPLAY_COOLDOWN:
+        return f"這部影片 {details['hours']} 小時內播過了，請換一部"
+    if reason is AdmissionReason.NOT_PLAYABLE:
+        return _UNPLAYABLE.get(str(details.get("unplayable_reason") or ""), _SORRY)
+    if reason is AdmissionReason.BLOCKED:
+        # Deliberately neutral: never reveal which rule matched (e.g. that the
+        # requester themselves is blocked).
+        return _SORRY
+    # METADATA_UNVERIFIABLE, QUEUE_CHANGED: transient, retrying is the fix.
+    return UNAVAILABLE
+
+
+def accepted_message(title: str | None, video_id: str, position: int | None) -> str:
+    place = f"，第 {position} 首" if position else ""
+    return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place} SeemsGood")
+
+
+def now_playing_message(entry: VideoQueueEntry) -> str:
+    """No remaining time: it is stale the moment it is sent, and the overlay
+    already shows a live countdown for anyone who needs one."""
+    url = build_watch_url(entry.video_type, entry.video_id, entry.start_seconds)
+    return _fit(f"▶「{_entry_title(entry)}」 {url} | 點播：{entry.requested_by}")
+
+
+def queue_list_message(current: VideoQueueEntry | None, queued: Sequence[VideoQueueEntry]) -> str:
+    if current is None and not queued:
+        return QUEUE_EMPTY
+    parts: list[str] = []
+    if current is not None:
+        parts.append(f"▶ {_entry_title(current, LIST_TITLE_MAX)}")
+    if queued:
+        titles = " ".join(
+            f"{i}.{_entry_title(entry, LIST_TITLE_MAX)}"
+            for i, entry in enumerate(queued[:LIST_PREVIEW_COUNT], 1)
+        )
+        overflow = (
+            f"（+{len(queued) - LIST_PREVIEW_COUNT}）" if len(queued) > LIST_PREVIEW_COUNT else ""
+        )
+        parts.append(f"{titles}{overflow}")
+    return _fit(" | ".join(parts))
+
+
+def removed_message(entry: VideoQueueEntry) -> str:
+    return _fit(f"已取消「{_entry_title(entry)}」")
+
+
+def no_such_position_message(position: int) -> str:
+    return f"沒有第 {position} 首"
+
+
+def skipped_message(next_entry: VideoQueueEntry | None) -> str:
+    if next_entry is None:
+        return "已跳過，待播已空"
+    return _fit(f"已跳過，下一首「{_entry_title(next_entry)}」")
+
+
+def cleared_message(total: int) -> str:
+    return f"已清空 {total} 首" if total else QUEUE_EMPTY
+
+
+def usage_message(*, is_moderator: bool, reward_name: str | None) -> str:
+    # Never let a reply start with "!": another bot in chat would read the
+    # bot's own message as a command. Hence the "用法：" lead-in.
+    if is_moderator:
+        return "用法：!vq <網址> | list | remove | skip | clear | rules"
+    commands = "!vq list | !vq remove | !vq rules | !np"
+    if reward_name:
+        return _fit(f"點播請兌換「{_clean_title(reward_name, reward_name)}」 | {commands}")
+    return f"用法：{commands}"
+
+
+def rules_message(settings: VideoQueueSettings, reward_name: str | None) -> str:
+    """The limits a viewer's (redemption) request is held to — only those on."""
+    if not settings.enabled:
+        return PAUSED
+    if not reward_name:
+        return "目前不開放觀眾點播"
+    parts = [f"兌換「{_clean_title(reward_name, reward_name)}」點播"]
+    limits = [x for x in (settings.max_duration_seconds, settings.max_duration_redemption) if x > 0]
+    if limits:
+        parts.append(f"長度 {format_length(min(limits))}內")
+    if settings.max_per_user > 0:
+        parts.append(f"每人 {settings.max_per_user} 首")
+    if settings.user_cooldown_seconds > 0:
+        parts.append(f"間隔 {format_length(settings.user_cooldown_seconds)}")
+    if settings.min_view_count > 0:
+        parts.append(f"觀看數 {settings.min_view_count:,} 以上")
+    if settings.replay_cooldown_hours > 0:
+        parts.append(f"{settings.replay_cooldown_hours} 小時內不重播")
+    return _fit(" | ".join(parts))

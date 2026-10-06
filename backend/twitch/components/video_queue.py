@@ -1,14 +1,23 @@
 """Video Queue component: !vq, !np
 
-Public (all users):
-    !vq list        Show current + next 3 queued titles
-    !vq remove      Remove caller's own most recent queued entry
-    !np / !影片      Now playing: title, link, requester
+Everyone:
+    !vq              Usage hint (viewers are also told how to request with points)
+    !vq list         Now playing + next 3 queued titles
+    !vq remove [N]   Cancel your latest queued request, or your own entry #N
+    !vq rules        The limits a viewer's request is held to
+    !vq skip         Skip your own video while it is playing
+    !np / !影片       Now playing — a catalog builtin (toggle/cooldown/role in dashboard)
 
-Moderator+ only:
-    !vq <URL>       Add a video (YouTube, Twitch Clip/VOD, Instagram Reel, Bilibili)
-    !vq skip        Skip the current video
-    !vq clear       Clear entire queue (current + all queued)
+Moderator+ (fixed, not configurable):
+    !vq <URL>        Request a video (YouTube, Twitch Clip/VOD, Instagram Reel, Bilibili)
+    !vq remove N     Cancel any entry #N
+    !vq skip         Skip whatever is playing
+    !vq clear        Clear entire queue (current + all queued)
+
+Chat requests stay moderator+ on purpose: viewers request through channel points
+— the paid ladder is donation > channel points > free. Anything a viewer isn't
+allowed to do is ignored silently, and every viewer `!vq` is throttled per user
+so one person can't spend the bot's chat budget for the whole channel.
 """
 
 from __future__ import annotations
@@ -21,27 +30,56 @@ import twitchio.ext.commands as commands
 
 from core.component import BotComponent
 from core.config import get_settings
+from core.guards import check_command, has_role, try_acquire_cooldown
+from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.repositories.command_config import (
+    CommandConfigRepository,
+    RedemptionConfigRepository,
+)
 from shared.repositories.video_queue import (
     VideoQueueBlocklistRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
-    format_now_playing,
 )
 from shared.services.video_queue_admission import (
-    AdmissionReason,
+    AdmissionActor,
     AdmissionRejected,
     VideoQueueAdmissionService,
 )
-from shared.video_sources import (
-    fetch_video_metadata,
-    resolve_video_url,
-    unplayable_message,
+from shared.video_queue_messages import (
+    NO_OWN_REQUEST,
+    NOT_OWN_REQUEST,
+    NOTHING_PLAYING,
+    SKIP_RACED,
+    UNAVAILABLE,
+    accepted_message,
+    cleared_message,
+    no_such_position_message,
+    now_playing_message,
+    queue_list_message,
+    rejection_message,
+    removed_message,
+    rules_message,
+    skipped_message,
+    usage_message,
 )
+from shared.video_sources import fetch_video_metadata, resolve_video_url
+from utils.command_input import parse_number
 
 if TYPE_CHECKING:
     from core.bot import Bot
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
+
+# Per viewer, across every !vq subcommand: replies cost the bot's per-channel
+# chat budget, so one viewer repeating a command must not drain it.
+VIEWER_COOLDOWN_SECONDS = 5
+# Per channel, for the read-only replies everyone sees the same answer to.
+SHARED_REPLY_COOLDOWN_SECONDS = 10
+
+# Sources whose requester is a real, identified viewer. Donation rows have no
+# stable identity and dashboard rows are the broadcaster's own.
+_SELF_SKIPPABLE_SOURCES = ("chat", "redemption")
 
 
 class VideoQueueComponent(BotComponent):
@@ -51,6 +89,9 @@ class VideoQueueComponent(BotComponent):
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
 
     async def component_load(self) -> None:
@@ -66,9 +107,68 @@ class VideoQueueComponent(BotComponent):
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
         self.vq_blocklist_repo.pool = pool
+        self.cmd_repo.pool = pool
+        self.redemption_repo.pool = pool
 
     # ------------------------------------------------------------------
-    # Shared: add video logic
+    # Roles and throttles
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _actor(ctx: commands.Context[Bot]) -> AdmissionActor:
+        if ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            return "broadcaster"
+        if has_role(ctx.chatter, "moderator"):
+            return "moderator"
+        return "viewer"
+
+    @staticmethod
+    def _is_moderator(ctx: commands.Context[Bot]) -> bool:
+        return has_role(ctx.chatter, "moderator")
+
+    def _viewer_throttled(self, ctx: commands.Context[Bot]) -> bool:
+        """True when a viewer must be ignored for now; mods are never throttled."""
+        if self._is_moderator(ctx):
+            return False
+        key = f"{ctx.channel.id}:vq:user:{ctx.chatter.id}"
+        return not try_acquire_cooldown(key, VIEWER_COOLDOWN_SECONDS)
+
+    def _shared_reply_throttled(self, ctx: commands.Context[Bot], name: str) -> bool:
+        if self._is_moderator(ctx):
+            return False
+        key = f"{ctx.channel.id}:vq {name}"
+        return not try_acquire_cooldown(key, SHARED_REPLY_COOLDOWN_SECONDS)
+
+    @staticmethod
+    def _is_requester(ctx: commands.Context[Bot], entry: VideoQueueEntry) -> bool:
+        """Same identity rule as find_last_queued_by_user: id first, name for legacy rows."""
+        user_id = str(ctx.chatter.id or "")
+        if entry.requested_by_id is not None:
+            return bool(user_id) and entry.requested_by_id == user_id
+        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
+        return entry.requested_by == user_name
+
+    @staticmethod
+    def _can_self_skip(ctx: commands.Context[Bot], entry: VideoQueueEntry) -> bool:
+        # Strictly by Twitch user id: display names change, and legacy rows
+        # without an id can't be attributed safely.
+        return (
+            entry.source in _SELF_SKIPPABLE_SOURCES
+            and entry.requested_by_id is not None
+            and entry.requested_by_id == str(ctx.chatter.id or "")
+        )
+
+    async def _viewer_reward_name(
+        self, channel_id: str, settings: VideoQueueSettings
+    ) -> str | None:
+        """Name of the channel-points reward viewers request with, if one is live."""
+        if not (settings.enabled and settings.redemption_enabled):
+            return None
+        config = await self.redemption_repo.find_enabled_by_action(channel_id, "video_queue")
+        return config.reward_name if config else None
+
+    # ------------------------------------------------------------------
+    # Request (moderator+)
     # ------------------------------------------------------------------
 
     async def _handle_add(self, ctx: commands.Context[Bot], url_str: str) -> None:
@@ -79,18 +179,15 @@ class VideoQueueComponent(BotComponent):
             # Do not copy a submitted URL into logs: query strings may contain
             # short-lived tokens or other user-provided data.
             LOGGER.exception("VideoQueue add failed", extra={"channel_id": ctx.channel.id})
-            await self._ctx_reply(ctx, "目前暫時無法點播，請稍後再試 BloodTrail")
+            await self._ctx_reply(ctx, UNAVAILABLE)
 
     async def _handle_add_inner(self, ctx: commands.Context[Bot], url_str: str) -> None:
         """Inner implementation — separated so exceptions surface as a reply."""
+        actor = self._actor(ctx)
+        if actor == "viewer":
+            return  # silent: viewers request through channel points
+
         channel_id = ctx.channel.id
-
-        # CLI add is restricted to moderators and broadcaster
-        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
-            return  # silent
-
-        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
-        user_id: str | None = ctx.chatter.id or None
         admission = VideoQueueAdmissionService(
             self.vq_repo, self.vq_settings_repo, self.vq_blocklist_repo
         )
@@ -98,9 +195,10 @@ class VideoQueueComponent(BotComponent):
             result = await admission.admit(
                 channel_id=channel_id,
                 url=url_str,
-                requested_by=user_name,
-                requested_by_id=user_id,
+                requested_by=ctx.chatter.display_name or ctx.chatter.name or "",
+                requested_by_id=ctx.chatter.id or None,
                 source="chat",
+                actor=actor,
                 resolve=lambda url: resolve_video_url(url, session=self._session),
                 fetch_metadata=lambda resolved: fetch_video_metadata(
                     resolved,
@@ -112,57 +210,12 @@ class VideoQueueComponent(BotComponent):
                 ),
             )
         except AdmissionRejected as error:
-            reason = error.reason
-            details = error.details
-            if reason is AdmissionReason.DISABLED:
-                message = "目前暫停開放影片點播"
-            elif reason is AdmissionReason.INVALID_URL:
-                message = (
-                    "這個連結無法使用，目前支援 YouTube、Twitch Clip/VOD、Bilibili、Instagram Reel"
-                )
-            elif reason is AdmissionReason.DUPLICATE:
-                message = "這部影片已在待播中 KappaPride"
-            elif reason is AdmissionReason.QUEUE_FULL:
-                message = (
-                    f"目前待播已滿（{details['queue_size']}/{details['max_queue_size']}），"
-                    "請稍後再試 ResidentSleeper"
-                )
-            elif reason is AdmissionReason.USER_LIMIT:
-                message = f"你目前已達點播上限（{details['max_per_user']} 首） KappaPride"
-            elif reason is AdmissionReason.USER_COOLDOWN:
-                remaining = int(details["remaining_seconds"])
-                minutes, seconds = divmod(remaining, 60)
-                time_text = f"{minutes}:{seconds:02d}" if minutes else f"{seconds} 秒"
-                message = f"請於 {time_text} 後再點播 ResidentSleeper"
-            elif reason is AdmissionReason.NOT_PLAYABLE:
-                message = unplayable_message(str(details.get("unplayable_reason") or ""))
-            elif reason is AdmissionReason.METADATA_UNVERIFIABLE:
-                message = "目前無法確認影片資訊，請稍後再試 BloodTrail"
-            elif reason is AdmissionReason.MIN_VIEWS:
-                message = f"這部影片未達觀看數條件（需 {details['min_view_count']:,} 次以上）"
-            elif reason is AdmissionReason.TOO_LONG:
-                message = (
-                    f"這部影片超過可點播的長度（上限 {int(details['limit_seconds']) // 60} 分鐘）"
-                )
-            elif reason is AdmissionReason.REPLAY_COOLDOWN:
-                message = f"這部影片在 {details['hours']} 小時內播過，請更換其他影片"
-            elif reason is AdmissionReason.BLOCKED:
-                message = "這部影片已被封鎖，無法點播 KappaPride"
-            else:
-                message = "點播失敗，請重新嘗試 BloodTrail"
-            await self._ctx_reply(ctx, message)
+            await self._ctx_reply(ctx, rejection_message(error.reason, error.details))
             return
 
-        title = result.metadata.title
-        duration_seconds = result.metadata.duration_seconds
-        title_part = f"「{title}」" if title else ""
-        dur_part = (
-            f"({duration_seconds // 60}:{duration_seconds % 60:02d})" if duration_seconds else ""
-        )
-        info = f"{title_part}{dur_part}"
         await self._ctx_reply(
             ctx,
-            f"{info + ' ' if info else ''}已加入待播（{result.position}/{result.settings.max_queue_size}） SeemsGood",
+            accepted_message(result.metadata.title, result.resolved.video_id, result.position),
         )
 
     # ------------------------------------------------------------------
@@ -172,13 +225,17 @@ class VideoQueueComponent(BotComponent):
     @commands.command(name="np", aliases=["影片"])
     async def cmd_np(self, ctx: commands.Context[Bot]) -> None:
         """!np / !影片 — 顯示當前播放影片資訊"""
-        channel_id = ctx.channel.id
-        current = await self.vq_repo.get_current(channel_id)
-        if not current:
-            await self._ctx_reply(ctx, "目前沒有播放中的影片")
+        config = await check_command(
+            self.cmd_repo, ctx, channel_repo=self.channel_repo, command_name="np"
+        )
+        if not config:
             return
-
-        await self._ctx_reply(ctx, format_now_playing(current))
+        current = await self.vq_repo.get_current(ctx.channel.id)
+        await self._ctx_reply(ctx, now_playing_message(current) if current else NOTHING_PLAYING)
+        try:
+            await self.cmd_repo.increment_usage_count(ctx.channel.id, "np")
+        except Exception as e:
+            LOGGER.debug("usage count failed for np: %s", e)
 
     # ------------------------------------------------------------------
     # !vq — subcommand group
@@ -186,78 +243,112 @@ class VideoQueueComponent(BotComponent):
 
     @commands.group(name="vq", invoke_fallback=True, case_insensitive=True)
     async def vq(self, ctx: commands.Context[Bot]) -> None:
-        """!vq <URL> 投遞影片 | !vq list/remove/skip/clear 管理佇列"""
+        """!vq <URL> 投遞影片（Mod 以上）| !vq list/remove/rules/skip/clear"""
         if ctx.invoked_subcommand is not None:
             return
         args = (ctx.message.text if ctx.message else "").split(maxsplit=1)
         if len(args) > 1:
             await self._handle_add(ctx, args[1].strip())
-        else:
-            await self._ctx_reply(ctx, "用法：!vq <URL> | !vq list | !vq remove")
+            return
+
+        if self._viewer_throttled(ctx):
+            return
+        is_moderator = self._is_moderator(ctx)
+        reward_name = None
+        if not is_moderator:
+            settings = await self.vq_settings_repo.get_or_create(ctx.channel.id)
+            reward_name = await self._viewer_reward_name(ctx.channel.id, settings)
+        await self._ctx_reply(
+            ctx, usage_message(is_moderator=is_moderator, reward_name=reward_name)
+        )
 
     @vq.command(name="skip")
     async def vq_skip(self, ctx: commands.Context[Bot]) -> None:
-        """!vq skip — 跳過當前影片（moderator+）"""
-        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
+        """!vq skip — Mod 以上跳過任何影片；點播者可跳過自己正在播放的影片"""
+        if self._viewer_throttled(ctx):
             return
-
         channel_id = ctx.channel.id
         current = await self.vq_repo.get_current(channel_id)
-        if not current:
-            await self._ctx_reply(ctx, "目前沒有播放中的影片")
+        if not self._is_moderator(ctx) and (
+            current is None or not self._can_self_skip(ctx, current)
+        ):
+            return  # silent
+        if current is None:
+            await self._ctx_reply(ctx, NOTHING_PLAYING)
             return
 
-        # Fetch next before atomic skip so we can include title in reply
-        queued = await self.vq_repo.get_queued(channel_id)
-        await self.vq_repo.skip_current_atomic(channel_id)
-        if queued:
-            next_title = queued[0].title or queued[0].video_id
-            await self._ctx_reply(ctx, f"已跳過 › 下一首「{next_title}」")
-        else:
-            await self._ctx_reply(ctx, "已跳過，目前沒有其他待播影片 ResidentSleeper")
+        # Conditional on the entry we just looked at: if the overlay advanced
+        # meanwhile, skipping "whatever is playing" would end someone else's video.
+        result = await self.vq_repo.skip_current_atomic(
+            channel_id, expected_entry_id=current.id, end_reason="chat_skip"
+        )
+        await self._ctx_reply(
+            ctx, skipped_message(result.next_entry) if result.skipped else SKIP_RACED
+        )
 
     @vq.command(name="clear")
     async def vq_clear(self, ctx: commands.Context[Bot]) -> None:
-        """!vq clear — 清空整個佇列（moderator+）"""
-        if not (ctx.chatter.moderator or ctx.chatter.broadcaster):  # type: ignore[attr-defined]
+        """!vq clear — 清空整個佇列（Mod 以上）"""
+        if not self._is_moderator(ctx):
             return
-
-        channel_id = ctx.channel.id
-        total = await self.vq_repo.clear_all_atomic(channel_id)
-        await self._ctx_reply(ctx, f"已清空待播（{total} 首）")
+        total = await self.vq_repo.clear_all_atomic(ctx.channel.id)
+        await self._ctx_reply(ctx, cleared_message(total))
 
     @vq.command(name="list")
     async def vq_list(self, ctx: commands.Context[Bot]) -> None:
         """!vq list — 顯示現正播放與待播前 3 首（標題，不含投遞者；查投遞者用 !np）"""
-        channel_id = ctx.channel.id
-        current = await self.vq_repo.get_current(channel_id)
-        queued = await self.vq_repo.get_queued(channel_id)
-
-        if not current and not queued:
-            await self._ctx_reply(ctx, "目前沒有待播影片")
+        if self._viewer_throttled(ctx) or self._shared_reply_throttled(ctx, "list"):
             return
+        current, queued = await self.vq_repo.get_current_and_queued(ctx.channel.id)
+        await self._ctx_reply(ctx, queue_list_message(current, queued))
 
-        parts: list[str] = []
-        if current:
-            parts.append(f"▶ {current.title or current.video_id}")
-        if queued:
-            titles = " ".join(f"{i}.{e.title or e.video_id}" for i, e in enumerate(queued[:3], 1))
-            overflow = f"（+{len(queued) - 3} 首）" if len(queued) > 3 else ""
-            parts.append(f"待播：{titles}{overflow}")
-        await self._ctx_reply(ctx, " | ".join(parts))
+    @vq.command(name="rules")
+    async def vq_rules(self, ctx: commands.Context[Bot]) -> None:
+        """!vq rules — 觀眾點播的方式與限制"""
+        if self._viewer_throttled(ctx) or self._shared_reply_throttled(ctx, "rules"):
+            return
+        settings = await self.vq_settings_repo.get_or_create(ctx.channel.id)
+        reward_name = await self._viewer_reward_name(ctx.channel.id, settings)
+        await self._ctx_reply(ctx, rules_message(settings, reward_name))
 
     @vq.command(name="remove")
-    async def vq_remove(self, ctx: commands.Context[Bot]) -> None:
-        """!vq remove — 移除自己最後一首尚未播放的請求（所有人可用）"""
-        channel_id = ctx.channel.id
-        user_name = ctx.chatter.display_name or ctx.chatter.name or ""
-        user_id: str | None = ctx.chatter.id or None
-        entry = await self.vq_repo.find_last_queued_by_user(channel_id, user_name, user_id)
-        if not entry:
-            await self._ctx_reply(ctx, "你目前沒有待播影片")
+    async def vq_remove(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:
+        """!vq remove [N] — 取消自己最後一首，或第 N 首（觀眾限自己點的；Mod 以上不限）"""
+        if self._viewer_throttled(ctx):
             return
-        await self.vq_repo.mark_skipped(entry.id, channel_id)
-        await self._ctx_reply(ctx, f"已移除「{entry.title or entry.video_id}」")
+        channel_id = ctx.channel.id
+        raw = (args or "").strip()
+
+        if not raw:
+            entry = await self.vq_repo.find_last_queued_by_user(
+                channel_id,
+                ctx.chatter.display_name or ctx.chatter.name or "",
+                ctx.chatter.id or None,
+            )
+            if entry is None or not await self.vq_repo.cancel_queued(entry.id, channel_id):
+                await self._ctx_reply(ctx, NO_OWN_REQUEST)
+                return
+            await self._ctx_reply(ctx, removed_message(entry))
+            return
+
+        # Same numbering as !vq list and the "第 N 首" in a request reply.
+        position = parse_number(raw)
+        if position is None or position < 1:
+            return  # not a position; never echo free text back into chat
+        queued = await self.vq_repo.get_queued(channel_id)
+        if position > len(queued):
+            await self._ctx_reply(ctx, no_such_position_message(position))
+            return
+        entry = queued[position - 1]
+        if not self._is_moderator(ctx) and not self._is_requester(ctx, entry):
+            await self._ctx_reply(ctx, NOT_OWN_REQUEST)
+            return
+        # Conditional on still being queued: if it started playing meanwhile,
+        # cancelling must not end it (that's what skip is for).
+        if not await self.vq_repo.cancel_queued(entry.id, channel_id):
+            await self._ctx_reply(ctx, no_such_position_message(position))
+            return
+        await self._ctx_reply(ctx, removed_message(entry))
 
 
 async def setup(bot: commands.Bot) -> None:

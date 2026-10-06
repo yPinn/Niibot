@@ -76,9 +76,14 @@ def _component(*, settings: VideoQueueSettings | None = None) -> ChannelPointsCo
     component.vq_repo.count_active_by_user = AsyncMock(return_value=0)
     component.vq_repo.find_last_entry_by_user = AsyncMock(return_value=None)
     component.vq_repo.add_if_within_limits = AsyncMock(return_value=_entry())
+    component.vq_repo.get_queue_position = AsyncMock(return_value=3)
     component.vq_blocklist_repo.check = AsyncMock(return_value=None)
     component._reply = AsyncMock()  # type: ignore[method-assign]
     return component
+
+
+def _reply_text(component: ChannelPointsComponent) -> str:
+    return component._reply.await_args.args[1]
 
 
 @pytest.mark.asyncio
@@ -106,6 +111,8 @@ class TestVideoQueueRedemptionPlatforms:
         assert kwargs["video_type"] == "youtube"
         assert kwargs["title"] == "YT Title"
         assert kwargs["duration_seconds"] == 120
+        # Same copy as the chat command, prefixed with the redeemer.
+        assert _reply_text(component) == "@Viewer 「YT Title」已加入待播，第 3 首 SeemsGood"
 
     async def test_twitch_clip_happy_path(self):
         component = _component()
@@ -162,6 +169,21 @@ class TestVideoQueueRedemptionPlatforms:
             )
         component.vq_repo.add_if_within_limits.assert_not_awaited()
         component._reply.assert_awaited_once()
+        assert _reply_text(component) == (
+            "@Viewer 不支援此連結，請使用 YouTube／Twitch／Bilibili／IG Reel"
+        )
+
+    async def test_unexpected_error_still_answers_the_redeemer(self):
+        # The viewer already spent points: a crash must not leave them silent.
+        component = _component()
+        with patch(
+            "twitch.components.channel_points.resolve_video_url",
+            AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            await component._handle_video_queue_redemption(
+                _payload(user_input="https://youtu.be/vid123"), "Viewer"
+            )
+        assert _reply_text(component) == "@Viewer 暫時無法點播，請稍後再試"
 
     async def test_surrounding_whitespace_is_trimmed_before_resolving(self):
         # Twitch's redemption text box returns the raw typed text — a stray

@@ -602,6 +602,27 @@ class RedemptionConfigRepository:
 
         return await _retry_on_db_error(_query)
 
+    @cached(
+        cache=_redemption_cache,
+        key_func=lambda self, channel_id, action_type: (
+            f"redemption:{channel_id}:action:{action_type}"
+        ),
+    )
+    async def find_enabled_by_action(
+        self, channel_id: str, action_type: str
+    ) -> RedemptionConfig | None:
+        """The enabled config bound to one action (e.g. to name the reward in chat help)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, channel_id, action_type, reward_name, reward_id, enabled, "
+                "first_message, first_announce_color, created_at, updated_at "
+                "FROM redemption_configs "
+                "WHERE channel_id = $1 AND action_type = $2 AND enabled = TRUE",
+                channel_id,
+                action_type,
+            )
+            return RedemptionConfig(**dict(row)) if row else None
+
     async def find_by_reward_name(
         self, channel_id: str, reward_name: str
     ) -> RedemptionConfig | None:

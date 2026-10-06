@@ -88,8 +88,14 @@ UNPLAYABLE_REMOVED = "removed"
 UNPLAYABLE_INVALID_TIMESTAMP = "invalid_timestamp"
 UNPLAYABLE_INVALID_PAGE = "invalid_page"
 UNPLAYABLE_NOT_VIDEO = "not_video"
+# An ongoing or scheduled YouTube live stream. The queue only plays content
+# that already exists (VOD-like): a live stream has no known length, can't be
+# reviewed at submission, and never ends on its own. Once the stream is over the
+# same URL is an ordinary video and passes.
+UNPLAYABLE_LIVE = "live"
 
 _UNPLAYABLE_MESSAGES: dict[str, str] = {
+    UNPLAYABLE_LIVE: "直播進行中無法點播，結束後可點播重播",
     UNPLAYABLE_NOT_EMBEDDABLE: "這部影片不開放外部播放",
     UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法播放",
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
@@ -200,6 +206,10 @@ def _assess_yt_playability(item: dict) -> str | None:
     # 'unlisted' still embeds fine — only 'private' is unplayable for a viewer.
     if status.get("privacyStatus") == "private":
         return UNPLAYABLE_PRIVATE
+    # Live/upcoming report a zero duration (`P0D`), which reads as "unknown" —
+    # without this a stream slips past every length gate and stalls the overlay.
+    if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
+        return UNPLAYABLE_LIVE
     if content_rating.get("ytRating") == "ytAgeRestricted":
         return UNPLAYABLE_AGE_RESTRICTED
     if status.get("embeddable") is False:

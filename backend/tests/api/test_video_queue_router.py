@@ -534,6 +534,21 @@ class TestSkipCurrent:
             r = _make_auth_client().delete("/api/video-queue/skip")
         assert r.status_code == 200
         assert r.json()["queue_size"] == 0
+        # Unconditional by default — the existing dashboard button.
+        assert vqr.return_value.skip_current_atomic.await_args.kwargs == {"expected_entry_id": None}
+
+    def test_skip_can_be_conditional_on_the_entry_shown(self):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            vqr.return_value.skip_current_atomic = AsyncMock()
+            vqr.return_value.get_current = AsyncMock(return_value=None)
+            vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+            r = _make_auth_client().delete("/api/video-queue/skip?expected_entry_id=42")
+        assert r.status_code == 200
+        assert vqr.return_value.skip_current_atomic.await_args.kwargs == {"expected_entry_id": 42}
 
     def test_exception_returns_500(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
