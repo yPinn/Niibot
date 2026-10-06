@@ -92,14 +92,14 @@ deterministic, no network call.
 Submission source and video provider are separate axes. `VideoQueueAdmissionService`
 owns the source policy; provider parsing and playback stay in the registry.
 
-| Rule                                             | Chat | Channel Points            | Donate                    | Dashboard manual          |
-| ------------------------------------------------ | ---- | ------------------------- | ------------------------- | ------------------------- |
-| Video Queue enabled                              | Yes  | Yes                       | Yes                       | Yes                       |
-| Source enabled                                   | —    | `redemption_enabled`      | Donate settings page      | Authenticated dashboard   |
-| Playability + blocklist + global duration        | Yes  | Yes                       | Yes                       | Yes                       |
-| Queue capacity + minimum views + replay cooldown | Yes  | Yes                       | Yes                       | No (broadcaster override) |
-| Per-viewer limit + cooldown                      | Yes  | Yes                       | No stable Twitch identity | No                        |
-| Source duration                                  | —    | `max_duration_redemption` | —                         | —                         |
+| Rule                                             | Chat                 | Channel Points            | Donate                    | Dashboard manual          |
+| ------------------------------------------------ | -------------------- | ------------------------- | ------------------------- | ------------------------- |
+| Video Queue enabled                              | Yes                  | Yes                       | Yes                       | Yes                       |
+| Source enabled                                   | —                    | `redemption_enabled`      | Donate settings page      | Authenticated dashboard   |
+| Playability + blocklist + global duration        | Yes                  | Yes                       | Yes                       | Yes                       |
+| Queue capacity + minimum views + replay cooldown | By actor (see below) | Yes                       | Yes                       | No (broadcaster override) |
+| Per-viewer limit + cooldown                      | By actor (see below) | Yes                       | No stable Twitch identity | No                        |
+| Source duration                                  | —                    | `max_duration_redemption` | —                         | —                         |
 
 When both the global duration and Channel Points duration are non-zero, the
 shorter limit wins. Dashboard settings are intentionally ordered as Channel
@@ -117,9 +117,48 @@ dashboard URL keeps it in the fragment so it is not sent as an HTTP referrer.
 Rotating the OBS URL immediately revokes the old capability. Preview mode is
 always read-only, even if its URL contains a valid capability.
 
-Admission emits one structured accepted/rejected log with source, channel and
-reason/provider fields. Raw submitted URLs and requester text are intentionally
-excluded from these outcome logs.
+Admission emits one structured accepted/rejected log with source, channel,
+actor and reason/provider fields. Raw submitted URLs and requester text are
+intentionally excluded from these outcome logs.
+
+### Chat actors
+
+Chat is the only source that distinguishes **who** submits
+(`AdmissionActor`, `CHAT_ACTOR_POLICIES`). Requesting via chat (`!vq <URL>`)
+is fixed to moderator+ and is deliberately not a configurable command: viewers
+request through Channel Points, because the paid ladder is
+donation > Channel Points > free.
+
+| Chat actor  | Fairness gates (per-viewer, min views, replay, requester block) | Capacity | Queue tier           |
+| ----------- | --------------------------------------------------------------- | -------- | -------------------- |
+| Viewer      | — (ignored silently, never reaches admission)                   | —        | —                    |
+| Moderator   | Skipped                                                         | Enforced | Chat (0), no jumping |
+| Broadcaster | Skipped                                                         | Skipped  | Dashboard (30)       |
+
+Safety gates (playability incl. live streams, global duration, video/creator/
+keyword blocklist) apply to every actor. Moderators get dashboard-like trust
+but cannot push the queue past capacity.
+
+Other chat behaviour (`twitch/components/video_queue.py`):
+
+- `!vq remove [N]` — N is the same numbering as `!vq list` and the "第 N 首"
+  in a request reply. Viewers may only cancel their own entries; it never ends
+  a video that is already playing (`cancel_queued` is conditional on
+  `status = 'queued'`).
+- `!vq skip` — moderators skip anything; a requester may skip their **own**
+  playing video, matched strictly by Twitch user id on chat/redemption rows.
+  The skip is conditional on the entry that was looked up
+  (`skip_current_atomic(expected_entry_id=…)`), so an overlay advance in
+  between can never make it end someone else's video. Chat skips record
+  `end_reason = 'chat_skip'` (migration 153).
+- Every viewer `!vq` subcommand is throttled per user (5 s) and `list`/`rules`
+  per channel (10 s), silently — one viewer must not drain the bot's chat
+  budget. Moderators are never throttled.
+- `!np` is a catalog builtin (toggle, cooldown, role in the dashboard).
+- All chat and Channel Points copy lives in `shared/video_queue_messages.py`:
+  short, polite, an emote only on success, no technical detail, single-line
+  titles truncated so no reply exceeds Twitch's 500-character limit, and no
+  reply ever starts with `!`.
 
 ## Twitch VOD (`twitch.tv/videos/{id}`)
 
@@ -338,7 +377,13 @@ viewer sees a dead frame until the ceiling expires.
 
 `fetch_yt_info` requests the `status` part alongside `snippet,contentDetails,
 statistics` and returns a `YouTubeInfo` dataclass carrying `playable: bool` and
-`unplayable_reason` (`not_embeddable | age_restricted | private | removed`).
+`unplayable_reason` (`not_embeddable | age_restricted | private | removed | live`).
+
+`live` covers ongoing and scheduled streams (`snippet.liveBroadcastContent` is
+`live`/`upcoming`). The queue only plays content that already exists: a live
+stream has no known length (YouTube reports `P0D`, which reads as "unknown" and
+used to slip past every length gate), can't be reviewed at submission, and
+never ends on its own. Once the stream ends the same URL is an ordinary video.
 `_assess_yt_playability()` only trusts **positive** signals — a response with no
 `status` block, an empty `items` array, a non-200, or a network error all leave
 `playable = True` (fail-open), so a transient API problem never rejects a real
