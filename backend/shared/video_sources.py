@@ -78,14 +78,14 @@ _youtube_info_cache: LoopLocalReadThroughCache[str, YouTubeInfo]
 # the timer ceiling expires. Reject these at submission instead. Most are
 # YouTube-only (Twitch clips always embed, and Bilibili's metadata endpoint is
 # too unreliable to gate on generally — see
-# docs/architecture/video-queue-platforms.md); INVALID_TIMESTAMP/INVALID_PAGE
-# are Twitch VOD/Bilibili-specific out-of-range submissions, and NOT_VIDEO is
-# Instagram-specific (a pasted `/p/` link that turned out to be a photo post).
+# docs/architecture/video-queue-platforms.md); INVALID_PAGE is a Bilibili
+# out-of-range part number, and NOT_VIDEO is Instagram-specific (a pasted `/p/`
+# link that turned out to be a photo post). An out-of-range time is a segment
+# error (shared.video_segments), not a playability reason.
 UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
 UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
 UNPLAYABLE_PRIVATE = "private"
 UNPLAYABLE_REMOVED = "removed"
-UNPLAYABLE_INVALID_TIMESTAMP = "invalid_timestamp"
 UNPLAYABLE_INVALID_PAGE = "invalid_page"
 UNPLAYABLE_NOT_VIDEO = "not_video"
 # An ongoing or scheduled YouTube live stream. The queue only plays content
@@ -100,7 +100,6 @@ _UNPLAYABLE_MESSAGES: dict[str, str] = {
     UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法播放",
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
     UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
-    UNPLAYABLE_INVALID_TIMESTAMP: "影片時間點已超出可播放範圍",
     UNPLAYABLE_INVALID_PAGE: "指定的分P不存在",
     UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片",
 }
@@ -548,10 +547,6 @@ _TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
 # twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
 _HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
 
-# A VOD is hours long; Video Queue treats it as a "long clip" — play a window of
-# at most this many seconds from its start point (the `?t=` timestamp, else 0).
-TWITCH_VOD_WINDOW_SECONDS = 600
-
 
 def _parse_hms(text: str) -> int:
     """Parse Twitch's `1h2m3s` / `90m` / `3600s` / bare-seconds duration to int."""
@@ -657,6 +652,30 @@ def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
         return None, 0
     timestamp = parse_qs(parsed.query).get("t", [""])[0]
     return segments[1], _parse_hms(timestamp) if timestamp else 0
+
+
+# First path segments on twitch.tv that are site pages, not channel logins.
+_TWITCH_NON_CHANNEL_PATHS = frozenset(
+    {"directory", "videos", "settings", "search", "downloads", "jobs", "turbo", "p", "wallet"}
+)
+_TWITCH_LOGIN_RE = re.compile(r"[A-Za-z0-9_]{3,25}")
+
+
+def is_twitch_channel_url(text: str) -> bool:
+    """Whether ``text`` holds a ``twitch.tv/{channel}`` link (a live channel).
+
+    The queue never accepts one (live content has no end); this only lets the
+    rejection point the requester at a VOD link instead.
+    """
+    parsed = find_allowed_http_url(text, _TWITCH_VOD_HOSTS)
+    if parsed is None:
+        return False
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    return (
+        len(segments) == 1
+        and segments[0].lower() not in _TWITCH_NON_CHANNEL_PATHS
+        and _TWITCH_LOGIN_RE.fullmatch(segments[0]) is not None
+    )
 
 
 async def _get_twitch_app_token(
@@ -970,7 +989,10 @@ class ResolvedVideo:
     video_type: VideoType
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
-    start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
+    # Twitch VOD `?t=` offset; 0 for everything else (YouTube's `?t=` is ignored,
+    # see resolve_video_url). A typed time range overrides it — see
+    # shared.video_segments.
+    start_seconds: int = 0
 
 
 @dataclass
@@ -978,10 +1000,12 @@ class VideoMetadata:
     """Metadata fetch result, normalized to one shape across all platforms.
 
     ``playable`` / ``unplayable_reason`` are mostly YouTube signals (see
-    ``YouTubeInfo``); Twitch VOD (``UNPLAYABLE_INVALID_TIMESTAMP``), Bilibili
-    (``UNPLAYABLE_INVALID_PAGE``), and Instagram (``UNPLAYABLE_NOT_VIDEO``) each
-    add one submission-time-only reason of their own. Twitch Clip is always
-    reported playable.
+    ``YouTubeInfo``); Bilibili (``UNPLAYABLE_INVALID_PAGE``) and Instagram
+    (``UNPLAYABLE_NOT_VIDEO``) each add one submission-time-only reason of their
+    own. Twitch Clip and VOD are always reported playable.
+
+    ``duration_seconds`` is always the whole video's length; the segment that
+    actually plays is resolved at admission (shared.video_segments).
 
     ``metadata_best_effort`` is ``True`` when the values came from an unofficial
     endpoint that datacenter IPs frequently cannot reach (Bilibili, risk-control
@@ -1030,6 +1054,10 @@ async def resolve_video_url(
     """
     video_id, is_vertical = extract_youtube_info(url)
     if video_id:
+        # A YouTube `?t=` is deliberately ignored: the site appends the viewer's
+        # own resume position (watch history, "continue watching"), so a copied
+        # address-bar URL carries it without the requester meaning a start
+        # point. A start is only ever the explicit `<url> 1:30` syntax.
         return ResolvedVideo(video_type="youtube", video_id=video_id, is_vertical=is_vertical)
 
     clip_slug = extract_twitch_clip_slug(url)
@@ -1089,28 +1117,11 @@ async def fetch_video_metadata(
         vod = await fetch_twitch_vod_info(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
-        if vod.duration_seconds and resolved.start_seconds >= vod.duration_seconds:
-            return VideoMetadata(
-                vod.title,
-                0,
-                vod.view_count,
-                is_vertical=False,
-                playable=False,
-                unplayable_reason=UNPLAYABLE_INVALID_TIMESTAMP,
-                thumbnail_url=vod.thumbnail_url,
-                creator_id=vod.creator_id,
-                creator_name=vod.creator_name,
-            )
-        # Play a bounded window from the `?t=` offset — a VOD is hours long.
-        remaining = (
-            max(0, vod.duration_seconds - resolved.start_seconds)
-            if vod.duration_seconds
-            else TWITCH_VOD_WINDOW_SECONDS
-        )
-        window = min(TWITCH_VOD_WINDOW_SECONDS, remaining) or TWITCH_VOD_WINDOW_SECONDS
+        # Full VOD length: the play window (start point + capped length) is
+        # resolved by shared.video_segments.plan_segment at admission.
         return VideoMetadata(
             vod.title,
-            window,
+            vod.duration_seconds,
             vod.view_count,
             is_vertical=False,
             thumbnail_url=vod.thumbnail_url,
@@ -1218,11 +1229,14 @@ def build_watch_url(video_type: str, video_id: str, start_seconds: int = 0) -> s
     template = _WATCH_URL_BUILDERS.get(video_type)
     if template is None:
         raise ValueError(f"Unknown video_type: {video_type!r}")
+    params: list[str] = []
     if video_type == "bilibili":
         bvid, page = split_bilibili_id(video_id)
         url = template.format(video_id=bvid)
-        return f"{url}?p={page}" if page > 1 else url
-    url = template.format(video_id=video_id)
-    if video_type == "twitch_vod" and start_seconds > 0:
-        return f"{url}?t={start_seconds}s"
-    return url
+        if page > 1:
+            params.append(f"p={page}")
+    else:
+        url = template.format(video_id=video_id)
+    if start_seconds > 0 and video_type in ("youtube", "twitch_vod", "bilibili"):
+        params.append(f"t={start_seconds}s" if video_type == "twitch_vod" else f"t={start_seconds}")
+    return f"{url}?{'&'.join(params)}" if params else url

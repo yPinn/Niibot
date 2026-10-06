@@ -53,6 +53,7 @@ from shared.services.video_queue_admission import (
     AdmissionRejected,
     VideoQueueAdmissionService,
 )
+from shared.video_queue_messages import segment_error_message
 from shared.video_sources import (
     VideoType,
     fetch_twitch_clip_source,
@@ -288,9 +289,15 @@ def _raise_dashboard_admission_error(error: AdmissionRejected) -> None:
         raise VideoNotPlayableError(user_message=unplayable_message(reason)) from error
     if error.reason is AdmissionReason.METADATA_UNVERIFIABLE:
         raise VideoMetadataUnverifiableError() from error
+    if error.reason is AdmissionReason.INVALID_SEGMENT:
+        code = str(error.details.get("segment_error") or "")
+        raise InvalidInputError(user_message=segment_error_message(code)) from error
     if error.reason is AdmissionReason.TOO_LONG:
         limit = int(error.details.get("limit_seconds") or 0)
-        raise VideoTooLongError(user_message=f"影片長度超過上限（{limit // 60} 分鐘）") from error
+        subject = "片段" if error.details.get("segment") == 1 else "影片"
+        raise VideoTooLongError(
+            user_message=f"{subject}長度超過上限（{limit // 60} 分鐘）"
+        ) from error
     if error.reason is AdmissionReason.BLOCKED and error.blocked is not None:
         raise VideoBlockedError(user_message=_blocked_message(error.blocked)) from error
     raise InvalidInputError(user_message="這部影片目前無法加入，請稍後再試") from error

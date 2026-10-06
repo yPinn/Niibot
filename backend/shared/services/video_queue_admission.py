@@ -24,9 +24,17 @@ from shared.repositories.video_queue import (
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
+from shared.video_segments import (
+    SEGMENT_VIDEO_TYPES,
+    SegmentError,
+    TimeRange,
+    parse_submission_range,
+    plan_segment,
+)
 from shared.video_sources import (
     ResolvedVideo,
     VideoMetadata,
+    is_twitch_channel_url,
     metadata_gate_unverifiable,
 )
 
@@ -119,6 +127,7 @@ class AdmissionReason(StrEnum):
     USER_LIMIT = "user_limit"
     USER_COOLDOWN = "user_cooldown"
     NOT_PLAYABLE = "not_playable"
+    INVALID_SEGMENT = "invalid_segment"
     METADATA_UNVERIFIABLE = "metadata_unverifiable"
     MIN_VIEWS = "min_views"
     TOO_LONG = "too_long"
@@ -139,6 +148,11 @@ class AdmissionRejected(Exception):  # noqa: N818 - domain outcome, not an inter
         self.details = details or {}
         self.blocked = blocked
         super().__init__(reason.value)
+
+
+def _invalid_url(url: str) -> AdmissionRejected:
+    details: dict[str, int | str] = {"hint": "twitch_channel"} if is_twitch_channel_url(url) else {}
+    return AdmissionRejected(AdmissionReason.INVALID_URL, details=details)
 
 
 @dataclass(frozen=True)
@@ -236,9 +250,18 @@ class VideoQueueAdmissionService:
                 requester_name = await requester_resolver()
             return requester_name
 
+        # Parsed up front (pure), raised only once the URL itself is known good:
+        # a disabled queue or an unsupported link is the more useful answer.
+        requested_range: TimeRange | None = None
+        range_error: SegmentError | None = None
+        try:
+            requested_range = parse_submission_range(url)
+        except SegmentError as error:
+            range_error = error
+
         resolved = await resolve(url) if policy.resolve_before_settings else None
         if policy.resolve_before_settings and resolved is None:
-            raise AdmissionRejected(AdmissionReason.INVALID_URL)
+            raise _invalid_url(url)
         settings = await self.settings.get_or_create(channel_id)
         if not settings.enabled:
             raise AdmissionRejected(AdmissionReason.DISABLED)
@@ -247,7 +270,12 @@ class VideoQueueAdmissionService:
         if resolved is None:
             resolved = await resolve(url)
         if resolved is None:
-            raise AdmissionRejected(AdmissionReason.INVALID_URL)
+            raise _invalid_url(url)
+        # Platforms without segment support ignore the time, even a malformed one.
+        if range_error is not None and resolved.video_type in SEGMENT_VIDEO_TYPES:
+            raise AdmissionRejected(
+                AdmissionReason.INVALID_SEGMENT, details={"segment_error": range_error.code}
+            )
         if await self.queue.video_is_active(channel_id, resolved.video_id, resolved.video_type):
             raise AdmissionRejected(AdmissionReason.DUPLICATE)
 
@@ -293,6 +321,27 @@ class VideoQueueAdmissionService:
                 details={"unplayable_reason": metadata.unplayable_reason or ""},
             )
 
+        duration_limits = [settings.max_duration_seconds]
+        if policy.source_duration_field:
+            duration_limits.append(int(getattr(settings, policy.source_duration_field)))
+        duration_limit = (
+            min(limit for limit in duration_limits if limit > 0)
+            if any(limit > 0 for limit in duration_limits)
+            else 0
+        )
+        try:
+            segment = plan_segment(
+                resolved.video_type,
+                metadata.duration_seconds,
+                url_start=resolved.start_seconds,
+                requested=requested_range,
+                window_cap=duration_limit,
+            )
+        except SegmentError as error:
+            raise AdmissionRejected(
+                AdmissionReason.INVALID_SEGMENT, details={"segment_error": error.code}
+            ) from error
+
         if policy.enforce_min_views and settings.min_view_count > 0:
             if metadata_gate_unverifiable(
                 metadata.view_count, best_effort=metadata.metadata_best_effort
@@ -310,28 +359,26 @@ class VideoQueueAdmissionService:
                     },
                 )
 
-        duration_limits = [settings.max_duration_seconds]
-        if policy.source_duration_field:
-            duration_limits.append(int(getattr(settings, policy.source_duration_field)))
-        duration_limit = (
-            min(limit for limit in duration_limits if limit > 0)
-            if any(limit > 0 for limit in duration_limits)
-            else 0
-        )
+        # The limit applies to what actually plays — the segment, not the video.
         if duration_limit > 0:
             if metadata_gate_unverifiable(
-                metadata.duration_seconds, best_effort=metadata.metadata_best_effort
+                segment.duration_seconds, best_effort=metadata.metadata_best_effort
             ):
                 raise AdmissionRejected(
                     AdmissionReason.METADATA_UNVERIFIABLE,
                     details={"field": "duration_seconds"},
                 )
-            if metadata.duration_seconds is not None and metadata.duration_seconds > duration_limit:
+            if segment.duration_seconds is not None and segment.duration_seconds > duration_limit:
                 raise AdmissionRejected(
                     AdmissionReason.TOO_LONG,
                     details={
-                        "duration_seconds": metadata.duration_seconds,
+                        "duration_seconds": segment.duration_seconds,
                         "limit_seconds": duration_limit,
+                        # 1 = the requester already chose a segment; 0 = they
+                        # could still pick one (hint), -1 = platform can't.
+                        "segment": 1
+                        if segment.trimmed
+                        else (0 if resolved.video_type in SEGMENT_VIDEO_TYPES else -1),
                     },
                 )
 
@@ -371,12 +418,12 @@ class VideoQueueAdmissionService:
                 max_per_user=settings.max_per_user if policy.enforce_user_limits else 0,
                 requested_by_id=requested_by_id,
                 title=metadata.title,
-                duration_seconds=metadata.duration_seconds,
+                duration_seconds=segment.duration_seconds,
                 is_vertical=metadata.is_vertical,
                 thumbnail_url=metadata.thumbnail_url,
                 video_type=resolved.video_type,
                 priority=priority,
-                start_seconds=resolved.start_seconds,
+                start_seconds=segment.start_seconds,
                 creator_id=metadata.creator_id,
                 creator_name=metadata.creator_name,
             )
@@ -390,12 +437,12 @@ class VideoQueueAdmissionService:
                 source=source,
                 requested_by_id=requested_by_id,
                 title=metadata.title,
-                duration_seconds=metadata.duration_seconds,
+                duration_seconds=segment.duration_seconds,
                 is_vertical=metadata.is_vertical,
                 thumbnail_url=metadata.thumbnail_url,
                 video_type=resolved.video_type,
                 priority=priority,
-                start_seconds=resolved.start_seconds,
+                start_seconds=segment.start_seconds,
                 creator_id=metadata.creator_id,
                 creator_name=metadata.creator_name,
             )

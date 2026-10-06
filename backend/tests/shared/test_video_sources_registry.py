@@ -20,6 +20,7 @@ from shared.video_sources import (
     YouTubeInfo,
     build_watch_url,
     fetch_video_metadata,
+    is_twitch_channel_url,
     metadata_gate_unverifiable,
     resolve_video_url,
 )
@@ -47,6 +48,21 @@ class TestResolveVideoUrl:
         assert resolved == ResolvedVideo(
             video_type="youtube", video_id="dQw4w9WgXcQ", is_vertical=False
         )
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://youtu.be/dQw4w9WgXcQ?t=90",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1m30s",
+            "https://www.youtube.com/embed/dQw4w9WgXcQ?start=45",
+        ],
+    )
+    async def test_youtube_url_offset_is_ignored(self, url):
+        # YouTube appends the viewer's own resume position to copied URLs —
+        # not a start point the requester chose.
+        resolved = await resolve_video_url(url)
+        assert resolved is not None
+        assert resolved.start_seconds == 0
 
     async def test_youtube_shorts_sets_is_vertical(self):
         resolved = await resolve_video_url("https://www.youtube.com/shorts/dQw4w9WgXcQ")
@@ -236,8 +252,8 @@ class TestFetchVideoMetadata:
             creator_name="SomeBroadcaster",
         )
 
-    async def test_twitch_vod_caps_the_play_window_from_the_offset(self):
-        # 2h VOD, start 1h50m in → 10min remains, capped at the 600s window.
+    async def test_twitch_vod_reports_the_full_length(self):
+        # The play window is resolved at admission (shared.video_segments).
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=6600)
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
@@ -255,51 +271,11 @@ class TestFetchVideoMetadata:
             )
         assert metadata == VideoMetadata(
             title="VOD Title",
-            duration_seconds=600,
+            duration_seconds=7200,
             view_count=5000,
             is_vertical=False,
             thumbnail_url="https://static-cdn.jtvnw.net/t.jpg",
         )
-
-    async def test_twitch_vod_shorter_remainder_wins_over_the_cap(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7100)
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(
-                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
-            ),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-        assert metadata.duration_seconds == 100
-
-    async def test_twitch_vod_rejects_timestamp_at_or_past_the_end(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7200)
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(
-                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
-            ),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-
-        assert metadata.playable is False
-        assert metadata.unplayable_reason == "invalid_timestamp"
-        assert metadata.duration_seconds == 0
-
-    async def test_twitch_vod_unknown_duration_falls_back_to_the_window(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=TwitchMediaInfo()),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-        assert metadata.duration_seconds == 600
 
     async def test_bilibili_delegates_and_preserves_shape(self):
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD")
@@ -537,6 +513,30 @@ class TestBuildWatchUrl:
             == "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
         )
 
+    def test_start_offset_is_carried_for_seekable_platforms(self):
+        assert build_watch_url("youtube", "dQw4w9WgXcQ", 90) == "https://youtu.be/dQw4w9WgXcQ?t=90"
+        assert build_watch_url("twitch_vod", "123", 90) == "https://www.twitch.tv/videos/123?t=90s"
+        assert (
+            build_watch_url("bilibili", "BV1xx411c7mD_p2", 90)
+            == "https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=90"
+        )
+        assert build_watch_url("twitch_clip", "Slug", 90) == "https://clips.twitch.tv/Slug"
+
     def test_unknown_video_type_raises(self):
         with pytest.raises(ValueError, match="Unknown video_type"):
             build_watch_url("tiktok", "abc123")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("https://www.twitch.tv/somestreamer", True),
+        ("twitch.tv/some_streamer/", True),
+        ("https://www.twitch.tv/videos/123", False),
+        ("https://www.twitch.tv/directory", False),
+        ("https://clips.twitch.tv/SomeClip", False),
+        ("https://youtu.be/dQw4w9WgXcQ", False),
+    ],
+)
+def test_is_twitch_channel_url(text, expected):
+    assert is_twitch_channel_url(text) is expected

@@ -173,16 +173,66 @@ A VOD is hours long, so Video Queue treats it as a **long clip**:
 
 - `extract_twitch_vod_info()` also parses the URL's `?t=1h2m3s` into
   `start_seconds` (a new `video_queue.start_seconds` column, migration 108).
-- `fetch_video_metadata()` stores `duration_seconds =
-min(TWITCH_VOD_WINDOW_SECONDS, vod_duration - start_seconds)` — the **capped
-  play window**, not the VOD length. When Helix can't return the VOD duration
-  (deleted / sub-only / expired) it falls back to the full window.
+- `fetch_video_metadata()` returns the full VOD length; admission's
+  `plan_segment()` (see [Play segments](#play-segments-url-130-400)) stores
+  `duration_seconds = min(TWITCH_VOD_WINDOW_SECONDS, length limit, vod_duration -
+start_seconds)` — the **capped play window**, not the VOD length — unless an
+  end point was typed. When Helix can't return the VOD duration (deleted /
+  sub-only / expired) it falls back to the full window.
 - The overlay seeks to `start_seconds + joinElapsed` and advances when
   `getCurrentTime() - start_seconds` reaches `duration_seconds`, or on `ENDED`.
 
 `fetch_twitch_vod_info()` uses Helix `/videos` with the same app token as
 clips; the duration string (`"3h20m5s"`) is parsed by `_parse_hms()`, shared
 with the `?t=` parser.
+
+## Play segments (`<url> 1:30-4:00`)
+
+The queue is **VOD-only**: it plays content that already exists. Every gate —
+length limit, replay cooldown, "第 N 首", play-then-advance — assumes a known,
+finite video. An ongoing or scheduled live stream extends forward instead, so
+it is rejected for everyone (YouTube `live`/`upcoming`; a `twitch.tv/{channel}`
+link is an invalid URL whose rejection points at a VOD link instead). A
+finished stream's URL is an ordinary video and passes.
+
+A submission may follow its URL with a time range — parsed in one place
+(`shared/video_segments.py`) for chat, Channel Points, Donate and dashboard:
+
+| Text after the URL | Plays       |
+| ------------------ | ----------- |
+| `1:30`             | 1:30 → end  |
+| `1:30-4:00`        | 1:30 → 4:00 |
+| `-4:00`            | 0:00 → 4:00 |
+
+- Points are `m:ss` (minutes may exceed 59) or `h:mm:ss`. Tolerated, not
+  advertised: full-width `：`/`－`, `~`/`～`/`–`/`—` as the dash, spaces around
+  the dash, `1m30s`/`1h2m`. Bare numbers and decimals (`90`, `1.30`) reject.
+- Only text **starting** with a digit or `-` right after the URL is a time;
+  anything else is a comment and ignored. Once treated as a time, a parse
+  failure rejects (`INVALID_SEGMENT`) instead of silently playing the whole
+  video.
+- A Twitch VOD URL's own `?t=` is the start when nothing is typed; a typed
+  range overrides it entirely. A **YouTube** `?t=` is ignored: YouTube appends
+  the viewer's own resume position (watch history, "continue watching"), so a
+  copied address-bar URL carries it without the requester meaning a start.
+- Validation: start < end ≤ video length, segment ≥ 10 s. The length limit
+  applies to the **segment**; a too-long whole video still rejects (no
+  auto-trim) with a hint to pick a segment.
+- Storage reuses `start_seconds` + `duration_seconds` (= segment length) — no
+  new column. Rankings group by `(video_type, video_id)`, so segments of one
+  video count together.
+
+| Platform              | Segment                   | Playback                                                              |
+| --------------------- | ------------------------- | --------------------------------------------------------------------- |
+| YouTube               | start + end               | `playerVars.start` + seek; ends when `currentTime ≥ start + duration` |
+| Twitch VOD            | start + end               | existing window; a typed end replaces the default window              |
+| Bilibili              | start + end (best effort) | iframe `t=`; ends on the `duration_seconds` timer                     |
+| Twitch Clip / IG Reel | ignored                   | queued as the whole clip — a redemption never burns points over it    |
+
+A Twitch VOD of a stream **still in progress** grows while it is queued; the
+segment length is fixed at submission (Helix's duration at that moment), so
+the overlay plays exactly what was checked. An end point past the current
+length rejects as out of range.
 
 ## Instagram Reel (`instagram.com/reel/{shortcode}`)
 
@@ -395,11 +445,12 @@ before insertion. `min_view_count` and replay/capacity gates vary by source;
 playability, global duration and blocklist do not, so the dashboard's
 broadcaster-authority bypass does **not** skip them.
 
-Twitch Clip always reports `playable = True` — clips always embed. Twitch VOD
-(`invalid_timestamp`), Bilibili (`invalid_page`), and Instagram (`not_video`)
-each add exactly one submission-time reason of their own, for an out-of-range
-`?t=`/`?p=` or a `/p/` link that resolved to a photo post — Bilibili's general
-metadata is otherwise too unreliable (`-412`) to gate on.
+Twitch Clip and VOD always report `playable = True`. Bilibili (`invalid_page`)
+and Instagram (`not_video`) each add exactly one submission-time reason of
+their own, for an out-of-range `?p=` or a `/p/` link that resolved to a photo
+post — Bilibili's general metadata is otherwise too unreliable (`-412`) to gate
+on. An out-of-range time (`?t=` or a typed range) is a segment error, not a
+playability reason.
 
 ## Submission gates and best-effort metadata
 

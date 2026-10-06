@@ -163,7 +163,7 @@ class TestChatAddSafetyGates:
         with p1, p2:
             await component._handle_add_inner(_ctx(), "https://bilibili.com/video/BV1x")
         component.vq_repo.add_if_within_limits.assert_not_awaited()
-        assert _reply(component) == "影片長度請在 10 分鐘內"
+        assert _reply(component) == "影片長度請在 10 分鐘內，可指定片段，例：1:30-11:30"
 
     async def test_content_blocklist_still_applies_to_mods(self):
         component = _component()
@@ -255,7 +255,9 @@ class TestUsageAndRules:
         )
         component.redemption_repo.find_enabled_by_action = AsyncMock(return_value=_reward())
         await VideoQueueComponent.vq_rules.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
-        assert _reply(component) == "兌換「點歌」點播 | 長度 10 分鐘內 | 每人 3 首"
+        assert _reply(component) == (
+            "兌換「點歌」點播 | 可指定片段：網址 1:30-4:00 | 長度 10 分鐘內 | 每人 3 首"
+        )
 
     async def test_rules_without_reward(self):
         component = _component()

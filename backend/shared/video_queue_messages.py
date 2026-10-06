@@ -17,9 +17,9 @@ from collections.abc import Mapping, Sequence
 
 from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
 from shared.services.video_queue_admission import AdmissionReason
+from shared.video_segments import MIN_SEGMENT_SECONDS, SegmentErrorCode
 from shared.video_sources import (
     UNPLAYABLE_INVALID_PAGE,
-    UNPLAYABLE_INVALID_TIMESTAMP,
     UNPLAYABLE_LIVE,
     UNPLAYABLE_NOT_VIDEO,
     build_watch_url,
@@ -45,11 +45,36 @@ _SORRY = "抱歉，這部影片無法點播"
 # the viewer can't fix them, so the cause is noise. The dashboard keeps the
 # detailed wording from shared.video_sources.unplayable_message.
 _UNPLAYABLE: dict[str, str] = {
-    UNPLAYABLE_INVALID_TIMESTAMP: "時間點超出影片長度，請確認連結",
     UNPLAYABLE_INVALID_PAGE: "找不到指定的分P，請確認連結",
     UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片，請確認連結",
     UNPLAYABLE_LIVE: "直播進行中無法點播，結束後可點播重播",
 }
+
+
+SEGMENT_EXAMPLE = "1:30-4:00"
+
+_SEGMENT_ERRORS: dict[str, str] = {
+    "format": f"時間格式錯誤，例：{SEGMENT_EXAMPLE}",
+    "order": "開始時間需早於結束時間",
+    "out_of_range": "時間點超出影片長度，請確認",
+    "too_short": f"片段至少需 {MIN_SEGMENT_SECONDS} 秒",
+}
+
+
+def segment_error_message(code: SegmentErrorCode | str) -> str:
+    return _SEGMENT_ERRORS.get(code, _SEGMENT_ERRORS["format"])
+
+
+def too_long_message(details: Mapping[str, int | str]) -> str:
+    """``segment`` detail: 1 = a segment was chosen, 0 = one could be (hint), else n/a."""
+    limit = int(details["limit_seconds"])
+    segment = int(details.get("segment", -1))
+    if segment == 1:
+        return f"片段長度請在 {format_length(limit)}內"
+    if segment == 0:
+        example = f"1:30-{format_clock(90 + limit)}"
+        return f"影片長度請在 {format_length(limit)}內，可指定片段，例：{example}"
+    return f"影片長度請在 {format_length(limit)}內"
 
 
 def _fit(message: str) -> str:
@@ -86,6 +111,8 @@ def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str])
     if reason in (AdmissionReason.DISABLED, AdmissionReason.SOURCE_DISABLED):
         return PAUSED
     if reason is AdmissionReason.INVALID_URL:
+        if details.get("hint") == "twitch_channel":
+            return "直播無法點播，請改用 VOD 連結（twitch.tv/videos/…）"
         return "不支援此連結，請使用 YouTube／Twitch／Bilibili／IG Reel"
     if reason is AdmissionReason.DUPLICATE:
         return "這部影片已在待播中"
@@ -98,7 +125,9 @@ def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str])
     if reason is AdmissionReason.MIN_VIEWS:
         return f"影片觀看數需達 {int(details['min_view_count']):,} 以上"
     if reason is AdmissionReason.TOO_LONG:
-        return f"影片長度請在 {format_length(int(details['limit_seconds']))}內"
+        return too_long_message(details)
+    if reason is AdmissionReason.INVALID_SEGMENT:
+        return segment_error_message(str(details.get("segment_error") or ""))
     if reason is AdmissionReason.REPLAY_COOLDOWN:
         return f"這部影片 {details['hours']} 小時內播過了，請換一部"
     if reason is AdmissionReason.NOT_PLAYABLE:
@@ -176,7 +205,10 @@ def rules_message(settings: VideoQueueSettings, reward_name: str | None) -> str:
         return PAUSED
     if not reward_name:
         return "目前不開放觀眾點播"
-    parts = [f"兌換「{_clean_title(reward_name, reward_name)}」點播"]
+    parts = [
+        f"兌換「{_clean_title(reward_name, reward_name)}」點播",
+        f"可指定片段：網址 {SEGMENT_EXAMPLE}",
+    ]
     limits = [x for x in (settings.max_duration_seconds, settings.max_duration_redemption) if x > 0]
     if limits:
         parts.append(f"長度 {format_length(min(limits))}內")
