@@ -126,32 +126,30 @@ describe('timeStrToMinutes', () => {
 })
 
 describe('isLiveNow', () => {
-  const today = toDateStr(new Date())
+  // A fixed instant + explicit timezone: the old tests derived "now" from the
+  // machine's local clock, so they only passed when run in UTC (and could
+  // still flake around midnight).
+  const now = new Date('2026-09-21T12:30:00Z') // 20:30 in Asia/Taipei
+  const tz = 'Asia/Taipei'
 
   it('is true when now falls inside the schedule window on the same day', () => {
-    const now = new Date()
-    const startMinutes = now.getHours() * 60 + now.getMinutes() - 10
-    const s = schedule({
-      start_time: `${String(Math.floor(startMinutes / 60)).padStart(2, '0')}:${String(startMinutes % 60).padStart(2, '0')}:00`,
-      duration_minutes: 60,
-    })
-    expect(isLiveNow(s, today, now)).toBe(true)
+    const s = schedule({ start_time: '20:00:00', duration_minutes: 60 })
+    expect(isLiveNow(s, '2026-09-21', now, tz)).toBe(true)
+  })
+
+  it('reads the window in the channel timezone, not UTC', () => {
+    const s = schedule({ start_time: '20:00:00', duration_minutes: 60 })
+    expect(isLiveNow(s, '2026-09-21', now, 'UTC')).toBe(false)
   })
 
   it('is false for a different day even if the time-of-day would match', () => {
-    const now = new Date()
     const s = schedule({ start_time: '00:00:00', duration_minutes: 1440 })
-    expect(isLiveNow(s, '2000-01-01', now)).toBe(false)
+    expect(isLiveNow(s, '2000-01-01', now, tz)).toBe(false)
   })
 
   it('is false once the window has ended', () => {
-    const now = new Date()
-    const startMinutes = (now.getHours() * 60 + now.getMinutes() - 120 + 1440) % 1440
-    const s = schedule({
-      start_time: `${String(Math.floor(startMinutes / 60)).padStart(2, '0')}:${String(startMinutes % 60).padStart(2, '0')}:00`,
-      duration_minutes: 30,
-    })
-    expect(isLiveNow(s, today, now)).toBe(false)
+    const s = schedule({ start_time: '18:30:00', duration_minutes: 30 })
+    expect(isLiveNow(s, '2026-09-21', now, tz)).toBe(false)
   })
 })
 
