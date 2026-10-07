@@ -1,6 +1,6 @@
 import { reportClientError } from '@/lib/clientErrorReporter'
 
-import { makeMountDiv } from './shared'
+import { createStallWatch, makeMountDiv } from './shared'
 import type { MountContext, PlayerStrategy } from './types'
 
 // Twitch VODs (twitch.tv/videos/{id}) play through Twitch's embed player.
@@ -149,6 +149,23 @@ function mountEmbed(ctx: MountContext): (() => void) | void {
     }
   }, 500)
 
+  // Armed by the first PLAYING (`playing`); the startup watchdog covers before that.
+  const stallWatch = createStallWatch('twitch_vod', {
+    recover: () => {
+      try {
+        player.seek(player.getCurrentTime())
+        player.play()
+      } catch {
+        /* ignore */
+      }
+    },
+    giveUp: () => {
+      clearInterval(progressRef.current ?? undefined)
+      progressRef.current = null
+      handleVideoEnd(currentId, 'provider_error')
+    },
+  })
+
   setElapsed(alreadyPlayed)
   progressRef.current = setInterval(() => {
     let played: number
@@ -172,7 +189,11 @@ function mountEmbed(ctx: MountContext): (() => void) | void {
       return
     }
     setElapsed(played)
-    if (played >= windowSeconds) finish()
+    if (played >= windowSeconds) {
+      finish()
+      return
+    }
+    if (playing) stallWatch(played)
   }, 1000)
 
   return () => {

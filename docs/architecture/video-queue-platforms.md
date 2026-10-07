@@ -188,6 +188,15 @@ Any entry that never starts within the 15 s watchdog also reports
 `VIDEO_QUEUE.STARTUP_TIMEOUT` (with the platform) before advancing as
 `startup_timeout`. Without the report, a stalled player leaves no trace.
 
+The startup watchdog stops once playback is confirmed, so a player that later
+freezes mid-video (a buffering spinner that never clears) is covered by a
+separate **stall watch** (`createStallWatch` in `players/shared.ts`), used by
+YouTube and Twitch VOD. It reads the playhead on each 1 s progress tick, only
+after the first `PLAYING`. The thresholds are deliberately conservative so an
+ordinary rebuffer never trips them: after 30 s without movement it re-seeks to
+the current position and plays once; after 120 s it reports
+`VIDEO_QUEUE.PLAYBACK_STALLED` and advances as `provider_error`.
+
 A VOD is hours long, so Video Queue treats it as a **long clip**:
 
 - `extract_twitch_vod_info()` also parses the URL's `?t=1h2m3s` into

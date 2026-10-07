@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { reportClientError } from '@/lib/clientErrorReporter'
 
+import { STALL_RECOVER_SECONDS, STALL_SKIP_SECONDS } from './shared'
 import { twitchVodStrategy } from './twitchVod'
 import type { MountContext } from './types'
 
@@ -287,6 +288,49 @@ describe('twitchVodStrategy', () => {
 
     expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
     expect(Player).not.toHaveBeenCalled()
+  })
+
+  it('re-seeks a mid-playback freeze, then skips it if it never clears', async () => {
+    vi.useFakeTimers()
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    player.getCurrentTime.mockReturnValue(200) // 110s into the window, frozen
+    const cleanup = twitchVodStrategy.mount(c)
+    await settle()
+    fire(player, 'video.play')
+    player.play.mockClear()
+
+    vi.advanceTimersByTime((STALL_RECOVER_SECONDS - 5) * 1000)
+    expect(player.seek).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(10 * 1000)
+    expect(player.seek).toHaveBeenCalledTimes(1)
+    expect(player.seek).toHaveBeenCalledWith(200)
+    expect(player.play).toHaveBeenCalled()
+    expect(c.handleVideoEnd).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(STALL_SKIP_SECONDS * 1000)
+    expect(c.handleVideoEnd).toHaveBeenCalledTimes(1)
+    expect(c.handleVideoEnd).toHaveBeenCalledWith(7, 'provider_error')
+    expect(reportClientError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'VIDEO_QUEUE.PLAYBACK_STALLED' })
+    )
+    if (typeof cleanup === 'function') cleanup()
+  })
+
+  it('does not watch for stalls before playback starts', async () => {
+    vi.useFakeTimers()
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    const cleanup = twitchVodStrategy.mount(c)
+    await settle()
+
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS + 5) * 1000)
+    expect(player.seek).not.toHaveBeenCalled()
+    expect(c.handleVideoEnd).not.toHaveBeenCalled()
+    if (typeof cleanup === 'function') cleanup()
   })
 
   it('destroys the player on cleanup', async () => {

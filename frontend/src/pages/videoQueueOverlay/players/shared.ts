@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
 
 import type { VideoQueueEntry } from '@/api/videoQueue'
+import { reportClientError } from '@/lib/clientErrorReporter'
 
 import type { MountContext, YTPlayer } from './types'
 
@@ -123,6 +124,57 @@ export function startTimerBasedEnd(ctx: MountContext, fallbackMaxSeconds: number
       : fallbackMaxSeconds
   const remaining = Math.max(0, total - joinElapsed)
   clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
+}
+
+// Mid-playback stall thresholds, in seconds the playhead hasn't moved. Kept
+// deliberately conservative: an ordinary rebuffer recovers by itself well within
+// these, so only a real freeze gets a nudge, and only a long one skips the entry.
+export const STALL_RECOVER_SECONDS = 30
+export const STALL_SKIP_SECONDS = 120
+/** Playhead movement below this between two ticks counts as frozen. */
+const STALL_EPSILON_SECONDS = 0.25
+
+export interface StallWatchHandlers {
+  /** Re-seek to the current position and play again — once per freeze. */
+  recover: () => void
+  /** The freeze outlasted recovery; move the queue on. Fired once. */
+  giveUp: () => void
+}
+
+/**
+ * Detects playback that started and then froze mid-video (a buffering spinner
+ * that never clears). The startup watchdog only covers the first seconds; after
+ * that nothing else advances a frozen player. Feed it the player's position on
+ * each 1 s progress tick, only after playback was confirmed. Counting ticks
+ * rather than wall time means a throttled timer can only make it slower to fire.
+ */
+export function createStallWatch(platform: string, handlers: StallWatchHandlers) {
+  let lastTime: number | null = null
+  let frozenTicks = 0
+  let recovered = false
+  let gaveUp = false
+  return (time: number): void => {
+    if (gaveUp) return
+    if (lastTime === null || Math.abs(time - lastTime) > STALL_EPSILON_SECONDS) {
+      lastTime = time
+      frozenTicks = 0
+      recovered = false
+      return
+    }
+    frozenTicks++
+    if (frozenTicks >= STALL_SKIP_SECONDS) {
+      gaveUp = true
+      reportClientError({
+        kind: 'error',
+        message: `${platform}: playback froze for ${STALL_SKIP_SECONDS}s, skipping`,
+        errorCode: 'VIDEO_QUEUE.PLAYBACK_STALLED',
+      })
+      handlers.giveUp()
+    } else if (!recovered && frozenTicks >= STALL_RECOVER_SECONDS) {
+      recovered = true
+      handlers.recover()
+    }
+  }
 }
 
 /**
