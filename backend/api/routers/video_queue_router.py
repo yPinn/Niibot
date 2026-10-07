@@ -130,11 +130,6 @@ class VideoBlockedError(InvalidInputError):
     user_message = "這部影片在封鎖清單中"
 
 
-class VideoQueueInsertActiveError(ConflictError):
-    code = "VIDEO_QUEUE.INSERT_ACTIVE"
-    user_message = "直播播放中，請先結束直播"
-
-
 class LiveInsertRejectedError(InvalidInputError):
     code = "VIDEO_QUEUE.INSERT_REJECTED"
     http_status = 422
@@ -1214,10 +1209,6 @@ async def play_entry_now(
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
-        # The overlay is playing the insert; promoting an entry now would run
-        # its clock while nothing plays it.
-        if await VideoQueueInsertRepository(pool).get_active(channel_id) is not None:
-            raise VideoQueueInsertActiveError()
         promoted = await repo.play_immediately(entry_id, channel_id)
         if not promoted:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
@@ -1320,7 +1311,8 @@ async def start_live_insert(
     pool: Pool = Depends(get_db_pool),
     app_settings: Settings = Depends(get_settings),
 ) -> PublicVideoQueueState:
-    """Play an ongoing live stream open-ended in the overlay; pauses the queue."""
+    """Play an ongoing live stream open-ended in the overlay, in the background:
+    queued videos play first, the stream shows whenever the queue is empty."""
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)

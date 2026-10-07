@@ -16,8 +16,9 @@ Moderator+ (fixed, not configurable):
 
 Broadcaster only:
     !vq live <URL>   Live insert: play an ongoing Twitch / YouTube live stream
-                     open-ended (background music, watch-along); pauses the queue
-    !vq live stop    End the live insert and resume the queue
+                     open-ended (background music, watch-along); queued videos
+                     play first, the stream shows whenever the queue is empty
+    !vq live stop    End the live insert
 
 Chat requests stay moderator+ on purpose: viewers request through channel points
 — the paid ladder is donation > channel points > free. Anything a viewer isn't
@@ -239,14 +240,12 @@ class VideoQueueComponent(BotComponent):
             await self._ctx_reply(ctx, message)
             return
 
-        inserting = await self.vq_insert_repo.get_active(channel_id) is not None
         await self._ctx_reply(
             ctx,
             accepted_message(
                 result.metadata.title,
                 result.resolved.video_id,
                 result.position,
-                inserting=inserting,
             ),
         )
 
@@ -263,10 +262,11 @@ class VideoQueueComponent(BotComponent):
         if not config:
             return
         current, _, insert = await self.vq_repo.get_stream_snapshot(ctx.channel.id)
-        if insert is not None:
-            message = insert_now_playing_message(insert)
+        # A queued video plays over the live insert, so it is what's on screen.
+        if current is not None:
+            message = now_playing_message(current)
         else:
-            message = now_playing_message(current) if current else NOTHING_PLAYING
+            message = insert_now_playing_message(insert) if insert else NOTHING_PLAYING
         await self._ctx_reply(ctx, message)
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "np")
