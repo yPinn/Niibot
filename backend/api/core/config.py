@@ -40,6 +40,10 @@ class Settings(BaseServiceSettings):
 
     frontend_url: str = Field(default="http://localhost:3000", description="Frontend URL for CORS")
     api_url: str = Field(default="http://localhost:8000", description="API server URL")
+    # Public origin that reaches the API without the Pages Functions proxy. Only
+    # high-frequency public endpoints use it (see docs/guides/cloudflare-pages.md,
+    # "Overlay request budget"); empty → they stay behind API_URL's proxy.
+    api_direct_url: str = Field(default="", description="Direct API URL (bypasses Pages)")
     twitch_bot_url: str = Field(
         default="http://localhost:4344", description="Twitch Bot Health Server URL"
     )
@@ -68,7 +72,14 @@ class Settings(BaseServiceSettings):
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
 
-    @field_validator("frontend_url", "api_url", "twitch_bot_url", "discord_bot_url", mode="before")
+    @field_validator(
+        "frontend_url",
+        "api_url",
+        "api_direct_url",
+        "twitch_bot_url",
+        "discord_bot_url",
+        mode="before",
+    )
     @classmethod
     def strip_trailing_slash(cls, v: str) -> str:
         return v.rstrip("/")
