@@ -338,9 +338,11 @@ export default function VideoQueue() {
     if (!url) return
     setComposerBusy('live')
     try {
-      setState(await startLiveInsert(url))
+      const next = await startLiveInsert(url)
+      setState(next)
       setAddUrlInput('')
-      toast.success('開始播放直播，佇列暫停')
+      // Queued videos come first; the stream starts once they are done.
+      toast.success(next.current ? '直播已設定，點播播完後開始' : '開始播放直播')
     } catch (e) {
       toastApiError(e, '播放直播失敗')
     } finally {

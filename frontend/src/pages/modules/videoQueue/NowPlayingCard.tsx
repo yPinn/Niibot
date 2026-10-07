@@ -53,7 +53,7 @@ export interface PlayComposer {
   onUrlChange: (value: string) => void
   /** 影片 mode: add the URL to the queue. */
   onAdd: () => void
-  /** 直播 mode: play the live stream now; the queue waits. */
+  /** 直播 mode: play the live stream in the background; queued videos come first. */
   onPlayLive: () => void
   busy: 'add' | 'live' | null
 }
@@ -155,13 +155,13 @@ export function NowPlayingCard({
   queueSize: number
   totalQueuedDuration: number | null
   onSkip: () => void
-  /** Active live insert — shown instead of `current` (the queue is paused). */
+  /** Active live insert: a background source, shown only while nothing is queued. */
   insert?: VideoQueueLiveInsert | null
   onStopInsert?: () => void
   composer?: PlayComposer
 }) {
   const [now, setNow] = useState(() => Date.now())
-  const startedAt = insert ? null : current?.started_at
+  const startedAt = current?.started_at
   useEffect(() => {
     if (!startedAt) return
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -170,9 +170,7 @@ export function NowPlayingCard({
 
   const upNext = (
     <div className="flex min-w-0 flex-col gap-element border-t pt-card lg:w-80 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-card">
-      <p className="text-label font-medium text-muted-foreground">
-        {insert ? '直播結束後' : '接下來'}
-      </p>
+      <p className="text-label font-medium text-muted-foreground">接下來</p>
       {next ? (
         <div className="flex items-center gap-element min-w-0">
           <Thumb key={next.video_id} entry={next} className="aspect-video w-16 shrink-0" />
@@ -191,6 +189,17 @@ export function NowPlayingCard({
           ? `待播 ${queueSize} 首${totalQueuedDuration ? ` · 約 ${formatDuration(totalQueuedDuration)}` : ''}`
           : '待播佇列為空'}
       </p>
+      {current && insert && (
+        <div className="flex items-center gap-element border-t pt-element min-w-0">
+          <Icon icon="fa-solid fa-tower-broadcast" className="size-3 text-status-live" />
+          <span className="truncate text-label text-muted-foreground">
+            播完回到直播：{insert.creator_name || insert.source_id}
+          </span>
+          <Button size="sm" variant="ghost" className="ml-auto shrink-0" onClick={onStopInsert}>
+            結束直播
+          </Button>
+        </div>
+      )}
     </div>
   )
 
@@ -198,45 +207,7 @@ export function NowPlayingCard({
   let action: ReactNode = null
   let body: ReactNode
 
-  if (insert) {
-    badge = (
-      <Badge variant="outline" className="text-label border-status-live/60 text-status-live">
-        LIVE
-      </Badge>
-    )
-    action = (
-      <>
-        <OpenLink href={liveWatchUrl(insert)} label="開啟直播" />
-        <Button size="sm" variant="outline" onClick={onStopInsert}>
-          <Icon icon="fa-solid fa-stop" className="mr-1.5 size-3" />
-          結束直播
-        </Button>
-      </>
-    )
-    body = (
-      <div className="flex flex-col gap-card lg:flex-row">
-        <div className="flex min-w-0 flex-1 flex-col justify-center gap-element">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="shrink-0 text-label text-muted-foreground">
-              {insert.source_type === 'twitch_live' ? 'Twitch' : 'YouTube'}
-            </span>
-            <span className="truncate text-content font-semibold">
-              {insert.creator_name || insert.source_id}
-            </span>
-          </div>
-          {insert.title && (
-            <span className="truncate text-sub text-muted-foreground" title={insert.title}>
-              {insert.title}
-            </span>
-          )}
-          <span className="text-label text-muted-foreground">
-            直播播放中，佇列暫停{insert.audio_only ? ' · 僅聲音' : ''}
-          </span>
-        </div>
-        {upNext}
-      </div>
-    )
-  } else if (current) {
+  if (current) {
     const elapsed = current.started_at
       ? Math.max(0, (now - new Date(current.started_at).getTime()) / 1000)
       : 0
@@ -295,6 +266,44 @@ export function NowPlayingCard({
               </span>
             </div>
           </div>
+        </div>
+        {upNext}
+      </div>
+    )
+  } else if (insert) {
+    badge = (
+      <Badge variant="outline" className="text-label border-status-live/60 text-status-live">
+        LIVE
+      </Badge>
+    )
+    action = (
+      <>
+        <OpenLink href={liveWatchUrl(insert)} label="開啟直播" />
+        <Button size="sm" variant="outline" onClick={onStopInsert}>
+          <Icon icon="fa-solid fa-stop" className="mr-1.5 size-3" />
+          結束直播
+        </Button>
+      </>
+    )
+    body = (
+      <div className="flex flex-col gap-card lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-element">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0 text-label text-muted-foreground">
+              {insert.source_type === 'twitch_live' ? 'Twitch' : 'YouTube'}
+            </span>
+            <span className="truncate text-content font-semibold">
+              {insert.creator_name || insert.source_id}
+            </span>
+          </div>
+          {insert.title && (
+            <span className="truncate text-sub text-muted-foreground" title={insert.title}>
+              {insert.title}
+            </span>
+          )}
+          <span className="text-label text-muted-foreground">
+            有點播時會先播點播{insert.audio_only ? ' · 僅聲音' : ''}
+          </span>
         </div>
         {upNext}
       </div>

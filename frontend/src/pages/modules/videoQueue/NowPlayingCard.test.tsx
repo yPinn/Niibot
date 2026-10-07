@@ -118,7 +118,31 @@ function composer(overrides: Partial<PlayComposer> = {}): PlayComposer {
 }
 
 describe('NowPlayingCard live stream and composer', () => {
-  it('shows the live stream instead of the queue entry, with 結束直播 instead of skip', () => {
+  it('shows the live stream with 結束直播 while nothing is queued', () => {
+    const onStopInsert = vi.fn()
+    render(
+      <NowPlayingCard
+        current={null}
+        insert={liveInsert}
+        onStopInsert={onStopInsert}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+      />
+    )
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
+    expect(screen.getByText('有點播時會先播點播 · 僅聲音')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /跳過/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '開啟直播' })).toHaveAttribute(
+      'href',
+      'https://www.twitch.tv/lofistreamer'
+    )
+    fireEvent.click(screen.getByRole('button', { name: /結束直播/ }))
+    expect(onStopInsert).toHaveBeenCalled()
+  })
+
+  it('a playing video takes the card; the stream waits in the background', () => {
     const onStopInsert = vi.fn()
     render(
       <NowPlayingCard
@@ -130,17 +154,11 @@ describe('NowPlayingCard live stream and composer', () => {
         onSkip={noop}
       />
     )
-    expect(screen.getByText('LIVE')).toBeInTheDocument()
-    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
-    expect(screen.getByText('直播播放中，佇列暫停 · 僅聲音')).toBeInTheDocument()
-    expect(screen.getByText('直播結束後')).toBeInTheDocument()
-    expect(screen.queryByText('A video')).toBeNull()
-    expect(screen.queryByRole('button', { name: /跳過/ })).toBeNull()
-    expect(screen.getByRole('link', { name: '開啟直播' })).toHaveAttribute(
-      'href',
-      'https://www.twitch.tv/lofistreamer'
-    )
-    fireEvent.click(screen.getByRole('button', { name: /結束直播/ }))
+    expect(screen.getByText('A video')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /跳過/ })).toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).toBeNull()
+    expect(screen.getByText('播完回到直播：LofiStreamer')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '結束直播' }))
     expect(onStopInsert).toHaveBeenCalled()
   })
 

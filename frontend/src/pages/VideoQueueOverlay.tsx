@@ -73,29 +73,35 @@ export default function VideoQueueOverlay() {
   // ~43k Cloudflare requests a day — and tell the streamer instead.
   const [keyRejected, setKeyRejected] = useState(false)
   const keyRejectedRef = useRef(false)
-  // Live insert (直播播放): while one is active the overlay plays it instead of
-  // the queue, and the queue is paused (server-side too). An insert this
-  // client saw end is hidden at once, before the stream confirms it is gone.
+  // Live insert (直播播放) is a background source: queued videos play first,
+  // and the stream shows only while nothing is playing or waiting. Its player
+  // is torn down while hidden and rejoins at the live edge when shown again.
+  // An insert this client saw end is hidden at once, before the stream
+  // confirms it is gone.
   const [endedInsertId, setEndedInsertId] = useState<number | null>(null)
   const liveInsert = state?.insert && state.insert.id !== endedInsertId ? state.insert : null
-  const insertId = liveInsert?.id ?? null
-  const currentVideoType = liveInsert ? undefined : state?.current?.video_type
+  const queueActive = !!state?.current || (state?.queue_size ?? 0) > 0
+  const showLive = !!liveInsert && !queueActive
+  // The insert whose player should be mounted right now (null while hidden).
+  const shownInsertId = showLive ? (liveInsert?.id ?? null) : null
+  const currentVideoType = state?.current?.video_type
 
   // What the window shows; null when there is nothing. The last frame is kept
   // so a disappearing window plays its exit animation with its old title
   // instead of vanishing — stream-driven removals (dashboard skip/clear, an
   // insert ending) never go through handleVideoEnd's exit.
-  const frame: OverlayFrame | null = liveInsert
-    ? {
-        kind: 'live',
-        title: liveInsert.creator_name || liveInsert.source_id,
-        audioOnly: liveInsert.audio_only,
-      }
-    : state?.current
-      ? { kind: 'queue', title: `@ ${state.current.requested_by}`, audioOnly: false }
-      : (state?.queue_size ?? 0) > 0
-        ? { kind: 'queue', title: null, audioOnly: false }
-        : null
+  const frame: OverlayFrame | null =
+    showLive && liveInsert
+      ? {
+          kind: 'live',
+          title: liveInsert.creator_name || liveInsert.source_id,
+          audioOnly: liveInsert.audio_only,
+        }
+      : state?.current
+        ? { kind: 'queue', title: `@ ${state.current.requested_by}`, audioOnly: false }
+        : (state?.queue_size ?? 0) > 0
+          ? { kind: 'queue', title: null, audioOnly: false }
+          : null
   const [lastFrame, setLastFrame] = useState<OverlayFrame | null>(frame)
   const [leaving, setLeaving] = useState(false)
   // Adjusting state while rendering (React's documented pattern for state
@@ -237,7 +243,7 @@ export default function VideoQueueOverlay() {
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
-    if (!username || !overlayKey || !state || isPreview || insertId !== null || keyRejected) return
+    if (!username || !overlayKey || !state || isPreview || keyRejected) return
     if (state.current === null && state.queue.length > 0 && !advancingRef.current) {
       advancingRef.current = true
       let cancelled = false
@@ -273,19 +279,8 @@ export default function VideoQueueOverlay() {
     }
     // Only react to specific state fields — not the full `state` object —
     // to avoid re-running the advance logic on unrelated state updates.
-    // state?.insert?.id is the server's view, not just insertId: an insert this
-    // overlay already hid locally can still be blocking the server's kickstart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    username,
-    overlayKey,
-    isPreview,
-    state?.current?.id,
-    state?.queue.length,
-    insertId,
-    state?.insert?.id,
-    keyRejected,
-  ])
+  }, [username, overlayKey, isPreview, state?.current?.id, state?.queue.length, keyRejected])
 
   // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
   // are stable React dispatch functions — no stale closure risk from future refactors.
@@ -361,10 +356,9 @@ export default function VideoQueueOverlay() {
 
   // Create / destroy player(s) when current video changes
   useEffect(() => {
-    if (insertId !== null) {
+    if (showLive) {
       // The queue container unmounts for the insert; its player's timers
-      // (startup watchdog, progress poll, clip timer) must not keep running
-      // and advance the queue behind the insert.
+      // (startup watchdog, progress poll, clip timer) must not keep running.
       destroyAllPlayers(
         [playerRef, leftPlayerRef, rightPlayerRef],
         progressRef,
@@ -481,11 +475,12 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, state?.current?.id, username, handleVideoEnd, volumePercent, insertId])
+  }, [ytReady, state?.current?.id, username, handleVideoEnd, volumePercent, showLive])
 
-  // Mount the live insert's player (keyed on the insert, not its settings).
+  // Mount the live insert's player while it is shown (keyed on the insert,
+  // not its settings). Hiding it for a queued video destroys the player.
   useEffect(() => {
-    if (!liveInsert) return
+    if (!liveInsert || shownInsertId === null) return
     const insert = liveInsert
     let done = false
     // Twitch plays via hls.js and loads its embed fallback itself.
@@ -516,7 +511,7 @@ export default function VideoQueueOverlay() {
       insertControllerRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insertId])
+  }, [shownInsertId])
 
   // Volume changes apply to the running insert player without a remount.
   useEffect(() => {
