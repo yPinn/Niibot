@@ -20,6 +20,7 @@ import {
 import { formatRelativeTime } from '@/lib/format'
 
 import { PlatformBadge, SourceBadge } from './QueueTable'
+import { segmentLabel } from './utils'
 
 export function HistoryTable({
   entries,
@@ -62,6 +63,11 @@ export function HistoryTable({
                 <span className="truncate" title={entry.title || entry.video_id}>
                   {entry.title || entry.video_id}
                 </span>
+                {segmentLabel(entry) && (
+                  <span className="shrink-0 text-label text-muted-foreground tabular-nums">
+                    {segmentLabel(entry)}
+                  </span>
+                )}
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground text-sub">

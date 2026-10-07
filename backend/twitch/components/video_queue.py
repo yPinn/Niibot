@@ -14,6 +14,11 @@ Moderator+ (fixed, not configurable):
     !vq skip         Skip whatever is playing
     !vq clear        Clear entire queue (current + all queued)
 
+Broadcaster only:
+    !vq live <URL>   Live insert: play an ongoing Twitch / YouTube live stream
+                     open-ended (background music, watch-along); pauses the queue
+    !vq live stop    End the live insert and resume the queue
+
 Chat requests stay moderator+ on purpose: viewers request through channel points
 — the paid ladder is donation > channel points > free. Anything a viewer isn't
 allowed to do is ignored silently, and every viewer `!vq` is throttled per user
@@ -38,6 +43,7 @@ from shared.repositories.command_config import (
 )
 from shared.repositories.video_queue import (
     VideoQueueBlocklistRepository,
+    VideoQueueInsertRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -46,7 +52,11 @@ from shared.services.video_queue_admission import (
     AdmissionRejected,
     VideoQueueAdmissionService,
 )
+from shared.services.video_queue_insert import InsertRejected, VideoQueueInsertService
 from shared.video_queue_messages import (
+    INSERT_NONE,
+    INSERT_STOPPED,
+    INSERT_USAGE,
     NO_OWN_REQUEST,
     NOT_OWN_REQUEST,
     NOTHING_PLAYING,
@@ -54,6 +64,9 @@ from shared.video_queue_messages import (
     UNAVAILABLE,
     accepted_message,
     cleared_message,
+    insert_now_playing_message,
+    insert_rejection_message,
+    insert_started_message,
     no_such_position_message,
     now_playing_message,
     queue_list_message,
@@ -63,7 +76,12 @@ from shared.video_queue_messages import (
     skipped_message,
     usage_message,
 )
-from shared.video_sources import fetch_video_metadata, resolve_video_url
+from shared.video_sources import (
+    fetch_twitch_live_stream,
+    fetch_video_metadata,
+    fetch_yt_info,
+    resolve_video_url,
+)
 from utils.command_input import parse_number
 
 if TYPE_CHECKING:
@@ -91,6 +109,7 @@ class VideoQueueComponent(BotComponent):
         self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.cmd_repo = CommandConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.redemption_repo = RedemptionConfigRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_insert_repo = VideoQueueInsertRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.channel_repo = self.bot.channels  # type: ignore[attr-defined]
         self._session: aiohttp.ClientSession | None = None
 
@@ -109,6 +128,7 @@ class VideoQueueComponent(BotComponent):
         self.vq_blocklist_repo.pool = pool
         self.cmd_repo.pool = pool
         self.redemption_repo.pool = pool
+        self.vq_insert_repo.pool = pool
 
     # ------------------------------------------------------------------
     # Roles and throttles
@@ -213,9 +233,15 @@ class VideoQueueComponent(BotComponent):
             await self._ctx_reply(ctx, rejection_message(error.reason, error.details))
             return
 
+        inserting = await self.vq_insert_repo.get_active(channel_id) is not None
         await self._ctx_reply(
             ctx,
-            accepted_message(result.metadata.title, result.resolved.video_id, result.position),
+            accepted_message(
+                result.metadata.title,
+                result.resolved.video_id,
+                result.position,
+                inserting=inserting,
+            ),
         )
 
     # ------------------------------------------------------------------
@@ -230,8 +256,12 @@ class VideoQueueComponent(BotComponent):
         )
         if not config:
             return
-        current = await self.vq_repo.get_current(ctx.channel.id)
-        await self._ctx_reply(ctx, now_playing_message(current) if current else NOTHING_PLAYING)
+        current, _, insert = await self.vq_repo.get_stream_snapshot(ctx.channel.id)
+        if insert is not None:
+            message = insert_now_playing_message(insert)
+        else:
+            message = now_playing_message(current) if current else NOTHING_PLAYING
+        await self._ctx_reply(ctx, message)
         try:
             await self.cmd_repo.increment_usage_count(ctx.channel.id, "np")
         except Exception as e:
@@ -299,8 +329,50 @@ class VideoQueueComponent(BotComponent):
         """!vq list — 顯示現正播放與待播前 3 首（標題，不含投遞者；查投遞者用 !np）"""
         if self._viewer_throttled(ctx) or self._shared_reply_throttled(ctx, "list"):
             return
-        current, queued = await self.vq_repo.get_current_and_queued(ctx.channel.id)
-        await self._ctx_reply(ctx, queue_list_message(current, queued))
+        current, queued, insert = await self.vq_repo.get_stream_snapshot(ctx.channel.id)
+        await self._ctx_reply(ctx, queue_list_message(current, queued, insert))
+
+    @vq.command(name="live")
+    async def vq_live(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:
+        """!vq live <URL> 插播直播 | !vq live stop 結束插播（限實況主）"""
+        if not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
+            return  # silent, like every other command a role can't use
+        channel_id = ctx.channel.id
+        raw = (args or "").strip()
+        if not raw:
+            insert = await self.vq_insert_repo.get_active(channel_id)
+            await self._ctx_reply(
+                ctx, insert_now_playing_message(insert) if insert else INSERT_USAGE
+            )
+            return
+        if raw.lower() == "stop":
+            stopped = await self.vq_insert_repo.stop(channel_id)
+            await self._ctx_reply(ctx, INSERT_STOPPED if stopped else INSERT_NONE)
+            return
+        try:
+            insert = await VideoQueueInsertService(
+                self.vq_insert_repo, self.vq_settings_repo
+            ).start(
+                channel_id=channel_id,
+                url=raw,
+                fetch_youtube=lambda video_id: fetch_yt_info(
+                    video_id, self._settings.youtube_api_key, self._session
+                ),
+                fetch_twitch_live=lambda login: fetch_twitch_live_stream(
+                    login,
+                    self._settings.twitch_client_id,
+                    self._settings.twitch_client_secret,
+                    self._session,
+                ),
+            )
+        except InsertRejected as error:
+            await self._ctx_reply(ctx, insert_rejection_message(error.reason))
+            return
+        except Exception:
+            LOGGER.exception("VideoQueue live insert failed", extra={"channel_id": channel_id})
+            await self._ctx_reply(ctx, UNAVAILABLE)
+            return
+        await self._ctx_reply(ctx, insert_started_message(insert))
 
     @vq.command(name="rules")
     async def vq_rules(self, ctx: commands.Context[Bot]) -> None:

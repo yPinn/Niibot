@@ -23,6 +23,7 @@ from shared.repositories.command_config import RedemptionConfigRepository
 from shared.repositories.game_queue import GameQueueRepository, GameQueueSettingsRepository
 from shared.repositories.video_queue import (
     VideoQueueBlocklistRepository,
+    VideoQueueInsertRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -61,6 +62,7 @@ class ChannelPointsComponent(commands.Component):
         self.vq_repo = VideoQueueRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_settings_repo = VideoQueueSettingsRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vq_blocklist_repo = VideoQueueBlocklistRepository(self.bot.token_database)  # type: ignore[attr-defined]
+        self.vq_insert_repo = VideoQueueInsertRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_repo = VipRepository(self.bot.token_database)  # type: ignore[attr-defined]
         self.vip_policy = VipService()
         self._session: aiohttp.ClientSession | None = None
@@ -81,6 +83,7 @@ class ChannelPointsComponent(commands.Component):
         self.vq_repo.pool = pool
         self.vq_settings_repo.pool = pool
         self.vq_blocklist_repo.pool = pool
+        self.vq_insert_repo.pool = pool
         self.vip_repo.pool = pool
 
     async def component_load(self) -> None:
@@ -812,11 +815,15 @@ class ChannelPointsComponent(commands.Component):
                 await self._reply(broadcaster, f"@{user_name} {message}")
                 return
 
+            inserting = await self.vq_insert_repo.get_active(channel_id) is not None
             await self._reply(
                 broadcaster,
                 f"@{user_name} "
                 + accepted_message(
-                    result.metadata.title, result.resolved.video_id, result.position
+                    result.metadata.title,
+                    result.resolved.video_id,
+                    result.position,
+                    inserting=inserting,
                 ),
             )
             LOGGER.info(

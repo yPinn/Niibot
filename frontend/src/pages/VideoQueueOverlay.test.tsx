@@ -6,6 +6,7 @@ import {
   advanceVideoQueue,
   fetchTwitchClipSource,
   getPublicVideoQueueState,
+  reportLiveInsertEnded,
   reportPlaybackStarted,
 } from '@/api/videoQueue'
 import { openVideoQueueStream } from '@/api/videoQueueStream'
@@ -18,6 +19,7 @@ vi.mock('@/api/videoQueue', () => ({
   reportVideoMetadata: vi.fn(),
   fetchTwitchClipSource: vi.fn().mockResolvedValue(null),
   getPublicVideoQueueState: vi.fn(),
+  reportLiveInsertEnded: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock('@/api/videoQueueStream', () => ({ openVideoQueueStream: vi.fn() }))
 
@@ -534,5 +536,106 @@ describe('VideoQueueOverlay player strategy selection', () => {
     await act(async () => Promise.resolve())
 
     expect(advanceVideoQueue).not.toHaveBeenCalled()
+  })
+})
+
+describe('VideoQueueOverlay live insert', () => {
+  const insert = {
+    id: 5,
+    source_type: 'twitch_live' as const,
+    source_id: 'lofistreamer',
+    title: 'beats',
+    creator_name: 'LofiStreamer',
+    thumbnail_url: null,
+    volume_percent: 30,
+    audio_only: false,
+    started_at: null,
+  }
+  let fire: (event: string) => void
+
+  beforeEach(() => {
+    vi.mocked(openVideoQueueStream).mockReset()
+    vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(advanceVideoQueue).mockReset()
+    vi.mocked(reportLiveInsertEnded).mockClear()
+    vi.mocked(getPublicVideoQueueState).mockResolvedValue({
+      enabled: true,
+      volume_percent: 100,
+      current: null,
+      queue: [],
+      queue_size: 0,
+      total_queued_duration: null,
+    })
+    const listeners: Record<string, () => void> = {}
+    const player = {
+      play: vi.fn(),
+      setVolume: vi.fn(),
+      setMuted: vi.fn(),
+      destroy: vi.fn(),
+      addEventListener: (event: string, cb: () => void) => {
+        listeners[event] = cb
+      },
+    }
+    const Player = Object.assign(
+      vi.fn(function () {
+        return player
+      }),
+      { ENDED: 'ended', PLAYING: 'playing', PAUSE: 'pause', OFFLINE: 'offline', ONLINE: 'online' }
+    )
+    ;(window as unknown as { Twitch: unknown }).Twitch = { Player }
+    fire = event => listeners[event]?.()
+  })
+
+  function push(message: Record<string, unknown>) {
+    const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
+    act(() => {
+      options.onMessage({
+        type: 'snapshot',
+        current: null,
+        queue: [],
+        queue_size: 0,
+        total_queued_duration: null,
+        ...message,
+      } as never)
+    })
+  }
+
+  it('plays the insert instead of the queue and never kickstarts the queue', async () => {
+    const { container } = renderOverlay()
+    push({ insert, queue: [bilibiliEntry(1, 'viewer')], queue_size: 1 })
+    await act(async () => undefined)
+
+    expect(screen.getByText('LIVE · LofiStreamer')).toBeInTheDocument()
+    expect(container.querySelector('iframe[src*="bilibili"]')).toBeNull()
+    expect(advanceVideoQueue).not.toHaveBeenCalled()
+  })
+
+  it('reports the end once and hides the insert right away', async () => {
+    renderOverlay()
+    push({ insert })
+    await act(async () => undefined)
+
+    act(() => {
+      fire('ended')
+      fire('ended')
+    })
+    expect(reportLiveInsertEnded).toHaveBeenCalledTimes(1)
+    expect(reportLiveInsertEnded).toHaveBeenCalledWith(USERNAME, 5, 'ended', OVERLAY_KEY)
+    expect(screen.queryByText('LIVE · LofiStreamer')).toBeNull()
+  })
+
+  it('keeps the dashboard preview read-only', async () => {
+    renderOverlay(`?preview=1#key=${OVERLAY_KEY}`)
+    push({ insert })
+    await act(async () => undefined)
+    act(() => fire('ended'))
+    expect(reportLiveInsertEnded).not.toHaveBeenCalled()
+  })
+
+  it('hides the picture of an audio-only insert in OBS', async () => {
+    renderOverlay()
+    push({ insert: { ...insert, audio_only: true } })
+    await act(async () => undefined)
+    expect(screen.getByTestId('live-insert')).toHaveStyle({ opacity: '0' })
   })
 })

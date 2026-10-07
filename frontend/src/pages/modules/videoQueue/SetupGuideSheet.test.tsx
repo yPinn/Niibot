@@ -26,6 +26,8 @@ describe('SetupGuideSheet', () => {
 
     // step 2 must name the real page ("Channel Points"), not the stale "Events" flow
     expect(screen.getByText('開放用頻道點數兌換')).toBeInTheDocument()
+    // the suggested reward prompt advertises the segment syntax
+    expect(screen.getByText('貼上網址，可加時間，例：1:30-4:00')).toBeInTheDocument()
 
     // Twitch CTA deep-links straight to this user's rewards page
     const twitchCta = screen.getByRole('link', { name: /前往 Twitch 獎勵頁面/ })

@@ -12,6 +12,9 @@ import type { MountContext, PlayerStrategy } from './types'
 let _twitchReadyPromise: Promise<void> | null = null
 
 export function loadTwitchEmbedAPI(): Promise<void> {
+  // Already available (loaded by another mount, or present before any load):
+  // never wait on a cached promise from an earlier, still-pending attempt.
+  if (typeof window !== 'undefined' && window.Twitch?.Player) return Promise.resolve()
   if (_twitchReadyPromise) return _twitchReadyPromise
   _twitchReadyPromise = new Promise((resolve, reject) => {
     if (typeof window !== 'undefined' && window.Twitch?.Player) {
@@ -109,6 +112,20 @@ function mount(ctx: MountContext): (() => void) | void {
     try {
       played = player.getCurrentTime() - start
     } catch {
+      return
+    }
+    let loaded = ''
+    try {
+      loaded = player.getVideo().replace(/^v/, '')
+    } catch {
+      /* older embed without getVideo — the window check below still applies */
+    }
+    // A VOD's length is fixed when the player loads it (an in-progress VOD
+    // included); once that end is reached Twitch autoplays an unrelated VOD.
+    // If ENDED was missed, played time would restart near 0 and never reach
+    // the window — stop as soon as a different video is loaded instead.
+    if (loaded && loaded !== current.video_id) {
+      finish()
       return
     }
     setElapsed(played)

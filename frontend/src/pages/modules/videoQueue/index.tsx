@@ -13,6 +13,8 @@ import {
   rotateVideoQueueOverlayKey,
   setVideoAsNext,
   skipCurrentVideo,
+  startLiveInsert,
+  stopLiveInsert,
   updateVideoQueueSettings,
   type VideoQueueHistoryEntry,
   type VideoQueueRankingEntry,
@@ -40,13 +42,20 @@ import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
 import { BlocklistSection, type BlocklistSectionHandle } from './BlocklistSection'
+import { InsertCard } from './InsertCard'
 import { NowPlayingCard } from './NowPlayingCard'
 import { OverlayCard } from './OverlayCard'
 import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
 import type { RulesDraft } from './RulesCard'
 import { SettingsCard } from './SettingsCard'
 import { SetupGuideSheet } from './SetupGuideSheet'
-import { QUEUE_PAGE_SIZE, REDEMPTION_DURATION_OPTIONS, snapToOption, watchUrl } from './utils'
+import {
+  QUEUE_PAGE_SIZE,
+  REDEMPTION_DURATION_OPTIONS,
+  requeueText,
+  snapToOption,
+  watchUrl,
+} from './utils'
 import { VideoQueuePageSkeleton } from './VideoQueuePageSkeleton'
 
 const EMPTY_DRAFT: RulesDraft = {
@@ -143,7 +152,7 @@ export default function VideoQueue() {
 
   const handleRequeue = async (entry: VideoQueueHistoryEntry) => {
     try {
-      await addUrlAndRefreshQueue(watchUrl(entry.video_type, entry.video_id, entry.start_seconds))
+      await addUrlAndRefreshQueue(requeueText(entry))
       toast.success('已重新加入佇列')
     } catch (e) {
       toastApiError(e, '重新點播失敗')
@@ -324,9 +333,42 @@ export default function VideoQueue() {
     }
   }
 
+  const handleStartInsert = async (url: string) => {
+    try {
+      setState(await startLiveInsert(url))
+      toast.success('開始插播，佇列暫停')
+    } catch (e) {
+      toastApiError(e, '插播失敗')
+      throw e
+    }
+  }
+
+  const handleStopInsert = async () => {
+    try {
+      setState(await stopLiveInsert())
+      toast.success('已結束插播，恢復播放佇列')
+    } catch (e) {
+      toastApiError(e, '結束插播失敗')
+      throw e
+    }
+  }
+
+  const handleSaveInsertDefaults = async (patch: {
+    insert_volume_percent?: number
+    insert_audio_only?: boolean
+  }) => {
+    try {
+      setSettings(await updateVideoQueueSettings(patch))
+      toast.success('插播設定已儲存')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
+      throw e
+    }
+  }
+
   const handleSkip = async () => {
     try {
-      setState(await skipCurrentVideo())
+      setState(await skipCurrentVideo(state?.current?.id))
       toast.success('已跳過當前影片')
     } catch (e) {
       toastApiError(e, '跳過失敗')
@@ -458,6 +500,17 @@ export default function VideoQueue() {
           queueSize={queueSize}
           totalQueuedDuration={totalQueuedDuration}
           onSkip={handleSkip}
+        />
+      </SlideUp>
+
+      <SlideUp inView delay={0.03}>
+        <InsertCard
+          insert={state?.insert ?? null}
+          volumePercent={settings?.insert_volume_percent ?? 30}
+          audioOnly={settings?.insert_audio_only ?? false}
+          onStart={handleStartInsert}
+          onStop={handleStopInsert}
+          onSaveDefaults={handleSaveInsertDefaults}
         />
       </SlideUp>
 

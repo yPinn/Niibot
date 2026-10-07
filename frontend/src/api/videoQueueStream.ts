@@ -1,6 +1,6 @@
 import { API_ENDPOINTS } from './config'
 import { openSseStream, type SseFrame } from './sseStream'
-import type { VideoQueueEntry } from './videoQueue'
+import type { VideoQueueEntry, VideoQueueLiveInsert } from './videoQueue'
 
 // Deliberately narrower than PublicVideoQueueState: no `enabled` — see
 // VideoQueueStreamState on the backend for why the stream never sends it.
@@ -9,6 +9,8 @@ export interface VideoQueueStreamState {
   queue: VideoQueueEntry[]
   queue_size: number
   total_queued_duration: number | null
+  /** Active live insert; the overlay plays it instead of the queue. */
+  insert?: VideoQueueLiveInsert | null
 }
 
 export interface VideoQueueStreamMessage extends VideoQueueStreamState {

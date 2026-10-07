@@ -4,6 +4,7 @@ import { useLocation, useParams, useSearchParams } from 'react-router-dom'
 import {
   advanceVideoQueue,
   getPublicVideoQueueState,
+  reportLiveInsertEnded,
   reportPlaybackStarted,
 } from '@/api/videoQueue'
 import { openVideoQueueStream, type VideoQueueStreamState } from '@/api/videoQueueStream'
@@ -14,8 +15,10 @@ import { type StreamHelpers, useReconnectingStream } from '@/hooks/useReconnecti
 import {
   destroyAllPlayers,
   getPlayerStrategy,
+  type LiveInsertController,
   loadTwitchEmbedAPI,
   loadYouTubeAPI,
+  mountLiveInsert,
   type YTPlayer,
 } from './videoQueueOverlay/players'
 
@@ -47,7 +50,13 @@ export default function VideoQueueOverlay() {
   const [twitchReady, setTwitchReady] = useState(false)
   const [volumePercent, setVolumePercent] = useState(100)
   const [isExiting, setIsExiting] = useState(false)
-  const currentVideoType = state?.current?.video_type
+  // Live insert (直播插播): while one is active the overlay plays it instead of
+  // the queue, and the queue is paused (server-side too). An insert this
+  // client saw end is hidden at once, before the stream confirms it is gone.
+  const [endedInsertId, setEndedInsertId] = useState<number | null>(null)
+  const liveInsert = state?.insert && state.insert.id !== endedInsertId ? state.insert : null
+  const insertId = liveInsert?.id ?? null
+  const currentVideoType = liveInsert ? undefined : state?.current?.video_type
 
   const playerRef = useRef<YTPlayer | null>(null)
   const leftPlayerRef = useRef<YTPlayer | null>(null)
@@ -57,6 +66,14 @@ export default function VideoQueueOverlay() {
   const leftContainerRef = useRef<HTMLDivElement>(null)
   const rightContainerRef = useRef<HTMLDivElement>(null)
   const currentIdRef = useRef<number | null>(null)
+  const insertContainerRef = useRef<HTMLDivElement>(null)
+  const insertControllerRef = useRef<LiveInsertController | null>(null)
+  // Latest insert volume for the async mount below (the API load can resolve
+  // after a volume change). Declared before that effect so it runs first.
+  const insertVolumeRef = useRef(0)
+  useEffect(() => {
+    if (liveInsert) insertVolumeRef.current = liveInsert.volume_percent
+  })
   const mountedVolumeRef = useRef<number | null>(null)
   const advancingRef = useRef(false) // prevent concurrent advance calls
   // Video ids this client has already locally advanced past. A stream frame
@@ -158,7 +175,7 @@ export default function VideoQueueOverlay() {
 
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
-    if (!username || !overlayKey || !state || isPreview) return
+    if (!username || !overlayKey || !state || isPreview || insertId !== null) return
     if (state.current === null && state.queue.length > 0 && !advancingRef.current) {
       advancingRef.current = true
       let cancelled = false
@@ -195,7 +212,7 @@ export default function VideoQueueOverlay() {
     // Only react to specific state fields — not the full `state` object —
     // to avoid re-running the advance logic on unrelated state updates.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username, overlayKey, isPreview, state?.current?.id, state?.queue.length])
+  }, [username, overlayKey, isPreview, state?.current?.id, state?.queue.length, insertId])
 
   // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
   // are stable React dispatch functions — no stale closure risk from future refactors.
@@ -265,6 +282,23 @@ export default function VideoQueueOverlay() {
 
   // Create / destroy player(s) when current video changes
   useEffect(() => {
+    if (insertId !== null) {
+      // The queue container unmounts for the insert; its player's timers
+      // (startup watchdog, progress poll, clip timer) must not keep running
+      // and advance the queue behind the insert.
+      destroyAllPlayers(
+        [playerRef, leftPlayerRef, rightPlayerRef],
+        progressRef,
+        clipTimerRef,
+        playbackStartTimerRef,
+        containerRef,
+        setElapsed,
+        [leftContainerRef, rightContainerRef]
+      )
+      currentIdRef.current = null
+      mountedVolumeRef.current = null
+      return
+    }
     if (!containerRef.current) return
 
     const current = state?.current ?? null
@@ -359,7 +393,43 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, twitchReady, state?.current?.id, username, handleVideoEnd, volumePercent])
+  }, [ytReady, twitchReady, state?.current?.id, username, handleVideoEnd, volumePercent, insertId])
+
+  // Mount the live insert's player (keyed on the insert, not its settings).
+  useEffect(() => {
+    if (!liveInsert) return
+    const insert = liveInsert
+    let done = false
+    const load = insert.source_type === 'twitch_live' ? loadTwitchEmbedAPI() : loadYouTubeAPI()
+    load
+      .then(() => {
+        if (done || !insertContainerRef.current) return
+        insertControllerRef.current = mountLiveInsert({
+          insert: { ...insert, volume_percent: insertVolumeRef.current },
+          container: insertContainerRef.current,
+          muted: isPreview,
+          onEnded: reason => {
+            if (done) return
+            done = true // report once; never retried in a loop
+            setEndedInsertId(insert.id)
+            if (isPreview || !username || !overlayKey) return
+            reportLiveInsertEnded(username, insert.id, reason, overlayKey).catch(() => {})
+          },
+        })
+      })
+      .catch(() => {})
+    return () => {
+      done = true
+      insertControllerRef.current?.destroy()
+      insertControllerRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insertId])
+
+  // Volume changes apply to the running insert player without a remount.
+  useEffect(() => {
+    if (liveInsert) insertControllerRef.current?.setVolume(liveInsert.volume_percent, isPreview)
+  }, [liveInsert, isPreview])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -378,6 +448,7 @@ export default function VideoQueueOverlay() {
       if (kickstartRetryTimerRef.current) clearTimeout(kickstartRetryTimerRef.current)
       if (advanceRetryTimerRef.current) clearTimeout(advanceRetryTimerRef.current)
       if (playbackStartTimerRef.current) clearTimeout(playbackStartTimerRef.current)
+      insertControllerRef.current?.destroy()
     }
   }, [])
 
@@ -389,6 +460,32 @@ export default function VideoQueueOverlay() {
     current?.duration_seconds && current.duration_seconds > 0
       ? Math.min(elapsed / current.duration_seconds, 1)
       : 0
+
+  if (liveInsert) {
+    const name = liveInsert.creator_name || liveInsert.source_id
+    // Audio only: the player keeps its real size (YouTube refuses tiny
+    // players) but is invisible in OBS; the dashboard preview stays faintly
+    // visible so the streamer can tell it's running.
+    const hidden = liveInsert.audio_only ? { opacity: isPreview ? 0.35 : 0 } : undefined
+    return (
+      <div
+        className={styles.overlay}
+        style={{ ...(isPreview ? { width: '100%', height: '100dvh' } : {}), ...hidden }}
+        data-testid="live-insert"
+      >
+        <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
+        <div className={styles.titleBar}>
+          <div className={styles.titleLeft}>
+            <span className={styles.titleName}>LIVE · {name}</span>
+          </div>
+        </div>
+        <div className={styles.videoPanel}>
+          <div ref={insertContainerRef} className={styles.videoContainer} />
+          <div className={styles.sunkenOverlay} />
+        </div>
+      </div>
+    )
+  }
 
   // Empty queue and no current → fully transparent (OBS sees nothing), except
   // in preview mode a streamer testing connectivity should still see the

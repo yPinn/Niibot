@@ -20,6 +20,21 @@ export interface VideoQueueEntry {
   started_at: string | null
 }
 
+/** Active live insert (直播插播): an ongoing live stream the broadcaster plays
+ *  open-ended instead of the queue (background music, watch-along). */
+export interface VideoQueueLiveInsert {
+  id: number
+  source_type: 'twitch_live' | 'youtube_live'
+  /** Twitch channel login / YouTube video id. */
+  source_id: string
+  title: string | null
+  creator_name: string | null
+  thumbnail_url: string | null
+  volume_percent: number
+  audio_only: boolean
+  started_at: string | null
+}
+
 export interface PublicVideoQueueState {
   enabled: boolean
   volume_percent: number
@@ -27,6 +42,7 @@ export interface PublicVideoQueueState {
   queue: VideoQueueEntry[]
   queue_size: number
   total_queued_duration: number | null
+  insert?: VideoQueueLiveInsert | null
 }
 
 export interface VideoQueueHistoryEntry {
@@ -82,6 +98,8 @@ export interface VideoQueueSettings {
   max_duration_seconds: number
   replay_cooldown_hours: number
   volume_percent: number
+  insert_volume_percent: number
+  insert_audio_only: boolean
 }
 
 export type BlocklistKind = 'video' | 'creator' | 'keyword' | 'user'
@@ -106,6 +124,8 @@ export interface VideoQueueSettingsUpdate {
   max_duration_seconds?: number
   replay_cooldown_hours?: number
   volume_percent?: number
+  insert_volume_percent?: number
+  insert_audio_only?: boolean
 }
 
 // ---- Public (OBS Overlay) ----
@@ -219,8 +239,15 @@ export async function advanceVideoQueueFromDashboard(
   return response.json()
 }
 
-export async function skipCurrentVideo(): Promise<PublicVideoQueueState> {
-  const response = await apiFetch(API_ENDPOINTS.videoQueue.skip, {
+/** `expectedEntryId` makes the skip conditional on that entry still playing —
+ *  the dashboard view can be a few seconds stale, and a mismatch is a no-op
+ *  rather than skipping whatever started in the meantime. */
+export async function skipCurrentVideo(expectedEntryId?: number): Promise<PublicVideoQueueState> {
+  const url =
+    expectedEntryId === undefined
+      ? API_ENDPOINTS.videoQueue.skip
+      : `${API_ENDPOINTS.videoQueue.skip}?expected_entry_id=${expectedEntryId}`
+  const response = await apiFetch(url, {
     method: 'DELETE',
     credentials: 'include',
   })
@@ -320,6 +347,42 @@ export async function getVideoQueueBlocklist(): Promise<BlocklistEntry[]> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.blocklist, { credentials: 'include' })
   if (!response.ok) throw await parseApiError(response, '載入封鎖清單失敗')
   return response.json()
+}
+
+// ---- Live insert (直播插播) ----
+
+export async function startLiveInsert(url: string): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.insert, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ url }),
+  })
+  if (!response.ok) throw await parseApiError(response, '插播失敗')
+  return response.json()
+}
+
+export async function stopLiveInsert(): Promise<PublicVideoQueueState> {
+  const response = await apiFetch(API_ENDPOINTS.videoQueue.insert, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!response.ok) throw await parseApiError(response, '結束插播失敗')
+  return response.json()
+}
+
+/** Overlay: the live stream ended. Conditional on `insertId`; send once, never retry in a loop. */
+export async function reportLiveInsertEnded(
+  username: string,
+  insertId: number,
+  reason: 'ended' | 'offline' | 'provider_error',
+  overlayKey: string
+): Promise<void> {
+  await apiFetch(API_ENDPOINTS.videoQueue.insertEnd(username), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Overlay-Key': overlayKey },
+    body: JSON.stringify({ insert_id: insertId, reason }),
+  })
 }
 
 export async function addVideoQueueBlock(

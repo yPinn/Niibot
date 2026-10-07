@@ -46,6 +46,17 @@ async def _no_lifespan(app: FastAPI):
 
 
 @pytest.fixture(autouse=True)
+def _no_live_insert():
+    """Most tests mock VideoQueueRepository wholesale; give the insert lookups
+    the same treatment so state builders see "no insert" by default."""
+    with patch("routers.video_queue_router.VideoQueueInsertRepository") as insert_repo:
+        insert_repo.return_value.get_active = AsyncMock(return_value=None)
+        insert_repo.return_value.stop = AsyncMock(return_value=True)
+        insert_repo.return_value.update_playback = AsyncMock()
+        yield insert_repo
+
+
+@pytest.fixture(autouse=True)
 def _reset_settings():
     get_settings.cache_clear()
     yield
@@ -65,6 +76,8 @@ def _make_settings(**kw) -> MagicMock:
     s.max_duration_seconds = kw.get("max_duration_seconds", 0)
     s.replay_cooldown_hours = kw.get("replay_cooldown_hours", 0)
     s.volume_percent = kw.get("volume_percent", 100)
+    s.insert_volume_percent = kw.get("insert_volume_percent", 30)
+    s.insert_audio_only = kw.get("insert_audio_only", False)
     s.overlay_key = UUID(kw.get("overlay_key", OVERLAY_KEY))
     return s
 
@@ -1441,7 +1454,7 @@ def _hub(**kwargs: object) -> NotifyWakeHub:
 class TestStreamPublicVideoQueue:
     def test_snapshot_frame_has_no_enabled_field(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(_make_entry(), []))
+            vqr.return_value.get_stream_snapshot = AsyncMock(return_value=(_make_entry(), [], None))
             hub = _hub()
 
             async def run():
@@ -1468,10 +1481,10 @@ class TestStreamPublicVideoQueue:
 
     def test_update_frame_sent_when_state_changes(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(
+            vqr.return_value.get_stream_snapshot = AsyncMock(
                 side_effect=[
-                    (_make_entry(id=1), []),
-                    (_make_entry(id=2), []),
+                    (_make_entry(id=1), [], None),
+                    (_make_entry(id=2), [], None),
                 ]
             )
             hub = _hub()
@@ -1500,11 +1513,11 @@ class TestStreamPublicVideoQueue:
         wakes (e.g. reconnect notify_all()) — an identical rebuild must not
         emit a frame, only a genuinely different one should."""
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(
+            vqr.return_value.get_stream_snapshot = AsyncMock(
                 side_effect=[
-                    (_make_entry(id=1), []),
-                    (_make_entry(id=1), []),  # identical rebuild — must be suppressed
-                    (_make_entry(id=2), []),
+                    (_make_entry(id=1), [], None),
+                    (_make_entry(id=1), [], None),  # identical rebuild — must be suppressed
+                    (_make_entry(id=2), [], None),
                 ]
             )
             hub = _hub()
@@ -1536,7 +1549,7 @@ class TestStreamPublicVideoQueue:
     def test_heartbeat_sent_when_idle(self, monkeypatch):
         monkeypatch.setattr("routers.video_queue_router._STREAM_HEARTBEAT_SECONDS", 0.01)
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            vqr.return_value.get_stream_snapshot = AsyncMock(return_value=(None, [], None))
             hub = _hub()
 
             async def run():
@@ -1559,7 +1572,7 @@ class TestStreamPublicVideoQueue:
     def test_hard_lease_releases_subscription(self, monkeypatch):
         monkeypatch.setattr("routers.video_queue_router._STREAM_LEASE_SECONDS", 0.01)
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            vqr.return_value.get_stream_snapshot = AsyncMock(return_value=(None, [], None))
             hub = _hub()
 
             async def run():
@@ -1582,7 +1595,7 @@ class TestStreamPublicVideoQueue:
 
     def test_capacity_exhaustion_returns_429(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(return_value=(None, []))
+            vqr.return_value.get_stream_snapshot = AsyncMock(return_value=(None, [], None))
             hub = _hub(max_subscribers_per_channel=1)
             hub.subscribe(VIDEO_QUEUE_NOTIFY_CHANNEL, CHANNEL_ID)
 
@@ -1603,7 +1616,7 @@ class TestStreamPublicVideoQueue:
 
     def test_releases_capacity_when_initial_state_build_fails(self):
         with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
-            vqr.return_value.get_current_and_queued = AsyncMock(
+            vqr.return_value.get_stream_snapshot = AsyncMock(
                 side_effect=RuntimeError("database unavailable")
             )
             hub = _hub()
@@ -1641,3 +1654,117 @@ class TestStreamPublicVideoQueue:
 
         assert exc.status_code == 404
         assert hub.subscriber_count == 0
+
+
+# ── Live insert (直播插播) ─────────────────────────────────────────────────────
+
+
+def _make_insert(**kw):
+    from shared.models.video_queue import VideoQueueInsert
+
+    base = {
+        "id": 5,
+        "channel_id": CHANNEL_ID,
+        "source_type": "twitch_live",
+        "source_id": "lofistreamer",
+        "volume_percent": 30,
+        "audio_only": True,
+        "title": "beats",
+        "creator_name": "LofiStreamer",
+        "started_at": datetime(2026, 10, 7, tzinfo=UTC),
+    }
+    return VideoQueueInsert(**{**base, **kw})
+
+
+class TestLiveInsert:
+    def _repos(self, vqr, sr):
+        vqr.return_value.get_current = AsyncMock(return_value=None)
+        vqr.return_value.get_queued = AsyncMock(return_value=[])
+        sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+        sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
+
+    def test_start_returns_state_with_the_insert(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+            patch(
+                "routers.video_queue_router.VideoQueueInsertService.start",
+                AsyncMock(return_value=_make_insert()),
+            ),
+        ):
+            self._repos(vqr, sr)
+            r = _make_auth_client().post(
+                "/api/video-queue/insert", json={"url": "https://www.twitch.tv/lofistreamer"}
+            )
+        assert r.status_code == 200
+        insert = r.json()["insert"]
+        assert insert["source_type"] == "twitch_live"
+        assert insert["audio_only"] is True
+
+    def test_start_rejection_carries_the_chat_copy(self):
+        from shared.services.video_queue_insert import InsertReason, InsertRejected
+
+        with patch(
+            "routers.video_queue_router.VideoQueueInsertService.start",
+            AsyncMock(side_effect=InsertRejected(InsertReason.NOT_LIVE)),
+        ):
+            r = _make_auth_client().post(
+                "/api/video-queue/insert", json={"url": "https://www.twitch.tv/someone"}
+            )
+        assert r.status_code == 422
+        assert "目前沒有進行中的直播" in r.text
+
+    def test_stop(self, _no_live_insert):
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
+            self._repos(vqr, sr)
+            r = _make_auth_client().delete("/api/video-queue/insert")
+        assert r.status_code == 200
+        _no_live_insert.return_value.stop.assert_awaited_once_with(CHANNEL_ID)
+
+    def test_overlay_end_is_conditional_on_the_insert_id(self, _no_live_insert):
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=True)
+            r = _make_public_client(_twitch_api_found()).post(
+                "/api/video-queue/public/testuser/insert/end",
+                json={"insert_id": 5, "reason": "offline"},
+                headers=OVERLAY_HEADERS,
+            )
+        assert r.status_code == 204
+        _no_live_insert.return_value.stop.assert_awaited_once_with(CHANNEL_ID, expected_id=5)
+
+    def test_overlay_end_requires_the_capability(self, _no_live_insert):
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.overlay_key_matches = AsyncMock(return_value=False)
+            r = _make_public_client(_twitch_api_found()).post(
+                "/api/video-queue/public/testuser/insert/end",
+                json={"insert_id": 5},
+                headers=OVERLAY_HEADERS,
+            )
+        assert r.status_code == 404
+        _no_live_insert.return_value.stop.assert_not_awaited()
+
+    def test_play_now_is_refused_during_an_insert(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+            vqr.return_value.play_immediately = AsyncMock(return_value=True)
+            r = _make_auth_client().post("/api/video-queue/entries/1/play-now")
+        assert r.status_code == 409
+        vqr.return_value.play_immediately.assert_not_awaited()
+
+    def test_settings_update_reaches_the_playing_insert(self, _no_live_insert):
+        with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:
+            sr.return_value.update_settings = AsyncMock(return_value=_make_settings())
+            r = _make_auth_client().put(
+                "/api/video-queue/settings",
+                json={"insert_volume_percent": 20, "insert_audio_only": True},
+            )
+        assert r.status_code == 200
+        kwargs = sr.return_value.update_settings.await_args.kwargs
+        assert (kwargs["insert_volume_percent"], kwargs["insert_audio_only"]) == (20, True)
+        _no_live_insert.return_value.update_playback.assert_awaited_once_with(
+            CHANNEL_ID, volume_percent=20, audio_only=True
+        )

@@ -30,6 +30,7 @@ _DETAILS: dict[AdmissionReason, dict[str, int | str]] = {
     AdmissionReason.REPLAY_COOLDOWN: {"hours": 6},
     AdmissionReason.NOT_PLAYABLE: {"unplayable_reason": "private"},
     AdmissionReason.METADATA_UNVERIFIABLE: {"field": "duration_seconds"},
+    AdmissionReason.INVALID_SEGMENT: {"segment_error": "format"},
 }
 
 
@@ -56,6 +57,7 @@ EXPECTED_REJECTIONS = {
     AdmissionReason.USER_LIMIT: "每人最多點 3 首，請等播完再點",
     AdmissionReason.USER_COOLDOWN: "請於 1:30 後再點播",
     AdmissionReason.NOT_PLAYABLE: "抱歉，這部影片無法點播",
+    AdmissionReason.INVALID_SEGMENT: "時間格式錯誤，例：1:30-4:00",
     AdmissionReason.METADATA_UNVERIFIABLE: "暫時無法點播，請稍後再試",
     AdmissionReason.MIN_VIEWS: "影片觀看數需達 5,000 以上",
     AdmissionReason.TOO_LONG: "影片長度請在 10 分鐘內",
@@ -85,7 +87,6 @@ def test_rejections_carry_no_emote_or_counts_viewers_dont_need():
 @pytest.mark.parametrize(
     ("unplayable_reason", "expected"),
     [
-        ("invalid_timestamp", "時間點超出影片長度，請確認連結"),
         ("invalid_page", "找不到指定的分P，請確認連結"),
         ("not_video", "這則貼文不是影片，請確認連結"),
         ("live", "直播進行中無法點播，結束後可點播重播"),
@@ -174,11 +175,11 @@ def test_rules_lists_only_enabled_limits():
         replay_cooldown_hours=6,
     )
     assert rules_message(settings, "點歌") == (
-        "兌換「點歌」點播 | 長度 5 分鐘內 | 每人 3 首 | 間隔 5 分鐘 | "
+        "兌換「點歌」點播 | 可指定片段：網址 1:30-4:00 | 長度 5 分鐘內 | 每人 3 首 | 間隔 5 分鐘 | "
         "觀看數 5,000 以上 | 6 小時內不重播"
     )
     bare = VideoQueueSettings(channel_id="ch1", max_duration_redemption=0)
-    assert rules_message(bare, "點歌") == "兌換「點歌」點播"
+    assert rules_message(bare, "點歌") == "兌換「點歌」點播 | 可指定片段：網址 1:30-4:00"
     assert rules_message(bare, None) == "目前不開放觀眾點播"
     assert rules_message(VideoQueueSettings(channel_id="ch1", enabled=False), "點歌") == (
         "目前暫停點播"
@@ -201,3 +202,67 @@ def test_no_reply_can_trigger_another_bot():
         *(rejection_message(r, _DETAILS.get(r, {})) for r in AdmissionReason),
     ]
     assert not [s for s in samples if s.startswith("!")]
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("format", "時間格式錯誤，例：1:30-4:00"),
+        ("order", "開始時間需早於結束時間"),
+        ("out_of_range", "時間點超出影片長度，請確認"),
+        ("too_short", "片段至少需 10 秒"),
+    ],
+)
+def test_segment_errors_have_reviewed_copy(code, expected):
+    assert rejection_message(AdmissionReason.INVALID_SEGMENT, {"segment_error": code}) == expected
+
+
+@pytest.mark.parametrize(
+    ("segment", "expected"),
+    [
+        (1, "片段長度請在 10 分鐘內"),
+        (0, "影片長度請在 10 分鐘內，可指定片段，例：1:30-11:30"),
+        (-1, "影片長度請在 10 分鐘內"),
+    ],
+)
+def test_too_long_hints_a_segment_only_where_one_helps(segment, expected):
+    details = {"duration_seconds": 900, "limit_seconds": 600, "segment": segment}
+    assert rejection_message(AdmissionReason.TOO_LONG, details) == expected
+
+
+def test_twitch_channel_link_points_at_a_vod():
+    message = rejection_message(AdmissionReason.INVALID_URL, {"hint": "twitch_channel"})
+    assert message == "直播無法點播，請改用 VOD 連結（twitch.tv/videos/…）"
+
+
+def test_insert_copy():
+    from shared.models.video_queue import VideoQueueInsert
+    from shared.services.video_queue_insert import InsertReason
+    from shared.video_queue_messages import (
+        insert_now_playing_message,
+        insert_rejection_message,
+        insert_started_message,
+    )
+
+    insert = VideoQueueInsert(
+        id=1,
+        channel_id="ch1",
+        source_type="youtube_live",
+        source_id="jfKfPfyJRdk",
+        volume_percent=30,
+        title="lofi radio",
+        creator_name="Lofi Girl",
+    )
+    assert insert_started_message(insert) == "開始插播 Lofi Girl 的直播，佇列暫停"
+    assert insert_now_playing_message(insert) == (
+        "插播中：Lofi Girl「lofi radio」 https://youtu.be/jfKfPfyJRdk"
+    )
+    assert queue_list_message(None, [], insert) == "插播中：Lofi Girl"
+    assert accepted_message("Song", "vid", 2, inserting=True) == (
+        "「Song」已加入待播，第 2 首（目前插播中，結束後播放） SeemsGood"
+    )
+    assert {insert_rejection_message(reason) for reason in InsertReason} >= {
+        "插播只支援 Twitch 頻道或 YouTube 直播網址",
+        "目前沒有進行中的直播",
+        "不能插播自己的直播",
+    }

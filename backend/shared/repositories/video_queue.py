@@ -17,6 +17,7 @@ from shared.cache import AsyncTTLCache, cached
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
     VideoQueueEntry,
+    VideoQueueInsert,
     VideoQueueRankingEntry,
     VideoQueueSettings,
 )
@@ -73,7 +74,22 @@ _SETTINGS_COLUMNS = (
     "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
     "max_duration_seconds, replay_cooldown_hours, volume_percent, "
+    "insert_volume_percent, insert_audio_only, "
     "created_at, updated_at"
+)
+
+_INSERT_COLUMNS = (
+    "id, channel_id, source_type, source_id, title, creator_id, creator_name, "
+    "thumbnail_url, volume_percent, audio_only, started_at"
+)
+
+# A live insert pauses the queue. It counts as active for this long after it
+# started — a forgotten insert must not resume on the next broadcast.
+INSERT_MAX_HOURS = 12
+_ACTIVE_INSERT = (
+    "SELECT 1 FROM video_queue_inserts "
+    "WHERE channel_id = $1 AND started_at > NOW() - make_interval(hours => "
+    f"{INSERT_MAX_HOURS})"
 )
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=15, name="video_queue.settings")
@@ -279,6 +295,15 @@ class VideoQueueRepository:
             )
             return [VideoQueueEntry(**dict(row)) for row in rows]
 
+    async def get_stream_snapshot(
+        self, channel_id: str
+    ) -> tuple[VideoQueueEntry | None, list[VideoQueueEntry], VideoQueueInsert | None]:
+        """Current + queued + active live insert, on one connection (see below)."""
+        async with self.pool.acquire() as conn:
+            current, queued = await self._current_and_queued(conn, channel_id)
+            insert = await _fetch_active_insert(conn, channel_id)
+        return current, queued, insert
+
     async def get_current_and_queued(
         self, channel_id: str
     ) -> tuple[VideoQueueEntry | None, list[VideoQueueEntry]]:
@@ -291,13 +316,19 @@ class VideoQueueRepository:
         otherwise acquire 2 connections simultaneously.
         """
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
-                "WHERE channel_id = $1 AND status IN ('queued', 'playing') "
-                "ORDER BY CASE status WHEN 'playing' THEN 0 ELSE 1 END, "
-                "started_at ASC, priority DESC, created_at ASC",
-                channel_id,
-            )
+            return await self._current_and_queued(conn, channel_id)
+
+    @staticmethod
+    async def _current_and_queued(
+        conn: asyncpg.Connection, channel_id: str
+    ) -> tuple[VideoQueueEntry | None, list[VideoQueueEntry]]:
+        rows = await conn.fetch(
+            f"SELECT {_ENTRY_COLUMNS} FROM video_queue "
+            "WHERE channel_id = $1 AND status IN ('queued', 'playing') "
+            "ORDER BY CASE status WHEN 'playing' THEN 0 ELSE 1 END, "
+            "started_at ASC, priority DESC, created_at ASC",
+            channel_id,
+        )
         current: VideoQueueEntry | None = None
         queued: list[VideoQueueEntry] = []
         for row in rows:
@@ -364,6 +395,8 @@ class VideoQueueRepository:
                 "    AND NOT EXISTS ("
                 "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
                 "    ) "
+                # A live insert pauses the queue (migration 155).
+                f"    AND NOT EXISTS ({_ACTIVE_INSERT}) "
                 "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                 ")",
                 channel_id,
@@ -459,6 +492,8 @@ class VideoQueueRepository:
                     "    AND NOT EXISTS ("
                     "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
                     "    ) "
+                    # A live insert pauses the queue (migration 155).
+                    f"    AND NOT EXISTS ({_ACTIVE_INSERT}) "
                     "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,
@@ -937,6 +972,125 @@ class VideoQueueRepository:
 
 
 # ---------------------------------------------------------------------------
+# VideoQueueInsertRepository
+# ---------------------------------------------------------------------------
+
+
+class VideoQueueInsertRepository:
+    """Live insert (直播插播) state — one active insert per channel (migration 155)."""
+
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        self.pool = pool
+
+    async def get_active(self, channel_id: str) -> VideoQueueInsert | None:
+        async with self.pool.acquire() as conn:
+            return await _fetch_active_insert(conn, channel_id)
+
+    async def start(
+        self,
+        channel_id: str,
+        *,
+        source_type: str,
+        source_id: str,
+        title: str | None,
+        creator_id: str | None,
+        creator_name: str | None,
+        thumbnail_url: str | None,
+        volume_percent: int,
+        audio_only: bool,
+    ) -> VideoQueueInsert:
+        """Start (or replace) the channel's insert and pause the queue.
+
+        The entry playing right now goes back to the very front of the queue,
+        unplayed, so it starts over once the insert ends instead of being
+        judged already finished by its old started_at.
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                min_ts = await conn.fetchval(
+                    "SELECT MIN(created_at) FROM video_queue "
+                    "WHERE channel_id = $1 AND status = 'queued'",
+                    channel_id,
+                )
+                await conn.execute(
+                    "UPDATE video_queue SET status = 'queued', started_at = NULL, "
+                    "priority = $2, created_at = COALESCE($3, created_at) "
+                    "WHERE channel_id = $1 AND status = 'playing'",
+                    channel_id,
+                    PRIORITY_PINNED,
+                    (min_ts - timedelta(seconds=1)) if min_ts is not None else None,
+                )
+                # A fresh row (new id) per start: the overlay ends inserts by
+                # id, so a late report for the old one cannot stop this one.
+                await conn.execute(
+                    "DELETE FROM video_queue_inserts WHERE channel_id = $1", channel_id
+                )
+                row = await conn.fetchrow(
+                    "INSERT INTO video_queue_inserts "
+                    "(channel_id, source_type, source_id, title, creator_id, creator_name, "
+                    " thumbnail_url, volume_percent, audio_only) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) "
+                    f"RETURNING {_INSERT_COLUMNS}",
+                    channel_id,
+                    source_type,
+                    source_id,
+                    title,
+                    creator_id,
+                    creator_name,
+                    thumbnail_url,
+                    volume_percent,
+                    audio_only,
+                )
+        return VideoQueueInsert(**dict(row))
+
+    async def stop(self, channel_id: str, *, expected_id: int | None = None) -> bool:
+        """End the channel's insert; with ``expected_id`` only that exact insert.
+
+        Expired rows (past INSERT_MAX_HOURS) are removed too but report False:
+        nothing was actually playing.
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "DELETE FROM video_queue_inserts "
+                "WHERE channel_id = $1 AND ($2::bigint IS NULL OR id = $2) "
+                "RETURNING started_at > NOW() - make_interval(hours => $3) AS was_active",
+                channel_id,
+                expected_id,
+                INSERT_MAX_HOURS,
+            )
+        return bool(row and row["was_active"])
+
+    async def update_playback(
+        self, channel_id: str, *, volume_percent: int | None, audio_only: bool | None
+    ) -> None:
+        """Apply changed insert defaults to the insert that is playing now, if any."""
+        if volume_percent is None and audio_only is None:
+            return
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE video_queue_inserts SET "
+                "volume_percent = COALESCE($2, volume_percent), "
+                "audio_only = COALESCE($3, audio_only) "
+                "WHERE channel_id = $1",
+                channel_id,
+                volume_percent,
+                audio_only,
+            )
+
+
+async def _fetch_active_insert(
+    conn: asyncpg.Connection, channel_id: str
+) -> VideoQueueInsert | None:
+    row = await conn.fetchrow(
+        f"SELECT {_INSERT_COLUMNS} FROM video_queue_inserts "
+        "WHERE channel_id = $1 AND started_at > NOW() - make_interval(hours => $2)",
+        channel_id,
+        INSERT_MAX_HOURS,
+    )
+    return VideoQueueInsert(**dict(row)) if row else None
+
+
+# ---------------------------------------------------------------------------
 # VideoQueueSettingsRepository
 # ---------------------------------------------------------------------------
 
@@ -979,6 +1133,8 @@ class VideoQueueSettingsRepository:
         max_duration_seconds: int | None = None,
         replay_cooldown_hours: int | None = None,
         volume_percent: int | None = None,
+        insert_volume_percent: int | None = None,
+        insert_audio_only: bool | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
         async with self.pool.acquire() as conn:
@@ -996,7 +1152,9 @@ class VideoQueueSettingsRepository:
                     max_per_user             = COALESCE($8, video_queue_settings.max_per_user),
                     max_duration_seconds     = COALESCE($9, video_queue_settings.max_duration_seconds),
                     replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours),
-                    volume_percent           = COALESCE($11, video_queue_settings.volume_percent)
+                    volume_percent           = COALESCE($11, video_queue_settings.volume_percent),
+                    insert_volume_percent    = COALESCE($12, video_queue_settings.insert_volume_percent),
+                    insert_audio_only        = COALESCE($13, video_queue_settings.insert_audio_only)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -1010,6 +1168,8 @@ class VideoQueueSettingsRepository:
                 max_duration_seconds,
                 replay_cooldown_hours,
                 volume_percent,
+                insert_volume_percent,
+                insert_audio_only,
             )
             result = VideoQueueSettings(**dict(row))
             _settings_cache.invalidate(f"vq_settings:{channel_id}")
