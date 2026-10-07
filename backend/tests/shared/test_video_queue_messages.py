@@ -256,14 +256,16 @@ def test_insert_copy():
         title="lofi radio",
         creator_name="Lofi Girl",
     )
-    assert insert_started_message(insert) == "開始播放 Lofi Girl 的直播，佇列暫停"
+    assert insert_started_message(insert) == "開始播放 Lofi Girl 的直播，有點播時會先播點播"
     assert insert_now_playing_message(insert) == (
         "直播中：Lofi Girl「lofi radio」 https://youtu.be/jfKfPfyJRdk"
     )
     assert queue_list_message(None, [], insert) == "直播中：Lofi Girl"
-    assert accepted_message("Song", "vid", 2, inserting=True) == (
-        "「Song」已加入待播，第 2 首（直播結束後播放） SeemsGood"
+    # A queued video plays over the live insert, which comes back afterwards.
+    assert queue_list_message(_entry(title="Song"), [], insert) == (
+        "▶ Song | 播完回到直播：Lofi Girl"
     )
+    assert accepted_message("Song", "vid", 2) == "「Song」已加入待播，第 2 首 SeemsGood"
     assert {insert_rejection_message(reason) for reason in InsertReason} >= {
         "直播只支援 Twitch 頻道或 YouTube 直播網址",
         "目前沒有進行中的直播",

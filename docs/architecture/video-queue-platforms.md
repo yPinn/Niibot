@@ -309,14 +309,21 @@ dropped as ambiguous.)
   on every change, so the overlay and dashboard follow it on the existing SSE
   stream with no extra requests. Each start is a new row id; the overlay ends
   live playback **by id**, so a late report never stops a newer one.
-- **Queue pause:** starting puts the playing entry back at the very front,
-  unplayed. The promote queries (`kickstart_if_idle`, `advance_queue`) skip
-  channels with active live playback, and dashboard play-now is refused (409).
-  Requests are still accepted; chat and redemption replies add 「直播結束後播放」.
+- **Background source, queue first:** live playback never pauses the queue.
+  The overlay plays the current queue entry whenever there is one (or one is
+  waiting) and shows the stream only while the queue is empty. Starting live
+  playback leaves a playing video alone, and the promote queries and dashboard
+  play-now ignore it. While hidden, the stream's player is destroyed rather
+  than kept running muted: no bandwidth or decoding in OBS for nothing. Shown
+  again, it is a fresh player that joins at the live edge. Chat `!np` and the
+  dashboard show the playing video first; `!vq list` ends with
+  「播完回到直播：channel」.
 - **Ending:** the broadcaster stops it, or the overlay sees the stream end and
   reports it **once**, without retries. That means Twitch `ENDED`, an
   `OFFLINE` or lost HLS stream that lasts 60 s (a brief disconnect fires these
-  too), or YouTube `ENDED` / an error. Live playback counts as active for 12 hours
+  too), or YouTube `ENDED` / an error. These are only seen while the stream is
+  shown: a stream that ended while videos played is detected once the queue
+  empties and its player mounts again. Live playback counts as active for 12 hours
   at most, so a forgotten one never resumes on the next broadcast. Niibot does
   not detect whether the streamer is live.
 - **Playback settings** (dashboard OBS 畫面 card): one shared volume for queue

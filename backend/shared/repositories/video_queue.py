@@ -83,14 +83,10 @@ _INSERT_COLUMNS = (
     "thumbnail_url, volume_percent, audio_only, started_at"
 )
 
-# A live insert pauses the queue. It counts as active for this long after it
-# started — a forgotten insert must not resume on the next broadcast.
+# A live insert plays in the background whenever the queue is empty. It counts
+# as active for this long after it started — a forgotten insert must not
+# resume on the next broadcast.
 INSERT_MAX_HOURS = 12
-_ACTIVE_INSERT = (
-    "SELECT 1 FROM video_queue_inserts "
-    "WHERE channel_id = $1 AND started_at > NOW() - make_interval(hours => "
-    f"{INSERT_MAX_HOURS})"
-)
 
 _settings_cache = AsyncTTLCache(maxsize=32, ttl=15, name="video_queue.settings")
 
@@ -395,8 +391,6 @@ class VideoQueueRepository:
                 "    AND NOT EXISTS ("
                 "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
                 "    ) "
-                # A live insert pauses the queue (migration 155).
-                f"    AND NOT EXISTS ({_ACTIVE_INSERT}) "
                 "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                 ")",
                 channel_id,
@@ -492,8 +486,6 @@ class VideoQueueRepository:
                     "    AND NOT EXISTS ("
                     "        SELECT 1 FROM video_queue WHERE channel_id = $1 AND status = 'playing'"
                     "    ) "
-                    # A live insert pauses the queue (migration 155).
-                    f"    AND NOT EXISTS ({_ACTIVE_INSERT}) "
                     "    ORDER BY priority DESC, created_at ASC LIMIT 1"
                     ")",
                     channel_id,
@@ -999,27 +991,14 @@ class VideoQueueInsertRepository:
         volume_percent: int,
         audio_only: bool,
     ) -> VideoQueueInsert:
-        """Start (or replace) the channel's insert and pause the queue.
+        """Start (or replace) the channel's insert.
 
-        The entry playing right now goes back to the very front of the queue,
-        unplayed, so it starts over once the insert ends instead of being
-        judged already finished by its old started_at.
+        The insert is a background source: the queue keeps playing and has
+        priority, and the overlay shows the insert only while nothing is
+        queued. A video playing right now is left alone.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                min_ts = await conn.fetchval(
-                    "SELECT MIN(created_at) FROM video_queue "
-                    "WHERE channel_id = $1 AND status = 'queued'",
-                    channel_id,
-                )
-                await conn.execute(
-                    "UPDATE video_queue SET status = 'queued', started_at = NULL, "
-                    "priority = $2, created_at = COALESCE($3, created_at) "
-                    "WHERE channel_id = $1 AND status = 'playing'",
-                    channel_id,
-                    PRIORITY_PINNED,
-                    (min_ts - timedelta(seconds=1)) if min_ts is not None else None,
-                )
                 # A fresh row (new id) per start: the overlay ends inserts by
                 # id, so a late report for the old one cannot stop this one.
                 await conn.execute(
@@ -1049,10 +1028,10 @@ class VideoQueueInsertRepository:
         Expired rows (past INSERT_MAX_HOURS) are removed too but report False:
         nothing was actually playing.
 
-        The queue resumes in the same transaction: the next queued entry is
-        promoted here rather than left to an overlay kickstart, which could
-        reach the server before this delete and be refused (an insert still
-        active) — leaving the overlay waiting on a queue nobody restarts.
+        The queue never waits on an insert, but a channel can still hold
+        queued entries with nothing playing (e.g. rows left from before
+        inserts stopped pausing the queue), so the next one is promoted here
+        too rather than waiting for an overlay kickstart.
         """
         async with self.pool.acquire() as conn:
             async with conn.transaction():

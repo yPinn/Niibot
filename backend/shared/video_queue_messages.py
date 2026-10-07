@@ -156,14 +156,9 @@ def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str])
     return UNAVAILABLE
 
 
-def accepted_message(
-    title: str | None, video_id: str, position: int | None, *, inserting: bool = False
-) -> str:
+def accepted_message(title: str | None, video_id: str, position: int | None) -> str:
     place = f"，第 {position} 首" if position else ""
-    # A live insert pauses the queue for an open-ended time: say so, or a
-    # viewer who just paid points thinks the request vanished.
-    paused = "（直播結束後播放）" if inserting else ""
-    return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place}{paused} SeemsGood")
+    return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place} SeemsGood")
 
 
 def now_playing_message(entry: VideoQueueEntry) -> str:
@@ -181,7 +176,8 @@ def queue_list_message(
     if current is None and not queued and insert is None:
         return QUEUE_EMPTY
     parts: list[str] = []
-    if insert is not None:
+    # The live insert is the background: it shows only once the queue is empty.
+    if insert is not None and current is None:
         parts.append(f"直播中：{_insert_name(insert, LIST_TITLE_MAX)}")
     if current is not None:
         parts.append(f"▶ {_entry_title(current, LIST_TITLE_MAX)}")
@@ -194,6 +190,8 @@ def queue_list_message(
             f"（+{len(queued) - LIST_PREVIEW_COUNT}）" if len(queued) > LIST_PREVIEW_COUNT else ""
         )
         parts.append(f"{titles}{overflow}")
+    if insert is not None and current is not None:
+        parts.append(f"播完回到直播：{_insert_name(insert, LIST_TITLE_MAX)}")
     return _fit(" | ".join(parts))
 
 
@@ -245,7 +243,7 @@ def insert_rejection_message(
 
 
 def insert_started_message(insert: VideoQueueInsert) -> str:
-    return _fit(f"開始播放 {_insert_name(insert)} 的直播，佇列暫停")
+    return _fit(f"開始播放 {_insert_name(insert)} 的直播，有點播時會先播點播")
 
 
 def insert_now_playing_message(insert: VideoQueueInsert) -> str:

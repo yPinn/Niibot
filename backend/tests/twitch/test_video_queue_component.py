@@ -492,7 +492,7 @@ class TestLiveInsert:
         kwargs = component.vq_insert_repo.start.await_args.kwargs
         assert (kwargs["source_type"], kwargs["source_id"]) == ("twitch_live", "lofistreamer")
         assert kwargs["volume_percent"] == 50  # the shared volume (default)
-        assert _reply(component) == "開始播放 LofiStreamer 的直播，佇列暫停"
+        assert _reply(component) == "開始播放 LofiStreamer 的直播，有點播時會先播點播"
 
     async def test_offline_channel_is_rejected(self):
         component = _component()
@@ -528,13 +528,30 @@ class TestLiveInsert:
             "直播中：LofiStreamer「beats to relax to」 https://www.twitch.tv/lofistreamer"
         )
 
-    async def test_requests_during_an_insert_say_when_they_play(self):
+    async def test_np_prefers_the_video_playing_over_the_insert(self):
+        component = _component()
+        playing = MagicMock(video_type="youtube", video_id="vid123", start_seconds=0)
+        component.vq_repo.get_stream_snapshot = AsyncMock(return_value=(playing, [], _insert()))
+        component.cmd_repo.increment_usage_count = AsyncMock()
+        with (
+            patch(
+                "twitch.components.video_queue.check_command", AsyncMock(return_value=MagicMock())
+            ),
+            patch("twitch.components.video_queue.now_playing_message", return_value="NP") as np,
+        ):
+            await VideoQueueComponent.cmd_np.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
+        np.assert_called_once_with(playing)
+        assert _reply(component) == "NP"
+
+    async def test_requests_during_an_insert_are_queued_as_usual(self):
+        """A queued video plays over the live insert: no 'after the stream' note."""
         component = _component()
         component.vq_insert_repo.get_active = AsyncMock(return_value=_insert())
         p1, p2 = _patches(_YT, VideoMetadata("YT", 90, 5000, False))
         with p1, p2:
             await component._handle_add_inner(_ctx(), "https://youtu.be/vid123")
-        assert "（直播結束後播放）" in _reply(component)
+        assert "已加入待播" in _reply(component)
+        assert "直播" not in _reply(component)
 
 
 @pytest.mark.asyncio

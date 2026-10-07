@@ -1746,13 +1746,20 @@ class TestLiveInsert:
         assert r.status_code == 404
         _no_live_insert.return_value.stop.assert_not_awaited()
 
-    def test_play_now_is_refused_during_an_insert(self, _no_live_insert):
+    def test_play_now_works_during_an_insert(self, _no_live_insert):
+        """The insert is a background source; a queued video plays over it."""
         _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
-        with patch("routers.video_queue_router.VideoQueueRepository") as vqr:
+        with (
+            patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+            patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+        ):
             vqr.return_value.play_immediately = AsyncMock(return_value=True)
+            vqr.return_value.get_current = AsyncMock(return_value=None)
+            vqr.return_value.get_queued = AsyncMock(return_value=[])
+            sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
             r = _make_auth_client().post("/api/video-queue/entries/1/play-now")
-        assert r.status_code == 409
-        vqr.return_value.play_immediately.assert_not_awaited()
+        assert r.status_code == 200
+        vqr.return_value.play_immediately.assert_awaited_once()
 
     def test_settings_update_reaches_the_playing_insert(self, _no_live_insert):
         with patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr:

@@ -2167,10 +2167,11 @@ _INSERT_ROW = {
 
 @pytest.mark.asyncio
 class TestVideoQueueInsertRepository:
-    async def test_start_requeues_the_playing_entry_then_replaces_the_insert(self):
-        from shared.repositories.video_queue import PRIORITY_PINNED, VideoQueueInsertRepository
+    async def test_start_replaces_the_insert_and_leaves_the_queue_alone(self):
+        """The insert is a background source: the playing video keeps playing."""
+        from shared.repositories.video_queue import VideoQueueInsertRepository
 
-        pool, conn = _make_pool(fetchval=_NOW, fetchrow=_INSERT_ROW)
+        pool, conn = _make_pool(fetchrow=_INSERT_ROW)
         insert = await VideoQueueInsertRepository(pool).start(
             "ch1",
             source_type="twitch_live",
@@ -2183,11 +2184,9 @@ class TestVideoQueueInsertRepository:
             audio_only=False,
         )
         conn.transaction.assert_called_once()
-        requeue, delete = (c.args for c in conn.execute.await_args_list)
-        assert "SET status = 'queued', started_at = NULL" in requeue[0]
-        assert "status = 'playing'" in requeue[0]
-        assert requeue[2] == PRIORITY_PINNED
+        (delete,) = (c.args for c in conn.execute.await_args_list)
         assert "DELETE FROM video_queue_inserts" in delete[0]
+        assert "INSERT INTO video_queue_inserts" in conn.fetchrow.await_args.args[0]
         assert insert.id == 5
 
     async def test_stop_is_conditional_on_the_expected_id(self):
@@ -2234,7 +2233,8 @@ class TestVideoQueueInsertRepository:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method", ["kickstart_if_idle", "advance_queue"])
-async def test_promotion_is_paused_by_an_active_insert(method):
+async def test_promotion_ignores_a_live_insert(method):
+    """A live insert no longer pauses the queue: queued videos play over it."""
     pool, conn = _make_pool()
     repo = VideoQueueRepository(pool)
     if method == "advance_queue":
@@ -2242,4 +2242,5 @@ async def test_promotion_is_paused_by_an_active_insert(method):
     else:
         await repo.kickstart_if_idle("ch1")
     promote_sql = conn.execute.await_args_list[-1].args[0]
-    assert "FROM video_queue_inserts" in promote_sql
+    assert "SET status = 'playing'" in promote_sql
+    assert "video_queue_inserts" not in promote_sql

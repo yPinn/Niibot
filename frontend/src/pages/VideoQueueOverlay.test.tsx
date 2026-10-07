@@ -592,6 +592,8 @@ describe('VideoQueueOverlay live insert', () => {
     started_at: null,
   }
   let fire: (event: string) => void
+  let TwitchPlayer: ReturnType<typeof vi.fn>
+  let twitchPlayer: { destroy: ReturnType<typeof vi.fn> }
 
   beforeEach(() => {
     vi.mocked(openVideoQueueStream).mockReset()
@@ -623,6 +625,8 @@ describe('VideoQueueOverlay live insert', () => {
       { ENDED: 'ended', PLAYING: 'playing', PAUSE: 'pause', OFFLINE: 'offline', ONLINE: 'online' }
     )
     ;(window as unknown as { Twitch: unknown }).Twitch = { Player }
+    TwitchPlayer = Player
+    twitchPlayer = player
     fire = event => listeners[event]?.()
   })
 
@@ -644,16 +648,35 @@ describe('VideoQueueOverlay live insert', () => {
     })
   }
 
-  it('plays the insert instead of the queue and never kickstarts the queue', async () => {
-    const { container } = renderOverlay()
-    push({ insert, queue: [bilibiliEntry(1, 'viewer')], queue_size: 1 })
+  it('shows the insert while the queue is empty', async () => {
+    renderOverlay()
+    push({ insert })
     await settle()
 
     // Title bar: the channel on the left, a red-dot LIVE where the countdown goes.
     expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
     expect(screen.getByText('LIVE')).toBeInTheDocument()
-    expect(container.querySelector('iframe[src*="bilibili"]')).toBeNull()
-    expect(advanceVideoQueue).not.toHaveBeenCalled()
+  })
+
+  it('plays a queued video over the insert, then returns to the stream', async () => {
+    const { container } = renderOverlay()
+    push({ insert })
+    await settle()
+    expect(TwitchPlayer).toHaveBeenCalledTimes(1)
+
+    push({ insert, current: { ...bilibiliEntry(1, 'viewer'), started_at: null } })
+    await settle()
+    expect(screen.getByText('@ viewer')).toBeInTheDocument()
+    expect(screen.queryByText('LIVE')).toBeNull()
+    expect(container.querySelector('iframe[src*="bilibili"]')).not.toBeNull()
+    // Hidden, the stream's player is torn down rather than left running.
+    expect(twitchPlayer.destroy).toHaveBeenCalled()
+
+    push({ insert, current: null })
+    await settle()
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    // Shown again, it is a fresh player: it rejoins at the live edge.
+    expect(TwitchPlayer).toHaveBeenCalledTimes(2)
   })
 
   it('reports the end once, then plays the exit animation before hiding', async () => {
@@ -777,55 +800,11 @@ describe('VideoQueueOverlay live insert → queue handover', () => {
     for (let i = 0; i < 10; i++) await act(async () => undefined)
   }
 
-  it('never kickstarts during the insert, then resumes once it is stopped', async () => {
+  it('kickstarts a request queued during the insert right away', async () => {
     const push = await setupStream()
     push({ insert, queue: [entry], queue_size: 1 })
-    await settle()
-    expect(advanceVideoQueue).not.toHaveBeenCalled()
-    push({ insert: null, queue: [entry], queue_size: 1 })
     await settle()
     expect(advanceVideoQueue).toHaveBeenCalledWith(USERNAME, null, OVERLAY_KEY)
-  })
-
-  it('retries the kickstart when the server only drops the insert after refusing one', async () => {
-    const listeners: Record<string, () => void> = {}
-    const player = {
-      play: vi.fn(),
-      setVolume: vi.fn(),
-      setMuted: vi.fn(),
-      destroy: vi.fn(),
-      addEventListener: (event: string, cb: () => void) => {
-        listeners[event] = cb
-      },
-    }
-    ;(window as unknown as { Twitch: unknown }).Twitch = {
-      Player: Object.assign(
-        vi.fn(function () {
-          return player
-        }),
-        { ENDED: 'ended', PLAYING: 'playing', PAUSE: 'pause', OFFLINE: 'offline', ONLINE: 'online' }
-      ),
-    }
-    // The overlay's kickstart lands before its end report deletes the insert.
-    vi.mocked(advanceVideoQueue).mockResolvedValueOnce({
-      enabled: true,
-      volume_percent: 50,
-      current: null,
-      queue: [entry],
-      queue_size: 1,
-      total_queued_duration: null,
-      insert,
-    })
-    const push = await setupStream()
-    push({ insert, queue: [entry], queue_size: 1 })
-    await settle()
-    act(() => listeners.ended?.())
-    await settle()
-    expect(advanceVideoQueue).toHaveBeenCalledTimes(1)
-
-    push({ insert: null, queue: [entry], queue_size: 1 })
-    await settle()
-    expect(advanceVideoQueue).toHaveBeenCalledTimes(2)
   })
 })
 
