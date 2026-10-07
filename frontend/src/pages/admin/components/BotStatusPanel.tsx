@@ -26,21 +26,21 @@ import {
 const BOT_STATUS_CONFIG = {
   ok: {
     label: '已就緒',
-    description: 'Bot 已可正常使用。',
+    description: '',
     action: '更新授權',
     icon: 'fa-solid fa-shield-check',
     className: 'border-status-online/20 bg-status-online/10 text-status-online',
   },
   missing: {
     label: '權限不足',
-    description: '部分功能暫時無法使用，請重新授權。',
+    description: '部分功能無法使用。',
     action: '補充授權',
     icon: 'fa-solid fa-lock',
     className: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
   },
   no_token: {
     label: '尚未授權',
-    description: '完成授權後，Niibot 才能以這個帳號運作。',
+    description: '尚未連結 Bot 帳號。',
     action: '連結帳號',
     icon: 'fa-solid fa-rotate-exclamation',
     className: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
@@ -83,7 +83,7 @@ export function BotStatusPanel({
   }
 
   return (
-    <Card className="lg:h-full">
+    <Card>
       <CardHeader>
         <div className="flex items-center gap-element">
           <Icon icon="fa-solid fa-robot" size="sm" wrapperClassName="text-muted-foreground" />
@@ -122,7 +122,7 @@ export function BotStatusPanel({
             {resetInvite ? (
               <div className="bg-muted flex flex-col gap-element rounded-lg p-section sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-label text-muted-foreground">
-                  請使用 {bot.display_name || bot.name} 完成授權；連結只能使用一次。
+                  以 {botName} 登入授權（單次有效）
                 </p>
                 <Button size="sm" asChild>
                   <a
@@ -138,10 +138,14 @@ export function BotStatusPanel({
               </div>
             ) : (
               <div className="flex flex-col gap-element sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-label text-muted-foreground">{botCfg.description}</p>
+                {botCfg.description && (
+                  <p className="text-label text-muted-foreground">{botCfg.description}</p>
+                )}
                 <Button
                   size="sm"
-                  variant="outline"
+                  // Routine refresh when healthy; the page's primary action when not.
+                  variant={bot.status === 'ok' ? 'ghost' : 'default'}
+                  className="shrink-0 sm:ml-auto"
                   onClick={() => void createResetInvite()}
                   disabled={resetting}
                 >
@@ -152,33 +156,26 @@ export function BotStatusPanel({
             )}
           </div>
         ) : (
-          <p className="text-sub text-muted-foreground">目前無法載入 Bot 帳號狀態。</p>
+          <p className="text-sub text-muted-foreground">無法載入 Bot 狀態</p>
         )}
 
         <Separator />
 
         <div className="space-y-element">
-          <div className="space-y-element">
-            <div className="flex items-center gap-element">
-              <Icon icon="fa-solid fa-coins" size="xs" wrapperClassName="text-muted-foreground" />
-              <p className="select-none text-label font-medium">使用資格獎勵</p>
-            </div>
-            <p className="text-label text-muted-foreground">
-              觀眾兌換後，可在下次登入取得 Niibot 使用資格。
-            </p>
+          <div className="flex items-center gap-element">
+            <Icon icon="fa-solid fa-coins" size="xs" wrapperClassName="text-muted-foreground" />
+            <p className="select-none text-label font-medium">使用資格獎勵</p>
           </div>
           {redemptionLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : !niibotAuth ? (
-            <p className="text-label text-muted-foreground">目前無法載入使用資格獎勵設定。</p>
+            <p className="text-label text-muted-foreground">無法載入</p>
           ) : (
             <div className="flex items-center justify-between gap-element">
               {rewardsLoading ? (
                 <Skeleton className="h-9 flex-1" />
               ) : twitchRewards.length === 0 ? (
-                <span className="text-label text-muted-foreground">
-                  尚未建立可用的 Twitch 自訂獎勵。
-                </span>
+                <span className="text-label text-muted-foreground">尚無 Twitch 自訂獎勵</span>
               ) : (
                 <Select
                   value={

@@ -72,9 +72,9 @@ describe('BotStatusPanel', () => {
   })
 
   it.each([
-    ['ok', '已就緒', 'Bot 已可正常使用。', '更新授權'],
-    ['missing', '權限不足', '部分功能暫時無法使用，請重新授權。', '補充授權'],
-    ['no_token', '尚未授權', '完成授權後，Niibot 才能以這個帳號運作。', '連結帳號'],
+    ['ok', '已就緒', null, '更新授權'],
+    ['missing', '權限不足', '部分功能無法使用。', '補充授權'],
+    ['no_token', '尚未授權', '尚未連結 Bot 帳號。', '連結帳號'],
   ] as const)('shows actionable copy for the %s state', (status, label, description, action) => {
     renderPanel({
       ...BOT,
@@ -83,7 +83,7 @@ describe('BotStatusPanel', () => {
     })
 
     expect(screen.getByText(label)).toBeInTheDocument()
-    expect(screen.getByText(description)).toBeInTheDocument()
+    if (description) expect(screen.getByText(description)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: action })).toBeInTheDocument()
   })
 
@@ -119,7 +119,7 @@ describe('BotStatusPanel', () => {
     await user.click(screen.getByRole('button', { name: '更新授權' }))
 
     await waitFor(() => expect(mockCreateReset).toHaveBeenCalledOnce())
-    expect(screen.getByText('請使用 Niibot 完成授權；連結只能使用一次。')).toBeInTheDocument()
+    expect(screen.getByText('以 Niibot 登入授權（單次有效）')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '開啟授權頁' })).toHaveAttribute(
       'href',
       'https://niibot.test/bot-invite/opaque?nonce=state-nonce'
@@ -158,7 +158,6 @@ describe('BotStatusPanel', () => {
     renderPanel()
 
     expect(screen.getByText('使用資格獎勵')).toBeInTheDocument()
-    expect(screen.getByText('觀眾兌換後，可在下次登入取得 Niibot 使用資格。')).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: '啟用使用資格兌換' })).toBeChecked()
     expect(screen.queryByText('niibot_auth')).not.toBeInTheDocument()
 

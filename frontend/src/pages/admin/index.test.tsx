@@ -7,6 +7,8 @@ vi.mock('@/api/admin', () => ({
   getAdminBotStatus: vi.fn(),
   reinstateMembership: vi.fn(),
   suspendMembership: vi.fn(),
+  approveActivationRequest: vi.fn(),
+  rejectActivationRequest: vi.fn(),
 }))
 vi.mock('@/api/events', () => ({
   getRedemptionConfigs: vi.fn(),
@@ -18,19 +20,27 @@ vi.mock('@/lib/toast-error', () => ({ toastApiError: vi.fn() }))
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }))
-vi.mock('./components/ActivationCard', () => ({
-  ActivationCard: () => <div>授權管理內容</div>,
+vi.mock('./components/ActivationCodes', () => ({
+  ActivationCodes: () => <div>啟用碼內容</div>,
 }))
 vi.mock('./components/BotStatusPanel', () => ({
   BotStatusPanel: () => <div>Bot 設定內容</div>,
 }))
 vi.mock('./components/ChannelCard', () => ({
-  ChannelCard: ({ ch, onSuspend }: { ch: AdminChannel; onSuspend?: SuspendHandler }) => (
+  ChannelCard: ({
+    ch,
+    onSuspend,
+    onApprove,
+  }: {
+    ch: AdminChannel
+    onSuspend?: SuspendHandler
+    onApprove?: (ch: AdminChannel) => Promise<boolean>
+  }) => (
     <button
       type="button"
       data-testid={`channel-${ch.id}`}
       data-membership-status={ch.membership_status}
-      onClick={() => void onSuspend?.(ch, '違反使用規範')}
+      onClick={() => void (onApprove ? onApprove(ch) : onSuspend?.(ch, '違反使用規範'))}
     >
       {ch.display_name}
     </button>
@@ -40,7 +50,12 @@ vi.mock('./components/ChannelCard', () => ({
 import { toast } from 'sonner'
 
 import type { AdminChannel } from '@/api/admin'
-import { getAdminBotStatus, getAdminChannels, suspendMembership } from '@/api/admin'
+import {
+  approveActivationRequest,
+  getAdminBotStatus,
+  getAdminChannels,
+  suspendMembership,
+} from '@/api/admin'
 import { getRedemptionConfigs, getTwitchRewards } from '@/api/events'
 import { toastApiError } from '@/lib/toast-error'
 
@@ -143,14 +158,17 @@ describe('AdminPage membership suspension', () => {
     mockSuspend.mockResolvedValue(undefined)
   })
 
-  it('uses an operator-first reading order with a full-width authorization region', async () => {
+  it('stacks bot settings and activation codes as separate cards beside the grid', async () => {
     render(<AdminPage />)
 
     expect(
       await screen.findByRole('heading', { name: '使用者與頻道', level: 2 })
     ).toBeInTheDocument()
-    expect(screen.getByText('Bot 設定內容')).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: '授權管理' })).toHaveTextContent('授權管理內容')
+    const bot = screen.getByText('Bot 設定內容')
+    const codes = screen.getByText('啟用碼內容')
+    expect(bot).not.toContainElement(codes)
+    // Same right-hand column, bot settings first.
+    expect(bot.compareDocumentPosition(codes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('filters the unified user grid by membership and monitoring state', async () => {
@@ -170,7 +188,7 @@ describe('AdminPage membership suspension', () => {
     expect(screen.getByTestId('channel-channel-2')).toBeInTheDocument()
   })
 
-  it('groups channels in a stable frequency-first category order', async () => {
+  it('groups channels with actionable categories first', async () => {
     mockGetChannels.mockReset()
     mockGetChannels.mockResolvedValueOnce([
       SUSPENDED_CHANNEL,
@@ -187,7 +205,7 @@ describe('AdminPage membership suspension', () => {
 
     expect(
       screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)
-    ).toEqual(['正常監聽', '需處理', '待審核', '監控暫停', '已停權'])
+    ).toEqual(['需處理', '待審核', '正常監聽', '監控暫停', '已停權'])
 
     const healthyGroup = screen.getByRole('region', { name: '正常監聽' })
     const channelNames = (regionName: string) =>
@@ -206,18 +224,24 @@ describe('AdminPage membership suspension', () => {
     expect(channelNames('已停權')).toEqual(['Suspended'])
   })
 
-  it('omits empty groups from the all view but keeps their filters available', async () => {
-    const user = userEvent.setup()
+  it('offers filters only for groups that have channels', async () => {
     render(<AdminPage />)
 
     await screen.findByTestId('channel-channel-1')
 
-    expect(screen.getByRole('region', { name: '正常監聽' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /正常監聽\s*1/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /已停權/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '已停權' })).not.toBeInTheDocument()
+  })
 
-    await user.click(screen.getByRole('button', { name: /已停權\s*0/ }))
+  it('drops the group heading once a single group is selected', async () => {
+    const user = userEvent.setup()
+    render(<AdminPage />)
 
-    expect(screen.getByRole('region', { name: '已停權' })).toHaveTextContent('目前沒有已停權的頻道')
+    await user.click(await screen.findByRole('button', { name: /正常監聽\s*1/ }))
+
+    expect(screen.getByRole('region', { name: '正常監聽' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { level: 3 })).not.toBeInTheDocument()
   })
 
   it('keeps the user cards in the established responsive auto-fill grid', async () => {
@@ -244,5 +268,28 @@ describe('AdminPage membership suspension', () => {
     })
     expect(toast.success).toHaveBeenCalledWith('Streamer 已停權')
     expect(toastApiError).not.toHaveBeenCalled()
+  })
+
+  it('approves from the grid and refreshes the grid', async () => {
+    const user = userEvent.setup()
+    mockGetChannels.mockReset()
+    mockGetChannels
+      .mockResolvedValueOnce([PENDING_CHANNEL])
+      .mockResolvedValueOnce([
+        { ...PENDING_CHANNEL, membership_status: 'active', is_enabled: true },
+      ])
+    ;(approveActivationRequest as ReturnType<typeof vi.fn>).mockResolvedValue(undefined)
+    render(<AdminPage />)
+
+    await user.click(await screen.findByTestId('channel-channel-pending'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('channel-channel-pending')).toHaveAttribute(
+        'data-membership-status',
+        'active'
+      )
+    )
+    expect(approveActivationRequest).toHaveBeenCalledWith('user-pending')
+    expect(toast.success).toHaveBeenCalledWith('Pending 已通過')
   })
 })
