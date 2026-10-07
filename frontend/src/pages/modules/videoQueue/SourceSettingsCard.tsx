@@ -32,21 +32,15 @@ export function SourceSettingsPanel({
       <section className="flex flex-col gap-card" aria-labelledby="channel-points-source">
         <div>
           <h3 id="channel-points-source" className="text-sub font-medium">
-            頻道點數
+            忠誠點數
           </h3>
           <p className="text-label text-muted-foreground">Twitch 兌換專屬設定</p>
         </div>
         <div className={GRID}>
-          <SettingRow
-            title="開放頻道點數點播"
-            description="觀眾可用已綁定的 Twitch 自訂獎勵加入影片"
-          >
+          <SettingRow title="開放忠誠點數點播" description="需先綁定 Twitch 自訂獎勵">
             <Switch checked={redemptionEnabled} onCheckedChange={onToggleRedemption} />
           </SettingRow>
-          <SettingRow
-            title="單次兌換長度上限"
-            description="會與通用影片長度一起套用，以較短的上限為準"
-          >
+          <SettingRow title="單次兌換長度上限" description="與通用長度上限取較短者">
             <Select
               value={draft.maxRedemptionDuration}
               onValueChange={value => onField('maxRedemptionDuration', value)}
@@ -75,12 +69,9 @@ export function SourceSettingsPanel({
           </h3>
           <p className="text-label text-muted-foreground">付費點播來源設定</p>
         </div>
-        <SettingRow
-          title="斗內影片點播"
-          description="在金流設定中逐一開啟平台的影片分享；仍會套用通用安全、容量與封鎖規則"
-        >
+        <SettingRow title="斗內影片點播" description="在金流設定逐一開啟平台">
           <Button asChild variant="outline" size="sm">
-            <a href="/settings">前往 Donate 設定</a>
+            <a href="/settings">前往斗內設定</a>
           </Button>
         </SettingRow>
       </section>

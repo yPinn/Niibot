@@ -1,16 +1,15 @@
 import { useState } from 'react'
 
 import type { VideoQueueEntry } from '@/api/videoQueue'
-import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
-import { Icon, Spinner } from '@/components/primitives'
+import { EmptyState, Icon, Spinner } from '@/components/primitives'
 import { SettingRow } from '@/components/SettingRow'
 import {
   Badge,
   Button,
   Card,
+  CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Input,
@@ -22,7 +21,7 @@ import {
 
 import { thumbnailUrl } from './utils'
 
-function PercentField({
+function PercentInput({
   label,
   value,
   onChange,
@@ -32,40 +31,36 @@ function PercentField({
   onChange?: (value: string) => void
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-label text-muted-foreground">{label}</span>
-      <div className="relative w-20">
-        <Input
-          aria-label={label}
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={100}
-          value={value}
-          onChange={event => onChange?.(event.target.value)}
-          className="w-full pr-7 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-label text-muted-foreground"
-        >
-          %
-        </span>
-      </div>
-    </label>
+    <div className="relative w-20">
+      <Input
+        aria-label={label}
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={100}
+        value={value}
+        onChange={event => onChange?.(event.target.value)}
+        className="w-full pr-7 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-label text-muted-foreground"
+      >
+        %
+      </span>
+    </div>
   )
 }
 
 export function OverlayCard({
   url,
   current,
-  volumePercent = '100',
+  volumePercent = '50',
   onVolumeChange,
-  insertVolumePercent = '30',
-  onInsertVolumeChange,
   insertAudioOnly = false,
   onToggleInsertAudioOnly,
   onSaveOutput,
+  outputDirty = true,
   saving = false,
   onOpenGuide,
   onRotateUrl,
@@ -75,11 +70,11 @@ export function OverlayCard({
   current: VideoQueueEntry | null
   volumePercent?: string
   onVolumeChange?: (value: string) => void
-  insertVolumePercent?: string
-  onInsertVolumeChange?: (value: string) => void
   insertAudioOnly?: boolean
   onToggleInsertAudioOnly?: (value: boolean) => void
   onSaveOutput?: () => void
+  /** Unsaved output changes: the save button is only prominent (and enabled) then. */
+  outputDirty?: boolean
   saving?: boolean
   onOpenGuide: () => void
   onRotateUrl?: () => void
@@ -89,51 +84,68 @@ export function OverlayCard({
   // poster by default: the overlay can't autoplay muted for every platform
   // (Twitch clips especially), and the "現在播放" card already shows live status.
   const [previewOpen, setPreviewOpen] = useState(false)
-  const [confirmRotate, setConfirmRotate] = useState(false)
   const poster = current ? thumbnailUrl(current.video_type, current.video_id) : null
   const [overlayPath, capabilityFragment] = url.split('#', 2)
   const previewUrl = url
     ? `${overlayPath}${overlayPath.includes('?') ? '&' : '?'}preview=1${capabilityFragment ? `#${capabilityFragment}` : ''}`
     : ''
 
+  // Order: the URL (what you need to set OBS up) → output settings, each a
+  // uniform "title + description | control" row → the preview.
   return (
-    <Card className="lg:h-full">
+    <Card>
       <CardHeader>
         <CardTitle>OBS 畫面</CardTitle>
-        <CardDescription>加到 OBS 後，觀眾點播的影片會自動出現在直播畫面上</CardDescription>
+        <CardAction>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="如何加入 OBS"
+                onClick={onOpenGuide}
+              >
+                <Icon icon="fa-regular fa-circle-question" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">如何加入 OBS</TooltipContent>
+          </Tooltip>
+        </CardAction>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-card">
-        <div className="flex flex-col gap-element">
-          <div className="flex items-end gap-2">
-            <PercentField label="點播音量" value={volumePercent} onChange={onVolumeChange} />
-            <PercentField
-              label="插播音量"
-              value={insertVolumePercent}
-              onChange={onInsertVolumeChange}
-            />
-            {onSaveOutput && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon"
-                    disabled={saving}
-                    onClick={onSaveOutput}
-                    aria-label="儲存播放設定"
-                  >
-                    {saving ? <Spinner /> : <Icon icon="fa-solid fa-floppy-disk" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">儲存播放設定</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
-          <p className="text-label text-muted-foreground">
-            嵌入式備援播放器僅支援靜音；插播當背景音樂時通常調小聲
-          </p>
+        <OverlayUrlBlock
+          url={url}
+          obsSource={{ name: 'Niibot Video Queue', width: 640, height: 400 }}
+          onRotate={onRotateUrl}
+          rotating={rotating}
+        />
+
+        <div className="flex flex-col gap-card">
+          <SettingRow title="播放音量" description="影片與直播共用">
+            <div className="flex shrink-0 items-center gap-element">
+              <PercentInput label="播放音量" value={volumePercent} onChange={onVolumeChange} />
+              {onSaveOutput && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant={outputDirty ? 'default' : 'outline'}
+                      disabled={saving || !outputDirty}
+                      onClick={onSaveOutput}
+                      aria-label="儲存播放設定"
+                    >
+                      {saving ? <Spinner /> : <Icon icon="fa-solid fa-floppy-disk" />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">儲存播放設定</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </SettingRow>
           {onToggleInsertAudioOnly && (
-            <SettingRow title="插播僅聲音" description="OBS 不顯示插播的直播畫面，只播放聲音">
+            <SettingRow title="直播僅聲音" description="不顯示直播畫面">
               <Switch
-                aria-label="插播僅聲音"
+                aria-label="直播僅聲音"
                 checked={insertAudioOnly}
                 onCheckedChange={onToggleInsertAudioOnly}
               />
@@ -141,82 +153,62 @@ export function OverlayCard({
           )}
         </div>
 
-        <OverlayUrlBlock url={url} />
-
-        <div className="relative aspect-video overflow-hidden rounded-lg border bg-black lg:aspect-auto lg:min-h-0 lg:flex-1">
+        {/* Same 16:10 as the 640×400 overlay. Nothing to show → the same
+            EmptyState as the rest of the page; dark only once there is media. */}
+        <div
+          className={`relative aspect-[16/10] overflow-hidden rounded-lg border ${
+            previewOpen || poster ? 'bg-black' : 'bg-muted/30'
+          }`}
+        >
           {previewOpen ? (
             <>
               <iframe
                 src={previewUrl}
                 className="block h-full w-full"
-                title="Overlay 預覽"
+                title="畫面預覽"
                 allow="autoplay"
               />
               <Badge
                 variant="secondary"
                 className="pointer-events-none absolute top-2 left-2 bg-black/75 text-white shadow-sm"
               >
-                跟隨正式 Overlay · 靜音 · 唯讀
+                同步預覽 · 靜音
               </Badge>
             </>
           ) : (
             <button
               type="button"
               onClick={() => setPreviewOpen(true)}
-              aria-label="載入同步預覽"
-              className="group absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80 hover:text-white"
+              aria-label="載入預覽"
+              className="group absolute inset-0"
             >
-              {poster && (
-                <img
-                  src={poster}
-                  alt=""
-                  className="absolute inset-0 h-full w-full object-cover opacity-40 transition-opacity group-hover:opacity-55"
+              {poster ? (
+                <span className="flex h-full flex-col items-center justify-center gap-element p-card text-center text-white/85 group-hover:text-white">
+                  <img
+                    src={poster}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover opacity-40 transition-opacity group-hover:opacity-55"
+                  />
+                  <Icon
+                    icon="fa-solid fa-circle-play"
+                    wrapperClassName="relative size-20 opacity-60"
+                    className="text-[5rem]"
+                  />
+                  <span className="relative text-card-title font-medium">載入預覽</span>
+                  <span className="relative text-sub text-white/60">與 OBS 同步，靜音</span>
+                </span>
+              ) : (
+                <EmptyState
+                  icon="fa-solid fa-circle-play"
+                  title="載入預覽"
+                  description="目前沒有播放"
+                  className="h-full p-card transition-opacity group-hover:opacity-80"
                 />
               )}
-              <Icon
-                icon="fa-solid fa-circle-play"
-                wrapperClassName="relative size-9"
-                className="size-9"
-              />
-              <span className="relative text-sub">載入同步預覽</span>
-              <span className="relative text-label text-white/55">
-                {current
-                  ? '跟隨目前項目；嵌入備援可能從頭開始'
-                  : '等待正式 Overlay 播放，靜音且唯讀'}
-              </span>
             </button>
           )}
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={onOpenGuide}>
-            <Icon icon="fa-regular fa-circle-question" wrapperClassName="mr-1.5 size-3.5" />
-            如何加入 OBS
-          </Button>
-          {onRotateUrl && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={rotating}
-              onClick={() => setConfirmRotate(true)}
-            >
-              <Icon icon="fa-solid fa-rotate" wrapperClassName="mr-1.5 size-3.5" />
-              重設 OBS 網址
-            </Button>
-          )}
-        </div>
       </CardContent>
-      <DeleteConfirmDialog
-        open={confirmRotate}
-        onOpenChange={setConfirmRotate}
-        title="重設 OBS 網址？"
-        description="目前的網址會立即失效；請把新網址重新貼到 OBS Browser Source。"
-        actionLabel="重設網址"
-        onConfirm={() => {
-          setConfirmRotate(false)
-          onRotateUrl?.()
-        }}
-      />
     </Card>
   )
 }

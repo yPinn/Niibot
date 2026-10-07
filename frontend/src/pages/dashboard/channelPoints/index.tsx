@@ -134,9 +134,9 @@ export default function ChannelPoints() {
         enabled,
       }).then(() => {}),
     messages: {
-      on: '頻道點數動作已啟用',
-      off: '頻道點數動作已停用',
-      error: '切換頻道點數動作失敗',
+      on: '忠誠點數動作已啟用',
+      off: '忠誠點數動作已停用',
+      error: '切換忠誠點數動作失敗',
     },
   })
 
@@ -191,7 +191,7 @@ export default function ChannelPoints() {
 
       {loadFailed && (
         <Alert variant="destructive">
-          <AlertTitle>部分頻道點數設定載入失敗</AlertTitle>
+          <AlertTitle>部分忠誠點數設定載入失敗</AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
             <span>既有資料仍會保留；請重新載入後再進行修改。</span>
             <Button size="sm" variant="outline" onClick={() => void loadChannelPoints()}>

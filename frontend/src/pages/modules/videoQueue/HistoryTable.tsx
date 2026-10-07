@@ -114,7 +114,7 @@ export function HistoryTable({
                       </Button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="left">加入封鎖清單</TooltipContent>
+                  <TooltipContent side="left">封鎖</TooltipContent>
                 </Tooltip>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={() => onBlock(entry, 'video')}>

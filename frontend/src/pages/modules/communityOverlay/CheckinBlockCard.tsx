@@ -122,9 +122,9 @@ export function CheckinBlockCard({
           ) : !isAffiliate ? (
             <Alert>
               <Icon icon="fa-brands fa-twitch" />
-              <AlertTitle>頻道點數尚不可用</AlertTitle>
+              <AlertTitle>忠誠點數尚不可用</AlertTitle>
               <AlertDescription>
-                頻道點數僅供 Twitch 實況盟友與合作夥伴使用；仍可用聊天指令簽到。
+                忠誠點數僅供 Twitch 實況盟友與合作夥伴使用；仍可用聊天指令簽到。
               </AlertDescription>
             </Alert>
           ) : (
@@ -138,7 +138,7 @@ export function CheckinBlockCard({
                     note: '每天每人記錄一次',
                   },
                   {
-                    label: '頻道點數',
+                    label: '忠誠點數',
                     badge: (
                       <Badge variant={config?.enabled && bindingLabel ? 'default' : 'outline'}>
                         {statusLabel}

@@ -14,13 +14,10 @@ describe('SourceSettingsPanel', () => {
       />
     )
 
-    const points = screen.getByRole('heading', { name: '頻道點數' })
+    const points = screen.getByRole('heading', { name: '忠誠點數' })
     const donate = screen.getByRole('heading', { name: 'Donate' })
     expect(points.compareDocumentPosition(donate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText(/較短的上限為準/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '前往 Donate 設定' })).toHaveAttribute(
-      'href',
-      '/settings'
-    )
+    expect(screen.getByText(/取較短者/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '前往斗內設定' })).toHaveAttribute('href', '/settings')
   })
 })

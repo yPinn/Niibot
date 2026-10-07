@@ -59,7 +59,7 @@ describe('RankingPanel', () => {
       expect(getVideoQueueRankings).toHaveBeenLastCalledWith('global', 30, undefined)
     )
     expect(screen.getByText('4 個頻道 · 播放 12 次')).toBeInTheDocument()
-    expect(screen.getByText(/只顯示匿名彙總/)).toBeInTheDocument()
+    expect(screen.getByText(/匿名彙總/)).toBeInTheDocument()
   })
 
   it('adds an available ranked video and prevents duplicate queue actions', async () => {

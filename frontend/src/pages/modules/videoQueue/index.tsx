@@ -65,8 +65,7 @@ const EMPTY_DRAFT: RulesDraft = {
   userCooldownSeconds: '',
   maxQueueSize: '',
   maxRedemptionDuration: '600',
-  volumePercent: '100',
-  insertVolumePercent: '30',
+  volumePercent: '50',
 }
 
 export default function VideoQueue() {
@@ -87,8 +86,8 @@ export default function VideoQueue() {
   const [draft, setDraft] = useState<RulesDraft>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
-  // One input for everything that goes on screen: queue it, or insert it live.
-  const [composerBusy, setComposerBusy] = useState<'add' | 'insert' | null>(null)
+  // One input for everything that goes on screen: queue a video, or play a live stream.
+  const [composerBusy, setComposerBusy] = useState<'add' | 'live' | null>(null)
   const [rotatingOverlayUrl, setRotatingOverlayUrl] = useState(false)
   const hasInitialized = useRef(false)
 
@@ -236,7 +235,6 @@ export default function VideoQueue() {
             snapToOption(REDEMPTION_DURATION_OPTIONS, queueSettings.max_duration_redemption)
           ),
           volumePercent: String(queueSettings.volume_percent),
-          insertVolumePercent: String(queueSettings.insert_volume_percent),
         })
         hasInitialized.current = true
       }
@@ -290,7 +288,6 @@ export default function VideoQueue() {
     const maxDurationMinutes = parseInt(draft.maxDurationMinutes, 10)
     const replayCooldownHours = parseInt(draft.replayCooldownHours, 10)
     const volumePercent = parseInt(draft.volumePercent, 10)
-    const insertVolumePercent = parseInt(draft.insertVolumePercent, 10)
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('佇列最多：1 ~ 100 首')
       return
@@ -312,11 +309,7 @@ export default function VideoQueue() {
       return
     }
     if (isNaN(volumePercent) || volumePercent < 0 || volumePercent > 100) {
-      toast.error('點播音量：0 ~ 100%')
-      return
-    }
-    if (isNaN(insertVolumePercent) || insertVolumePercent < 0 || insertVolumePercent > 100) {
-      toast.error('插播音量：0 ~ 100%')
+      toast.error('播放音量：0 ~ 100%')
       return
     }
     setSaving(true)
@@ -330,7 +323,6 @@ export default function VideoQueue() {
         max_duration_seconds: maxDurationMinutes * 60,
         replay_cooldown_hours: replayCooldownHours,
         volume_percent: volumePercent,
-        insert_volume_percent: insertVolumePercent,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -344,13 +336,13 @@ export default function VideoQueue() {
   const handleInsertFromComposer = async () => {
     const url = addUrlInput.trim()
     if (!url) return
-    setComposerBusy('insert')
+    setComposerBusy('live')
     try {
       setState(await startLiveInsert(url))
       setAddUrlInput('')
-      toast.success('開始插播，佇列暫停')
+      toast.success('開始播放直播，佇列暫停')
     } catch (e) {
-      toastApiError(e, '插播失敗')
+      toastApiError(e, '播放直播失敗')
     } finally {
       setComposerBusy(null)
     }
@@ -359,9 +351,9 @@ export default function VideoQueue() {
   const handleStopInsert = async () => {
     try {
       setState(await stopLiveInsert())
-      toast.success('已結束插播，恢復播放佇列')
+      toast.success('已結束直播，恢復播放佇列')
     } catch (e) {
-      toastApiError(e, '結束插播失敗')
+      toastApiError(e, '結束直播失敗')
     }
   }
 
@@ -403,9 +395,9 @@ export default function VideoQueue() {
   const handlePlayNow = async (entryId: number) => {
     try {
       setState(await playVideoNow(entryId))
-      toast.success('已插播')
+      toast.success('已開始播放這部')
     } catch (e) {
-      toastApiError(e, '插播失敗')
+      toastApiError(e, '播放失敗')
     }
   }
 
@@ -436,7 +428,7 @@ export default function VideoQueue() {
     setRotatingOverlayUrl(true)
     try {
       setSettings(await rotateVideoQueueOverlayKey())
-      toast.success('OBS 網址已重設，請更新 Browser Source')
+      toast.success('網址已重設，請到 OBS 的瀏覽器來源貼上新網址')
     } catch (error) {
       toastApiError(error, '重設 OBS 網址失敗')
     } finally {
@@ -513,7 +505,7 @@ export default function VideoQueue() {
             url: addUrlInput,
             onUrlChange: setAddUrlInput,
             onAdd: () => void handleAddVideo(),
-            onInsert: () => void handleInsertFromComposer(),
+            onPlayLive: () => void handleInsertFromComposer(),
             busy: composerBusy,
           }}
         />
@@ -555,11 +547,12 @@ export default function VideoQueue() {
             current={current}
             volumePercent={draft.volumePercent}
             onVolumeChange={value => setField('volumePercent', value)}
-            insertVolumePercent={draft.insertVolumePercent}
-            onInsertVolumeChange={value => setField('insertVolumePercent', value)}
             insertAudioOnly={settings?.insert_audio_only ?? false}
             onToggleInsertAudioOnly={value => void handleToggleInsertAudioOnly(value)}
             onSaveOutput={handleSaveSettings}
+            outputDirty={
+              settings !== null && draft.volumePercent !== String(settings.volume_percent)
+            }
             saving={saving}
             onOpenGuide={() => setHelpOpen(true)}
             onRotateUrl={() => void handleRotateOverlayUrl()}
@@ -589,9 +582,7 @@ export default function VideoQueue() {
           <Card className="h-full">
             <CardHeader>
               <CardTitle>封鎖清單</CardTitle>
-              <CardDescription>
-                影片、創作者與標題規則套用所有來源；使用者規則只套用 Chat 與頻道點數
-              </CardDescription>
+              <CardDescription>點播者規則只套用聊天與忠誠點數</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <BlocklistSection ref={blocklistRef} hideHeader />

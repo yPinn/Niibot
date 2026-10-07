@@ -5,7 +5,6 @@ import {
   CARD_HEADER_STACK_ON_MOBILE,
   CardAction,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
   Tabs,
@@ -37,7 +36,6 @@ export function SettingsCard({
       <CardHeader className={CARD_HEADER_STACK_ON_MOBILE}>
         <div>
           <CardTitle>點播設定</CardTitle>
-          <CardDescription>依加入來源與共用限制分頁管理</CardDescription>
         </div>
         <CardAction>
           <Button size="sm" onClick={onSave} disabled={saving}>

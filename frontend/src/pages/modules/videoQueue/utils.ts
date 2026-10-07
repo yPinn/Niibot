@@ -83,7 +83,7 @@ export function requeueText(
     : `${url} ${formatDuration(start)}`
 }
 
-/** Watch URL for a live insert (直播插播) — the channel or live video itself. */
+/** Watch URL for a live insert (直播播放) — the channel or live video itself. */
 export function liveWatchUrl(insert: {
   source_type: 'twitch_live' | 'youtube_live'
   source_id: string

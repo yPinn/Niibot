@@ -81,7 +81,7 @@ describe('Events page', () => {
     await waitFor(() => expect(getEventConfigs).toHaveBeenCalledOnce())
     expect(getRedemptionConfigs).not.toHaveBeenCalled()
     expect(getTwitchRewards).not.toHaveBeenCalled()
-    expect(screen.queryByText('頻道點數動作')).not.toBeInTheDocument()
+    expect(screen.queryByText('忠誠點數動作')).not.toBeInTheDocument()
   })
 
   it('renders the catalog-driven Watch Streak event', async () => {
