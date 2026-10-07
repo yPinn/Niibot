@@ -210,6 +210,7 @@ export const API_ENDPOINTS = {
     addEntry: join('/api/video-queue/entries'),
     insert: join('/api/video-queue/insert'),
     insertEnd: (u: string) => join(`/api/video-queue/public/${u}/insert/end`),
+    insertPlaylist: (u: string) => join(`/api/video-queue/public/${u}/insert/playlist.m3u8`),
     blocklist: join('/api/video-queue/blocklist'),
     blocklistEntry: (id: number) => join(`/api/video-queue/blocklist/${id}`),
   },

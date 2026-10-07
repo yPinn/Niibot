@@ -2,8 +2,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { VideoQueueLiveInsert } from '@/api/videoQueue'
 
-import { mountLiveInsert, OFFLINE_GRACE_MS } from './liveInsert'
+import { HLS_RETRY_MS, mountLiveInsert, OFFLINE_GRACE_MS } from './liveInsert'
 import type { YTPlayerOptions } from './types'
+
+// A stand-in for hls.js: records the source and lets a test raise errors.
+const hlsInstances: FakeHls[] = []
+class FakeHls {
+  static isSupported = vi.fn(() => true)
+  static Events = { ERROR: 'hlsError' }
+  handlers: Record<string, (event: string, data: { fatal: boolean }) => void> = {}
+  loadSource = vi.fn()
+  attachMedia = vi.fn()
+  destroy = vi.fn()
+  constructor(public config: Record<string, unknown>) {
+    hlsInstances.push(this)
+  }
+  on(event: string, cb: (event: string, data: { fatal: boolean }) => void) {
+    this.handlers[event] = cb
+  }
+  fatal() {
+    this.handlers.hlsError?.('hlsError', { fatal: true })
+  }
+}
+vi.mock('hls.js', () => ({ default: FakeHls }))
 
 function insert(overrides: Partial<VideoQueueLiveInsert> = {}): VideoQueueLiveInsert {
   return {
@@ -48,21 +69,161 @@ function installTwitch() {
   return { Player, player, fire: (event: string) => listeners[event]?.() }
 }
 
-describe('mountLiveInsert — Twitch channel', () => {
-  beforeEach(() => vi.useFakeTimers())
-  afterEach(() => {
-    vi.useRealTimers()
-    delete (window as unknown as { Twitch?: unknown }).Twitch
+/** Let the source lookup, the hls.js dynamic import and the embed load settle. */
+async function settle() {
+  await vi.dynamicImportSettled()
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  hlsInstances.length = 0
+})
+afterEach(() => {
+  vi.useRealTimers()
+  delete (window as unknown as { Twitch?: unknown }).Twitch
+})
+
+describe('mountLiveInsert — Twitch via hls.js', () => {
+  it('plays the resolved playlist in a <video>, capped to the player size', async () => {
+    const { Player } = installTwitch()
+    const container = document.createElement('div')
+    mountLiveInsert({
+      insert: insert(),
+      container,
+      muted: false,
+      onEnded: vi.fn(),
+      resolveTwitchSource: () => Promise.resolve('https://usher.ttvnw.net/x.m3u8'),
+    })
+    await settle()
+
+    const video = container.querySelector('video')!
+    expect(video).not.toBeNull()
+    expect(video.volume).toBeCloseTo(0.3)
+    expect(video.muted).toBe(false)
+    expect(hlsInstances[0].loadSource).toHaveBeenCalledWith('https://usher.ttvnw.net/x.m3u8')
+    expect(hlsInstances[0].config).toMatchObject({
+      enableWorker: false,
+      capLevelToPlayerSize: true,
+    })
+    expect(Player).not.toHaveBeenCalled()
   })
 
-  it('plays the channel (not a video) with controls off at the insert volume', () => {
-    const { Player, player } = installTwitch()
+  it('falls back to the embed when no source resolves', async () => {
+    const { Player } = installTwitch()
     mountLiveInsert({
       insert: insert(),
       container: document.createElement('div'),
       muted: false,
       onEnded: vi.fn(),
+      resolveTwitchSource: () => Promise.resolve(null),
     })
+    await settle()
+    expect(Player).toHaveBeenCalledOnce()
+    expect(hlsInstances).toHaveLength(0)
+  })
+
+  it('falls back to the embed when the stream fails before it ever plays', async () => {
+    const { Player } = installTwitch()
+    const container = document.createElement('div')
+    mountLiveInsert({
+      insert: insert(),
+      container,
+      muted: false,
+      onEnded: vi.fn(),
+      resolveTwitchSource: () => Promise.resolve('https://usher.ttvnw.net/x.m3u8'),
+    })
+    await settle()
+    hlsInstances[0].fatal()
+    await settle()
+    expect(hlsInstances[0].destroy).toHaveBeenCalled()
+    expect(Player).toHaveBeenCalledOnce()
+  })
+
+  it('retries a stream lost mid-play, and ends once the grace runs out', async () => {
+    installTwitch()
+    const container = document.createElement('div')
+    const onEnded = vi.fn()
+    const resolve = vi.fn(() => Promise.resolve('https://usher.ttvnw.net/x.m3u8'))
+    mountLiveInsert({
+      insert: insert(),
+      container,
+      muted: false,
+      onEnded,
+      resolveTwitchSource: resolve,
+    })
+    await settle()
+    container.querySelector('video')!.dispatchEvent(new Event('playing'))
+
+    // Each fatal error schedules a fresh resolve after HLS_RETRY_MS.
+    const rounds = Math.ceil(OFFLINE_GRACE_MS / HLS_RETRY_MS)
+    for (let i = 0; i < rounds; i++) {
+      hlsInstances.at(-1)!.fatal()
+      await vi.advanceTimersByTimeAsync(HLS_RETRY_MS)
+      await settle()
+    }
+    expect(resolve.mock.calls.length).toBeGreaterThan(1)
+    hlsInstances.at(-1)!.fatal()
+    await settle()
+    expect(onEnded).toHaveBeenCalledWith('offline')
+  })
+
+  it('a stream that recovers within the grace keeps playing', async () => {
+    installTwitch()
+    const container = document.createElement('div')
+    const onEnded = vi.fn()
+    mountLiveInsert({
+      insert: insert(),
+      container,
+      muted: false,
+      onEnded,
+      resolveTwitchSource: () => Promise.resolve('https://usher.ttvnw.net/x.m3u8'),
+    })
+    await settle()
+    const video = container.querySelector('video')!
+    video.dispatchEvent(new Event('playing'))
+    hlsInstances[0].fatal()
+    await vi.advanceTimersByTimeAsync(HLS_RETRY_MS)
+    await settle()
+    video.dispatchEvent(new Event('playing')) // back on air
+    await vi.advanceTimersByTimeAsync(OFFLINE_GRACE_MS * 2)
+    expect(onEnded).not.toHaveBeenCalled()
+  })
+
+  it('applies volume to the <video> and cleans up on destroy', async () => {
+    installTwitch()
+    const container = document.createElement('div')
+    const controller = mountLiveInsert({
+      insert: insert(),
+      container,
+      muted: false,
+      onEnded: vi.fn(),
+      resolveTwitchSource: () => Promise.resolve('https://usher.ttvnw.net/x.m3u8'),
+    })
+    await settle()
+    controller?.setVolume(0, false)
+    expect(container.querySelector('video')!.muted).toBe(true)
+    controller?.destroy()
+    expect(hlsInstances[0].destroy).toHaveBeenCalled()
+    expect(container.querySelector('video')).toBeNull()
+  })
+})
+
+describe('mountLiveInsert — Twitch embed fallback', () => {
+  async function mountEmbed(onEnded = vi.fn()) {
+    const twitch = installTwitch()
+    const controller = mountLiveInsert({
+      insert: insert(),
+      container: document.createElement('div'),
+      muted: false,
+      onEnded,
+    })
+    await settle()
+    return { ...twitch, controller, onEnded }
+  }
+
+  it('plays the channel (not a video) with controls off at the insert volume', async () => {
+    const { Player, player } = await mountEmbed()
     const opts = Player.mock.calls[0][1] as Record<string, unknown>
     expect(opts).toMatchObject({ channel: 'lofistreamer', controls: false, autoplay: true })
     expect(opts.video).toBeUndefined()
@@ -70,16 +231,8 @@ describe('mountLiveInsert — Twitch channel', () => {
     expect(player.setMuted).toHaveBeenLastCalledWith(false)
   })
 
-  it('rides out a brief offline blip but ends after the grace period', () => {
-    const { fire } = installTwitch()
-    const onEnded = vi.fn()
-    mountLiveInsert({
-      insert: insert(),
-      container: document.createElement('div'),
-      muted: false,
-      onEnded,
-    })
-
+  it('rides out a brief offline blip but ends after the grace period', async () => {
+    const { fire, onEnded } = await mountEmbed()
     fire('offline')
     vi.advanceTimersByTime(OFFLINE_GRACE_MS - 1000)
     fire('online')
@@ -92,28 +245,15 @@ describe('mountLiveInsert — Twitch channel', () => {
     expect(onEnded).toHaveBeenCalledWith('offline')
   })
 
-  it('applies a volume change without remounting', () => {
-    const { Player, player } = installTwitch()
-    const controller = mountLiveInsert({
-      insert: insert(),
-      container: document.createElement('div'),
-      muted: false,
-      onEnded: vi.fn(),
-    })
+  it('applies a volume change without remounting', async () => {
+    const { Player, player, controller } = await mountEmbed()
     controller?.setVolume(0, false)
     expect(player.setMuted).toHaveBeenLastCalledWith(true)
     expect(Player).toHaveBeenCalledTimes(1)
   })
 
-  it('destroy clears a pending offline timer', () => {
-    const { fire, player } = installTwitch()
-    const onEnded = vi.fn()
-    const controller = mountLiveInsert({
-      insert: insert(),
-      container: document.createElement('div'),
-      muted: false,
-      onEnded,
-    })
+  it('destroy clears a pending offline timer', async () => {
+    const { fire, player, controller, onEnded } = await mountEmbed()
     fire('offline')
     controller?.destroy()
     vi.advanceTimersByTime(OFFLINE_GRACE_MS)

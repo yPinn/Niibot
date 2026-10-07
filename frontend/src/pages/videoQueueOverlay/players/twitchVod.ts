@@ -1,13 +1,20 @@
+import { reportClientError } from '@/lib/clientErrorReporter'
+
 import { makeMountDiv } from './shared'
 import type { MountContext, PlayerStrategy } from './types'
 
-// Twitch VODs (twitch.tv/videos/{id}) play through Twitch's official embed
-// player JS API — which, unlike clips, accepts a `video` param. That gives a
-// real player object: `autoplay` + `.play()` are imperative (so OBS's relaxed
-// autoplay policy honours them, like YouTube), `controls: false` hides the
-// chrome, and the ENDED event plus a currentTime check bound the play window
-// (a VOD is hours long — the backend caps duration_seconds; start_seconds is
-// the `?t=` seek offset).
+// Twitch VODs (twitch.tv/videos/{id}) play through Twitch's embed player.
+//
+// hls.js is not an option for VODs: their playlists and segments live on
+// Twitch's CloudFront VOD hosts, which send no CORS headers at all (checked
+// 2026-10-07; the live hosts do), so a browser can't read them. Relaying the
+// video through Niibot would cost per-tenant bandwidth — ruled out.
+//
+// The embed won't autoplay *with sound* in an OBS Browser Source, so it starts
+// muted (muted autoplay is the case browsers allow) and unmutes once PLAYING
+// fires. If unmuting gets it paused or blocked, it goes back to muted playback
+// — a silent video beats a stuck queue — and reports it, so OBS behaviour can
+// be confirmed from admin → Monitor → Errors.
 
 let _twitchReadyPromise: Promise<void> | null = null
 
@@ -50,7 +57,10 @@ export function loadTwitchEmbedAPI(): Promise<void> {
   return _twitchReadyPromise
 }
 
-function mount(ctx: MountContext): (() => void) | void {
+/** How long after unmuting a pause still counts as "unmuting was refused". */
+const UNMUTE_GRACE_MS = 3000
+
+function mountEmbed(ctx: MountContext): (() => void) | void {
   const {
     current,
     currentId,
@@ -68,35 +78,68 @@ function mount(ctx: MountContext): (() => void) | void {
   if (!Player || !containerRef.current) return
 
   const start = current.start_seconds || 0
-  const windowSeconds = current.duration_seconds || 600
+  // Unknown length (Helix failed, no length limit): play until the VOD ends.
+  const windowSeconds = current.duration_seconds || Number.POSITIVE_INFINITY
   const alreadyPlayed = Math.max(0, joinElapsed)
   if (alreadyPlayed >= windowSeconds - 0.5) {
     handleVideoEnd(currentId)
     return
   }
 
+  const wantsSound = !muted && volumePercent > 0
   const player = new Player(makeMountDiv(containerRef.current), {
     video: current.video_id,
     parent: [window.location.hostname],
     width: '100%',
     height: '100%',
     autoplay: true,
-    muted,
+    muted: true, // muted autoplay first; sound comes after PLAYING
     time: `${Math.floor(start + alreadyPlayed)}s`,
     controls: false,
   })
 
+  let playing = false
+  let unmutedAt: number | null = null
+  let soundRefused = false
   const finish = () => handleVideoEnd(currentId)
-  const blocked = () => handleVideoEnd(currentId, 'autoplay_blocked')
-  const applyPlaybackSettings = () => {
-    player.setVolume(volumePercent / 100)
-    player.setMuted(muted || volumePercent === 0)
+  const refuseSound = () => {
+    soundRefused = true
+    unmutedAt = null
+    try {
+      player.setMuted(true)
+      player.play()
+    } catch {
+      /* ignore */
+    }
+    reportClientError({
+      kind: 'error',
+      message: 'twitch_vod embed: unmuting after muted autoplay was refused',
+      errorCode: 'VIDEO_QUEUE.TWITCH_VOD_UNMUTE_REFUSED',
+    })
   }
-  applyPlaybackSettings()
-  if (Player.READY) player.addEventListener(Player.READY, applyPlaybackSettings)
+
+  player.setVolume(volumePercent / 100)
+  player.setMuted(true)
   player.addEventListener(Player.ENDED, finish)
-  player.addEventListener(Player.PLAYING, () => notifyPlaybackStarted('confirmed'))
-  if (Player.PLAYBACK_BLOCKED) player.addEventListener(Player.PLAYBACK_BLOCKED, blocked)
+  player.addEventListener(Player.PLAYING, () => {
+    if (playing) return
+    playing = true
+    notifyPlaybackStarted('confirmed')
+    if (wantsSound && !soundRefused) {
+      unmutedAt = Date.now()
+      player.setVolume(volumePercent / 100)
+      player.setMuted(false)
+    }
+  })
+  player.addEventListener(Player.PAUSE, () => {
+    if (unmutedAt !== null && Date.now() - unmutedAt < UNMUTE_GRACE_MS) refuseSound()
+  })
+  if (Player.PLAYBACK_BLOCKED) {
+    player.addEventListener(Player.PLAYBACK_BLOCKED, () => {
+      if (unmutedAt !== null) refuseSound()
+      else handleVideoEnd(currentId, 'autoplay_blocked')
+    })
+  }
   // Belt-and-braces autoplay nudge (harmless if already playing).
   const playTimer = setTimeout(() => {
     try {
@@ -142,4 +185,19 @@ function mount(ctx: MountContext): (() => void) | void {
   }
 }
 
-export const twitchVodStrategy: PlayerStrategy = { requiresApi: 'twitch', mount }
+function mount(ctx: MountContext): () => void {
+  let disposed = false
+  let cleanup: (() => void) | void
+  loadTwitchEmbedAPI()
+    .then(() => {
+      if (!disposed) cleanup = mountEmbed(ctx)
+    })
+    .catch(() => ctx.handleVideoEnd(ctx.currentId, 'provider_error'))
+  return () => {
+    disposed = true
+    if (typeof cleanup === 'function') cleanup()
+  }
+}
+
+// The embed script loads inside mount(), so no external API gates it here.
+export const twitchVodStrategy: PlayerStrategy = { requiresApi: null, mount }

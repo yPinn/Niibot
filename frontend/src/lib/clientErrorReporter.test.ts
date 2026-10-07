@@ -81,4 +81,13 @@ describe('reportSilent', () => {
     reportSilent('just a string')
     expect(bodyOf(0)).toMatchObject({ kind: 'api', message: 'just a string' })
   })
+
+  it('never sends the URL fragment (overlay capability keys live there)', () => {
+    window.history.replaceState(null, '', '/u/video-queue/overlay#key=secret-capability')
+    reportClientError({ kind: 'error', message: 'boom' })
+    const url = bodyOf(0).url as string
+    expect(url).toContain('/u/video-queue/overlay')
+    expect(url).not.toContain('secret-capability')
+    window.history.replaceState(null, '', '/')
+  })
 })

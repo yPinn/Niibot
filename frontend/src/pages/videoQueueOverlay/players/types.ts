@@ -138,6 +138,6 @@ export interface MountContext {
  */
 export interface PlayerStrategy {
   /** Which external API must be ready before mount() can run; null needs none (plain iframe). */
-  requiresApi: 'youtube' | 'twitch' | null
+  requiresApi: 'youtube' | null
   mount(ctx: MountContext): (() => void) | void
 }
