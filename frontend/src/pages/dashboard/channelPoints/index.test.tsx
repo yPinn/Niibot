@@ -411,7 +411,8 @@ describe('Channel Points page', () => {
         live_only: true,
       })
     )
-  })
+    // ~2.5s of userEvent typing alone; the default 5s trips under a loaded full run.
+  }, 15_000)
 
   it('opens the old-bot import panel directly, without going through settings', async () => {
     const user = userEvent.setup()
