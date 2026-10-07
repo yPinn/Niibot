@@ -684,11 +684,27 @@ class _TextResponse:
         (200, "<html>blocked</html>", None),
     ],
 )
-async def test_fetch_hls_master_playlist(status, text, expected):
+async def test_fetch_hls_playlist(status, text, expected):
     from unittest.mock import MagicMock
 
-    from shared.video_sources import fetch_hls_master_playlist
+    from shared.video_sources import fetch_hls_playlist
 
     session = MagicMock()
     session.get = MagicMock(return_value=_TextResponse(status, text))
-    assert await fetch_hls_master_playlist("https://usher.ttvnw.net/x.m3u8", session) == expected
+    assert await fetch_hls_playlist("https://usher.ttvnw.net/x.m3u8", session) == expected
+
+
+def test_rewrite_master_variant_urls_only_touches_twitch_variant_lines():
+    from urllib.parse import quote
+
+    from shared.video_sources import rewrite_master_variant_urls
+
+    variant = "https://aps13.playlist.ttvnw.net/v1/playlist/abc.m3u8"
+    master = (
+        '#EXTM3U\n#EXT-X-TWITCH-INFO:NODE="x"\n#EXT-X-STREAM-INF:BANDWIDTH=1\n'
+        f"{variant}\n#EXT-X-STREAM-INF:BANDWIDTH=2\nhttps://other.example/v.m3u8\n"
+    )
+    out = rewrite_master_variant_urls(master, "variant.m3u8").splitlines()
+    assert out[:3] == master.splitlines()[:3]  # tags untouched
+    assert out[3] == f"variant.m3u8?u={quote(variant, safe='')}"
+    assert out[5] == "https://other.example/v.m3u8"  # never route a non-Twitch URI through us
