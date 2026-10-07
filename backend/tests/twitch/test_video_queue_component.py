@@ -27,9 +27,9 @@ from twitch.components.video_queue import VideoQueueComponent
 
 from core import guards
 from shared.models.command_config import RedemptionConfig
-from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.models.video_queue import VideoQueueEntry, VideoQueueInsert, VideoQueueSettings
 from shared.repositories.video_queue import SkipResult
-from shared.video_sources import ResolvedVideo, VideoMetadata
+from shared.video_sources import ResolvedVideo, TwitchLiveStream, VideoMetadata
 
 CHANNEL_ID = "channel-1"
 
@@ -107,6 +107,8 @@ def _component(*, settings: VideoQueueSettings | None = None) -> VideoQueueCompo
     component.vq_repo.get_queue_position = AsyncMock(return_value=2)
     component.vq_blocklist_repo.check = AsyncMock(return_value=None)
     component.redemption_repo.find_enabled_by_action = AsyncMock(return_value=None)
+    component.vq_insert_repo.get_active = AsyncMock(return_value=None)
+    component.vq_repo.get_stream_snapshot = AsyncMock(return_value=(None, [], None))
     component._ctx_reply = AsyncMock()  # type: ignore[method-assign]
     return component
 
@@ -282,14 +284,12 @@ class TestThrottles:
 
     async def test_list_is_shared_across_viewers(self):
         component = _component()
-        component.vq_repo.get_current_and_queued = AsyncMock(return_value=(None, []))
         await VideoQueueComponent.vq_list.callback(component, _ctx("viewer", user_id="a"))  # type: ignore[attr-defined]
         await VideoQueueComponent.vq_list.callback(component, _ctx("viewer", user_id="b"))  # type: ignore[attr-defined]
         assert component._ctx_reply.await_count == 1
 
     async def test_mods_are_never_throttled(self):
         component = _component()
-        component.vq_repo.get_current_and_queued = AsyncMock(return_value=(None, []))
         for _ in range(3):
             await VideoQueueComponent.vq_list.callback(component, _ctx())  # type: ignore[attr-defined]
         assert component._ctx_reply.await_count == 3
@@ -435,16 +435,15 @@ class TestClearAndNowPlaying:
 
     async def test_np_respects_the_builtin_config(self):
         component = _component()
-        component.vq_repo.get_current = AsyncMock()
         with patch("twitch.components.video_queue.check_command", AsyncMock(return_value=None)):
             await VideoQueueComponent.cmd_np.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
-        component.vq_repo.get_current.assert_not_awaited()
+        component.vq_repo.get_stream_snapshot.assert_not_awaited()
         component._ctx_reply.assert_not_awaited()
 
     async def test_np_replies_with_now_playing(self):
         component = _component()
-        component.vq_repo.get_current = AsyncMock(
-            return_value=_entry(status="playing", title="Song", requested_by="Bob")
+        component.vq_repo.get_stream_snapshot = AsyncMock(
+            return_value=(_entry(status="playing", title="Song", requested_by="Bob"), [], None)
         )
         component.cmd_repo.increment_usage_count = AsyncMock()
         with patch(
@@ -452,3 +451,87 @@ class TestClearAndNowPlaying:
         ):
             await VideoQueueComponent.cmd_np.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
         assert _reply(component) == "▶「Song」 https://youtu.be/vid123 | 點播：Bob"
+
+
+def _insert(**kw) -> VideoQueueInsert:
+    base = {
+        "id": 5,
+        "channel_id": CHANNEL_ID,
+        "source_type": "twitch_live",
+        "source_id": "lofistreamer",
+        "volume_percent": 30,
+        "title": "beats to relax to",
+        "creator_name": "LofiStreamer",
+    }
+    return VideoQueueInsert(**{**base, **kw})
+
+
+@pytest.mark.asyncio
+class TestLiveInsert:
+    async def test_only_the_broadcaster_can_insert(self):
+        component = _component()
+        component.vq_insert_repo.start = AsyncMock()
+        for role in ("viewer", "moderator"):
+            await VideoQueueComponent.vq_live.callback(  # type: ignore[attr-defined]
+                component, _ctx(role), args="https://www.twitch.tv/lofistreamer"
+            )
+        component.vq_insert_repo.start.assert_not_awaited()
+        component._ctx_reply.assert_not_awaited()
+
+    async def test_broadcaster_starts_a_twitch_insert(self):
+        component = _component(settings=_settings())
+        component.vq_insert_repo.start = AsyncMock(return_value=_insert())
+        live = TwitchLiveStream("u-9", "lofistreamer", "LofiStreamer", "beats")
+        with patch(
+            "twitch.components.video_queue.fetch_twitch_live_stream",
+            AsyncMock(return_value=live),
+        ):
+            await VideoQueueComponent.vq_live.callback(  # type: ignore[attr-defined]
+                component, _ctx("broadcaster"), args="https://www.twitch.tv/LofiStreamer"
+            )
+        kwargs = component.vq_insert_repo.start.await_args.kwargs
+        assert (kwargs["source_type"], kwargs["source_id"]) == ("twitch_live", "lofistreamer")
+        assert kwargs["volume_percent"] == 30
+        assert _reply(component) == "開始插播 LofiStreamer 的直播，佇列暫停"
+
+    async def test_offline_channel_is_rejected(self):
+        component = _component()
+        component.vq_insert_repo.start = AsyncMock()
+        with patch(
+            "twitch.components.video_queue.fetch_twitch_live_stream",
+            AsyncMock(return_value=None),
+        ):
+            await VideoQueueComponent.vq_live.callback(  # type: ignore[attr-defined]
+                component, _ctx("broadcaster"), args="https://www.twitch.tv/someone"
+            )
+        component.vq_insert_repo.start.assert_not_awaited()
+        assert _reply(component) == "目前沒有進行中的直播"
+
+    async def test_stop(self):
+        component = _component()
+        component.vq_insert_repo.stop = AsyncMock(return_value=True)
+        await VideoQueueComponent.vq_live.callback(component, _ctx("broadcaster"), args="STOP")  # type: ignore[attr-defined]
+        assert _reply(component) == "已結束插播，恢復播放佇列"
+        component.vq_insert_repo.stop = AsyncMock(return_value=False)
+        await VideoQueueComponent.vq_live.callback(component, _ctx("broadcaster"), args="stop")  # type: ignore[attr-defined]
+        assert _reply(component) == "目前沒有插播"
+
+    async def test_np_shows_the_insert(self):
+        component = _component()
+        component.vq_repo.get_stream_snapshot = AsyncMock(return_value=(None, [], _insert()))
+        component.cmd_repo.increment_usage_count = AsyncMock()
+        with patch(
+            "twitch.components.video_queue.check_command", AsyncMock(return_value=MagicMock())
+        ):
+            await VideoQueueComponent.cmd_np.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
+        assert _reply(component) == (
+            "插播中：LofiStreamer「beats to relax to」 https://www.twitch.tv/lofistreamer"
+        )
+
+    async def test_requests_during_an_insert_say_when_they_play(self):
+        component = _component()
+        component.vq_insert_repo.get_active = AsyncMock(return_value=_insert())
+        p1, p2 = _patches(_YT, VideoMetadata("YT", 90, 5000, False))
+        with p1, p2:
+            await component._handle_add_inner(_ctx(), "https://youtu.be/vid123")
+        assert "（目前插播中，結束後播放）" in _reply(component)

@@ -2144,3 +2144,83 @@ class TestFetchTwitchVodInfo:
 
     async def test_missing_creds_returns_none(self):
         assert await fetch_twitch_vod_info("v1", "", "", MagicMock()) == TwitchMediaInfo()
+
+
+# ---------------------------------------------------------------------------
+# VideoQueueInsertRepository (live insert, migration 155)
+# ---------------------------------------------------------------------------
+
+_INSERT_ROW = {
+    "id": 5,
+    "channel_id": "ch1",
+    "source_type": "twitch_live",
+    "source_id": "lofistreamer",
+    "title": "beats",
+    "creator_id": "u-9",
+    "creator_name": "LofiStreamer",
+    "thumbnail_url": None,
+    "volume_percent": 30,
+    "audio_only": False,
+    "started_at": _NOW,
+}
+
+
+@pytest.mark.asyncio
+class TestVideoQueueInsertRepository:
+    async def test_start_requeues_the_playing_entry_then_replaces_the_insert(self):
+        from shared.repositories.video_queue import PRIORITY_PINNED, VideoQueueInsertRepository
+
+        pool, conn = _make_pool(fetchval=_NOW, fetchrow=_INSERT_ROW)
+        insert = await VideoQueueInsertRepository(pool).start(
+            "ch1",
+            source_type="twitch_live",
+            source_id="lofistreamer",
+            title="beats",
+            creator_id="u-9",
+            creator_name="LofiStreamer",
+            thumbnail_url=None,
+            volume_percent=30,
+            audio_only=False,
+        )
+        conn.transaction.assert_called_once()
+        requeue, delete = (c.args for c in conn.execute.await_args_list)
+        assert "SET status = 'queued', started_at = NULL" in requeue[0]
+        assert "status = 'playing'" in requeue[0]
+        assert requeue[2] == PRIORITY_PINNED
+        assert "DELETE FROM video_queue_inserts" in delete[0]
+        assert insert.id == 5
+
+    async def test_stop_is_conditional_on_the_expected_id(self):
+        from shared.repositories.video_queue import VideoQueueInsertRepository
+
+        pool, conn = _make_pool(fetchrow={"was_active": True})
+        assert await VideoQueueInsertRepository(pool).stop("ch1", expected_id=5) is True
+        sql, channel_id, expected_id, _hours = conn.fetchrow.await_args.args
+        assert "id = $2" in sql
+        assert (channel_id, expected_id) == ("ch1", 5)
+
+    async def test_stop_without_a_row_reports_false(self):
+        from shared.repositories.video_queue import VideoQueueInsertRepository
+
+        pool, _ = _make_pool(fetchrow=None)
+        assert await VideoQueueInsertRepository(pool).stop("ch1") is False
+
+    async def test_stream_snapshot_reads_insert_on_the_same_connection(self):
+        pool, conn = _make_pool(fetch=[], fetchrow=_INSERT_ROW)
+        current, queued, insert = await VideoQueueRepository(pool).get_stream_snapshot("ch1")
+        pool.acquire.assert_called_once()
+        assert (current, queued) == (None, [])
+        assert insert is not None and insert.source_id == "lofistreamer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["kickstart_if_idle", "advance_queue"])
+async def test_promotion_is_paused_by_an_active_insert(method):
+    pool, conn = _make_pool()
+    repo = VideoQueueRepository(pool)
+    if method == "advance_queue":
+        await repo.advance_queue("ch1", 1)
+    else:
+        await repo.kickstart_if_idle("ch1")
+    promote_sql = conn.execute.await_args_list[-1].args[0]
+    assert "FROM video_queue_inserts" in promote_sql

@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from shared.models.video_queue import VideoQueueEntry, VideoQueueSettings
+from shared.models.video_queue import VideoQueueEntry, VideoQueueInsert, VideoQueueSettings
 from shared.services.video_queue_admission import AdmissionReason
+from shared.services.video_queue_insert import InsertReason
 from shared.video_segments import MIN_SEGMENT_SECONDS, SegmentErrorCode
 from shared.video_sources import (
     UNPLAYABLE_INVALID_PAGE,
@@ -140,9 +141,14 @@ def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str])
     return UNAVAILABLE
 
 
-def accepted_message(title: str | None, video_id: str, position: int | None) -> str:
+def accepted_message(
+    title: str | None, video_id: str, position: int | None, *, inserting: bool = False
+) -> str:
     place = f"，第 {position} 首" if position else ""
-    return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place} SeemsGood")
+    # A live insert pauses the queue for an open-ended time: say so, or a
+    # viewer who just paid points thinks the request vanished.
+    paused = "（目前插播中，結束後播放）" if inserting else ""
+    return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place}{paused} SeemsGood")
 
 
 def now_playing_message(entry: VideoQueueEntry) -> str:
@@ -152,10 +158,16 @@ def now_playing_message(entry: VideoQueueEntry) -> str:
     return _fit(f"▶「{_entry_title(entry)}」 {url} | 點播：{entry.requested_by}")
 
 
-def queue_list_message(current: VideoQueueEntry | None, queued: Sequence[VideoQueueEntry]) -> str:
-    if current is None and not queued:
+def queue_list_message(
+    current: VideoQueueEntry | None,
+    queued: Sequence[VideoQueueEntry],
+    insert: VideoQueueInsert | None = None,
+) -> str:
+    if current is None and not queued and insert is None:
         return QUEUE_EMPTY
     parts: list[str] = []
+    if insert is not None:
+        parts.append(f"插播中：{_insert_name(insert, LIST_TITLE_MAX)}")
     if current is not None:
         parts.append(f"▶ {_entry_title(current, LIST_TITLE_MAX)}")
     if queued:
@@ -168,6 +180,46 @@ def queue_list_message(current: VideoQueueEntry | None, queued: Sequence[VideoQu
         )
         parts.append(f"{titles}{overflow}")
     return _fit(" | ".join(parts))
+
+
+# ---------------------------------------------------------------------------
+# Live insert (直播插播) — broadcaster-only, see shared.services.video_queue_insert
+# ---------------------------------------------------------------------------
+
+INSERT_NONE = "目前沒有插播"
+INSERT_STOPPED = "已結束插播，恢復播放佇列"
+INSERT_USAGE = "用法：!vq live <Twitch 頻道或 YouTube 直播網址> | !vq live stop"
+
+_INSERT_REJECTIONS: dict[InsertReason, str] = {
+    InsertReason.INVALID_URL: "插播只支援 Twitch 頻道或 YouTube 直播網址",
+    InsertReason.NOT_LIVE: "目前沒有進行中的直播",
+    InsertReason.OWN_CHANNEL: "不能插播自己的直播",
+    InsertReason.NOT_PLAYABLE: "這個直播不開放外部播放",
+    InsertReason.UNVERIFIABLE: UNAVAILABLE,
+}
+
+
+def insert_watch_url(insert: VideoQueueInsert) -> str:
+    if insert.source_type == "twitch_live":
+        return f"https://www.twitch.tv/{insert.source_id}"
+    return f"https://youtu.be/{insert.source_id}"
+
+
+def _insert_name(insert: VideoQueueInsert, limit: int = TITLE_MAX) -> str:
+    return _clean_title(insert.creator_name, insert.source_id, limit)
+
+
+def insert_rejection_message(reason: InsertReason) -> str:
+    return _INSERT_REJECTIONS.get(reason, UNAVAILABLE)
+
+
+def insert_started_message(insert: VideoQueueInsert) -> str:
+    return _fit(f"開始插播 {_insert_name(insert)} 的直播，佇列暫停")
+
+
+def insert_now_playing_message(insert: VideoQueueInsert) -> str:
+    title = f"「{_clean_title(insert.title, '', TITLE_MAX)}」" if insert.title else ""
+    return _fit(f"插播中：{_insert_name(insert)}{title} {insert_watch_url(insert)}")
 
 
 def removed_message(entry: VideoQueueEntry) -> str:

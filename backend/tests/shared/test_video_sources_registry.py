@@ -540,3 +540,52 @@ class TestBuildWatchUrl:
 )
 def test_is_twitch_channel_url(text, expected):
     assert is_twitch_channel_url(text) is expected
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchLiveStream:
+    async def _fetch(self, helix_result):
+        from shared.video_sources import fetch_twitch_live_stream
+
+        with (
+            patch("shared.video_sources._get_twitch_app_token", AsyncMock(return_value="tok")),
+            patch("shared.video_sources._twitch_helix_json", AsyncMock(return_value=helix_result)),
+        ):
+            return await fetch_twitch_live_stream("lofistreamer", "c", "s", session=AsyncMock())
+
+    async def test_live(self):
+        stream = await self._fetch(
+            (
+                200,
+                {
+                    "data": [
+                        {
+                            "type": "live",
+                            "user_id": "u-9",
+                            "user_login": "lofistreamer",
+                            "user_name": "LofiStreamer",
+                            "title": "beats",
+                            "thumbnail_url": "https://t/{width}x{height}.jpg",
+                        }
+                    ]
+                },
+            )
+        )
+        assert stream is not None
+        assert (stream.user_id, stream.user_name, stream.title) == ("u-9", "LofiStreamer", "beats")
+        assert stream.thumbnail_url == "https://t/320x180.jpg"
+
+    async def test_offline(self):
+        assert await self._fetch((200, {"data": []})) is None
+
+    async def test_http_failure_is_not_offline(self):
+        from shared.video_sources import TwitchLiveLookupError
+
+        with pytest.raises(TwitchLiveLookupError):
+            await self._fetch((500, {}))
+
+    async def test_missing_credentials_is_not_offline(self):
+        from shared.video_sources import TwitchLiveLookupError, fetch_twitch_live_stream
+
+        with pytest.raises(TwitchLiveLookupError):
+            await fetch_twitch_live_stream("lofistreamer", "", "")

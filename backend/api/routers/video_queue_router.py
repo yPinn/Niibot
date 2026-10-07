@@ -39,12 +39,14 @@ from shared.instafix_client import fetch_instagram_reel_source
 from shared.models.video_queue import (
     VideoQueueBlocklistEntry,
     VideoQueueEntry,
+    VideoQueueInsert,
     VideoQueueSettings,
 )
 from shared.repositories.channel import ChannelRepository
 from shared.repositories.video_queue import (
     BLOCKLIST_KINDS,
     VideoQueueBlocklistRepository,
+    VideoQueueInsertRepository,
     VideoQueueRepository,
     VideoQueueSettingsRepository,
 )
@@ -53,11 +55,14 @@ from shared.services.video_queue_admission import (
     AdmissionRejected,
     VideoQueueAdmissionService,
 )
-from shared.video_queue_messages import segment_error_message
+from shared.services.video_queue_insert import InsertRejected, VideoQueueInsertService
+from shared.video_queue_messages import insert_rejection_message, segment_error_message
 from shared.video_sources import (
     VideoType,
     fetch_twitch_clip_source,
+    fetch_twitch_live_stream,
     fetch_video_metadata,
+    fetch_yt_info,
     resolve_video_url,
     unplayable_message,
 )
@@ -118,6 +123,17 @@ class VideoBlockedError(InvalidInputError):
     user_message = "這部影片在封鎖清單中"
 
 
+class VideoQueueInsertActiveError(ConflictError):
+    code = "VIDEO_QUEUE.INSERT_ACTIVE"
+    user_message = "插播中，請先結束插播"
+
+
+class LiveInsertRejectedError(InvalidInputError):
+    code = "VIDEO_QUEUE.INSERT_REJECTED"
+    http_status = 422
+    user_message = "無法插播這個直播"
+
+
 class VideoQueueOverlayNotFoundError(NotFoundError):
     code = "VIDEO_QUEUE.OVERLAY_NOT_FOUND"
     user_message = "找不到這個顯示來源"
@@ -137,6 +153,20 @@ class VideoEntryResponse(BaseModel):
     started_at: datetime | None  # for overlay seek-to-elapsed sync
 
 
+class LiveInsertResponse(BaseModel):
+    """Active live insert (直播插播); the overlay plays it instead of the queue."""
+
+    id: int
+    source_type: str  # 'twitch_live' | 'youtube_live'
+    source_id: str  # Twitch channel login / YouTube video id
+    title: str | None
+    creator_name: str | None
+    thumbnail_url: str | None
+    volume_percent: int
+    audio_only: bool
+    started_at: datetime | None
+
+
 class PublicVideoQueueState(BaseModel):
     enabled: bool
     volume_percent: int
@@ -144,6 +174,7 @@ class PublicVideoQueueState(BaseModel):
     queue: list[VideoEntryResponse]
     queue_size: int
     total_queued_duration: int | None  # sum of queued entries' duration_seconds (if all known)
+    insert: LiveInsertResponse | None = None
 
 
 class VideoQueueStreamState(BaseModel):
@@ -160,6 +191,7 @@ class VideoQueueStreamState(BaseModel):
     queue: list[VideoEntryResponse]
     queue_size: int
     total_queued_duration: int | None
+    insert: LiveInsertResponse | None = None
 
 
 class VideoQueueSettingsResponse(BaseModel):
@@ -175,6 +207,8 @@ class VideoQueueSettingsResponse(BaseModel):
     max_duration_seconds: int  # global length cap for every source; 0 = no limit
     replay_cooldown_hours: int  # 0 = no limit
     volume_percent: int
+    insert_volume_percent: int
+    insert_audio_only: bool
 
 
 class VideoQueueSettingsUpdate(BaseModel):
@@ -188,10 +222,21 @@ class VideoQueueSettingsUpdate(BaseModel):
     max_duration_seconds: int | None = Field(default=None, ge=0, le=86400)
     replay_cooldown_hours: int | None = Field(default=None, ge=0, le=168)
     volume_percent: int | None = Field(default=None, ge=0, le=100)
+    insert_volume_percent: int | None = Field(default=None, ge=0, le=100)
+    insert_audio_only: bool | None = None
 
 
 class AddVideoRequest(BaseModel):
     url: str = Field(max_length=2048)
+
+
+class StartInsertRequest(BaseModel):
+    url: str = Field(max_length=2048)
+
+
+class EndInsertRequest(BaseModel):
+    insert_id: int
+    reason: Literal["ended", "offline", "provider_error"] = "ended"
 
 
 class AdvanceRequest(BaseModel):
@@ -380,10 +425,11 @@ async def _build_public_state(
     repo: VideoQueueRepository,
     settings_repo: VideoQueueSettingsRepository,
 ) -> PublicVideoQueueState:
-    settings, current, queued = await asyncio.gather(
+    settings, current, queued, insert = await asyncio.gather(
         settings_repo.get_or_create(channel_id),
         repo.get_current(channel_id),
         repo.get_queued(channel_id),
+        VideoQueueInsertRepository(repo.pool).get_active(channel_id),
     )
 
     return PublicVideoQueueState(
@@ -393,6 +439,23 @@ async def _build_public_state(
         queue=[_entry_response(e, started_at=None) for e in queued],
         queue_size=len(queued),
         total_queued_duration=_total_queued_duration(queued),
+        insert=_insert_response(insert),
+    )
+
+
+def _insert_response(insert: VideoQueueInsert | None) -> LiveInsertResponse | None:
+    if insert is None:
+        return None
+    return LiveInsertResponse(
+        id=insert.id,
+        source_type=insert.source_type,
+        source_id=insert.source_id,
+        title=insert.title,
+        creator_name=insert.creator_name,
+        thumbnail_url=insert.thumbnail_url,
+        volume_percent=insert.volume_percent,
+        audio_only=insert.audio_only,
+        started_at=insert.started_at,
     )
 
 
@@ -404,13 +467,14 @@ async def _build_stream_state(
     VideoQueueRepository.get_current_and_queued for why this avoids
     asyncio.gather-ing separate pool.acquire()s like _build_public_state does.
     """
-    current, queued = await repo.get_current_and_queued(channel_id)
+    current, queued, insert = await repo.get_stream_snapshot(channel_id)
 
     return VideoQueueStreamState(
         current=_entry_response(current, started_at=current.started_at) if current else None,
         queue=[_entry_response(e, started_at=None) for e in queued],
         queue_size=len(queued),
         total_queued_duration=_total_queued_duration(queued),
+        insert=_insert_response(insert),
     )
 
 
@@ -747,6 +811,8 @@ def _settings_response(s: VideoQueueSettings) -> VideoQueueSettingsResponse:
         max_duration_seconds=s.max_duration_seconds,
         replay_cooldown_hours=s.replay_cooldown_hours,
         volume_percent=s.volume_percent,
+        insert_volume_percent=s.insert_volume_percent,
+        insert_audio_only=s.insert_audio_only,
     )
 
 
@@ -793,6 +859,15 @@ async def update_video_queue_settings(
             max_duration_seconds=body.max_duration_seconds,
             replay_cooldown_hours=body.replay_cooldown_hours,
             volume_percent=body.volume_percent,
+            insert_volume_percent=body.insert_volume_percent,
+            insert_audio_only=body.insert_audio_only,
+        )
+        # The defaults also apply to the insert playing now (the overlay reads
+        # them from the insert row, which wakes its stream).
+        await VideoQueueInsertRepository(pool).update_playback(
+            channel_id,
+            volume_percent=body.insert_volume_percent,
+            audio_only=body.insert_audio_only,
         )
         LOGGER.info("Channel %s updated video queue settings", channel_id)
         return _settings_response(s)
@@ -1091,12 +1166,16 @@ async def play_entry_now(
     try:
         repo = VideoQueueRepository(pool)
         settings_repo = VideoQueueSettingsRepository(pool)
+        # The overlay is playing the insert; promoting an entry now would run
+        # its clock while nothing plays it.
+        if await VideoQueueInsertRepository(pool).get_active(channel_id) is not None:
+            raise VideoQueueInsertActiveError()
         promoted = await repo.play_immediately(entry_id, channel_id)
         if not promoted:
             raise HTTPException(status_code=404, detail="Entry not found or not in queued state")
         LOGGER.info("Channel %s played entry %s immediately", channel_id, entry_id)
         return await _build_public_state(channel_id, repo, settings_repo)
-    except HTTPException:
+    except (HTTPException, AppError):
         raise
     except Exception:
         LOGGER.exception("Failed to play entry immediately")
@@ -1178,3 +1257,93 @@ async def add_video_entry(
     except Exception:
         LOGGER.exception("Failed to add video entry")
         raise HTTPException(status_code=500, detail="Failed to add video") from None
+
+
+# ---------------------------------------------------------------------------
+# Live insert (直播插播) — broadcaster-only, see shared.services.video_queue_insert
+# ---------------------------------------------------------------------------
+
+
+@router.post("/insert", response_model=PublicVideoQueueState)
+async def start_live_insert(
+    body: StartInsertRequest,
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+    app_settings: Settings = Depends(get_settings),
+) -> PublicVideoQueueState:
+    """Play an ongoing live stream open-ended in the overlay; pauses the queue."""
+    try:
+        repo = VideoQueueRepository(pool)
+        settings_repo = VideoQueueSettingsRepository(pool)
+        service = VideoQueueInsertService(VideoQueueInsertRepository(pool), settings_repo)
+        try:
+            insert = await service.start(
+                channel_id=channel_id,
+                url=body.url,
+                fetch_youtube=lambda video_id: fetch_yt_info(
+                    video_id, app_settings.youtube_api_key
+                ),
+                fetch_twitch_live=lambda login: fetch_twitch_live_stream(
+                    login, app_settings.client_id, app_settings.client_secret
+                ),
+            )
+        except InsertRejected as error:
+            raise LiveInsertRejectedError(
+                user_message=insert_rejection_message(error.reason)
+            ) from error
+        LOGGER.info("Channel %s started a %s live insert", channel_id, insert.source_type)
+        return await _build_public_state(channel_id, repo, settings_repo)
+    except (HTTPException, AppError):
+        raise
+    except Exception:
+        LOGGER.exception("Failed to start live insert")
+        raise HTTPException(status_code=500, detail="Failed to start live insert") from None
+
+
+@router.delete("/insert", response_model=PublicVideoQueueState)
+async def stop_live_insert(
+    _: None = Depends(require_activated),
+    channel_id: str = Depends(get_current_channel_id),
+    pool: Pool = Depends(get_db_pool),
+) -> PublicVideoQueueState:
+    """End the live insert; the overlay resumes the queue."""
+    try:
+        repo = VideoQueueRepository(pool)
+        await VideoQueueInsertRepository(pool).stop(channel_id)
+        LOGGER.info("Channel %s stopped the live insert", channel_id)
+        return await _build_public_state(channel_id, repo, VideoQueueSettingsRepository(pool))
+    except Exception:
+        LOGGER.exception("Failed to stop live insert")
+        raise HTTPException(status_code=500, detail="Failed to stop live insert") from None
+
+
+@router.post("/public/{username}/insert/end", status_code=204)
+async def end_live_insert_from_overlay(
+    request: Request,
+    username: str,
+    body: EndInsertRequest,
+    overlay_key: str | None = Header(default=None, alias="X-Overlay-Key"),
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> None:
+    """The overlay saw the live stream end.
+
+    Conditional on ``insert_id`` so a late report never ends a newer insert.
+    The overlay reports once and never retries in a loop.
+    """
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        await _require_overlay_capability(
+            request, channel_id, overlay_key, VideoQueueSettingsRepository(pool), _advance_limiter
+        )
+        stopped = await VideoQueueInsertRepository(pool).stop(
+            channel_id, expected_id=body.insert_id
+        )
+        if stopped:
+            LOGGER.info("Channel %s live insert ended (%s)", channel_id, body.reason)
+    except (HTTPException, AppError):
+        raise
+    except Exception:
+        LOGGER.exception("Failed to end live insert")
+        raise HTTPException(status_code=500, detail="Failed to end live insert") from None

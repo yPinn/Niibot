@@ -233,3 +233,36 @@ def test_too_long_hints_a_segment_only_where_one_helps(segment, expected):
 def test_twitch_channel_link_points_at_a_vod():
     message = rejection_message(AdmissionReason.INVALID_URL, {"hint": "twitch_channel"})
     assert message == "直播無法點播，請改用 VOD 連結（twitch.tv/videos/…）"
+
+
+def test_insert_copy():
+    from shared.models.video_queue import VideoQueueInsert
+    from shared.services.video_queue_insert import InsertReason
+    from shared.video_queue_messages import (
+        insert_now_playing_message,
+        insert_rejection_message,
+        insert_started_message,
+    )
+
+    insert = VideoQueueInsert(
+        id=1,
+        channel_id="ch1",
+        source_type="youtube_live",
+        source_id="jfKfPfyJRdk",
+        volume_percent=30,
+        title="lofi radio",
+        creator_name="Lofi Girl",
+    )
+    assert insert_started_message(insert) == "開始插播 Lofi Girl 的直播，佇列暫停"
+    assert insert_now_playing_message(insert) == (
+        "插播中：Lofi Girl「lofi radio」 https://youtu.be/jfKfPfyJRdk"
+    )
+    assert queue_list_message(None, [], insert) == "插播中：Lofi Girl"
+    assert accepted_message("Song", "vid", 2, inserting=True) == (
+        "「Song」已加入待播，第 2 首（目前插播中，結束後播放） SeemsGood"
+    )
+    assert {insert_rejection_message(reason) for reason in InsertReason} >= {
+        "插播只支援 Twitch 頻道或 YouTube 直播網址",
+        "目前沒有進行中的直播",
+        "不能插播自己的直播",
+    }

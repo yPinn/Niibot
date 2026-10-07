@@ -78,6 +78,7 @@ def _component(*, settings: VideoQueueSettings | None = None) -> ChannelPointsCo
     component.vq_repo.add_if_within_limits = AsyncMock(return_value=_entry())
     component.vq_repo.get_queue_position = AsyncMock(return_value=3)
     component.vq_blocklist_repo.check = AsyncMock(return_value=None)
+    component.vq_insert_repo.get_active = AsyncMock(return_value=None)
     component._reply = AsyncMock()  # type: ignore[method-assign]
     return component
 

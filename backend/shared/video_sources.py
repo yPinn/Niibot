@@ -129,6 +129,8 @@ class YouTubeInfo:
     thumbnail_url: str | None = None
     creator_id: str | None = None  # snippet.channelId
     creator_name: str | None = None  # snippet.channelTitle
+    # snippet.liveBroadcastContent: 'none' | 'live' | 'upcoming'; None when unknown.
+    live_status: str | None = None
 
 
 def extract_youtube_id(text: str) -> str | None:
@@ -205,14 +207,16 @@ def _assess_yt_playability(item: dict) -> str | None:
     # 'unlisted' still embeds fine — only 'private' is unplayable for a viewer.
     if status.get("privacyStatus") == "private":
         return UNPLAYABLE_PRIVATE
-    # Live/upcoming report a zero duration (`P0D`), which reads as "unknown" —
-    # without this a stream slips past every length gate and stalls the overlay.
-    if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
-        return UNPLAYABLE_LIVE
     if content_rating.get("ytRating") == "ytAgeRestricted":
         return UNPLAYABLE_AGE_RESTRICTED
     if status.get("embeddable") is False:
         return UNPLAYABLE_NOT_EMBEDDABLE
+    # Live/upcoming report a zero duration (`P0D`), which reads as "unknown" —
+    # without this a stream slips past every length gate and stalls the overlay.
+    # Checked last: a live stream that can't be embedded must report that, since
+    # it won't play after it ends either (and a live insert needs to know).
+    if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
+        return UNPLAYABLE_LIVE
     return None
 
 
@@ -291,6 +295,7 @@ async def _load_yt_info(
                     thumbnail_url=_https(thumb.get("url")) if isinstance(thumb, dict) else None,
                     creator_id=channel_id,
                     creator_name=channel_title,
+                    live_status=snippet.get("liveBroadcastContent"),
                 ),
                 ttl=_YOUTUBE_POSITIVE_TTL_SECONDS,
             )
@@ -543,6 +548,7 @@ _TWITCH_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
 _TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
+_TWITCH_HELIX_STREAMS_URL = "https://api.twitch.tv/helix/streams"
 
 # twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
 _HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
@@ -661,21 +667,29 @@ _TWITCH_NON_CHANNEL_PATHS = frozenset(
 _TWITCH_LOGIN_RE = re.compile(r"[A-Za-z0-9_]{3,25}")
 
 
+def extract_twitch_channel_login(text: str) -> str | None:
+    """Lower-cased channel login from a ``twitch.tv/{channel}`` link, else None."""
+    parsed = find_allowed_http_url(text, _TWITCH_VOD_HOSTS)
+    if parsed is None:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if (
+        len(segments) != 1
+        or segments[0].lower() in _TWITCH_NON_CHANNEL_PATHS
+        or _TWITCH_LOGIN_RE.fullmatch(segments[0]) is None
+    ):
+        return None
+    return segments[0].lower()
+
+
 def is_twitch_channel_url(text: str) -> bool:
     """Whether ``text`` holds a ``twitch.tv/{channel}`` link (a live channel).
 
     The queue never accepts one (live content has no end); this only lets the
-    rejection point the requester at a VOD link instead.
+    rejection point the requester at a VOD link instead. A live insert does
+    accept it — see shared.services.video_queue_insert.
     """
-    parsed = find_allowed_http_url(text, _TWITCH_VOD_HOSTS)
-    if parsed is None:
-        return False
-    segments = [segment for segment in parsed.path.split("/") if segment]
-    return (
-        len(segments) == 1
-        and segments[0].lower() not in _TWITCH_NON_CHANNEL_PATHS
-        and _TWITCH_LOGIN_RE.fullmatch(segments[0]) is not None
-    )
+    return extract_twitch_channel_login(text) is not None
 
 
 async def _get_twitch_app_token(
@@ -866,6 +880,71 @@ async def fetch_twitch_vod_info(
             "[Twitch API] fetch_twitch_vod_info failed for %s: %s", video_id, type(exc).__name__
         )
         return TwitchMediaInfo()
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+class TwitchLiveLookupError(Exception):
+    """Twitch could not be asked whether a channel is live."""
+
+
+@dataclass
+class TwitchLiveStream:
+    """An ongoing Twitch broadcast (Helix ``/streams``)."""
+
+    user_id: str
+    user_login: str
+    user_name: str
+    title: str | None = None
+    thumbnail_url: str | None = None
+
+
+async def fetch_twitch_live_stream(
+    login: str,
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession | None = None,
+) -> TwitchLiveStream | None:
+    """The channel's current broadcast, or None when it is offline.
+
+    Raises ``TwitchLiveLookupError`` when Twitch could not be asked (no
+    credentials, token or HTTP failure) — "offline" and "couldn't check" must
+    not look the same to the caller.
+    """
+    if not client_id or not client_secret:
+        raise TwitchLiveLookupError("missing Twitch credentials")
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        app_token = await _get_twitch_app_token(client_id, client_secret, _session)
+        if not app_token:
+            raise TwitchLiveLookupError("no app token")
+        status, data = await _twitch_helix_json(
+            _session,
+            _TWITCH_HELIX_STREAMS_URL,
+            params={"user_login": login},
+            client_id=client_id,
+            token=app_token,
+        )
+        if status != 200:
+            raise TwitchLiveLookupError(f"status {status}")
+        streams = [s for s in data.get("data", []) if s.get("type") == "live"]
+        if not streams:
+            return None
+        stream = streams[0]
+        raw_thumb: str = stream.get("thumbnail_url") or ""
+        return TwitchLiveStream(
+            user_id=str(stream.get("user_id") or ""),
+            user_login=str(stream.get("user_login") or login),
+            user_name=str(stream.get("user_name") or login),
+            title=stream.get("title"),
+            thumbnail_url=raw_thumb.replace("{width}", "320").replace("{height}", "180") or None,
+        )
+    except TwitchLiveLookupError:
+        raise
+    except Exception as exc:
+        raise TwitchLiveLookupError(type(exc).__name__) from exc
     finally:
         if _own_session:
             await _session.close()

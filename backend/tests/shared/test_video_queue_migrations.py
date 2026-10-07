@@ -83,3 +83,21 @@ def test_np_catalog_migration_moves_legacy_custom_rows_aside():
     assert "lower(command.command_name) = 'np'" in sql
     assert "'__legacy_'" in sql
     assert "enabled = FALSE" in sql
+
+
+def test_live_insert_migration_wakes_the_queue_stream_and_bounds_the_row():
+    sql = (_VERSIONS / "155_video_queue_live_insert.sql").read_text(encoding="utf-8")
+
+    # Same wake channel as 106, hardened the same way.
+    assert "pg_notify('video_queue_updates'" in sql
+    assert "SET search_path = public" in sql
+    # DELETE (stop) must wake the overlay too, and has no NEW row.
+    assert "AFTER INSERT OR UPDATE OR DELETE ON video_queue_inserts" in sql
+    assert "COALESCE(NEW.channel_id, OLD.channel_id)" in sql
+    # One insert per channel; removed with the channel.
+    assert (
+        "channel_id     TEXT NOT NULL UNIQUE REFERENCES channels(channel_id) ON DELETE CASCADE"
+        in sql
+    )
+    assert "CHECK (source_type IN ('twitch_live', 'youtube_live'))" in sql
+    assert "CHECK (insert_volume_percent BETWEEN 0 AND 100)" in sql

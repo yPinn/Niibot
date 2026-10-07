@@ -92,5 +92,29 @@ class VideoQueueSettings:
     max_duration_seconds: int = 0  # global length cap for every source; 0 = no limit
     replay_cooldown_hours: int = 0  # reject a video played within N hours; 0 = no limit
     volume_percent: int = 100  # normalized output gain where the provider exposes volume control
+    insert_volume_percent: int = 30  # default gain for a live insert (usually background)
+    insert_audio_only: bool = False  # default: a live insert plays without its picture
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+@dataclass
+class VideoQueueInsert:
+    """An active live insert (直播插播) — see migration 155.
+
+    Broadcaster-only, open-ended playback of an ongoing live stream; not a
+    queue entry. ``source_id`` is the Twitch channel login or the YouTube
+    video id of the live broadcast.
+    """
+
+    id: int
+    channel_id: str
+    source_type: str  # 'twitch_live' | 'youtube_live'
+    source_id: str
+    volume_percent: int
+    audio_only: bool = False
+    title: str | None = None
+    creator_id: str | None = None
+    creator_name: str | None = None
+    thumbnail_url: str | None = None
+    started_at: datetime | None = None
