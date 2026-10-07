@@ -68,7 +68,16 @@ Members intent 供加入／離開、role、生日與 moderation；Message Conten
 
 ## 指令發布
 
-Bot 啟動不會自動同步 commands。先在 nonprod test guild 驗證，再發布 production global：
+Bot 啟動與 reconnect 都不會同步 commands；同步由 CD 在部署後執行：
+
+- `discord-bot` 有重新部署且 health check 通過後，`_deploy.yml` 的 **Sync Discord commands**
+  會在 container 內執行 `sync --if-changed`。它先比對完整 payload（名稱、說明、參數、權限），
+  沒有差異就不呼叫寫入 API。
+- production 同步 global；staging 只有設定 GitHub Variable `DISCORD_SYNC_GUILD_ID`（nonprod
+  測試 guild）才同步，未設定則跳過。
+- 同步失敗會讓 workflow 失敗並通知，但不 rollback（服務正常，只是指令未更新）；可重跑或手動同步。
+
+手動檢查與同步（diff 會列出 `+` 新增、`-` 移除、`~` 內容變更）：
 
 ```bash
 # staging：在目標 Discord container 內使用 nonprod token
