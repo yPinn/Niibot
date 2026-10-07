@@ -3,10 +3,12 @@ import { toast } from 'sonner'
 
 import {
   type AdminChannel,
+  approveActivationRequest,
   type BotTokenInfo,
   getAdminBotStatus,
   getAdminChannels,
   reinstateMembership,
+  rejectActivationRequest,
   suspendMembership,
 } from '@/api/admin'
 import {
@@ -19,79 +21,57 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { EmptyState, Icon, SlideUp } from '@/components/primitives'
-import {
-  Badge,
-  Button,
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-} from '@/components/ui'
+import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from '@/components/ui'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { toastApiError } from '@/lib/toast-error'
 
-import { ActivationCard } from './components/ActivationCard'
+import { type ChannelCategory as ChannelCategoryValue, getChannelCategory } from './channelStatus'
+import { ActivationCodes } from './components/ActivationCodes'
 import { BotStatusPanel } from './components/BotStatusPanel'
 import { ChannelCard } from './components/ChannelCard'
 
-type ChannelCategoryValue = 'healthy' | 'issues' | 'pending' | 'paused' | 'suspended'
 type ChannelFilterValue = 'all' | ChannelCategoryValue
 
 interface ChannelCategoryDefinition {
   value: ChannelCategoryValue
   label: string
-  description: string
   icon: string
   toneClassName: string
 }
 
+// Actionable groups lead so the operator's to-do list is the first thing seen.
 const CHANNEL_CATEGORY_DEFINITIONS: ChannelCategoryDefinition[] = [
-  {
-    value: 'healthy',
-    label: '正常監聽',
-    description: '授權與 Bot 狀態正常',
-    icon: 'fa-solid fa-shield-check',
-    toneClassName: 'text-status-online',
-  },
   {
     value: 'issues',
     label: '需處理',
-    description: '缺少授權、Token 或 Mod 狀態異常',
     icon: 'fa-solid fa-triangle-exclamation',
     toneClassName: 'text-status-warning',
   },
   {
     value: 'pending',
     label: '待審核',
-    description: '等待管理員確認使用資格',
     icon: 'fa-solid fa-hourglass-half',
     toneClassName: 'text-status-info',
   },
   {
+    value: 'healthy',
+    label: '正常監聽',
+    icon: 'fa-solid fa-shield-check',
+    toneClassName: 'text-status-online',
+  },
+  {
     value: 'paused',
     label: '監控暫停',
-    description: '授權有效，但 Bot 目前未監控',
     icon: 'fa-solid fa-circle-pause',
     toneClassName: 'text-muted-foreground',
   },
   {
     value: 'suspended',
     label: '已停權',
-    description: '使用權限與 Bot 監控皆已停止',
     icon: 'fa-solid fa-ban',
     toneClassName: 'text-destructive',
   },
 ]
-
-function getChannelCategory(ch: AdminChannel): ChannelCategoryValue {
-  if (ch.membership_status === 'pending') return 'pending'
-  if (ch.membership_status === 'suspended') return 'suspended'
-  if (!ch.is_enabled) return 'paused'
-  if (ch.mod_status !== 'mod' || ch.missing_scopes.length > 0) return 'issues'
-  return 'healthy'
-}
 
 function sortCategoryChannels(channels: AdminChannel[]): AdminChannel[] {
   return [...channels].sort((a, b) => {
@@ -123,13 +103,19 @@ export default function AdminPage() {
   }, [channels])
 
   const allUserChannels = channelCategories.flatMap(category => category.channels)
+  const nonEmptyCategories = channelCategories.filter(category => category.channels.length > 0)
+  // A filter whose last channel was just resolved falls back to "all"
+  // instead of leaving an empty view behind.
+  const activeFilter = nonEmptyCategories.some(category => category.value === channelFilter)
+    ? channelFilter
+    : 'all'
   const visibleCategories =
-    channelFilter === 'all'
-      ? channelCategories.filter(category => category.channels.length > 0)
-      : channelCategories.filter(category => category.value === channelFilter)
+    activeFilter === 'all'
+      ? nonEmptyCategories
+      : nonEmptyCategories.filter(category => category.value === activeFilter)
   const channelFilters = [
     { value: 'all' as const, label: '全部', count: allUserChannels.length },
-    ...channelCategories.map(category => ({
+    ...nonEmptyCategories.map(category => ({
       value: category.value,
       label: category.label,
       count: category.channels.length,
@@ -182,19 +168,46 @@ export default function AdminPage() {
     }
   }
 
-  const handleReinstate = async (ch: AdminChannel) => {
-    if (!ch.owner_user_id) return
+  const refreshChannels = () =>
+    getAdminChannels()
+      .then(setChannels)
+      .catch(() => undefined)
+
+  /** Runs a membership transition, then refetches rather than patching
+   * locally: approve/reinstate flip channels.enabled server-side (084's
+   * trigger) and re-derive mod_status, which the client can't compute. A
+   * failed refresh must not read as a failed transition, so it's separate. */
+  const commitMembership = async (
+    ch: AdminChannel,
+    mutate: (userId: string) => Promise<void>,
+    successMessage: string,
+    errorMessage: string
+  ): Promise<boolean> => {
+    if (!ch.owner_user_id) return false
     try {
-      await reinstateMembership(ch.owner_user_id, 'admin_reinstate')
-      toast.success(`${ch.display_name} 授權已恢復`)
-      // Refetch rather than patch locally: reinstating flips channels.enabled
-      // server-side (084's trigger) and re-derives mod_status, neither of
-      // which the client can compute from the stale suspended-state record.
-      setChannels(await getAdminChannels())
+      await mutate(ch.owner_user_id)
     } catch (e) {
-      toastApiError(e, '恢復失敗')
+      toastApiError(e, errorMessage)
+      return false
     }
+    toast.success(successMessage)
+    await refreshChannels()
+    return true
   }
+
+  const handleReinstate = (ch: AdminChannel) =>
+    commitMembership(
+      ch,
+      id => reinstateMembership(id, 'admin_reinstate'),
+      `${ch.display_name} 授權已恢復`,
+      '恢復失敗'
+    )
+
+  const handleApprove = (ch: AdminChannel) =>
+    commitMembership(ch, approveActivationRequest, `${ch.display_name} 已通過`, '審核失敗')
+
+  const handleReject = (ch: AdminChannel) =>
+    commitMembership(ch, rejectActivationRequest, `${ch.display_name} 的申請已拒絕`, '操作失敗')
 
   const handleSuspend = async (ch: AdminChannel, reason: string): Promise<boolean> => {
     if (!ch.owner_user_id) return false
@@ -223,9 +236,7 @@ export default function AdminPage() {
 
     // Reconcile trigger-derived fields in the background while preserving the
     // locally committed state if this non-critical refresh is unavailable.
-    void getAdminChannels()
-      .then(setChannels)
-      .catch(() => undefined)
+    void refreshChannels()
     return true
   }
 
@@ -264,11 +275,6 @@ export default function AdminPage() {
                   使用者與頻道
                 </CardTitle>
               </div>
-              <CardAction>
-                <Badge variant="outline" className="font-mono text-label">
-                  {channelsLoading ? '…' : allUserChannels.length}
-                </Badge>
-              </CardAction>
             </CardHeader>
             <CardContent>
               {channelsLoading ? (
@@ -278,11 +284,7 @@ export default function AdminPage() {
                   ))}
                 </div>
               ) : allUserChannels.length === 0 ? (
-                <EmptyState
-                  icon="fa-solid fa-users"
-                  title="目前沒有可管理的使用者頻道"
-                  description="完成授權後，使用者會顯示在這裡。"
-                />
+                <EmptyState icon="fa-solid fa-users" title="尚無使用者頻道" />
               ) : (
                 <div className="space-y-section">
                   <div
@@ -290,79 +292,67 @@ export default function AdminPage() {
                     role="group"
                     aria-label="使用者狀態篩選"
                   >
-                    {channelFilters.map(filter => (
-                      <Button
-                        key={filter.value}
-                        type="button"
-                        size="sm"
-                        variant={channelFilter === filter.value ? 'default' : 'outline'}
-                        onClick={() => setChannelFilter(filter.value)}
-                        aria-pressed={channelFilter === filter.value}
-                      >
-                        {filter.label}
-                        <span className="font-mono text-label opacity-75">{filter.count}</span>
-                      </Button>
-                    ))}
+                    {channelFilters.map(filter => {
+                      const active = activeFilter === filter.value
+                      return (
+                        <Button
+                          key={filter.value}
+                          type="button"
+                          size="sm"
+                          variant={active ? 'default' : 'outline'}
+                          onClick={() => setChannelFilter(filter.value)}
+                          aria-pressed={active}
+                        >
+                          {filter.label}
+                          <span className="font-mono text-label opacity-75">{filter.count}</span>
+                        </Button>
+                      )
+                    })}
                   </div>
 
                   <div className="space-y-card">
-                    {visibleCategories.map(category => {
-                      const headingId = `channel-category-${category.value}`
-                      return (
-                        <section
-                          key={category.value}
-                          aria-labelledby={headingId}
-                          className="space-y-section"
-                        >
-                          <div className="flex items-start justify-between gap-section border-b pb-element">
-                            <div className="flex min-w-0 items-start gap-element">
-                              <Icon
-                                icon={category.icon}
-                                size="xs"
-                                wrapperClassName={`mt-0.5 ${category.toneClassName}`}
-                              />
-                              <div className="min-w-0">
-                                <h3 id={headingId} className="text-sub font-semibold">
-                                  {category.label}
-                                </h3>
-                                <p className="text-label text-muted-foreground">
-                                  {category.description}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className={`font-mono text-label ${category.toneClassName}`}
-                            >
-                              {category.channels.length}
-                            </Badge>
+                    {visibleCategories.map(category => (
+                      // The filter chip already names a single selected group, so
+                      // the heading only earns its space in the mixed "all" view.
+                      <section
+                        key={category.value}
+                        aria-label={category.label}
+                        className="space-y-section"
+                      >
+                        {activeFilter === 'all' && (
+                          <div className="flex items-center gap-element border-b pb-element">
+                            <Icon
+                              icon={category.icon}
+                              size="xs"
+                              wrapperClassName={category.toneClassName}
+                            />
+                            <h3 className="text-sub font-semibold">{category.label}</h3>
                           </div>
+                        )}
 
-                          {category.channels.length === 0 ? (
-                            <div className="rounded-lg border border-dashed px-4 py-6 text-center">
-                              <p className="text-sub font-medium">目前沒有{category.label}的頻道</p>
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-                              {category.channels.map(ch => (
-                                <ChannelCard
-                                  key={ch.id}
-                                  ch={ch}
-                                  onSuspend={
-                                    ch.membership_status === 'active' ? handleSuspend : undefined
-                                  }
-                                  onReinstate={
-                                    ch.membership_status === 'suspended'
-                                      ? handleReinstate
-                                      : undefined
-                                  }
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </section>
-                      )
-                    })}
+                        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+                          {category.channels.map(ch => (
+                            <ChannelCard
+                              key={ch.id}
+                              ch={ch}
+                              onSuspend={
+                                ch.membership_status === 'active' ? handleSuspend : undefined
+                              }
+                              onReinstate={
+                                ch.membership_status === 'suspended' ? handleReinstate : undefined
+                              }
+                              onApprove={
+                                ch.membership_status === 'pending' ? handleApprove : undefined
+                              }
+                              onReject={
+                                ch.membership_status === 'pending' ? handleReject : undefined
+                              }
+                              onRecheck={refreshChannels}
+                            />
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 </div>
               )}
@@ -370,22 +360,23 @@ export default function AdminPage() {
           </Card>
         </SlideUp>
 
-        <SlideUp delay={0.1}>
-          <BotStatusPanel
-            bot={botStatus}
-            botLoading={botLoading}
-            redemptionLoading={redemptionLoading}
-            rewardsLoading={rewardsLoading}
-            niibotAuth={niibotAuth}
-            twitchRewards={twitchRewards}
-            onRewardSelect={handleRewardSelect}
-            onAuthToggle={handleAuthToggle}
-          />
-        </SlideUp>
-
-        <SlideUp delay={0.15} className="lg:col-span-2" role="region" aria-label="授權管理">
-          <ActivationCard />
-        </SlideUp>
+        <div className="flex flex-col gap-card">
+          <SlideUp delay={0.1}>
+            <BotStatusPanel
+              bot={botStatus}
+              botLoading={botLoading}
+              redemptionLoading={redemptionLoading}
+              rewardsLoading={rewardsLoading}
+              niibotAuth={niibotAuth}
+              twitchRewards={twitchRewards}
+              onRewardSelect={handleRewardSelect}
+              onAuthToggle={handleAuthToggle}
+            />
+          </SlideUp>
+          <SlideUp delay={0.15}>
+            <ActivationCodes />
+          </SlideUp>
+        </div>
       </div>
     </PageMain>
   )
