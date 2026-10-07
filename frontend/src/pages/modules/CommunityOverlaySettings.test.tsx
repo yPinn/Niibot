@@ -279,7 +279,7 @@ describe('CommunityOverlaySettings', () => {
     const connection = screen.getByRole('region', { name: 'OBS 連線' })
     expect(connection.children[0]).toHaveAttribute('data-layout-start', 'connection')
     expect(
-      within(connection).getByText('將連結加入 OBS Browser Source，設定為 1920 × 1080、透明背景。')
+      within(connection).getByText('將連結加入 OBS 瀏覽器來源，設定為 1920 × 1080、透明背景。')
     ).toBeInTheDocument()
 
     const preview = screen.getByRole('region', { name: '預覽' })
@@ -587,12 +587,12 @@ describe('CommunityOverlaySettings', () => {
     expect(screen.getByLabelText('NiibotFan 的卡冊：獲得普通卡Karina')).toBeInTheDocument()
     expect(screen.queryByTitle('每日簽到實際播放')).not.toBeInTheDocument()
 
-    expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '開啟畫面' })).toHaveAttribute(
       'href',
       `${window.location.origin}/live-display#key=${KEY}`
     )
 
-    await user.click(screen.getByRole('button', { name: /點擊以複製 OBS 顯示連結/ }))
+    await user.click(screen.getByRole('button', { name: /點擊複製 OBS 網址/ }))
     expect(copyToClipboard).toHaveBeenCalledWith(
       `${window.location.origin}/live-display#key=${KEY}`,
       '已複製',
@@ -661,7 +661,7 @@ describe('CommunityOverlaySettings', () => {
     const connection = screen.getByRole('region', { name: 'OBS 連線' })
     expect(within(connection).getByRole('switch', { name: '啟用直播畫面顯示' })).toBeInTheDocument()
     expect(within(connection).getByText('OBS 連線')).toBeInTheDocument()
-    expect(within(connection).getByRole('button', { name: '更新連結' })).toBeInTheDocument()
+    expect(within(connection).getByRole('button', { name: '重設網址' })).toBeInTheDocument()
 
     const preview = screen.getByRole('region', { name: '預覽' })
     expect(within(preview).getByText('每日簽到')).toBeInTheDocument()
@@ -782,7 +782,7 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(getTwitchRewards).mockRejectedValueOnce(new NonPartnerError())
     render(<CommunityOverlaySettings />)
 
-    expect(await screen.findByText('頻道點數尚不可用')).toBeInTheDocument()
+    expect(await screen.findByText('忠誠點數尚不可用')).toBeInTheDocument()
     expect(screen.getByText(/仍可用聊天指令簽到/)).toBeInTheDocument()
     expect(screen.queryByText('無法載入 Twitch 簽到設定')).not.toBeInTheDocument()
   })
@@ -834,7 +834,7 @@ describe('CommunityOverlaySettings', () => {
     render(<CommunityOverlaySettings />)
 
     await user.click(await screen.findByRole('switch', { name: '啟用直播畫面顯示' }))
-    const rotate = screen.getByRole('button', { name: '更新連結' })
+    const rotate = screen.getByRole('button', { name: '重設網址' })
 
     expect(rotate).toBeDisabled()
     await user.click(rotate)
@@ -848,9 +848,11 @@ describe('CommunityOverlaySettings', () => {
     const user = userEvent.setup()
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '更新連結' }))
+    await user.click(await screen.findByRole('button', { name: '重設網址' }))
     expect(rotateCommunityOverlayKey).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: '確認更新' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: '重設網址' })
+    )
 
     await waitFor(() => expect(rotateCommunityOverlayKey).toHaveBeenCalledOnce())
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
@@ -858,7 +860,7 @@ describe('CommunityOverlaySettings', () => {
       'src',
       `${window.location.origin}/live-display#key=${NEW_KEY}&preview=1&block=checkin`
     )
-    expect(screen.getByRole('link', { name: '開啟 OBS 顯示畫面' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '開啟畫面' })).toHaveAttribute(
       'href',
       `${window.location.origin}/live-display#key=${NEW_KEY}`
     )
@@ -870,8 +872,10 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(rotateCommunityOverlayKey).mockRejectedValueOnce(error)
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '更新連結' }))
-    await user.click(screen.getByRole('button', { name: '確認更新' }))
+    await user.click(await screen.findByRole('button', { name: '重設網址' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: '重設網址' })
+    )
 
     await waitFor(() => expect(toastApiError).toHaveBeenCalledWith(error, '更新 OBS 顯示連結失敗'))
     await user.click(screen.getByRole('button', { name: '測試每日簽到動畫' }))
@@ -887,8 +891,10 @@ describe('CommunityOverlaySettings', () => {
     vi.mocked(rotateCommunityOverlayKey).mockReturnValueOnce(pending.promise)
     render(<CommunityOverlaySettings />)
 
-    await user.click(await screen.findByRole('button', { name: '更新連結' }))
-    await user.click(screen.getByRole('button', { name: '確認更新' }))
+    await user.click(await screen.findByRole('button', { name: '重設網址' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: '重設網址' })
+    )
     const toggle = screen.getByRole('switch', { name: '啟用直播畫面顯示' })
 
     expect(toggle).toBeDisabled()

@@ -8,7 +8,7 @@ export interface SetupStep {
   description?: string
   /** Ordered sub-steps. Plain strings, or JSX with <GuideValue> for literals. */
   items: React.ReactNode[]
-  /** Optional CTA rendered below the items, unnumbered — e.g. a link to the page the step describes. */
+  /** Optional compact CTA beside the step title — e.g. a link to the page the step describes. */
   action?: React.ReactNode
 }
 
@@ -38,22 +38,28 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
             {i < steps.length - 1 && <span className="mt-1 w-px flex-1 bg-border" />}
           </div>
           <div className="flex flex-1 flex-col gap-element">
-            <h3 className="flex items-center gap-1.5 text-content font-semibold">
-              {step.icon && (
-                <Icon
-                  icon={step.icon}
-                  wrapperClassName="size-3.5"
-                  className="text-label text-muted-foreground"
-                />
-              )}
-              {step.title}
-            </h3>
+            {/* h-7 = the number badge's height, so badge, icon, title and the
+                (h-7) action all share one centre line; the title truncates
+                rather than pushing the action onto its own row. */}
+            <div className="flex h-7 items-center justify-between gap-element">
+              <h3 className="flex min-w-0 items-center gap-1.5 text-content font-semibold">
+                {step.icon && (
+                  <Icon
+                    icon={step.icon}
+                    wrapperClassName="size-3.5"
+                    className="text-label text-muted-foreground"
+                  />
+                )}
+                <span className="truncate">{step.title}</span>
+              </h3>
+              {step.action && <div className="shrink-0">{step.action}</div>}
+            </div>
             {step.description && (
               <p className="text-sub text-muted-foreground">{step.description}</p>
             )}
             <ol className="flex flex-col gap-element">
               {step.items.map((item, j) => (
-                <li key={j} className="flex gap-element text-sub">
+                <li key={j} className="flex items-baseline gap-element text-sub">
                   <span className="shrink-0 text-label text-muted-foreground tabular-nums">
                     {j + 1}.
                   </span>
@@ -61,7 +67,6 @@ export function SetupSteps({ steps }: { steps: SetupStep[] }) {
                 </li>
               ))}
             </ol>
-            {step.action && <div className="pt-0.5">{step.action}</div>}
           </div>
         </li>
       ))}

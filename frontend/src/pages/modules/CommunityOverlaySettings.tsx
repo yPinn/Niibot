@@ -29,19 +29,10 @@ import { getCollectionBinderChoreographyDurationMs } from '@/components/communit
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PageMain } from '@/components/layout/PageMain'
 import { OverlayUrlBlock } from '@/components/OverlayUrlBlock'
-import { Icon, SlideUp, Spinner } from '@/components/primitives'
+import { Icon, SlideUp } from '@/components/primitives'
 import {
   Alert,
   AlertDescription,
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
   AlertTitle,
   Badge,
   Button,
@@ -348,7 +339,7 @@ export default function CommunityOverlaySettings({
           }
         : await rotateCommunityOverlayKey()
       setAccess(next)
-      toast.success('OBS 顯示連結已更新，請貼回 Browser Source')
+      toast.success('網址已重設，請到 OBS 的瀏覽器來源貼上新網址')
     } catch (error) {
       toastApiError(error, '更新 OBS 顯示連結失敗')
     } finally {
@@ -660,7 +651,7 @@ export default function CommunityOverlaySettings({
                       </Badge>
                     </CardTitle>
                     <CardDescription>
-                      將連結加入 OBS Browser Source，設定為 1920 × 1080、透明背景。
+                      將連結加入 OBS 瀏覽器來源，設定為 1920 × 1080、透明背景。
                     </CardDescription>
                     <CardAction>
                       <Switch
@@ -674,40 +665,10 @@ export default function CommunityOverlaySettings({
                   <CardContent className="flex min-w-0 flex-col gap-card border-t pt-card">
                     <OverlayUrlBlock
                       url={overlayUrl}
-                      copyLabel="點擊以複製 OBS 顯示連結"
-                      openLabel="開啟 OBS 顯示畫面"
+                      obsSource={{ name: 'Niibot Live Display', width: 1920, height: 1080 }}
+                      onRotate={() => void handleRotateKey()}
+                      rotating={mutation !== null}
                     />
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="self-start"
-                          disabled={mutation !== null}
-                        >
-                          {mutation === 'key' ? (
-                            <Spinner />
-                          ) : (
-                            <Icon icon="fa-solid fa-key" className="text-label" />
-                          )}
-                          更新連結
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>更新 OBS 顯示連結？</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            舊連結會立即失效。完成後請把新連結貼回 OBS Browser Source。
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => void handleRotateKey()}>
-                            確認更新
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
                   </CardContent>
                 </Card>
               </SlideUp>
