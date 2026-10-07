@@ -179,6 +179,16 @@ class TestDispatch:
 
         assert calls[0][1][-1] == "--global"
 
+    def test_discord_deployed_if_changed_is_forwarded(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            nb, "_sh", lambda *p, passthrough=None: calls.append((p, passthrough)) or 0
+        )
+
+        nb.main(["discord", "sync", "--env", "prod", "--global", "--if-changed", "-y"])
+
+        assert calls[0][1][-3:] == ["--global", "--if-changed", "--yes"]
+
     @pytest.mark.parametrize("action", ["preview", "build"])
     def test_collection_assets_dispatches_catalog_action(self, monkeypatch, action):
         seen = {}

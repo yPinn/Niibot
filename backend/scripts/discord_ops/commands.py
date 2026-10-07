@@ -6,6 +6,10 @@
     ls    list registered commands       diff  preview what sync would change
     sync  push the tree to Discord       rm    clear registered commands
 
+`diff` compares full payloads (options, descriptions, permissions), not just
+names. `sync --if-changed` runs the same diff first and skips the write when
+Discord already matches — CD uses it so an unchanged deploy makes no write call.
+
 Scope resolution: --global forces global; otherwise --guild overrides the
 DISCORD_GUILD_ID from the env file; otherwise that env value is used.
 (Run `... --help` for which flags each subcommand accepts.)
@@ -16,6 +20,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import discord
 from discord import app_commands
@@ -34,11 +39,6 @@ for _p in (str(BASE_DIR), str(BACKEND_DIR)):
         sys.path.insert(0, _p)
 
 from core import COGS_DIR  # noqa: E402
-
-_SUBCOMMAND_TYPES = (
-    discord.AppCommandOptionType.subcommand,
-    discord.AppCommandOptionType.subcommand_group,
-)
 
 
 def load_discord_env(env: str) -> tuple[str, str | None]:
@@ -72,35 +72,74 @@ def _discover_extensions() -> list[str]:
     ]
 
 
-def _flatten_local(cmds: list) -> set[str]:
-    """Qualified leaf-command names from the local app_commands tree."""
-    out: set[str] = set()
-    for cmd in cmds:
-        if isinstance(cmd, app_commands.Group):
-            for sub in cmd.walk_commands():
-                if not isinstance(sub, app_commands.Group):
-                    out.add(sub.qualified_name)
-        else:
-            out.add(cmd.qualified_name)
+# Keys Discord echoes back but that sync never sets — never part of the comparison.
+_IGNORED_KEYS = frozenset({"id", "application_id", "version", "guild_id", "dm_permission"})
+# Discord fills these in server-side when unset, so compare only when both sides have them.
+_SERVER_DEFAULTED_KEYS = ("contexts", "integration_types")
+_FALSY_DEFAULTS = {"required": False, "autocomplete": False, "nsfw": False}
+
+
+def _canonical(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalise a command/option payload so local and remote compare equal when in sync.
+
+    Drops empty / default-valued keys (Discord omits them, discord.py emits them)
+    and stringifies permission bitfields (Discord returns them as strings).
+    """
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in _IGNORED_KEYS or value is None or value == [] or value == {}:
+            continue
+        if _FALSY_DEFAULTS.get(key, object()) == value:
+            continue
+        if key == "options":
+            value = [_canonical(opt) for opt in value]
+        elif key == "choices":
+            value = [{"name": c["name"], "value": c["value"]} for c in value]
+        elif key in ("channel_types", *_SERVER_DEFAULTED_KEYS):
+            value = sorted(value)
+        elif key == "default_member_permissions":
+            value = str(value)
+        out[key] = value
     return out
 
 
-def _flatten_registered(cmds: list) -> set[str]:
-    """Qualified leaf-command names from commands fetched off Discord."""
-    out: set[str] = set()
+def _command_key(payload: dict[str, Any]) -> str:
+    """Slash and context-menu commands may share a name; key by type too."""
+    kind = payload.get("type", 1)
+    return payload["name"] if kind == 1 else f"{payload['name']} (type {kind})"
 
-    def walk(node, prefix: str) -> None:
-        name = f"{prefix} {node.name}".strip()
-        subs = [o for o in (getattr(node, "options", None) or []) if o.type in _SUBCOMMAND_TYPES]
-        if subs:
-            for s in subs:
-                walk(s, name)
-        else:
-            out.add(name)
 
-    for cmd in cmds:
-        walk(cmd, "")
-    return out
+def _remote_payload(cmd: app_commands.AppCommand) -> dict[str, Any]:
+    payload = dict(cmd.to_dict())
+    # AppCommand.to_dict() leaves these out although sync sets them.
+    perms = cmd.default_member_permissions
+    payload["default_member_permissions"] = None if perms is None else perms.value
+    payload["nsfw"] = cmd.nsfw
+    return payload
+
+
+def diff_commands(
+    local: list[dict[str, Any]], remote: list[dict[str, Any]]
+) -> tuple[list[str], list[str], list[str]]:
+    """(added, removed, changed) top-level command keys between two payload lists."""
+    local_by_key = {_command_key(p): _canonical(p) for p in local}
+    remote_by_key = {_command_key(p): _canonical(p) for p in remote}
+
+    changed: list[str] = []
+    for key in local_by_key.keys() & remote_by_key.keys():
+        mine, theirs = dict(local_by_key[key]), dict(remote_by_key[key])
+        for field in _SERVER_DEFAULTED_KEYS:
+            if field not in mine or field not in theirs:
+                mine.pop(field, None)
+                theirs.pop(field, None)
+        if mine != theirs:
+            changed.append(key)
+
+    return (
+        sorted(local_by_key.keys() - remote_by_key.keys()),
+        sorted(remote_by_key.keys() - local_by_key.keys()),
+        sorted(changed),
+    )
 
 
 class _Runner(commands.Bot):
@@ -110,10 +149,11 @@ class _Runner(commands.Bot):
     ``sync``/``diff`` can load the full cog set without a database or gateway.
     """
 
-    def __init__(self, action: str, guild_id: str | None) -> None:
+    def __init__(self, action: str, guild_id: str | None, *, if_changed: bool = False) -> None:
         super().__init__(command_prefix="!", intents=discord.Intents.default())
         self.action = action
         self.guild_id = guild_id
+        self.if_changed = if_changed
         self.exit_code = 0
         # Shim so every cog loads identically to production (no DB needed).
         self.db_pool = None
@@ -204,8 +244,34 @@ class _Runner(commands.Bot):
             await self.tree.sync()
         print("Done.")
 
+    async def _compare(self) -> tuple[list[str], list[str], list[str]]:
+        """Diff the loaded tree against what Discord has for the selected scope."""
+        guild = self._guild_obj()
+        if guild:
+            self.tree.copy_global_to(guild=guild)
+        local = [cmd.to_dict(self.tree) for cmd in self.tree.get_commands(guild=guild)]
+        remote = [_remote_payload(cmd) for cmd in await self.tree.fetch_commands(guild=guild)]
+        added, removed, changed = diff_commands(local, remote)
+
+        scope = f"guild {self.guild_id}" if guild else "global"
+        print(f"\nDiff vs {scope}:")
+        if not (added or removed or changed):
+            print("  (no changes — already in sync)")
+        for marker, names in (("+", added), ("-", removed), ("~", changed)):
+            for name in names:
+                print(f"  {marker} /{name}")
+        unchanged = len(local) - len(added) - len(changed)
+        print(
+            f"\n{len(added)} added, {len(removed)} removed, "
+            f"{len(changed)} changed, {unchanged} unchanged"
+        )
+        return added, removed, changed
+
     async def _sync(self) -> None:
         if not await self._load_tree():
+            return
+        if self.if_changed and not any(await self._compare()):
+            print("\nSkipping sync — Discord already matches the local tree.")
             return
         guild = self._guild_obj()
         if guild:
@@ -219,23 +285,7 @@ class _Runner(commands.Bot):
     async def _diff(self) -> None:
         if not await self._load_tree():
             return
-        local = _flatten_local(self.tree.get_commands())
-        guild = self._guild_obj()
-        registered = _flatten_registered(await self.tree.fetch_commands(guild=guild))
-        scope = f"guild {self.guild_id}" if guild else "global"
-
-        added = sorted(local - registered)
-        removed = sorted(registered - local)
-        unchanged = len(local & registered)
-
-        print(f"\nDiff vs {scope} (command names; sync would apply these):")
-        if not added and not removed:
-            print("  (no changes — already in sync)")
-        for n in added:
-            print(f"  + {n}")
-        for n in removed:
-            print(f"  - {n}")
-        print(f"\n{len(added)} added, {len(removed)} removed, {unchanged} unchanged")
+        await self._compare()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -258,6 +308,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_sync.add_argument("--global", dest="force_global", action="store_true", help="Force global")
     p_sync.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+    p_sync.add_argument(
+        "--if-changed", action="store_true", help="Only sync when the tree differs from Discord"
+    )
     p_sync.set_defaults(action="sync")
 
     p_rm = sub.add_parser("rm", parents=[common], help="Clear registered commands")
@@ -298,7 +351,7 @@ async def _run(args: argparse.Namespace) -> int:
         print("Aborted.")
         return 0
 
-    bot = _Runner(action, guild_id)
+    bot = _Runner(action, guild_id, if_changed=getattr(args, "if_changed", False))
     async with bot:
         await bot.start(token)
     return bot.exit_code
