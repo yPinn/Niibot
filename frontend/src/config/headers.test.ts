@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -91,5 +92,24 @@ describe('public/_headers', () => {
         'https://niibot-api-staging.llazypilot.com',
       ])
     )
+  })
+
+  it("allows index.html's inline scripts in every script-src (every route serves it)", () => {
+    const html = readFileSync(resolve(import.meta.dirname, '../../index.html'), 'utf8')
+    // Executable inline scripts only: no src, and not a data block like JSON-LD.
+    const inline = [...html.matchAll(/<script(?![^>]*\b(?:src|type)=)[^>]*>([\s\S]*?)<\/script>/g)]
+    expect(inline.length).toBeGreaterThan(0)
+    const hashes = inline.map(
+      ([, body]) => `'sha256-${createHash('sha256').update(body).digest('base64')}'`
+    )
+    for (const r of rules) {
+      for (const name of [CSP, CSP_RO]) {
+        const csp = r.set.get(name)
+        if (csp)
+          expect(directive(csp, 'script-src'), `${r.path} ${name}`).toEqual(
+            expect.arrayContaining(hashes)
+          )
+      }
+    }
   })
 })

@@ -13,9 +13,10 @@
 # Violations of either reach admin → Monitor → Errors as CSP.VIOLATION (clientErrorReporter).
 
 /*
-# 'sha256-BFYo...' is the Vite modulePreload polyfill injected by older builds (kept for CDN
-# cache rollover). frame-ancestors is omitted: X-Frame-Options: SAMEORIGIN covers non-overlay
-# pages; overlay paths detach it and allow framing via their own CSP.
+# 'sha256-BFYo...' (in every script-src) is index.html's inline theme script — every route
+# serves that HTML. Edit the script and the hash changes; headers.test.ts recomputes it.
+# frame-ancestors is omitted: X-Frame-Options: SAMEORIGIN covers non-overlay pages; overlay
+# paths detach it and allow framing via their own CSP.
 Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com https://*.fbcdn.net data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=()
@@ -41,7 +42,7 @@ Cache-Control: public, max-age=31536000, immutable
 /live-display
 # Community Overlay carries its capability in the fragment so it never reaches request logs.
 Referrer-Policy: no-referrer
-Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; frame-ancestors *; img-src 'self' data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://static.cloudflareinsights.com; frame-ancestors *; img-src 'self' data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 ! Content-Security-Policy-Report-Only
 ! X-Frame-Options
 
@@ -53,12 +54,12 @@ Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cl
 # media-src blob:, segments come from *.ttvnw.net, and variant playlists from the direct API
 # host (API_DIRECT_URL — prod and staging; see docs/guides/cloudflare-pages.md). img-src
 # covers the provider posters behind vertical videos (decorative CSS backgrounds).
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com https://*.fbcdn.net data:; media-src blob: https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://niibot-api-staging.llazypilot.com https://cloudflareinsights.com https://*.ttvnw.net; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com https://*.fbcdn.net data:; media-src blob: https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://niibot-api-staging.llazypilot.com https://cloudflareinsights.com https://*.ttvnw.net; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 ! Content-Security-Policy-Report-Only
 ! X-Frame-Options
 
 /*/game-queue/overlay
 # Same embedding policy as the video-queue overlay above.
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 ! Content-Security-Policy-Report-Only
 ! X-Frame-Options
