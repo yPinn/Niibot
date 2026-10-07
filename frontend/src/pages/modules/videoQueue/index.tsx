@@ -13,6 +13,8 @@ import {
   rotateVideoQueueOverlayKey,
   setVideoAsNext,
   skipCurrentVideo,
+  startLiveInsert,
+  stopLiveInsert,
   updateVideoQueueSettings,
   type VideoQueueHistoryEntry,
   type VideoQueueRankingEntry,
@@ -40,6 +42,7 @@ import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
 import { BlocklistSection, type BlocklistSectionHandle } from './BlocklistSection'
+import { InsertCard } from './InsertCard'
 import { NowPlayingCard } from './NowPlayingCard'
 import { OverlayCard } from './OverlayCard'
 import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
@@ -330,6 +333,39 @@ export default function VideoQueue() {
     }
   }
 
+  const handleStartInsert = async (url: string) => {
+    try {
+      setState(await startLiveInsert(url))
+      toast.success('開始插播，佇列暫停')
+    } catch (e) {
+      toastApiError(e, '插播失敗')
+      throw e
+    }
+  }
+
+  const handleStopInsert = async () => {
+    try {
+      setState(await stopLiveInsert())
+      toast.success('已結束插播，恢復播放佇列')
+    } catch (e) {
+      toastApiError(e, '結束插播失敗')
+      throw e
+    }
+  }
+
+  const handleSaveInsertDefaults = async (patch: {
+    insert_volume_percent?: number
+    insert_audio_only?: boolean
+  }) => {
+    try {
+      setSettings(await updateVideoQueueSettings(patch))
+      toast.success('插播設定已儲存')
+    } catch (e) {
+      toastApiError(e, '更新失敗')
+      throw e
+    }
+  }
+
   const handleSkip = async () => {
     try {
       setState(await skipCurrentVideo(state?.current?.id))
@@ -464,6 +500,17 @@ export default function VideoQueue() {
           queueSize={queueSize}
           totalQueuedDuration={totalQueuedDuration}
           onSkip={handleSkip}
+        />
+      </SlideUp>
+
+      <SlideUp inView delay={0.03}>
+        <InsertCard
+          insert={state?.insert ?? null}
+          volumePercent={settings?.insert_volume_percent ?? 30}
+          audioOnly={settings?.insert_audio_only ?? false}
+          onStart={handleStartInsert}
+          onStop={handleStopInsert}
+          onSaveDefaults={handleSaveInsertDefaults}
         />
       </SlideUp>
 

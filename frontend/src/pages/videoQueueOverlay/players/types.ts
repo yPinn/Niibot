@@ -79,6 +79,9 @@ interface TwitchPlayerCtor {
   PAUSE: string
   READY?: string
   PLAYBACK_BLOCKED?: string
+  /** Channel playback only: the broadcast went offline / came back. */
+  ONLINE?: string
+  OFFLINE?: string
 }
 
 declare global {

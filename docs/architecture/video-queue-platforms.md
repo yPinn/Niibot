@@ -234,6 +234,44 @@ segment length is fixed at submission (Helix's duration at that moment), so
 the overlay plays exactly what was checked. An end point past the current
 length rejects as out of range.
 
+## Live insert (直播插播)
+
+The queue rejects live streams, but the broadcaster can still play one
+**outside** the queue: background music, a watch-along. A live insert is
+open-ended playback of an ongoing Twitch channel or YouTube live stream, and it
+is deliberately not a queue entry. It has no length, no admission review and no
+place in line, and it never ends on its own schedule.
+
+- **Who:** broadcaster only. Chat `!vq live <url>` / `!vq live stop`, or the
+  dashboard's 直播插播 card. Never mods, never viewers, never redemptions.
+- **Sources:** `twitch.tv/{channel}` (Helix `/streams` must report it live;
+  the overlay uses the embed player's `channel` mode) and an ongoing YouTube live
+  (`liveBroadcastContent = live`, embeddable). Rejected: offline channels,
+  upcoming streams, non-embeddable lives, and the broadcaster's own channel
+  (mirrored picture, audio feedback).
+- **State:** `video_queue_inserts` (migration 155), one row per channel, NOTIFY
+  on every change, so the overlay and dashboard follow it on the existing SSE
+  stream with no extra requests. Each start is a new row id; the overlay ends an
+  insert **by id**, so a late report never stops a newer one.
+- **Queue pause:** starting an insert puts the playing entry back at the very
+  front, unplayed. The promote queries (`kickstart_if_idle`, `advance_queue`)
+  skip channels with an active insert, and dashboard play-now is refused (409).
+  Requests are still accepted; chat and redemption replies add
+  「目前插播中，結束後播放」.
+- **Ending:** the broadcaster stops it, or the overlay sees the stream end
+  (Twitch `ENDED`, or `OFFLINE` that lasts 60 s since a brief disconnect also
+  fires it; YouTube `ENDED` / error) and reports it **once**, without retries.
+  An insert counts as active for 12 hours at most, so a forgotten one never
+  resumes on the next broadcast. Niibot does not detect whether the streamer is
+  live.
+- **Playback settings:** insert volume (default 30%) and audio-only (the player
+  keeps its size but is invisible in OBS) are settings defaults copied onto the
+  row at start. Changing them updates the running insert too, and the overlay
+  applies volume without remounting.
+- **Budget:** video bytes flow from Twitch/YouTube straight to OBS, not through
+  Cloudflare. End detection uses player events only, with no polling of our API
+  or Helix, so an insert costs nothing beyond the stream's ~288 requests/day.
+
 ## Instagram Reel (`instagram.com/reel/{shortcode}`)
 
 Resolves through the same self-hosted **InstaFix** proxy the Discord bot's

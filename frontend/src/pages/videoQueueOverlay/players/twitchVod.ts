@@ -12,6 +12,9 @@ import type { MountContext, PlayerStrategy } from './types'
 let _twitchReadyPromise: Promise<void> | null = null
 
 export function loadTwitchEmbedAPI(): Promise<void> {
+  // Already available (loaded by another mount, or present before any load):
+  // never wait on a cached promise from an earlier, still-pending attempt.
+  if (typeof window !== 'undefined' && window.Twitch?.Player) return Promise.resolve()
   if (_twitchReadyPromise) return _twitchReadyPromise
   _twitchReadyPromise = new Promise((resolve, reject) => {
     if (typeof window !== 'undefined' && window.Twitch?.Player) {
