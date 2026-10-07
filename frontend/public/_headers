@@ -1,73 +1,64 @@
-/\*
+# Cloudflare Pages headers. Format rules (checked by src/config/headers.test.ts):
+# - a path line, then header lines at column 0 (indented lines are silently ignored);
+# - `*` is a literal splat — never backslash-escape it (an escaped path matches nothing;
+#   this file once lost every CSP to a Markdown formatter doing exactly that);
+# - Cloudflare sends EVERY matching rule, and a browser enforces every CSP it receives,
+#   so a path with its own CSP must detach the global one (`! Header-Name`).
+#
+# - A rule's `! Header` also drops that rule's own header of the same name, so a path that
+#   detaches the global Content-Security-Policy-Report-Only can't use Report-Only itself.
+#
+# CSP rollout: the global policy is Report-Only until its allowlist is confirmed. Overlay
+# and /live-display policies are enforced (their resource lists are small and known).
+# Violations of either reach admin → Monitor → Errors as CSP.VIOLATION (clientErrorReporter).
 
-# 'sha256-BFYo...' is the Vite modulePreload polyfill injected by older builds (kept for CDN cache
-
-# rollover). Cloudflare sends all matching rules simultaneously; the browser enforces all of them.
-
-# frame-ancestors is intentionally omitted here — X-Frame-Options: SAMEORIGIN handles non-overlay
-
-# pages, while overlay paths override framing via their own CSP frame-ancestors \* rule below.
-
-Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+/*
+# 'sha256-BFYo...' is the Vite modulePreload polyfill injected by older builds (kept for CDN
+# cache rollover). frame-ancestors is omitted: X-Frame-Options: SAMEORIGIN covers non-overlay
+# pages; overlay paths detach it and allow framing via their own CSP.
+Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'sha256-BFYoPoqqEce9Xn1iR84eJv0srIQYK8o0bOd6a5It8Ng=' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src 'self' https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com https://*.fbcdn.net data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=()
 X-Content-Type-Options: nosniff
 X-Frame-Options: SAMEORIGIN
 
 /bot-invite/*
-
 # Invite URLs carry one-time capabilities in the path and query string.
-
 Cache-Control: no-store
 Referrer-Policy: no-referrer
 X-Robots-Tag: noindex, nofollow
 
 /bot-auth/*
-
 # OAuth result pages must not be indexed or retained by shared caches.
-
 Cache-Control: no-store
 Referrer-Policy: no-referrer
 X-Robots-Tag: noindex, nofollow
 
 /images/tarot/decks/*
-
 # Deck versions are immutable; changing artwork requires a new deck id or version directory.
-
 Cache-Control: public, max-age=31536000, immutable
 
 /live-display
-
 # Community Overlay carries its capability in the fragment so it never reaches request logs.
-
 Referrer-Policy: no-referrer
 Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; frame-ancestors *; img-src 'self' data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+! Content-Security-Policy-Report-Only
 ! X-Frame-Options
 
-/\*/video-queue/overlay
+/*/video-queue/overlay
+# Embeddable in OBS Browser Source and the dashboard preview iframe (frame-ancestors *).
+# media-src: the signed Twitch clip MP4 (twitchClip.ts; CDN hosts vary — on a miss the <video>
+# falls back to the iframe) and Instagram Reels (instagramReel.ts; cdninstagram.com / fbcdn.net,
+# no fallback). Twitch live inserts (liveInsert.ts) play HLS via hls.js: MediaSource needs
+# media-src blob:, segments come from *.ttvnw.net, and variant playlists from the direct API
+# host (API_DIRECT_URL — prod and staging; see docs/guides/cloudflare-pages.md). img-src
+# covers the provider posters behind vertical videos (decorative CSS backgrounds).
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://clips-media-assets2.twitch.tv https://i.ytimg.com https://*.hdslb.com https://cdn.discordapp.com https://*.cdninstagram.com https://*.fbcdn.net data:; media-src blob: https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://niibot-api-staging.llazypilot.com https://cloudflareinsights.com https://*.ttvnw.net; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+! Content-Security-Policy-Report-Only
+! X-Frame-Options
 
-# Overlay pages must be embeddable in OBS Browser Source and the dashboard preview iframe.
-
-# frame-ancestors \* overrides the inherited X-Frame-Options: SAMEORIGIN from the global rule.
-
-# X-Frame-Options is intentionally omitted here; frame-ancestors takes precedence in modern browsers.
-
-# media-src covers the signed Twitch clip MP4 the overlay plays in a <video> (twitchClip.ts) — the
-
-# embed iframe can't autoplay in OBS. Clip CDN hosts vary (production.assets.clips.twitchcdn.net,
-
-# clips-media-assets2.twitch.tv); on a media-src miss the <video> errors and falls back to the iframe.
-
-# Instagram Reels (instagramReel.ts) play the same way but have no iframe fallback — cdninstagram.com
-# and fbcdn.net are wildcard-subdomain CDN hosts observed serving the resolved InstaFix mp4 URL.
-# Twitch live inserts (liveInsert.ts) play the signed HLS playlist via hls.js: playlist + segments
-# are fetched (connect-src) from usher.ttvnw.net / *.hls.ttvnw.net, and MediaSource needs media-src
-# blob:. On a miss hls.js errors before playing and the overlay falls back to the embed player.
-
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com https://*.cdninstagram.com data:; media-src blob: https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com https://*.ttvnw.net; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
-
-/\*/game-queue/overlay
-
-# Same embedding policy as video-queue overlay — see comment above.
-
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+/*/game-queue/overlay
+# Same embedding policy as the video-queue overlay above.
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors *; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com data:; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+! Content-Security-Policy-Report-Only
+! X-Frame-Options
