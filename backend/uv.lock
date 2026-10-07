@@ -1286,7 +1286,7 @@ wheels = [
 
 [[package]]
 name = "niibot-backend"
-version = "1.17"
+version = "1.18"
 source = { virtual = "." }
 dependencies = [
     { name = "aiohttp" },

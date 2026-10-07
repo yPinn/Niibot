@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui'
 
-import { formatDuration } from './utils'
+import { formatDuration, segmentLabel } from './utils'
 
 const SOURCE_CONFIG: Record<string, { label: string; className: string }> = {
   chat: { label: '聊天', className: 'text-muted-foreground' },
@@ -99,6 +99,11 @@ export function QueueTable({
                 <div className="truncate font-medium" title={entry.title || entry.video_id}>
                   {entry.title || entry.video_id}
                 </div>
+                {segmentLabel(entry) && (
+                  <span className="shrink-0 text-label text-muted-foreground tabular-nums">
+                    {segmentLabel(entry)}
+                  </span>
+                )}
               </div>
             </TableCell>
             <TableCell className="text-muted-foreground text-sub">
@@ -120,7 +125,7 @@ export function QueueTable({
                           <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">排到最前面</TooltipContent>
+                      <TooltipContent side="left">排到下一首</TooltipContent>
                     </Tooltip>
                   )}
                   {onPlayNow && (
@@ -130,7 +135,7 @@ export function QueueTable({
                           <Icon icon="fa-solid fa-play" className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">馬上播這部</TooltipContent>
+                      <TooltipContent side="left">立即播放</TooltipContent>
                     </Tooltip>
                   )}
                   {onRemove && (

@@ -91,7 +91,12 @@ def _build_formatter(shared: list[Any], *, console: bool) -> structlog.stdlib.Pr
     if console:
         render_chain = [
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-            structlog.dev.ConsoleRenderer(colors=True),
+            # show_locals=False: the default prints every frame's locals, which
+            # put decrypted OAuth tokens into the dev console on a failed save.
+            structlog.dev.ConsoleRenderer(
+                colors=True,
+                exception_formatter=structlog.dev.RichTracebackFormatter(show_locals=False),
+            ),
         ]
     else:
         render_chain = [

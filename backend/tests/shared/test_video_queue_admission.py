@@ -306,3 +306,160 @@ async def test_admission_logs_outcome_without_copying_submitted_url(caplog):
     assert "video_queue_admission_accepted" in caplog.text
     assert submitted_url not in caplog.text
     assert queue.add_if_within_limits.await_count == 1
+
+
+async def _admit_youtube(service, url: str, *, length: int = 300, source: str = "dashboard"):
+    async def metadata(_resolved: ResolvedVideo):
+        return VideoMetadata("Title", length, 1_000, False)
+
+    return await service.admit(
+        channel_id="ch1",
+        url=url,
+        requested_by="viewer",
+        requested_by_id="u1",
+        source=source,
+        resolve=_resolve,
+        fetch_metadata=metadata,
+    )
+
+
+@pytest.mark.asyncio
+async def test_typed_segment_is_stored_as_start_and_length():
+    service, queue, _ = _service()
+    await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ 1:30-4:00")
+    kwargs = queue.add.await_args.kwargs
+    assert kwargs["start_seconds"] == 90
+    assert kwargs["duration_seconds"] == 150
+
+
+@pytest.mark.asyncio
+async def test_length_limit_checks_the_segment_not_the_video():
+    service, queue, _ = _service(_settings(max_duration_seconds=600))
+    await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ 10:00-15:00", length=3600)
+    assert queue.add.await_args.kwargs["duration_seconds"] == 300
+
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ 10:00-25:00", length=3600)
+    assert exc_info.value.reason is AdmissionReason.TOO_LONG
+    assert exc_info.value.details["segment"] == 1
+
+
+@pytest.mark.asyncio
+async def test_too_long_whole_video_is_still_rejected_with_a_segment_hint():
+    service, queue, _ = _service(_settings(max_duration_seconds=600))
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ", length=3600)
+    assert exc_info.value.reason is AdmissionReason.TOO_LONG
+    assert exc_info.value.details["segment"] == 0
+    queue.add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("suffix", "code"),
+    [
+        ("90", "format"),
+        ("4:00-1:30", "order"),
+        ("1:30-6:00", "out_of_range"),
+        ("1:30-1:35", "too_short"),
+    ],
+)
+async def test_segment_errors_reject_before_insert(suffix, code):
+    service, queue, _ = _service()
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await _admit_youtube(service, f"https://youtu.be/dQw4w9WgXcQ {suffix}")
+    assert exc_info.value.reason is AdmissionReason.INVALID_SEGMENT
+    assert exc_info.value.details == {"segment_error": code}
+    queue.add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unsupported_url_wins_over_a_bad_time():
+    service, _, _ = _service()
+
+    async def unresolved(_url: str):
+        return None
+
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await service.admit(
+            channel_id="ch1",
+            url="https://example.com/x 90",
+            requested_by="viewer",
+            source="dashboard",
+            resolve=unresolved,
+            fetch_metadata=_metadata,
+        )
+    assert exc_info.value.reason is AdmissionReason.INVALID_URL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("suffix", ["0:10-0:20", "90"])
+async def test_clip_ignores_a_typed_time(suffix):
+    service, queue, _ = _service()
+
+    async def clip(_url: str):
+        return ResolvedVideo("twitch_clip", "Slug")
+
+    await service.admit(
+        channel_id="ch1",
+        url=f"https://clips.twitch.tv/Slug {suffix}",
+        requested_by="viewer",
+        source="dashboard",
+        resolve=clip,
+        fetch_metadata=lambda _r: _metadata(_r),
+    )
+    kwargs = queue.add.await_args.kwargs
+    assert (kwargs["start_seconds"], kwargs["duration_seconds"]) == (0, 120)
+
+
+@pytest.mark.asyncio
+async def test_twitch_channel_link_is_rejected_with_a_vod_hint():
+    service, _, _ = _service()
+
+    async def unresolved(_url: str):
+        return None
+
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await service.admit(
+            channel_id="ch1",
+            url="https://www.twitch.tv/somestreamer",
+            requested_by="viewer",
+            source="dashboard",
+            resolve=unresolved,
+            fetch_metadata=_metadata,
+        )
+    assert exc_info.value.reason is AdmissionReason.INVALID_URL
+    assert exc_info.value.details == {"hint": "twitch_channel"}
+
+
+@pytest.mark.asyncio
+async def test_youtube_with_no_data_is_rejected_even_without_a_length_limit():
+    """API failure / quota: live status is unknown, and a live stream let in
+    plays forever. The dashboard (no limit) used to let this through."""
+    service, queue, _ = _service()
+
+    async def nothing(_resolved: ResolvedVideo):
+        return VideoMetadata(None, None, None, False)
+
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await service.admit(
+            channel_id="ch1",
+            url="https://youtu.be/dQw4w9WgXcQ",
+            requested_by="viewer",
+            source="dashboard",
+            resolve=_resolve,
+            fetch_metadata=nothing,
+        )
+    assert exc_info.value.reason is AdmissionReason.METADATA_UNVERIFIABLE
+    assert exc_info.value.details == {"field": "youtube"}
+    queue.add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_blocked_rejection_carries_the_rule_kind():
+    service, _, blocklist = _service()
+    blocklist.check = AsyncMock(return_value=SimpleNamespace(kind="creator"))
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ")
+    assert exc_info.value.reason is AdmissionReason.BLOCKED
+    assert exc_info.value.details == {"blocked_kind": "creator"}

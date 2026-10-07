@@ -2,7 +2,9 @@ import { API_ENDPOINTS, apiFetch } from './config'
 import type { EmoteItem } from './emotes'
 import { parseApiError } from './errors'
 
-export type ModStatus = 'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'broadcaster'
+// Mirrors admin_router.AdminChannelInfo.mod_status ('error' = the check itself failed).
+export type ModStatus =
+  'mod' | 'no_mod' | 'token_error' | 'scope_error' | 'provider_unavailable' | 'error'
 export type BotTokenStatus = 'ok' | 'missing' | 'no_token'
 
 export type ChannelMembershipStatus = 'active' | 'pending' | 'suspended'
@@ -69,34 +71,6 @@ export interface GrantKindCounts {
 export interface OnboardingFunnel {
   active_members: number
   by_kind: GrantKindCounts[]
-}
-
-export interface ActivationRequest {
-  /** User UUID (was previously the int activation_requests.id). */
-  id: string
-  platform_user_id: string
-  display_name: string | null
-  username: string | null
-  avatar: string | null
-  note: string
-  created_at: string
-}
-
-export interface MembershipEvent {
-  id: number
-  event_type:
-    | 'requested'
-    | 'auto_admitted'
-    | 'approved'
-    | 'rejected'
-    | 'suspended'
-    | 'reinstated'
-    | 'withdrawn'
-  actor_type: 'system' | 'owner' | 'user'
-  actor_user_id: string | null
-  reason: string | null
-  metadata: Record<string, unknown>
-  occurred_at: string
 }
 
 export async function getAdminChannels(): Promise<AdminChannel[]> {
@@ -182,14 +156,6 @@ export async function getOnboardingFunnel(): Promise<OnboardingFunnel> {
   return response.json()
 }
 
-export async function getActivationRequests(): Promise<ActivationRequest[]> {
-  const response = await apiFetch(API_ENDPOINTS.admin.activationRequests, {
-    credentials: 'include',
-  })
-  if (!response.ok) throw await parseApiError(response, '載入啟用申請失敗')
-  return response.json()
-}
-
 export async function approveActivationRequest(userId: string, reason: string = ''): Promise<void> {
   const response = await apiFetch(API_ENDPOINTS.admin.approveRequest(userId), {
     method: 'POST',
@@ -208,14 +174,6 @@ export async function rejectActivationRequest(userId: string, reason: string = '
     body: JSON.stringify({ reason }),
   })
   if (!response.ok) throw await parseApiError(response, '駁回申請失敗')
-}
-
-export async function getMembershipTimeline(userId: string): Promise<MembershipEvent[]> {
-  const response = await apiFetch(API_ENDPOINTS.admin.membershipTimeline(userId), {
-    credentials: 'include',
-  })
-  if (!response.ok) throw await parseApiError(response, '載入會員紀錄失敗')
-  return response.json()
 }
 
 export async function suspendMembership(userId: string, reason: string): Promise<void> {

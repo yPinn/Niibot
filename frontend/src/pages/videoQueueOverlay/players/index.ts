@@ -17,6 +17,7 @@ export function getPlayerStrategy(videoType: string): PlayerStrategy | undefined
   return STRATEGIES[videoType]
 }
 
+export { type LiveInsertController, type LiveInsertEndReason, mountLiveInsert } from './liveInsert'
 export { destroyAllPlayers } from './shared'
 export { loadTwitchEmbedAPI } from './twitchVod'
 export type { MountContext, PlayerStrategy, YTPlayer } from './types'

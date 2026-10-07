@@ -35,11 +35,18 @@ async function openDetails(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('ChannelCard membership actions', () => {
-  it('shows membership and monitoring status without opening details', () => {
-    render(<ChannelCard ch={ACTIVE_CHANNEL} onSuspend={vi.fn()} />)
+  it('keeps a healthy card badge-free but announces its status', () => {
+    render(<ChannelCard ch={{ ...ACTIVE_CHANNEL, is_live: true }} onSuspend={vi.fn()} />)
 
-    expect(screen.getByText('使用中')).toBeInTheDocument()
-    expect(screen.getByText('監控正常')).toBeInTheDocument()
+    expect(screen.queryByText('使用中')).not.toBeInTheDocument()
+    expect(screen.queryByText('監控正常')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Streamer，直播中，監控正常' })).toBeInTheDocument()
+  })
+
+  it('flags an unreachable Twitch status as an issue rather than healthy', () => {
+    render(<ChannelCard ch={{ ...ACTIVE_CHANNEL, mod_status: 'provider_unavailable' }} />)
+
+    expect(screen.getByText('無法確認狀態')).toBeInTheDocument()
   })
 
   it('preserves the 16:9 media card and full-bleed offline background', () => {
@@ -59,7 +66,7 @@ describe('ChannelCard membership actions', () => {
     )
   })
 
-  it('keeps a suspended identity readable and labels the stopped monitoring state', () => {
+  it('announces a suspended card and keeps the reason for the details view', () => {
     render(
       <ChannelCard
         ch={{
@@ -72,9 +79,26 @@ describe('ChannelCard membership actions', () => {
       />
     )
 
-    expect(screen.getByText('已停權')).toBeInTheDocument()
-    expect(screen.getByText('監控已停止')).toBeInTheDocument()
-    expect(screen.getByText(/帳號安全風險/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Streamer，已停權' })).toBeInTheDocument()
+    expect(screen.queryByText(/帳號安全風險/)).not.toBeInTheDocument()
+  })
+
+  it('lists only the missing scopes in the details view', async () => {
+    const user = userEvent.setup()
+    render(
+      <ChannelCard
+        ch={{
+          ...ACTIVE_CHANNEL,
+          granted_scopes: ['user:read:chat'],
+          missing_scopes: ['bits:read'],
+        }}
+      />
+    )
+
+    await openDetails(user)
+
+    expect(screen.getByText('bits:read')).toBeInTheDocument()
+    expect(screen.queryByText('user:read:chat')).not.toBeInTheDocument()
   })
 
   it('shows missing permission count as an actionable status', () => {
@@ -150,5 +174,86 @@ describe('ChannelCard membership actions', () => {
     expect(screen.getByText('帳號安全風險')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '恢復授權' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '停權使用者' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ChannelCard fix actions', () => {
+  it("links the user's name to their Twitch channel", async () => {
+    const user = userEvent.setup()
+    render(<ChannelCard ch={{ ...ACTIVE_CHANNEL, mod_status: 'token_error' }} />)
+
+    await openDetails(user)
+
+    const link = screen.getByRole('link', { name: 'Streamer' })
+    expect(link).toHaveAttribute('href', 'https://www.twitch.tv/streamer')
+    expect(link).toHaveAttribute('target', '_blank')
+    // The broadcaster is already prompted in-app; no copy-to-send step here.
+    expect(screen.queryByRole('button', { name: /複製/ })).not.toBeInTheDocument()
+  })
+
+  it('rechecks a channel whose Twitch status could not be confirmed', async () => {
+    const user = userEvent.setup()
+    const onRecheck = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ChannelCard
+        ch={{ ...ACTIVE_CHANNEL, mod_status: 'provider_unavailable' }}
+        onRecheck={onRecheck}
+      />
+    )
+
+    await openDetails(user)
+    await user.click(screen.getByRole('button', { name: '重新檢查' }))
+
+    expect(onRecheck).toHaveBeenCalled()
+  })
+
+  it('approves a pending user from the card and closes the dialog', async () => {
+    const user = userEvent.setup()
+    const pending: AdminChannel = {
+      ...ACTIVE_CHANNEL,
+      is_enabled: false,
+      membership_status: 'pending',
+    }
+    const onApprove = vi.fn().mockResolvedValue(true)
+    render(<ChannelCard ch={pending} onApprove={onApprove} onReject={vi.fn()} />)
+
+    await openDetails(user)
+    await user.click(screen.getByRole('button', { name: '核准' }))
+
+    expect(onApprove).toHaveBeenCalledWith(pending)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('requires a second click to reject a pending user', async () => {
+    const user = userEvent.setup()
+    const pending: AdminChannel = {
+      ...ACTIVE_CHANNEL,
+      is_enabled: false,
+      membership_status: 'pending',
+    }
+    const onReject = vi.fn().mockResolvedValue(true)
+    render(<ChannelCard ch={pending} onApprove={vi.fn()} onReject={onReject} />)
+
+    await openDetails(user)
+    await user.click(screen.getByRole('button', { name: '拒絕' }))
+    expect(onReject).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '確認拒絕' }))
+    expect(onReject).toHaveBeenCalledWith(pending)
+  })
+
+  it('keeps the dialog open when a membership action fails', async () => {
+    const user = userEvent.setup()
+    render(
+      <ChannelCard
+        ch={{ ...ACTIVE_CHANNEL, is_enabled: false, membership_status: 'suspended' }}
+        onReinstate={vi.fn().mockResolvedValue(false)}
+      />
+    )
+
+    await openDetails(user)
+    await user.click(screen.getByRole('button', { name: '恢復授權' }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
   })
 })

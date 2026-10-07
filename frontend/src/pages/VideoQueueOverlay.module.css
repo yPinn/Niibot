@@ -121,6 +121,37 @@
   width: 4cqh;
 }
 
+/* live insert: same raised box as the countdown, with a pulsing red dot */
+
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.liveIndicator {
+  composes: charBox;
+  width: auto;
+  gap: 1.2cqh;
+  padding-inline: 1.5cqh;
+  font-size: 4.5cqh;
+  letter-spacing: 0.04em;
+}
+
+.liveDot {
+  width: 2.4cqh;
+  height: 2.4cqh;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e00000;
+  box-shadow: inset -1px -1px 0 #800000;
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+
 /* content */
 
 .progressBar {
@@ -213,4 +244,18 @@
   aspect-ratio: 9 / 16;
   height: 100%;
   flex-shrink: 0;
+}
+
+/* invalid overlay key: a plain, readable notice in the same window style */
+
+.keyNotice {
+  display: inline-block;
+  padding: 6px 10px;
+  background: #000080;
+  color: #ffffff;
+  font-family: 'Tahoma', 'MS Sans Serif', Arial, sans-serif;
+  font-weight: bold;
+  font-size: 14px;
+  border: 2px solid;
+  border-color: #ffffff #404040 #404040 #ffffff;
 }

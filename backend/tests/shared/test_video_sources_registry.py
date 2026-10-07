@@ -20,6 +20,7 @@ from shared.video_sources import (
     YouTubeInfo,
     build_watch_url,
     fetch_video_metadata,
+    is_twitch_channel_url,
     metadata_gate_unverifiable,
     resolve_video_url,
 )
@@ -47,6 +48,21 @@ class TestResolveVideoUrl:
         assert resolved == ResolvedVideo(
             video_type="youtube", video_id="dQw4w9WgXcQ", is_vertical=False
         )
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://youtu.be/dQw4w9WgXcQ?t=90",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1m30s",
+            "https://www.youtube.com/embed/dQw4w9WgXcQ?start=45",
+        ],
+    )
+    async def test_youtube_url_offset_is_ignored(self, url):
+        # YouTube appends the viewer's own resume position to copied URLs —
+        # not a start point the requester chose.
+        resolved = await resolve_video_url(url)
+        assert resolved is not None
+        assert resolved.start_seconds == 0
 
     async def test_youtube_shorts_sets_is_vertical(self):
         resolved = await resolve_video_url("https://www.youtube.com/shorts/dQw4w9WgXcQ")
@@ -236,8 +252,8 @@ class TestFetchVideoMetadata:
             creator_name="SomeBroadcaster",
         )
 
-    async def test_twitch_vod_caps_the_play_window_from_the_offset(self):
-        # 2h VOD, start 1h50m in → 10min remains, capped at the 600s window.
+    async def test_twitch_vod_reports_the_full_length(self):
+        # The play window is resolved at admission (shared.video_segments).
         resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=6600)
         with patch(
             "shared.video_sources.fetch_twitch_vod_info",
@@ -255,51 +271,11 @@ class TestFetchVideoMetadata:
             )
         assert metadata == VideoMetadata(
             title="VOD Title",
-            duration_seconds=600,
+            duration_seconds=7200,
             view_count=5000,
             is_vertical=False,
             thumbnail_url="https://static-cdn.jtvnw.net/t.jpg",
         )
-
-    async def test_twitch_vod_shorter_remainder_wins_over_the_cap(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7100)
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(
-                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
-            ),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-        assert metadata.duration_seconds == 100
-
-    async def test_twitch_vod_rejects_timestamp_at_or_past_the_end(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123", start_seconds=7200)
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(
-                return_value=TwitchMediaInfo(title="VOD", duration_seconds=7200, view_count=1)
-            ),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-
-        assert metadata.playable is False
-        assert metadata.unplayable_reason == "invalid_timestamp"
-        assert metadata.duration_seconds == 0
-
-    async def test_twitch_vod_unknown_duration_falls_back_to_the_window(self):
-        resolved = ResolvedVideo(video_type="twitch_vod", video_id="123")
-        with patch(
-            "shared.video_sources.fetch_twitch_vod_info",
-            new=AsyncMock(return_value=TwitchMediaInfo()),
-        ):
-            metadata = await fetch_video_metadata(
-                resolved, twitch_client_id="c", twitch_client_secret="s"
-            )
-        assert metadata.duration_seconds == 600
 
     async def test_bilibili_delegates_and_preserves_shape(self):
         resolved = ResolvedVideo(video_type="bilibili", video_id="BV1xx411c7mD")
@@ -537,6 +513,182 @@ class TestBuildWatchUrl:
             == "https://www.bilibili.com/video/BV1xx411c7mD?p=2"
         )
 
+    def test_start_offset_is_carried_for_seekable_platforms(self):
+        assert build_watch_url("youtube", "dQw4w9WgXcQ", 90) == "https://youtu.be/dQw4w9WgXcQ?t=90"
+        assert build_watch_url("twitch_vod", "123", 90) == "https://www.twitch.tv/videos/123?t=90s"
+        assert (
+            build_watch_url("bilibili", "BV1xx411c7mD_p2", 90)
+            == "https://www.bilibili.com/video/BV1xx411c7mD?p=2&t=90"
+        )
+        assert build_watch_url("twitch_clip", "Slug", 90) == "https://clips.twitch.tv/Slug"
+
     def test_unknown_video_type_raises(self):
         with pytest.raises(ValueError, match="Unknown video_type"):
             build_watch_url("tiktok", "abc123")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("https://www.twitch.tv/somestreamer", True),
+        ("twitch.tv/some_streamer/", True),
+        ("https://www.twitch.tv/videos/123", False),
+        ("https://www.twitch.tv/directory", False),
+        ("https://clips.twitch.tv/SomeClip", False),
+        ("https://youtu.be/dQw4w9WgXcQ", False),
+    ],
+)
+def test_is_twitch_channel_url(text, expected):
+    assert is_twitch_channel_url(text) is expected
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchLiveStream:
+    async def _fetch(self, helix_result):
+        from shared.video_sources import fetch_twitch_live_stream
+
+        with (
+            patch("shared.video_sources._get_twitch_app_token", AsyncMock(return_value="tok")),
+            patch("shared.video_sources._twitch_helix_json", AsyncMock(return_value=helix_result)),
+        ):
+            return await fetch_twitch_live_stream("lofistreamer", "c", "s", session=AsyncMock())
+
+    async def test_live(self):
+        stream = await self._fetch(
+            (
+                200,
+                {
+                    "data": [
+                        {
+                            "type": "live",
+                            "user_id": "u-9",
+                            "user_login": "lofistreamer",
+                            "user_name": "LofiStreamer",
+                            "title": "beats",
+                            "thumbnail_url": "https://t/{width}x{height}.jpg",
+                        }
+                    ]
+                },
+            )
+        )
+        assert stream is not None
+        assert (stream.user_id, stream.user_name, stream.title) == ("u-9", "LofiStreamer", "beats")
+        assert stream.thumbnail_url == "https://t/320x180.jpg"
+
+    async def test_offline(self):
+        assert await self._fetch((200, {"data": []})) is None
+
+    async def test_http_failure_is_not_offline(self):
+        from shared.video_sources import TwitchLiveLookupError
+
+        with pytest.raises(TwitchLiveLookupError):
+            await self._fetch((500, {}))
+
+    async def test_missing_credentials_is_not_offline(self):
+        from shared.video_sources import TwitchLiveLookupError, fetch_twitch_live_stream
+
+        with pytest.raises(TwitchLiveLookupError):
+            await fetch_twitch_live_stream("lofistreamer", "", "")
+
+
+class _GqlResponse:
+    def __init__(self, status, payload):
+        self.status = status
+        self._payload = payload
+
+    async def json(self, content_type=None):
+        return self._payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+
+def _gql_session(status, payload):
+    from unittest.mock import MagicMock
+
+    session = MagicMock()
+    session.post = MagicMock(return_value=_GqlResponse(status, payload))
+    return session
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchLiveHlsSource:
+    async def test_builds_a_signed_usher_playlist_url(self):
+        from urllib.parse import parse_qs, urlsplit
+
+        from shared.video_sources import fetch_twitch_live_hls_source
+
+        token = {"value": '{"channel":"lofi"}', "signature": "abc123", "authorization": {}}
+        session = _gql_session(200, {"data": {"streamPlaybackAccessToken": token}})
+        url = await fetch_twitch_live_hls_source("lofi", session)
+        assert url is not None
+        parts = urlsplit(url)
+        assert parts.netloc == "usher.ttvnw.net"
+        assert parts.path == "/api/channel/hls/lofi.m3u8"
+        query = parse_qs(parts.query)
+        assert query["sig"] == ["abc123"]
+        assert query["token"] == ['{"channel":"lofi"}']
+        assert query["supported_codecs"] == ["avc1"]
+        sent = session.post.call_args.kwargs
+        assert "PlaybackAccessToken_Template" in sent["data"]
+
+    @pytest.mark.parametrize(
+        ("status", "payload"),
+        [
+            (500, {}),
+            (200, {"data": {"streamPlaybackAccessToken": None}}),
+            (
+                200,
+                {
+                    "data": {
+                        "streamPlaybackAccessToken": {
+                            "value": "v",
+                            "signature": "s",
+                            "authorization": {"isForbidden": True},
+                        }
+                    }
+                },
+            ),
+        ],
+    )
+    async def test_failures_return_none(self, status, payload):
+        from shared.video_sources import fetch_twitch_live_hls_source
+
+        assert await fetch_twitch_live_hls_source("lofi", _gql_session(status, payload)) is None
+
+
+class _TextResponse:
+    def __init__(self, status, text):
+        self.status = status
+        self._text = text
+
+    async def text(self):
+        return self._text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "text", "expected"),
+    [
+        (200, "#EXTM3U\nhttps://x/v.m3u8\n", "#EXTM3U\nhttps://x/v.m3u8\n"),
+        (404, "#EXTM3U\n", None),
+        (200, "<html>blocked</html>", None),
+    ],
+)
+async def test_fetch_hls_master_playlist(status, text, expected):
+    from unittest.mock import MagicMock
+
+    from shared.video_sources import fetch_hls_master_playlist
+
+    session = MagicMock()
+    session.get = MagicMock(return_value=_TextResponse(status, text))
+    assert await fetch_hls_master_playlist("https://usher.ttvnw.net/x.m3u8", session) == expected

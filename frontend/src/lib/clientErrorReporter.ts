@@ -101,7 +101,8 @@ export function reportClientError(input: ReportInput): void {
       message: input.message.slice(0, 2000),
       stack: input.stack?.slice(0, 8000) ?? null,
       component_stack: input.componentStack?.slice(0, 4000) ?? null,
-      url: window.location.href.slice(0, 2000),
+      // Never the #fragment: overlay URLs carry their capability key there.
+      url: window.location.href.split('#')[0].slice(0, 2000),
       route: window.location.pathname.slice(0, 200),
       request_id: input.requestId ?? null,
       error_code: input.errorCode ?? null,

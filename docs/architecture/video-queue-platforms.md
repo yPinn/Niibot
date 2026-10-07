@@ -162,27 +162,185 @@ Other chat behaviour (`twitch/components/video_queue.py`):
 
 ## Twitch VOD (`twitch.tv/videos/{id}`)
 
-Added later, and one of the **best-behaved** of the five: Twitch's official embed
-player JS API (`embed.twitch.tv` / `player.twitch.tv/js/embed/v1.js`) accepts a
-`video` param — unlike clips — so `players/twitchVod.ts` gets a real player.
-`autoplay` + `.play()` are imperative (OBS honours them, like YouTube's
-`playVideo()`), `controls: false` hides the chrome, and the `ENDED` event gives
-real end detection.
+Twitch's embed player JS API accepts a `video` param (unlike clips), but it
+**does not autoplay in an OBS Browser Source**. It waits on a play button even
+in OBS "Interact", the same as the clip embed (confirmed for channel playback on
+staging). The original assumption that `.play()` is honoured, like YouTube's
+`playVideo()`, was never OBS-tested: a VOD that failed to start was skipped by
+the startup watchdog, which hid the problem.
+
+hls.js, which fixed the same problem for live playback, can't help here. A
+VOD's variant playlists and segments are served from Twitch's CloudFront VOD
+hosts (e.g. `d3vd9lfkzbru3h.cloudfront.net`), which send **no CORS headers at
+all** and answer the preflight with 403 (checked 2026-10-07). A browser on our
+domain can't read them. Relaying the video through the API would put every
+tenant's VOD bandwidth on Niibot, so that option is ruled out.
+
+So `players/twitchVod.ts` keeps the embed player and works within what OBS
+allows: **muted autoplay**. The player is created with `muted: true`. On the
+first `PLAYING` it unmutes to the shared volume. If unmuting is refused (a
+`PAUSE` within 3 s of unmuting, or `PLAYBACK_BLOCKED` after it), the player
+re-mutes and keeps playing. A silent VOD beats a stuck queue. It also reports
+`VIDEO_QUEUE.TWITCH_VOD_UNMUTE_REFUSED` to admin → Monitor → Errors. A
+`PLAYBACK_BLOCKED` before playback starts advances as `autoplay_blocked`.
+
+Any entry that never starts within the 15 s watchdog also reports
+`VIDEO_QUEUE.STARTUP_TIMEOUT` (with the platform) before advancing as
+`startup_timeout`. Without the report, a stalled player leaves no trace.
 
 A VOD is hours long, so Video Queue treats it as a **long clip**:
 
 - `extract_twitch_vod_info()` also parses the URL's `?t=1h2m3s` into
   `start_seconds` (a new `video_queue.start_seconds` column, migration 108).
-- `fetch_video_metadata()` stores `duration_seconds =
-min(TWITCH_VOD_WINDOW_SECONDS, vod_duration - start_seconds)` — the **capped
-  play window**, not the VOD length. When Helix can't return the VOD duration
-  (deleted / sub-only / expired) it falls back to the full window.
+- `fetch_video_metadata()` returns the full VOD length; admission's
+  `plan_segment()` decides what plays. A typed end point plays that segment.
+  With no end point, a length limit plays a limit-sized window from the start
+  point instead of rejecting (a VOD link usually points into hours of
+  footage). With no limit the VOD plays to the end, like any other video.
+  There is no fixed 10-minute window any more.
 - The overlay seeks to `start_seconds + joinElapsed` and advances when
   `getCurrentTime() - start_seconds` reaches `duration_seconds`, or on `ENDED`.
 
 `fetch_twitch_vod_info()` uses Helix `/videos` with the same app token as
 clips; the duration string (`"3h20m5s"`) is parsed by `_parse_hms()`, shared
 with the `?t=` parser.
+
+## Play segments (`<url> 1:30-4:00`)
+
+The queue is **VOD-only**: it plays content that already exists. Every gate —
+length limit, replay cooldown, "第 N 首", play-then-advance — assumes a known,
+finite video. An ongoing or scheduled live stream extends forward instead, so
+it is rejected for everyone (YouTube `live`/`upcoming`; a `twitch.tv/{channel}`
+link is an invalid URL whose rejection points at a VOD link instead). A
+finished stream's URL is an ordinary video and passes.
+
+A submission may follow its URL with a time range — parsed in one place
+(`shared/video_segments.py`) for chat, Channel Points, Donate and dashboard:
+
+| Text after the URL | Plays       |
+| ------------------ | ----------- |
+| `1:30`             | 1:30 → end  |
+| `1:30-4:00`        | 1:30 → 4:00 |
+| `-4:00`            | 0:00 → 4:00 |
+
+- Points are `m:ss` (minutes may exceed 59) or `h:mm:ss`. Tolerated, not
+  advertised: full-width `：`/`－`, `~`/`～`/`–`/`—` as the dash, spaces around
+  the dash, `1m30s`/`1h2m`. Bare numbers and decimals (`90`, `1.30`) reject.
+- Only text **starting** with a digit or `-` right after the URL is a time;
+  anything else is a comment and ignored. Once treated as a time, a parse
+  failure rejects (`INVALID_SEGMENT`) instead of silently playing the whole
+  video.
+- A Twitch VOD URL's own `?t=` is the start when nothing is typed; a typed
+  range overrides it entirely. A **YouTube** `?t=` is ignored: YouTube appends
+  the viewer's own resume position (watch history, "continue watching"), so a
+  copied address-bar URL carries it without the requester meaning a start.
+- Validation: start < end ≤ video length, segment ≥ 10 s. The length limit
+  applies to the **segment**; a too-long whole video still rejects (no
+  auto-trim) with a hint to pick a segment.
+- Storage reuses `start_seconds` + `duration_seconds` (= segment length) — no
+  new column. Rankings group by `(video_type, video_id)`, so segments of one
+  video count together.
+
+| Platform              | Segment                   | Playback                                                              |
+| --------------------- | ------------------------- | --------------------------------------------------------------------- |
+| YouTube               | start + end               | `playerVars.start` + seek; ends when `currentTime ≥ start + duration` |
+| Twitch VOD            | start + end               | existing window; a typed end replaces the default window              |
+| Bilibili              | start + end (best effort) | iframe `t=`; ends on the `duration_seconds` timer                     |
+| Twitch Clip / IG Reel | ignored                   | queued as the whole clip — a redemption never burns points over it    |
+
+A Twitch VOD of a stream **still in progress** grows while it is queued; the
+segment length is fixed at submission (Helix's duration at that moment), so
+the overlay plays exactly what was checked. An end point past the current
+length rejects as out of range.
+
+## Twitch HLS in the overlay (CORS)
+
+Twitch live playback plays HLS with hls.js (VODs can't; see Twitch VOD above).
+Only the **master playlist** host (`usher.ttvnw.net`) sends no CORS header (checked
+2026-10-07). The variant playlists (`*.playlist.ttvnw.net`) and segments
+(`*.hls.ttvnw.net`) send `Access-Control-Allow-Origin: *`. The API therefore
+relays just the master playlist, a few KB of text fetched once per start or
+retry (`fetch_hls_master_playlist`, served as
+`application/vnd.apple.mpegurl`, `no-store`). Every variant and segment URL in
+it is absolute, so hls.js fetches those straight from Twitch and no video bytes
+pass through Niibot. The overlay CSP's `connect-src https://*.ttvnw.net` covers
+them.
+
+**Unverified:** the backend fetches the master playlist from the server's IP,
+while OBS fetches the variants from the streamer's IP. Locally these are the
+same machine. Whether Twitch ties variant URLs to the requesting IP has to be
+checked on staging/production. If it does, the variant playlists need relaying
+too (still text only).
+
+## Live playback (直播播放)
+
+The queue rejects live streams, but the broadcaster can still play one
+**outside** the queue: background music, a watch-along. Live playback is
+open-ended playback of an ongoing Twitch channel or YouTube live stream, and it
+is deliberately not a queue entry. It has no length, no admission review and no
+place in line, and it never ends on its own schedule. (Code and tables call it
+a "live insert": `video_queue_inserts`, `!vq live`. User-facing copy says
+直播 everywhere; the older term 插播 also meant the queue's 馬上播這部 and was
+dropped as ambiguous.)
+
+- **Who:** broadcaster only. Chat `!vq live <url>` / `!vq live stop`, or the
+  dashboard 現在播放 card. Its URL box picks a mode first, 影片 (加入 → queue)
+  or 直播 (播放直播, 換台 while one plays), so each mode has exactly one action,
+  and 結束直播 replaces 跳過 while one plays. Never mods, never viewers, never
+  redemptions.
+- **Sources:** `twitch.tv/{channel}` (Helix `/streams` must report it live)
+  and an ongoing YouTube live (`liveBroadcastContent = live`, embeddable).
+  Rejected: offline channels, upcoming streams, non-embeddable lives, and the
+  broadcaster's own channel (mirrored picture, audio feedback).
+- **Twitch playback:** the embed player will not autoplay in an OBS Browser
+  Source (it waits on a play button even in OBS "Interact"; confirmed on
+  staging), the same as the clip embed. The overlay resolves a signed HLS
+  playlist (`GET /api/video-queue/public/{u}/insert/playlist.m3u8` →
+  `fetch_twitch_live_hls_source`, Twitch's unofficial GraphQL
+  `PlaybackAccessToken_Template` and the usher endpoint, the call
+  streamlink/yt-dlp make) and plays it with hls.js in a host-controlled
+  `<video>`. hls.js loads lazily, runs without a worker, and is capped to the
+  player size, so OBS decodes 360p/480p. The overlay CSP allows
+  `connect-src https://*.ttvnw.net` and `media-src blob:`. A stream that never
+  starts falls back to the embed player. A stream lost mid-play re-resolves
+  every 15 s and ends after 60 s. YouTube's player autoplays fine and is used
+  as is.
+- **State:** `video_queue_inserts` (migration 155), one row per channel, NOTIFY
+  on every change, so the overlay and dashboard follow it on the existing SSE
+  stream with no extra requests. Each start is a new row id; the overlay ends
+  live playback **by id**, so a late report never stops a newer one.
+- **Background source, queue first:** live playback never pauses the queue.
+  The overlay plays the current queue entry whenever there is one (or one is
+  waiting) and shows the stream only while the queue is empty. Starting live
+  playback leaves a playing video alone, and the promote queries and dashboard
+  play-now ignore it. While hidden, the stream's player is destroyed rather
+  than kept running muted: no bandwidth or decoding in OBS for nothing. Shown
+  again, it is a fresh player that joins at the live edge. Chat `!np` and the
+  dashboard show the playing video first; `!vq list` ends with
+  「播完回到直播：channel」.
+- **Ending:** the broadcaster stops it, or the overlay sees the stream end and
+  reports it **once**, without retries. That means Twitch `ENDED`, an
+  `OFFLINE` or lost HLS stream that lasts 60 s (a brief disconnect fires these
+  too), or YouTube `ENDED` / an error. These are only seen while the stream is
+  shown: a stream that ended while videos played is detected once the queue
+  empties and its player mounts again. Live playback counts as active for 12 hours
+  at most, so a forgotten one never resumes on the next broadcast. Niibot does
+  not detect whether the streamer is live.
+- **Playback settings** (dashboard OBS 畫面 card): one shared volume for queue
+  videos and live streams (migration 157; default 50% for new channels), plus
+  直播僅聲音, which hides the window on a wrapper so the animation's `forwards`
+  fill can't override it. The live row snapshots both at start; changing them
+  updates the running stream too, and the overlay applies volume without
+  remounting.
+- **Overlay title bar:** queue items show 「@ requester」 plus the countdown;
+  live playback shows the channel name plus a pulsing red-dot LIVE. Every
+  disappearance plays the exit animation (stream-driven ones included, e.g. a
+  dashboard clear or live playback ending), and switching between queue and live
+  regrows the window.
+- **Budget:** video bytes flow from Twitch/YouTube straight to OBS, not through
+  Cloudflare. End detection uses player events only, with no polling of our API
+  or Helix, so live playback costs nothing beyond the stream's ~288
+  requests/day plus one source lookup per start or retry.
 
 ## Instagram Reel (`instagram.com/reel/{shortcode}`)
 
@@ -280,14 +438,14 @@ instagramReel.ts` plays it in a host `<video>` with real `ended` /
 
 ## Platform reference (parsing → metadata → playback)
 
-| Capability         | YouTube                                                                  | Twitch Clip                               | Twitch VOD                                                         | Instagram Reel                           | Bilibili                                                |
-| ------------------ | ------------------------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------- |
-| Canonical identity | `youtube + video id`                                                     | `twitch_clip + slug`                      | `twitch_vod + VOD id`; timestamp stored separately                 | `instagram_reel + shortcode`             | `bilibili + BV id`; part N≥2 folded in as `_pN`         |
-| Metadata           | Official Data API                                                        | Official Helix                            | Official Helix                                                     | Unofficial InstaFix; best-effort         | Unofficial web API; best-effort                         |
-| Playback           | YT IFrame API                                                            | Signed MP4; iframe fallback               | Twitch Player API                                                  | Signed MP4; no fallback                  | Official embed iframe                                   |
-| Gain `0..100`      | Yes (`setVolume`)                                                        | Yes on MP4; iframe is mute-only           | Yes (`setVolume`)                                                  | Yes (`video.volume`)                     | No; mute-only                                           |
-| Start/end/error    | `PLAYING`, `ENDED`, `onError`, `onAutoplayBlocked`; 15s startup watchdog | `playing`/`ended`/`error`; fallback timer | `READY`, `PLAYING`, `ENDED`, `PLAYBACK_BLOCKED`; capped VOD window | `playing`/`ended`/`error`; failure skips | iframe `load`, best-effort ended message, timer ceiling |
-| External SDK       | Lazy-loaded for this provider only                                       | None                                      | Lazy-loaded for this provider only                                 | None                                     | None                                                    |
+| Capability         | YouTube                                                                  | Twitch Clip                               | Twitch VOD                                                     | Instagram Reel                           | Bilibili                                                |
+| ------------------ | ------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------- |
+| Canonical identity | `youtube + video id`                                                     | `twitch_clip + slug`                      | `twitch_vod + VOD id`; timestamp stored separately             | `instagram_reel + shortcode`             | `bilibili + BV id`; part N≥2 folded in as `_pN`         |
+| Metadata           | Official Data API                                                        | Official Helix                            | Official Helix                                                 | Unofficial InstaFix; best-effort         | Unofficial web API; best-effort                         |
+| Playback           | YT IFrame API                                                            | Signed MP4; iframe fallback               | Twitch Player API                                              | Signed MP4; no fallback                  | Official embed iframe                                   |
+| Gain `0..100`      | Yes (`setVolume`)                                                        | Yes on MP4; iframe is mute-only           | Yes (`setVolume`)                                              | Yes (`video.volume`)                     | No; mute-only                                           |
+| Start/end/error    | `PLAYING`, `ENDED`, `onError`, `onAutoplayBlocked`; 15s startup watchdog | `playing`/`ended`/`error`; fallback timer | muted `PLAYING` → unmute, `PAUSE`, `ENDED`, `PLAYBACK_BLOCKED` | `playing`/`ended`/`error`; failure skips | iframe `load`, best-effort ended message, timer ceiling |
+| External SDK       | Lazy-loaded for this provider only                                       | None                                      | Lazy-loaded for this provider only                             | None                                     | None                                                    |
 
 Duplicate and replay keys are `(channel_id, video_type, video_id)`, so native
 IDs that happen to be equal on different platforms do not collide. Twitch VOD
@@ -395,11 +553,12 @@ before insertion. `min_view_count` and replay/capacity gates vary by source;
 playability, global duration and blocklist do not, so the dashboard's
 broadcaster-authority bypass does **not** skip them.
 
-Twitch Clip always reports `playable = True` — clips always embed. Twitch VOD
-(`invalid_timestamp`), Bilibili (`invalid_page`), and Instagram (`not_video`)
-each add exactly one submission-time reason of their own, for an out-of-range
-`?t=`/`?p=` or a `/p/` link that resolved to a photo post — Bilibili's general
-metadata is otherwise too unreliable (`-412`) to gate on.
+Twitch Clip and VOD always report `playable = True`. Bilibili (`invalid_page`)
+and Instagram (`not_video`) each add exactly one submission-time reason of
+their own, for an out-of-range `?p=` or a `/p/` link that resolved to a photo
+post — Bilibili's general metadata is otherwise too unreliable (`-412`) to gate
+on. An out-of-range time (`?t=` or a typed range) is a segment error, not a
+playability reason.
 
 ## Submission gates and best-effort metadata
 

@@ -59,7 +59,9 @@ function mount(ctx: MountContext): (() => void) | void {
   containerRef.current.innerHTML = ''
 
   const iframe = document.createElement('iframe')
-  const startSeconds = Math.floor(joinElapsed)
+  // Segment start plus how far in a late-joining overlay is; the segment end
+  // is the duration_seconds timer below.
+  const startSeconds = Math.floor((current.start_seconds || 0) + joinElapsed)
   const [bvid, page] = splitBilibiliId(current.video_id)
   const base =
     `https://player.bilibili.com/player.html?bvid=${encodeURIComponent(bvid)}&page=${page}` +

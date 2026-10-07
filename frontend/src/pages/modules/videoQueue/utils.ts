@@ -36,23 +36,61 @@ export function splitBilibiliId(videoId: string): [bvid: string, page: number] {
 /** Canonical watch URL for a queued entry — frontend mirror of the backend's
  *  `build_watch_url` (shared/video_sources.py). */
 export function watchUrl(videoType: string, videoId: string, startSeconds = 0): string {
+  const t = startSeconds > 0 ? startSeconds : 0
   switch (videoType) {
     case 'twitch_clip':
       return `https://clips.twitch.tv/${videoId}`
     case 'twitch_vod': {
       const url = `https://www.twitch.tv/videos/${videoId}`
-      return startSeconds > 0 ? `${url}?t=${startSeconds}s` : url
+      return t ? `${url}?t=${t}s` : url
     }
     case 'bilibili': {
       const [bvid, page] = splitBilibiliId(videoId)
+      const params = [page > 1 ? `p=${page}` : '', t ? `t=${t}` : ''].filter(Boolean)
       const url = `https://www.bilibili.com/video/${bvid}`
-      return page > 1 ? `${url}?p=${page}` : url
+      return params.length ? `${url}?${params.join('&')}` : url
     }
     case 'instagram_reel':
       return `https://www.instagram.com/reel/${videoId}/`
     default:
-      return `https://youtu.be/${videoId}`
+      return t ? `https://youtu.be/${videoId}?t=${t}` : `https://youtu.be/${videoId}`
   }
+}
+
+interface SegmentFields {
+  start_seconds: number
+  duration_seconds: number | null
+}
+
+/** `1:30–4:00` for an entry that plays from a start point; null for a whole
+ *  video (start 0 — its length column already says everything). */
+export function segmentLabel({ start_seconds, duration_seconds }: SegmentFields): string | null {
+  if (!start_seconds) return null
+  const end = duration_seconds ? formatDuration(start_seconds + duration_seconds) : ''
+  return `${formatDuration(start_seconds)}–${end}`
+}
+
+/** Submission text that re-requests the same segment (`<url> 1:30-4:00`), in
+ *  the chat time syntax the backend parses (shared/video_segments.py). */
+export function requeueText(
+  entry: SegmentFields & { video_type: string; video_id: string }
+): string {
+  const url = watchUrl(entry.video_type, entry.video_id)
+  const { start_seconds: start, duration_seconds: duration } = entry
+  if (!start) return url
+  return duration
+    ? `${url} ${formatDuration(start)}-${formatDuration(start + duration)}`
+    : `${url} ${formatDuration(start)}`
+}
+
+/** Watch URL for a live insert (直播播放) — the channel or live video itself. */
+export function liveWatchUrl(insert: {
+  source_type: 'twitch_live' | 'youtube_live'
+  source_id: string
+}): string {
+  return insert.source_type === 'twitch_live'
+    ? `https://www.twitch.tv/${insert.source_id}`
+    : `https://youtu.be/${insert.source_id}`
 }
 
 /** Fallback thumbnail for a queued entry when the row has no stored

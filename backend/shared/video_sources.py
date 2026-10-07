@@ -30,6 +30,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -78,14 +79,14 @@ _youtube_info_cache: LoopLocalReadThroughCache[str, YouTubeInfo]
 # the timer ceiling expires. Reject these at submission instead. Most are
 # YouTube-only (Twitch clips always embed, and Bilibili's metadata endpoint is
 # too unreliable to gate on generally — see
-# docs/architecture/video-queue-platforms.md); INVALID_TIMESTAMP/INVALID_PAGE
-# are Twitch VOD/Bilibili-specific out-of-range submissions, and NOT_VIDEO is
-# Instagram-specific (a pasted `/p/` link that turned out to be a photo post).
+# docs/architecture/video-queue-platforms.md); INVALID_PAGE is a Bilibili
+# out-of-range part number, and NOT_VIDEO is Instagram-specific (a pasted `/p/`
+# link that turned out to be a photo post). An out-of-range time is a segment
+# error (shared.video_segments), not a playability reason.
 UNPLAYABLE_NOT_EMBEDDABLE = "not_embeddable"
 UNPLAYABLE_AGE_RESTRICTED = "age_restricted"
 UNPLAYABLE_PRIVATE = "private"
 UNPLAYABLE_REMOVED = "removed"
-UNPLAYABLE_INVALID_TIMESTAMP = "invalid_timestamp"
 UNPLAYABLE_INVALID_PAGE = "invalid_page"
 UNPLAYABLE_NOT_VIDEO = "not_video"
 # An ongoing or scheduled YouTube live stream. The queue only plays content
@@ -100,7 +101,6 @@ _UNPLAYABLE_MESSAGES: dict[str, str] = {
     UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法播放",
     UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
     UNPLAYABLE_REMOVED: "這部影片已被移除或無法使用",
-    UNPLAYABLE_INVALID_TIMESTAMP: "影片時間點已超出可播放範圍",
     UNPLAYABLE_INVALID_PAGE: "指定的分P不存在",
     UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片",
 }
@@ -130,6 +130,8 @@ class YouTubeInfo:
     thumbnail_url: str | None = None
     creator_id: str | None = None  # snippet.channelId
     creator_name: str | None = None  # snippet.channelTitle
+    # snippet.liveBroadcastContent: 'none' | 'live' | 'upcoming'; None when unknown.
+    live_status: str | None = None
 
 
 def extract_youtube_id(text: str) -> str | None:
@@ -206,14 +208,16 @@ def _assess_yt_playability(item: dict) -> str | None:
     # 'unlisted' still embeds fine — only 'private' is unplayable for a viewer.
     if status.get("privacyStatus") == "private":
         return UNPLAYABLE_PRIVATE
-    # Live/upcoming report a zero duration (`P0D`), which reads as "unknown" —
-    # without this a stream slips past every length gate and stalls the overlay.
-    if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
-        return UNPLAYABLE_LIVE
     if content_rating.get("ytRating") == "ytAgeRestricted":
         return UNPLAYABLE_AGE_RESTRICTED
     if status.get("embeddable") is False:
         return UNPLAYABLE_NOT_EMBEDDABLE
+    # Live/upcoming report a zero duration (`P0D`), which reads as "unknown" —
+    # without this a stream slips past every length gate and stalls the overlay.
+    # Checked last: a live stream that can't be embedded must report that, since
+    # it won't play after it ends either (and a live insert needs to know).
+    if item.get("snippet", {}).get("liveBroadcastContent") in ("live", "upcoming"):
+        return UNPLAYABLE_LIVE
     return None
 
 
@@ -292,6 +296,7 @@ async def _load_yt_info(
                     thumbnail_url=_https(thumb.get("url")) if isinstance(thumb, dict) else None,
                     creator_id=channel_id,
                     creator_name=channel_title,
+                    live_status=snippet.get("liveBroadcastContent"),
                 ),
                 ttl=_YOUTUBE_POSITIVE_TTL_SECONDS,
             )
@@ -544,13 +549,10 @@ _TWITCH_SLUG_RE = re.compile(r"[A-Za-z0-9_-]+")
 _TWITCH_OAUTH_URL = "https://id.twitch.tv/oauth2/token"
 _TWITCH_HELIX_CLIPS_URL = "https://api.twitch.tv/helix/clips"
 _TWITCH_HELIX_VIDEOS_URL = "https://api.twitch.tv/helix/videos"
+_TWITCH_HELIX_STREAMS_URL = "https://api.twitch.tv/helix/streams"
 
 # twitch.tv/videos/{id} (also m.twitch.tv). The id is numeric.
 _HMS_RE = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", re.IGNORECASE)
-
-# A VOD is hours long; Video Queue treats it as a "long clip" — play a window of
-# at most this many seconds from its start point (the `?t=` timestamp, else 0).
-TWITCH_VOD_WINDOW_SECONDS = 600
 
 
 def _parse_hms(text: str) -> int:
@@ -657,6 +659,38 @@ def extract_twitch_vod_info(text: str) -> tuple[str | None, int]:
         return None, 0
     timestamp = parse_qs(parsed.query).get("t", [""])[0]
     return segments[1], _parse_hms(timestamp) if timestamp else 0
+
+
+# First path segments on twitch.tv that are site pages, not channel logins.
+_TWITCH_NON_CHANNEL_PATHS = frozenset(
+    {"directory", "videos", "settings", "search", "downloads", "jobs", "turbo", "p", "wallet"}
+)
+_TWITCH_LOGIN_RE = re.compile(r"[A-Za-z0-9_]{3,25}")
+
+
+def extract_twitch_channel_login(text: str) -> str | None:
+    """Lower-cased channel login from a ``twitch.tv/{channel}`` link, else None."""
+    parsed = find_allowed_http_url(text, _TWITCH_VOD_HOSTS)
+    if parsed is None:
+        return None
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if (
+        len(segments) != 1
+        or segments[0].lower() in _TWITCH_NON_CHANNEL_PATHS
+        or _TWITCH_LOGIN_RE.fullmatch(segments[0]) is None
+    ):
+        return None
+    return segments[0].lower()
+
+
+def is_twitch_channel_url(text: str) -> bool:
+    """Whether ``text`` holds a ``twitch.tv/{channel}`` link (a live channel).
+
+    The queue never accepts one (live content has no end); this only lets the
+    rejection point the requester at a VOD link instead. A live insert does
+    accept it — see shared.services.video_queue_insert.
+    """
+    return extract_twitch_channel_login(text) is not None
 
 
 async def _get_twitch_app_token(
@@ -852,6 +886,71 @@ async def fetch_twitch_vod_info(
             await _session.close()
 
 
+class TwitchLiveLookupError(Exception):
+    """Twitch could not be asked whether a channel is live."""
+
+
+@dataclass
+class TwitchLiveStream:
+    """An ongoing Twitch broadcast (Helix ``/streams``)."""
+
+    user_id: str
+    user_login: str
+    user_name: str
+    title: str | None = None
+    thumbnail_url: str | None = None
+
+
+async def fetch_twitch_live_stream(
+    login: str,
+    client_id: str,
+    client_secret: str,
+    session: aiohttp.ClientSession | None = None,
+) -> TwitchLiveStream | None:
+    """The channel's current broadcast, or None when it is offline.
+
+    Raises ``TwitchLiveLookupError`` when Twitch could not be asked (no
+    credentials, token or HTTP failure) — "offline" and "couldn't check" must
+    not look the same to the caller.
+    """
+    if not client_id or not client_secret:
+        raise TwitchLiveLookupError("missing Twitch credentials")
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        app_token = await _get_twitch_app_token(client_id, client_secret, _session)
+        if not app_token:
+            raise TwitchLiveLookupError("no app token")
+        status, data = await _twitch_helix_json(
+            _session,
+            _TWITCH_HELIX_STREAMS_URL,
+            params={"user_login": login},
+            client_id=client_id,
+            token=app_token,
+        )
+        if status != 200:
+            raise TwitchLiveLookupError(f"status {status}")
+        streams = [s for s in data.get("data", []) if s.get("type") == "live"]
+        if not streams:
+            return None
+        stream = streams[0]
+        raw_thumb: str = stream.get("thumbnail_url") or ""
+        return TwitchLiveStream(
+            user_id=str(stream.get("user_id") or ""),
+            user_login=str(stream.get("user_login") or login),
+            user_name=str(stream.get("user_name") or login),
+            title=stream.get("title"),
+            thumbnail_url=raw_thumb.replace("{width}", "320").replace("{height}", "180") or None,
+        )
+    except TwitchLiveLookupError:
+        raise
+    except Exception as exc:
+        raise TwitchLiveLookupError(type(exc).__name__) from exc
+    finally:
+        if _own_session:
+            await _session.close()
+
+
 # ---------------------------------------------------------------------------
 # Twitch clip DIRECT SOURCE — unofficial GraphQL (Bilibili-tier dependency)
 # ---------------------------------------------------------------------------
@@ -939,6 +1038,110 @@ async def fetch_twitch_clip_source(
             await _session.close()
 
 
+# Live insert (直播播放) direct playback — same unofficial GraphQL class as the
+# clip source above, and for the same reason: Twitch's embed player will not
+# autoplay in an OBS Browser Source (confirmed for `channel` playback on
+# staging: it sits on a play button even in OBS "Interact"), while a
+# host-controlled <video> fed by hls.js does. This is the token request
+# streamlink / yt-dlp make (operationName `PlaybackAccessToken_Template`); the
+# playlist URL is Twitch's public HLS "usher" endpoint.
+_TWITCH_LIVE_TOKEN_QUERY = (
+    "query PlaybackAccessToken_Template($login: String!) {"
+    ' streamPlaybackAccessToken(channelName: $login, params: {platform: "web",'
+    ' playerBackend: "mediaplayer", playerType: "embed"}) {'
+    " value signature authorization { isForbidden forbiddenReasonCode } } }"
+)
+_TWITCH_USHER_LIVE_URL = "https://usher.ttvnw.net/api/channel/hls/{id}.m3u8"
+
+
+async def fetch_hls_master_playlist(
+    url: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Fetch a Twitch master playlist's text, or None on any failure.
+
+    Twitch's usher host sends no CORS header, so a browser on our domain can't
+    read the master playlist itself — the API relays just this one small text
+    file. The variant playlists and segments it lists (``*.ttvnw.net``) do send
+    ``Access-Control-Allow-Origin: *`` and are fetched by the overlay directly,
+    so no video bytes pass through Niibot.
+    """
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status != 200:
+                LOGGER.info("[Twitch usher] master playlist status %s", resp.status)
+                return None
+            text = await resp.text()
+        return text if text.startswith("#EXTM3U") else None
+    except Exception as exc:
+        LOGGER.warning("[Twitch usher] master playlist failed: %s", type(exc).__name__)
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+async def fetch_twitch_live_hls_source(
+    login: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Resolve an ongoing Twitch broadcast to a signed HLS master playlist URL.
+
+    UNOFFICIAL — see the clip-source comment above. Returns None on any failure
+    or when Twitch forbids anonymous playback (e.g. geo / sub-only restrictions);
+    the overlay then falls back to the embed player. ``supported_codecs=avc1``
+    keeps the variants H.264, which every OBS (CEF) build can decode.
+    """
+    body = {
+        "operationName": "PlaybackAccessToken_Template",
+        "query": _TWITCH_LIVE_TOKEN_QUERY,
+        "variables": {"login": login},
+    }
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.post(
+            _TWITCH_GQL_URL,
+            data=json.dumps(body),
+            headers={
+                "Client-ID": _TWITCH_GQL_CLIENT_ID,
+                "Content-Type": "text/plain;charset=UTF-8",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning("[Twitch GQL] live token status %s for %s", resp.status, login)
+                return None
+            data = await resp.json(content_type=None)
+
+        token = ((data or {}).get("data") or {}).get("streamPlaybackAccessToken") or {}
+        signature, value = token.get("signature"), token.get("value")
+        if not signature or not value:
+            return None
+        if (token.get("authorization") or {}).get("isForbidden"):
+            return None
+        params = {
+            "sig": signature,
+            "token": value,
+            "allow_source": "true",
+            "allow_audio_only": "true",
+            "player_backend": "mediaplayer",
+            "playlist_include_framerate": "true",
+            "supported_codecs": "avc1",
+            "p": str(secrets.randbelow(10_000_000)),
+        }
+        query_string = "&".join(f"{k}={quote(v, safe='')}" for k, v in params.items())
+        return f"{_TWITCH_USHER_LIVE_URL.format(id=quote(login, safe=''))}?{query_string}"
+    except Exception as exc:
+        LOGGER.warning("[Twitch GQL] live HLS source failed for %s: %s", login, type(exc).__name__)
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
 # ---------------------------------------------------------------------------
 # Registry — resolves a URL to a platform, then fetches metadata in one shape
 # ---------------------------------------------------------------------------
@@ -970,7 +1173,10 @@ class ResolvedVideo:
     video_type: VideoType
     video_id: str
     is_vertical: bool = False  # URL-shape hint (e.g. YouTube Shorts); refined by metadata
-    start_seconds: int = 0  # twitch_vod `?t=` offset; 0 for everything else
+    # Twitch VOD `?t=` offset; 0 for everything else (YouTube's `?t=` is ignored,
+    # see resolve_video_url). A typed time range overrides it — see
+    # shared.video_segments.
+    start_seconds: int = 0
 
 
 @dataclass
@@ -978,10 +1184,12 @@ class VideoMetadata:
     """Metadata fetch result, normalized to one shape across all platforms.
 
     ``playable`` / ``unplayable_reason`` are mostly YouTube signals (see
-    ``YouTubeInfo``); Twitch VOD (``UNPLAYABLE_INVALID_TIMESTAMP``), Bilibili
-    (``UNPLAYABLE_INVALID_PAGE``), and Instagram (``UNPLAYABLE_NOT_VIDEO``) each
-    add one submission-time-only reason of their own. Twitch Clip is always
-    reported playable.
+    ``YouTubeInfo``); Bilibili (``UNPLAYABLE_INVALID_PAGE``) and Instagram
+    (``UNPLAYABLE_NOT_VIDEO``) each add one submission-time-only reason of their
+    own. Twitch Clip and VOD are always reported playable.
+
+    ``duration_seconds`` is always the whole video's length; the segment that
+    actually plays is resolved at admission (shared.video_segments).
 
     ``metadata_best_effort`` is ``True`` when the values came from an unofficial
     endpoint that datacenter IPs frequently cannot reach (Bilibili, risk-control
@@ -1030,6 +1238,10 @@ async def resolve_video_url(
     """
     video_id, is_vertical = extract_youtube_info(url)
     if video_id:
+        # A YouTube `?t=` is deliberately ignored: the site appends the viewer's
+        # own resume position (watch history, "continue watching"), so a copied
+        # address-bar URL carries it without the requester meaning a start
+        # point. A start is only ever the explicit `<url> 1:30` syntax.
         return ResolvedVideo(video_type="youtube", video_id=video_id, is_vertical=is_vertical)
 
     clip_slug = extract_twitch_clip_slug(url)
@@ -1089,28 +1301,11 @@ async def fetch_video_metadata(
         vod = await fetch_twitch_vod_info(
             resolved.video_id, twitch_client_id, twitch_client_secret, session
         )
-        if vod.duration_seconds and resolved.start_seconds >= vod.duration_seconds:
-            return VideoMetadata(
-                vod.title,
-                0,
-                vod.view_count,
-                is_vertical=False,
-                playable=False,
-                unplayable_reason=UNPLAYABLE_INVALID_TIMESTAMP,
-                thumbnail_url=vod.thumbnail_url,
-                creator_id=vod.creator_id,
-                creator_name=vod.creator_name,
-            )
-        # Play a bounded window from the `?t=` offset — a VOD is hours long.
-        remaining = (
-            max(0, vod.duration_seconds - resolved.start_seconds)
-            if vod.duration_seconds
-            else TWITCH_VOD_WINDOW_SECONDS
-        )
-        window = min(TWITCH_VOD_WINDOW_SECONDS, remaining) or TWITCH_VOD_WINDOW_SECONDS
+        # Full VOD length: the play window (start point + capped length) is
+        # resolved by shared.video_segments.plan_segment at admission.
         return VideoMetadata(
             vod.title,
-            window,
+            vod.duration_seconds,
             vod.view_count,
             is_vertical=False,
             thumbnail_url=vod.thumbnail_url,
@@ -1218,11 +1413,14 @@ def build_watch_url(video_type: str, video_id: str, start_seconds: int = 0) -> s
     template = _WATCH_URL_BUILDERS.get(video_type)
     if template is None:
         raise ValueError(f"Unknown video_type: {video_type!r}")
+    params: list[str] = []
     if video_type == "bilibili":
         bvid, page = split_bilibili_id(video_id)
         url = template.format(video_id=bvid)
-        return f"{url}?p={page}" if page > 1 else url
-    url = template.format(video_id=video_id)
-    if video_type == "twitch_vod" and start_seconds > 0:
-        return f"{url}?t={start_seconds}s"
-    return url
+        if page > 1:
+            params.append(f"p={page}")
+    else:
+        url = template.format(video_id=video_id)
+    if start_seconds > 0 and video_type in ("youtube", "twitch_vod", "bilibili"):
+        params.append(f"t={start_seconds}s" if video_type == "twitch_vod" else f"t={start_seconds}")
+    return f"{url}?{'&'.join(params)}" if params else url

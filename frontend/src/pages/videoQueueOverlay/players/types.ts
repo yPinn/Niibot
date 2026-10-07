@@ -24,6 +24,7 @@ export interface YTPlayerOptions {
     rel?: 0 | 1
     mute?: 0 | 1
     iv_load_policy?: 1 | 3
+    start?: number
   }
   events?: {
     onReady?: (event: { target: YTPlayer }) => void
@@ -52,6 +53,8 @@ export interface TwitchPlayerInstance {
   getCurrentTime(): number
   getDuration(): number
   getEnded(): boolean
+  /** ID of the video now loaded (may carry a leading `v`); '' before load. */
+  getVideo(): string
   addEventListener(event: string, cb: () => void): void
   destroy(): void
 }
@@ -76,6 +79,9 @@ interface TwitchPlayerCtor {
   PAUSE: string
   READY?: string
   PLAYBACK_BLOCKED?: string
+  /** Channel playback only: the broadcast went offline / came back. */
+  ONLINE?: string
+  OFFLINE?: string
 }
 
 declare global {
@@ -132,6 +138,6 @@ export interface MountContext {
  */
 export interface PlayerStrategy {
   /** Which external API must be ready before mount() can run; null needs none (plain iframe). */
-  requiresApi: 'youtube' | 'twitch' | null
+  requiresApi: 'youtube' | null
   mount(ctx: MountContext): (() => void) | void
 }

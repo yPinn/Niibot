@@ -193,9 +193,7 @@ export function RankingPanel({
       </div>
 
       <p className="text-label text-muted-foreground">
-        {scope === 'global'
-          ? '依使用頻道數與播放次數排序，只顯示匿名彙總，不公開頻道或點播者。'
-          : '依本頻道的有效播放次數排序；播放器實際開始後才會計入。'}
+        {scope === 'global' ? '依使用頻道數與播放次數排序，匿名彙總' : '依本頻道的有效播放次數排序'}
       </p>
 
       {status === 'loading' ? (

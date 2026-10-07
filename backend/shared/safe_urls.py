@@ -71,6 +71,22 @@ def iter_http_urls(text: str) -> Iterator[SplitResult]:
             yield parsed
 
 
+def text_after_first_url(text: str) -> str | None:
+    """Return the text following the first URL token, or None if there is no URL.
+
+    A URL token here needs a dotted hostname with a letter in it, so a bare
+    time like ``1:30`` or ``1.30`` (which ``urlsplit`` would accept as a host)
+    never counts as the URL.
+    """
+    tokens = re.split(r"\s+", text.strip())
+    for index, token in enumerate(tokens):
+        parsed = _parse_http_token(token)
+        host = parsed.hostname if parsed is not None else None
+        if host and "." in host and re.search(r"[a-z]", host):
+            return " ".join(tokens[index + 1 :])
+    return None
+
+
 def find_allowed_http_url(text: str, allowed_hosts: frozenset[str]) -> SplitResult | None:
     """Return the first URL whose parsed hostname exactly matches ``allowed_hosts``."""
     for parsed in iter_http_urls(text):

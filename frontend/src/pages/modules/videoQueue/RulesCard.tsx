@@ -76,10 +76,7 @@ export function RulesPanel({
     <div className="flex flex-col gap-card">
       <p className={GROUP_LABEL}>所有來源</p>
       <div className={GRID}>
-        <SettingRow
-          title="影片最長"
-          description="Chat、頻道點數、Donate 與手動加入都會套用；0 代表不限"
-        >
+        <SettingRow title="影片最長" description="所有來源都套用；0 為不限">
           <NumberField
             value={draft.maxDurationMinutes}
             onChange={v => onField('maxDurationMinutes', v)}
@@ -95,10 +92,7 @@ export function RulesPanel({
 
       <p className={GROUP_LABEL}>觀眾加入來源</p>
       <div className={GRID}>
-        <SettingRow
-          title="至少要有多少觀看數"
-          description="套用 Chat、頻道點數與 Donate；手動加入不受限"
-        >
+        <SettingRow title="至少要有多少觀看數" description="手動加入不受限">
           <Select value={draft.minViewCount} onValueChange={v => onField('minViewCount', v)}>
             <SelectTrigger className={CONTROL_WIDTH}>
               <SelectValue />
@@ -112,10 +106,7 @@ export function RulesPanel({
             </SelectContent>
           </Select>
         </SettingRow>
-        <SettingRow
-          title="播過多久內不能再點"
-          description="套用 Chat、頻道點數與 Donate；0 代表不限"
-        >
+        <SettingRow title="播過多久內不能再點" description="手動加入不受限；0 為不限">
           <NumberField
             value={draft.replayCooldownHours}
             onChange={v => onField('replayCooldownHours', v)}
@@ -125,7 +116,7 @@ export function RulesPanel({
             unit="小時"
           />
         </SettingRow>
-        <SettingRow title="佇列最多" description="觀眾加入來源共用容量；手動加入可略過">
+        <SettingRow title="佇列最多" description="手動加入不受限">
           <NumberField
             value={draft.maxQueueSize}
             onChange={v => onField('maxQueueSize', v)}
@@ -141,7 +132,7 @@ export function RulesPanel({
 
       <p className={GROUP_LABEL}>可識別觀眾</p>
       <div className={GRID}>
-        <SettingRow title="每人同時最多" description="還在排隊的數量，0 代表不限">
+        <SettingRow title="每人同時最多" description="0 為不限">
           <NumberField
             value={draft.maxPerUser}
             onChange={v => onField('maxPerUser', v)}
@@ -151,10 +142,7 @@ export function RulesPanel({
             unit="首"
           />
         </SettingRow>
-        <SettingRow
-          title="兩次點播間隔"
-          description="套用 Chat 與頻道點數；Donate 沒有穩定 Twitch 身分"
-        >
+        <SettingRow title="兩次點播間隔" description="只套用聊天與忠誠點數">
           <NumberField
             value={draft.userCooldownSeconds}
             onChange={v => onField('userCooldownSeconds', v)}

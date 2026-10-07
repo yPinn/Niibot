@@ -21,6 +21,6 @@ describe('RulesPanel information architecture', () => {
     expect(screen.getByText('所有來源')).toBeInTheDocument()
     expect(screen.getByText('觀眾加入來源')).toBeInTheDocument()
     expect(screen.getByText('可識別觀眾')).toBeInTheDocument()
-    expect(screen.queryByText('用頻道點數兌換')).not.toBeInTheDocument()
+    expect(screen.queryByText('用忠誠點數兌換')).not.toBeInTheDocument()
   })
 })

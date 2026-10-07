@@ -13,6 +13,8 @@ import {
   rotateVideoQueueOverlayKey,
   setVideoAsNext,
   skipCurrentVideo,
+  startLiveInsert,
+  stopLiveInsert,
   updateVideoQueueSettings,
   type VideoQueueHistoryEntry,
   type VideoQueueRankingEntry,
@@ -46,7 +48,13 @@ import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
 import type { RulesDraft } from './RulesCard'
 import { SettingsCard } from './SettingsCard'
 import { SetupGuideSheet } from './SetupGuideSheet'
-import { QUEUE_PAGE_SIZE, REDEMPTION_DURATION_OPTIONS, snapToOption, watchUrl } from './utils'
+import {
+  QUEUE_PAGE_SIZE,
+  REDEMPTION_DURATION_OPTIONS,
+  requeueText,
+  snapToOption,
+  watchUrl,
+} from './utils'
 import { VideoQueuePageSkeleton } from './VideoQueuePageSkeleton'
 
 const EMPTY_DRAFT: RulesDraft = {
@@ -57,7 +65,7 @@ const EMPTY_DRAFT: RulesDraft = {
   userCooldownSeconds: '',
   maxQueueSize: '',
   maxRedemptionDuration: '600',
-  volumePercent: '100',
+  volumePercent: '50',
 }
 
 export default function VideoQueue() {
@@ -78,7 +86,8 @@ export default function VideoQueue() {
   const [draft, setDraft] = useState<RulesDraft>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
-  const [adding, setAdding] = useState(false)
+  // One input for everything that goes on screen: queue a video, or play a live stream.
+  const [composerBusy, setComposerBusy] = useState<'add' | 'live' | null>(null)
   const [rotatingOverlayUrl, setRotatingOverlayUrl] = useState(false)
   const hasInitialized = useRef(false)
 
@@ -143,7 +152,7 @@ export default function VideoQueue() {
 
   const handleRequeue = async (entry: VideoQueueHistoryEntry) => {
     try {
-      await addUrlAndRefreshQueue(watchUrl(entry.video_type, entry.video_id, entry.start_seconds))
+      await addUrlAndRefreshQueue(requeueText(entry))
       toast.success('已重新加入佇列')
     } catch (e) {
       toastApiError(e, '重新點播失敗')
@@ -300,7 +309,7 @@ export default function VideoQueue() {
       return
     }
     if (isNaN(volumePercent) || volumePercent < 0 || volumePercent > 100) {
-      toast.error('播放器音量：0 ~ 100%')
+      toast.error('播放音量：0 ~ 100%')
       return
     }
     setSaving(true)
@@ -324,9 +333,43 @@ export default function VideoQueue() {
     }
   }
 
+  const handleInsertFromComposer = async () => {
+    const url = addUrlInput.trim()
+    if (!url) return
+    setComposerBusy('live')
+    try {
+      const next = await startLiveInsert(url)
+      setState(next)
+      setAddUrlInput('')
+      // Queued videos come first; the stream starts once they are done.
+      toast.success(next.current ? '直播已設定，點播播完後開始' : '開始播放直播')
+    } catch (e) {
+      toastApiError(e, '播放直播失敗')
+    } finally {
+      setComposerBusy(null)
+    }
+  }
+
+  const handleStopInsert = async () => {
+    try {
+      setState(await stopLiveInsert())
+      toast.success('已結束直播，恢復播放佇列')
+    } catch (e) {
+      toastApiError(e, '結束直播失敗')
+    }
+  }
+
+  const handleToggleInsertAudioOnly = async (value: boolean) => {
+    try {
+      setSettings(await updateVideoQueueSettings({ insert_audio_only: value }))
+    } catch (e) {
+      toastApiError(e, '更新失敗')
+    }
+  }
+
   const handleSkip = async () => {
     try {
-      setState(await skipCurrentVideo())
+      setState(await skipCurrentVideo(state?.current?.id))
       toast.success('已跳過當前影片')
     } catch (e) {
       toastApiError(e, '跳過失敗')
@@ -354,9 +397,9 @@ export default function VideoQueue() {
   const handlePlayNow = async (entryId: number) => {
     try {
       setState(await playVideoNow(entryId))
-      toast.success('已插播')
+      toast.success('已開始播放這部')
     } catch (e) {
-      toastApiError(e, '插播失敗')
+      toastApiError(e, '播放失敗')
     }
   }
 
@@ -371,7 +414,7 @@ export default function VideoQueue() {
 
   const handleAddVideo = async () => {
     if (!addUrlInput.trim()) return
-    setAdding(true)
+    setComposerBusy('add')
     try {
       await addUrlAndRefreshQueue(addUrlInput.trim())
       setAddUrlInput('')
@@ -379,7 +422,7 @@ export default function VideoQueue() {
     } catch (e) {
       toastApiError(e, '新增失敗')
     } finally {
-      setAdding(false)
+      setComposerBusy(null)
     }
   }
 
@@ -387,7 +430,7 @@ export default function VideoQueue() {
     setRotatingOverlayUrl(true)
     try {
       setSettings(await rotateVideoQueueOverlayKey())
-      toast.success('OBS 網址已重設，請更新 Browser Source')
+      toast.success('網址已重設，請到 OBS 的瀏覽器來源貼上新網址')
     } catch (error) {
       toastApiError(error, '重設 OBS 網址失敗')
     } finally {
@@ -458,6 +501,15 @@ export default function VideoQueue() {
           queueSize={queueSize}
           totalQueuedDuration={totalQueuedDuration}
           onSkip={handleSkip}
+          insert={state?.insert ?? null}
+          onStopInsert={() => void handleStopInsert()}
+          composer={{
+            url: addUrlInput,
+            onUrlChange: setAddUrlInput,
+            onAdd: () => void handleAddVideo(),
+            onPlayLive: () => void handleInsertFromComposer(),
+            busy: composerBusy,
+          }}
         />
       </SlideUp>
 
@@ -473,10 +525,6 @@ export default function VideoQueue() {
             queue={queue}
             queueSize={queueSize}
             totalQueuedDuration={totalQueuedDuration}
-            addUrlInput={addUrlInput}
-            onAddUrlChange={setAddUrlInput}
-            adding={adding}
-            onAdd={handleAddVideo}
             onClear={handleClear}
             canClear={!!current || queueSize > 0}
             onSetNext={handleSetNext}
@@ -501,7 +549,12 @@ export default function VideoQueue() {
             current={current}
             volumePercent={draft.volumePercent}
             onVolumeChange={value => setField('volumePercent', value)}
+            insertAudioOnly={settings?.insert_audio_only ?? false}
+            onToggleInsertAudioOnly={value => void handleToggleInsertAudioOnly(value)}
             onSaveOutput={handleSaveSettings}
+            outputDirty={
+              settings !== null && draft.volumePercent !== String(settings.volume_percent)
+            }
             saving={saving}
             onOpenGuide={() => setHelpOpen(true)}
             onRotateUrl={() => void handleRotateOverlayUrl()}
@@ -531,9 +584,7 @@ export default function VideoQueue() {
           <Card className="h-full">
             <CardHeader>
               <CardTitle>封鎖清單</CardTitle>
-              <CardDescription>
-                影片、創作者與標題規則套用所有來源；使用者規則只套用 Chat 與頻道點數
-              </CardDescription>
+              <CardDescription>點播者規則只套用聊天與忠誠點數</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-1 flex-col">
               <BlocklistSection ref={blocklistRef} hideHeader />

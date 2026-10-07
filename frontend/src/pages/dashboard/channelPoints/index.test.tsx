@@ -261,7 +261,7 @@ describe('Channel Points page', () => {
     render(<ChannelPoints />)
 
     expect(await screen.findByRole('heading', { name: 'Channel Points' })).toBeInTheDocument()
-    expect(screen.getByText('頻道點數動作')).toBeInTheDocument()
+    expect(screen.getByText('忠誠點數動作')).toBeInTheDocument()
     expect(screen.getByText('每日簽到')).toBeInTheDocument()
     expect(screen.getByText('遊戲排隊券')).toBeInTheDocument()
     expect(getEventConfigs).not.toHaveBeenCalled()
@@ -411,7 +411,8 @@ describe('Channel Points page', () => {
         live_only: true,
       })
     )
-  })
+    // ~2.5s of userEvent typing alone; the default 5s trips under a loaded full run.
+  }, 15_000)
 
   it('opens the old-bot import panel directly, without going through settings', async () => {
     const user = userEvent.setup()

@@ -20,22 +20,28 @@ describe('SetupGuideSheet', () => {
       </MemoryRouter>
     )
 
-    expect(screen.getByText('在 Twitch 建立獎勵')).toBeInTheDocument()
-    expect(screen.getByText('在 Niibot 綁定獎勵')).toBeInTheDocument()
-    expect(screen.getByText('OBS 加入畫面')).toBeInTheDocument()
+    // Set up first (binding needs the Twitch reward), switch on last.
+    expect(screen.getAllByRole('heading', { level: 3 }).map(h => h.textContent)).toEqual([
+      'OBS 加入畫面',
+      '在 Twitch 建立獎勵',
+      '綁定獎勵',
+      '開啟點播',
+    ])
 
     // step 2 must name the real page ("Channel Points"), not the stale "Events" flow
-    expect(screen.getByText('開放用頻道點數兌換')).toBeInTheDocument()
+    expect(screen.getByText('開放忠誠點數點播')).toBeInTheDocument()
+    // the suggested reward prompt advertises the segment syntax
+    expect(screen.getByText(/可於網址後加上播放片段，例：1:30-4:00/)).toBeInTheDocument()
 
     // Twitch CTA deep-links straight to this user's rewards page
-    const twitchCta = screen.getByRole('link', { name: /前往 Twitch 獎勵頁面/ })
+    const twitchCta = screen.getByRole('link', { name: /^Twitch$/ })
     expect(twitchCta).toHaveAttribute(
       'href',
       'https://dashboard.twitch.tv/u/llazypilot/viewer-rewards/channel-points/rewards'
     )
     expect(twitchCta).toHaveAttribute('target', '_blank')
 
-    const channelPointsCta = screen.getByRole('link', { name: /前往 Channel Points 頁面/ })
+    const channelPointsCta = screen.getByRole('link', { name: /忠誠點數/ })
     expect(channelPointsCta).toHaveAttribute('href', '/channel-points')
 
     await userEvent.click(channelPointsCta)
@@ -50,7 +56,7 @@ describe('SetupGuideSheet', () => {
       </MemoryRouter>
     )
 
-    expect(screen.getByRole('link', { name: /前往 Twitch 獎勵頁面/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Twitch$/ })).toHaveAttribute(
       'href',
       'https://dashboard.twitch.tv/'
     )
