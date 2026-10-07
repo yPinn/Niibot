@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { useTwitchCapabilities } from '@/hooks/useTwitchCapabilities'
+import { isModPromptDismissed } from '@/lib/mod-prompt'
 
 export default function Dashboard() {
   useDocumentTitle('Dashboard')
@@ -38,6 +39,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!isInitialized || !user || capabilitiesLoading || !moderatorManagementAvailable) return
     if (user.name.toLowerCase() === BOT_USERNAME) return
+    if (isModPromptDismissed()) return
     getBotModStatus()
       .then(res => {
         if (res.ok && !res.data.is_moderator) setShowModDialog(true)

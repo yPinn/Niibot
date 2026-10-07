@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-import { Icon } from '@/components/primitives'
+import { Icon, Spinner } from '@/components/primitives'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -11,34 +11,31 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useGrantMod } from '@/hooks/useGrantMod'
+import { dismissModPrompt, MANUAL_MOD_HASH } from '@/lib/mod-prompt'
 
 interface ModSetupDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+/** First-visit prompt on Overview; wording mirrors Get Started's mod card. */
 export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
   const { granting, grantMod } = useGrantMod(() => onOpenChange(false))
 
   function dismiss() {
+    dismissModPrompt()
     onOpenChange(false)
   }
 
   return (
-    <Dialog open={open} onOpenChange={dismiss}>
+    <Dialog open={open} onOpenChange={next => !next && dismiss()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Icon
-              icon="fa-solid fa-shield-halved"
-              size="lg"
-              wrapperClassName="text-status-warning"
-            />
-            授予機器人管理員身份
+            <Icon icon="fa-solid fa-shield-halved" size="lg" wrapperClassName="text-primary" />讓
+            Niibot 成為管理員
           </DialogTitle>
-          <DialogDescription>
-            Niibot 需要 Mod 才能在你的頻道發言，並執行指令回應、事件通知、定時訊息等所有功能。
-          </DialogDescription>
+          <DialogDescription>需要 Mod 才能在頻道發言與執行指令。</DialogDescription>
         </DialogHeader>
 
         <DialogFooter>
@@ -46,13 +43,12 @@ export function ModSetupDialog({ open, onOpenChange }: ModSetupDialogProps) {
             稍後再說
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/docs/get-started" onClick={dismiss}>
-              <Icon icon="fa-solid fa-book-open" />
-              查看說明
+            <Link to={`/docs/get-started#${MANUAL_MOD_HASH}`} onClick={dismiss}>
+              手動設定
             </Link>
           </Button>
           <Button size="sm" onClick={grantMod} disabled={granting}>
-            <Icon icon={granting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-sword'} />
+            {granting ? <Spinner /> : <Icon icon="fa-solid fa-shield-halved" />}
             {granting ? '授予中…' : '一鍵授予 Mod'}
           </Button>
         </DialogFooter>
