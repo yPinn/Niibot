@@ -42,7 +42,6 @@ import { useVideoQueueStream } from '@/hooks/useVideoQueueStream'
 import { toastApiError } from '@/lib/toast-error'
 
 import { BlocklistSection, type BlocklistSectionHandle } from './BlocklistSection'
-import { InsertCard } from './InsertCard'
 import { NowPlayingCard } from './NowPlayingCard'
 import { OverlayCard } from './OverlayCard'
 import { type HistoryState, QueueCard, type QueueTab } from './QueueCard'
@@ -67,6 +66,7 @@ const EMPTY_DRAFT: RulesDraft = {
   maxQueueSize: '',
   maxRedemptionDuration: '600',
   volumePercent: '100',
+  insertVolumePercent: '30',
 }
 
 export default function VideoQueue() {
@@ -87,7 +87,8 @@ export default function VideoQueue() {
   const [draft, setDraft] = useState<RulesDraft>(EMPTY_DRAFT)
   const [saving, setSaving] = useState(false)
   const [addUrlInput, setAddUrlInput] = useState('')
-  const [adding, setAdding] = useState(false)
+  // One input for everything that goes on screen: queue it, or insert it live.
+  const [composerBusy, setComposerBusy] = useState<'add' | 'insert' | null>(null)
   const [rotatingOverlayUrl, setRotatingOverlayUrl] = useState(false)
   const hasInitialized = useRef(false)
 
@@ -235,6 +236,7 @@ export default function VideoQueue() {
             snapToOption(REDEMPTION_DURATION_OPTIONS, queueSettings.max_duration_redemption)
           ),
           volumePercent: String(queueSettings.volume_percent),
+          insertVolumePercent: String(queueSettings.insert_volume_percent),
         })
         hasInitialized.current = true
       }
@@ -288,6 +290,7 @@ export default function VideoQueue() {
     const maxDurationMinutes = parseInt(draft.maxDurationMinutes, 10)
     const replayCooldownHours = parseInt(draft.replayCooldownHours, 10)
     const volumePercent = parseInt(draft.volumePercent, 10)
+    const insertVolumePercent = parseInt(draft.insertVolumePercent, 10)
     if (isNaN(queueSize) || queueSize < 1 || queueSize > 100) {
       toast.error('佇列最多：1 ~ 100 首')
       return
@@ -309,7 +312,11 @@ export default function VideoQueue() {
       return
     }
     if (isNaN(volumePercent) || volumePercent < 0 || volumePercent > 100) {
-      toast.error('播放器音量：0 ~ 100%')
+      toast.error('點播音量：0 ~ 100%')
+      return
+    }
+    if (isNaN(insertVolumePercent) || insertVolumePercent < 0 || insertVolumePercent > 100) {
+      toast.error('插播音量：0 ~ 100%')
       return
     }
     setSaving(true)
@@ -323,6 +330,7 @@ export default function VideoQueue() {
         max_duration_seconds: maxDurationMinutes * 60,
         replay_cooldown_hours: replayCooldownHours,
         volume_percent: volumePercent,
+        insert_volume_percent: insertVolumePercent,
       })
       setSettings(updated)
       toast.success('設定已儲存')
@@ -333,13 +341,18 @@ export default function VideoQueue() {
     }
   }
 
-  const handleStartInsert = async (url: string) => {
+  const handleInsertFromComposer = async () => {
+    const url = addUrlInput.trim()
+    if (!url) return
+    setComposerBusy('insert')
     try {
       setState(await startLiveInsert(url))
+      setAddUrlInput('')
       toast.success('開始插播，佇列暫停')
     } catch (e) {
       toastApiError(e, '插播失敗')
-      throw e
+    } finally {
+      setComposerBusy(null)
     }
   }
 
@@ -349,20 +362,14 @@ export default function VideoQueue() {
       toast.success('已結束插播，恢復播放佇列')
     } catch (e) {
       toastApiError(e, '結束插播失敗')
-      throw e
     }
   }
 
-  const handleSaveInsertDefaults = async (patch: {
-    insert_volume_percent?: number
-    insert_audio_only?: boolean
-  }) => {
+  const handleToggleInsertAudioOnly = async (value: boolean) => {
     try {
-      setSettings(await updateVideoQueueSettings(patch))
-      toast.success('插播設定已儲存')
+      setSettings(await updateVideoQueueSettings({ insert_audio_only: value }))
     } catch (e) {
       toastApiError(e, '更新失敗')
-      throw e
     }
   }
 
@@ -413,7 +420,7 @@ export default function VideoQueue() {
 
   const handleAddVideo = async () => {
     if (!addUrlInput.trim()) return
-    setAdding(true)
+    setComposerBusy('add')
     try {
       await addUrlAndRefreshQueue(addUrlInput.trim())
       setAddUrlInput('')
@@ -421,7 +428,7 @@ export default function VideoQueue() {
     } catch (e) {
       toastApiError(e, '新增失敗')
     } finally {
-      setAdding(false)
+      setComposerBusy(null)
     }
   }
 
@@ -500,17 +507,15 @@ export default function VideoQueue() {
           queueSize={queueSize}
           totalQueuedDuration={totalQueuedDuration}
           onSkip={handleSkip}
-        />
-      </SlideUp>
-
-      <SlideUp inView delay={0.03}>
-        <InsertCard
           insert={state?.insert ?? null}
-          volumePercent={settings?.insert_volume_percent ?? 30}
-          audioOnly={settings?.insert_audio_only ?? false}
-          onStart={handleStartInsert}
-          onStop={handleStopInsert}
-          onSaveDefaults={handleSaveInsertDefaults}
+          onStopInsert={() => void handleStopInsert()}
+          composer={{
+            url: addUrlInput,
+            onUrlChange: setAddUrlInput,
+            onAdd: () => void handleAddVideo(),
+            onInsert: () => void handleInsertFromComposer(),
+            busy: composerBusy,
+          }}
         />
       </SlideUp>
 
@@ -526,10 +531,6 @@ export default function VideoQueue() {
             queue={queue}
             queueSize={queueSize}
             totalQueuedDuration={totalQueuedDuration}
-            addUrlInput={addUrlInput}
-            onAddUrlChange={setAddUrlInput}
-            adding={adding}
-            onAdd={handleAddVideo}
             onClear={handleClear}
             canClear={!!current || queueSize > 0}
             onSetNext={handleSetNext}
@@ -554,6 +555,10 @@ export default function VideoQueue() {
             current={current}
             volumePercent={draft.volumePercent}
             onVolumeChange={value => setField('volumePercent', value)}
+            insertVolumePercent={draft.insertVolumePercent}
+            onInsertVolumeChange={value => setField('insertVolumePercent', value)}
+            insertAudioOnly={settings?.insert_audio_only ?? false}
+            onToggleInsertAudioOnly={value => void handleToggleInsertAudioOnly(value)}
             onSaveOutput={handleSaveSettings}
             saving={saving}
             onOpenGuide={() => setHelpOpen(true)}

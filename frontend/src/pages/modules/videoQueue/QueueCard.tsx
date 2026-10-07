@@ -15,7 +15,6 @@ import {
   CardAction,
   CardContent,
   CardHeader,
-  Input,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -73,10 +72,6 @@ export function QueueCard({
   queue,
   queueSize,
   totalQueuedDuration,
-  addUrlInput,
-  onAddUrlChange,
-  adding,
-  onAdd,
   onClear,
   canClear,
   onSetNext,
@@ -99,10 +94,6 @@ export function QueueCard({
   queue: VideoQueueEntry[]
   queueSize: number
   totalQueuedDuration: number | null
-  addUrlInput: string
-  onAddUrlChange: (value: string) => void
-  adding: boolean
-  onAdd: () => void
   onClear: () => void
   canClear: boolean
   onSetNext: (id: number) => void
@@ -172,38 +163,12 @@ export function QueueCard({
       <CardContent className="flex min-h-120 flex-1 flex-col gap-card">
         {tab === 'queue' ? (
           <>
-            <div className="flex items-center gap-element">
-              <div className="relative flex-1">
-                <Icon
-                  icon="fa-solid fa-link"
-                  className="text-sub text-muted-foreground"
-                  wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
-                />
-                <Input
-                  aria-label="影片連結"
-                  placeholder="貼上影片連結（YouTube／Twitch／Bilibili／Instagram）"
-                  value={addUrlInput}
-                  onChange={e => onAddUrlChange(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && onAdd()}
-                  className="pl-8"
-                />
-              </div>
-              <Button size="sm" onClick={onAdd} disabled={adding || !addUrlInput.trim()}>
-                {adding ? (
-                  <Spinner className="mr-1.5" />
-                ) : (
-                  <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-                )}
-                {adding ? '新增中' : '新增'}
-              </Button>
-            </div>
-
             {queue.length === 0 ? (
               <EmptyState
                 className="my-auto"
                 icon="fa-solid fa-list-ul"
                 title="佇列是空的"
-                description="貼上連結按 Enter，或等觀眾點播"
+                description="在「現在播放」貼上連結，或等觀眾點播"
               />
             ) : (
               <>

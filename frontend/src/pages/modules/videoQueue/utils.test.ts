@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { requeueText, segmentLabel, splitBilibiliId, watchUrl } from './utils'
+import { liveWatchUrl, requeueText, segmentLabel, splitBilibiliId, watchUrl } from './utils'
 
 describe('watchUrl', () => {
   it('builds a Twitch VOD URL and preserves its start offset', () => {
@@ -53,6 +53,17 @@ describe('segments', () => {
     )
     expect(requeueText({ ...base, start_seconds: 0, duration_seconds: 240 })).toBe(
       'https://youtu.be/dQw4w9WgXcQ'
+    )
+  })
+})
+
+describe('liveWatchUrl', () => {
+  it('links the channel or the live video', () => {
+    expect(liveWatchUrl({ source_type: 'twitch_live', source_id: 'lofi' })).toBe(
+      'https://www.twitch.tv/lofi'
+    )
+    expect(liveWatchUrl({ source_type: 'youtube_live', source_id: 'jfKfPfyJRdk' })).toBe(
+      'https://youtu.be/jfKfPfyJRdk'
     )
   })
 })

@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 
-import type { VideoQueueEntry } from '@/api/videoQueue'
-import { EmptyState, Icon } from '@/components/primitives'
+import type { VideoQueueEntry, VideoQueueLiveInsert } from '@/api/videoQueue'
+import { EmptyState, Icon, Spinner } from '@/components/primitives'
 import {
   Badge,
   Button,
@@ -10,11 +10,12 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Input,
   Progress,
 } from '@/components/ui'
 
 import { PlatformBadge, SourceBadge } from './QueueTable'
-import { formatDuration, segmentLabel, thumbnailUrl, watchUrl } from './utils'
+import { formatDuration, liveWatchUrl, segmentLabel, thumbnailUrl, watchUrl } from './utils'
 
 function Thumb({ entry, className }: { entry: VideoQueueEntry; className?: string }) {
   const [failed, setFailed] = useState(false)
@@ -43,21 +44,98 @@ function Thumb({ entry, className }: { entry: VideoQueueEntry; className?: strin
   )
 }
 
+/** The one place to put something on screen: queue a URL, or insert a live stream. */
+export interface PlayComposer {
+  url: string
+  onUrlChange: (value: string) => void
+  onAdd: () => void
+  onInsert: () => void
+  busy: 'add' | 'insert' | null
+}
+
+function ComposerBar({ composer, inserting }: { composer: PlayComposer; inserting: boolean }) {
+  const { url, onUrlChange, onAdd, onInsert, busy } = composer
+  const empty = !url.trim()
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (!empty && !busy) onAdd()
+  }
+  return (
+    <form className="flex items-center gap-element border-t pt-card" onSubmit={submit}>
+      <div className="relative flex-1">
+        <Icon
+          icon="fa-solid fa-link"
+          className="text-sub text-muted-foreground"
+          wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+        />
+        <Input
+          aria-label="影片或直播網址"
+          placeholder="貼上網址，可加時間，例：1:30-4:00"
+          value={url}
+          onChange={event => onUrlChange(event.target.value)}
+          className="pl-8"
+        />
+      </div>
+      <Button type="submit" size="sm" disabled={empty || busy !== null}>
+        {busy === 'add' ? (
+          <Spinner className="mr-1.5" />
+        ) : (
+          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
+        )}
+        加入
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        title="以直播網址插播，期間佇列暫停"
+        disabled={empty || busy !== null}
+        onClick={onInsert}
+      >
+        {busy === 'insert' ? (
+          <Spinner className="mr-1.5" />
+        ) : (
+          <Icon icon="fa-solid fa-tower-broadcast" wrapperClassName="mr-1.5 size-3" />
+        )}
+        {inserting ? '換台' : '插播'}
+      </Button>
+    </form>
+  )
+}
+
+function OpenLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Button size="icon-sm" variant="ghost" asChild title={label}>
+      <a href={href} target="_blank" rel="noreferrer">
+        <Icon icon="fa-solid fa-arrow-up-right-from-square" className="size-3" />
+        <span className="sr-only">{label}</span>
+      </a>
+    </Button>
+  )
+}
+
 export function NowPlayingCard({
   current,
   next,
   queueSize,
   totalQueuedDuration,
   onSkip,
+  insert = null,
+  onStopInsert,
+  composer,
 }: {
   current: VideoQueueEntry | null
   next?: VideoQueueEntry
   queueSize: number
   totalQueuedDuration: number | null
   onSkip: () => void
+  /** Active live insert — shown instead of `current` (the queue is paused). */
+  insert?: VideoQueueLiveInsert | null
+  onStopInsert?: () => void
+  composer?: PlayComposer
 }) {
   const [now, setNow] = useState(() => Date.now())
-  const startedAt = current?.started_at
+  const startedAt = insert ? null : current?.started_at
   useEffect(() => {
     if (!startedAt) return
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -66,7 +144,9 @@ export function NowPlayingCard({
 
   const upNext = (
     <div className="flex min-w-0 flex-col gap-element border-t pt-card lg:w-80 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-card">
-      <p className="text-label font-medium text-muted-foreground">接下來</p>
+      <p className="text-label font-medium text-muted-foreground">
+        {insert ? '插播結束後' : '接下來'}
+      </p>
       {next ? (
         <div className="flex items-center gap-element min-w-0">
           <Thumb key={next.video_id} entry={next} className="aspect-video w-16 shrink-0" />
@@ -88,55 +168,73 @@ export function NowPlayingCard({
     </div>
   )
 
-  if (!current) {
-    return (
-      <Card className="min-h-52 justify-center">
-        <CardContent>
-          <EmptyState
-            icon="fa-solid fa-circle-play"
-            title="目前沒有播放"
-            description={
-              queueSize > 0 ? '佇列裡有影片，馬上就會開始' : '貼上影片連結，或等觀眾用點數點播'
-            }
-          />
-        </CardContent>
-      </Card>
+  let badge: ReactNode = null
+  let action: ReactNode = null
+  let body: ReactNode
+
+  if (insert) {
+    badge = (
+      <Badge variant="outline" className="text-label border-status-live/60 text-status-live">
+        LIVE
+      </Badge>
     )
-  }
-
-  const elapsed = current.started_at
-    ? Math.max(0, (now - new Date(current.started_at).getTime()) / 1000)
-    : 0
-  const duration = current.duration_seconds
-  const progress = duration && duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          現在播放
-          <Badge variant="secondary" className="text-label tabular-nums">
-            {formatDuration(elapsed)} / {duration ? formatDuration(duration) : '--:--'}
-          </Badge>
-        </CardTitle>
-        <CardAction className="flex items-center gap-1">
-          <Button size="icon-sm" variant="ghost" asChild title="在新分頁開啟影片">
-            <a
-              href={watchUrl(current.video_type, current.video_id, current.start_seconds)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Icon icon="fa-solid fa-arrow-up-right-from-square" className="size-3" />
-              <span className="sr-only">在新分頁開啟影片</span>
-            </a>
-          </Button>
-          <Button size="sm" variant="outline" onClick={onSkip}>
-            <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
-            跳過
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-card lg:flex-row">
+    action = (
+      <>
+        <OpenLink href={liveWatchUrl(insert)} label="在新分頁開啟直播" />
+        <Button size="sm" variant="outline" onClick={onStopInsert}>
+          <Icon icon="fa-solid fa-stop" className="mr-1.5 size-3" />
+          結束插播
+        </Button>
+      </>
+    )
+    body = (
+      <div className="flex flex-col gap-card lg:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-element">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0 text-label text-muted-foreground">
+              {insert.source_type === 'twitch_live' ? 'Twitch' : 'YouTube'}
+            </span>
+            <span className="truncate text-content font-semibold">
+              {insert.creator_name || insert.source_id}
+            </span>
+          </div>
+          {insert.title && (
+            <span className="truncate text-sub text-muted-foreground" title={insert.title}>
+              {insert.title}
+            </span>
+          )}
+          <span className="text-label text-muted-foreground">
+            直播插播中，佇列暫停{insert.audio_only ? ' · 僅聲音' : ''}
+          </span>
+        </div>
+        {upNext}
+      </div>
+    )
+  } else if (current) {
+    const elapsed = current.started_at
+      ? Math.max(0, (now - new Date(current.started_at).getTime()) / 1000)
+      : 0
+    const duration = current.duration_seconds
+    const progress = duration && duration > 0 ? Math.min(100, (elapsed / duration) * 100) : 0
+    badge = (
+      <Badge variant="secondary" className="text-label tabular-nums">
+        {formatDuration(elapsed)} / {duration ? formatDuration(duration) : '--:--'}
+      </Badge>
+    )
+    action = (
+      <>
+        <OpenLink
+          href={watchUrl(current.video_type, current.video_id, current.start_seconds)}
+          label="在新分頁開啟影片"
+        />
+        <Button size="sm" variant="outline" onClick={onSkip}>
+          <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
+          跳過
+        </Button>
+      </>
+    )
+    body = (
+      <div className="flex flex-col gap-card lg:flex-row">
         <div className="flex flex-1 gap-card min-w-0">
           <Thumb
             key={current.video_id}
@@ -173,6 +271,30 @@ export function NowPlayingCard({
           </div>
         </div>
         {upNext}
+      </div>
+    )
+  } else {
+    body = (
+      <EmptyState
+        icon="fa-solid fa-circle-play"
+        title="目前沒有播放"
+        description={queueSize > 0 ? '佇列裡有影片，馬上就會開始' : '貼上連結，或等觀眾用點數點播'}
+      />
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          現在播放
+          {badge}
+        </CardTitle>
+        {action && <CardAction className="flex items-center gap-1">{action}</CardAction>}
+      </CardHeader>
+      <CardContent className="flex flex-col gap-card">
+        {body}
+        {composer && <ComposerBar composer={composer} inserting={insert !== null} />}
       </CardContent>
     </Card>
   )

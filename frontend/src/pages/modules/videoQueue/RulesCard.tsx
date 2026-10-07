@@ -20,6 +20,7 @@ export interface RulesDraft {
   maxQueueSize: string
   maxRedemptionDuration: string
   volumePercent: string
+  insertVolumePercent: string
 }
 
 const GROUP_LABEL = 'text-sub font-medium'

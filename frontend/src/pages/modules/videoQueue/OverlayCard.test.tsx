@@ -88,7 +88,7 @@ describe('OverlayCard capability controls', () => {
       />
     )
 
-    const input = screen.getByRole('spinbutton', { name: '播放器音量' })
+    const input = screen.getByRole('spinbutton', { name: '點播音量' })
     expect(input).toHaveValue(35)
     expect(input).toHaveAttribute('inputmode', 'numeric')
     expect(input).toHaveAttribute('min', '0')
@@ -103,8 +103,32 @@ describe('OverlayCard capability controls', () => {
     const save = screen.getByRole('button', { name: '儲存播放設定' })
     expect(save).toHaveClass('size-9')
     expect(save).not.toHaveTextContent('儲存播放設定')
-    expect(save.parentElement).toHaveClass('sm:shrink-0')
+    expect(save.parentElement).toHaveClass('items-end') // same row as the volume fields
     await userEvent.click(save)
     expect(onSaveOutput).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the insert volume and audio-only next to the queue volume', async () => {
+    const onInsertVolumeChange = vi.fn()
+    const onToggleInsertAudioOnly = vi.fn()
+    render(
+      <OverlayCard
+        url={URL}
+        current={null}
+        insertVolumePercent="30"
+        onInsertVolumeChange={onInsertVolumeChange}
+        insertAudioOnly={false}
+        onToggleInsertAudioOnly={onToggleInsertAudioOnly}
+        onSaveOutput={vi.fn()}
+        onOpenGuide={vi.fn()}
+      />
+    )
+    const input = screen.getByRole('spinbutton', { name: '插播音量' })
+    expect(input).toHaveValue(30)
+    fireEvent.change(input, { target: { value: '15' } })
+    expect(onInsertVolumeChange).toHaveBeenLastCalledWith('15')
+
+    fireEvent.click(screen.getByRole('switch', { name: '插播僅聲音' }))
+    expect(onToggleInsertAudioOnly).toHaveBeenCalledWith(true)
   })
 })

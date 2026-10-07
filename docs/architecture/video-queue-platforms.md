@@ -243,7 +243,9 @@ is deliberately not a queue entry. It has no length, no admission review and no
 place in line, and it never ends on its own schedule.
 
 - **Who:** broadcaster only. Chat `!vq live <url>` / `!vq live stop`, or the
-  dashboard's 直播插播 card. Never mods, never viewers, never redemptions.
+  dashboard: the 現在播放 card's single URL box has 加入 (queue) and 插播
+  (insert; 換台 while one runs), and 結束插播 replaces 跳過 during an insert.
+  Never mods, never viewers, never redemptions.
 - **Sources:** `twitch.tv/{channel}` (Helix `/streams` must report it live;
   the overlay uses the embed player's `channel` mode) and an ongoing YouTube live
   (`liveBroadcastContent = live`, embeddable). Rejected: offline channels,
@@ -264,7 +266,8 @@ place in line, and it never ends on its own schedule.
   An insert counts as active for 12 hours at most, so a forgotten one never
   resumes on the next broadcast. Niibot does not detect whether the streamer is
   live.
-- **Playback settings:** insert volume (default 30%) and audio-only (the player
+- **Playback settings** (dashboard OBS 畫面 card, next to the queue volume):
+  insert volume (default 30%) and audio-only (the player
   keeps its size but is invisible in OBS) are settings defaults copied onto the
   row at start. Changing them updates the running insert too, and the overlay
   applies volume without remounting.
