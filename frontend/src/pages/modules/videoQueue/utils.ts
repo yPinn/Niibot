@@ -83,6 +83,16 @@ export function requeueText(
     : `${url} ${formatDuration(start)}`
 }
 
+/** Watch URL for a live insert (直播插播) — the channel or live video itself. */
+export function liveWatchUrl(insert: {
+  source_type: 'twitch_live' | 'youtube_live'
+  source_id: string
+}): string {
+  return insert.source_type === 'twitch_live'
+    ? `https://www.twitch.tv/${insert.source_id}`
+    : `https://youtu.be/${insert.source_id}`
+}
+
 /** Fallback thumbnail for a queued entry when the row has no stored
  *  `thumbnail_url` (older entries). Only YouTube has a deterministic no-auth
  *  URL; other platforms return null and the card shows a placeholder. */

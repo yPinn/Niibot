@@ -14,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
   Input,
+  Switch,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -21,11 +22,49 @@ import {
 
 import { thumbnailUrl } from './utils'
 
+function PercentField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange?: (value: string) => void
+}) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-label text-muted-foreground">{label}</span>
+      <div className="relative w-20">
+        <Input
+          aria-label={label}
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={100}
+          value={value}
+          onChange={event => onChange?.(event.target.value)}
+          className="w-full pr-7 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-label text-muted-foreground"
+        >
+          %
+        </span>
+      </div>
+    </label>
+  )
+}
+
 export function OverlayCard({
   url,
   current,
   volumePercent = '100',
   onVolumeChange,
+  insertVolumePercent = '30',
+  onInsertVolumeChange,
+  insertAudioOnly = false,
+  onToggleInsertAudioOnly,
   onSaveOutput,
   saving = false,
   onOpenGuide,
@@ -36,6 +75,10 @@ export function OverlayCard({
   current: VideoQueueEntry | null
   volumePercent?: string
   onVolumeChange?: (value: string) => void
+  insertVolumePercent?: string
+  onInsertVolumeChange?: (value: string) => void
+  insertAudioOnly?: boolean
+  onToggleInsertAudioOnly?: (value: boolean) => void
   onSaveOutput?: () => void
   saving?: boolean
   onOpenGuide: () => void
@@ -60,30 +103,14 @@ export function OverlayCard({
         <CardDescription>加到 OBS 後，觀眾點播的影片會自動出現在直播畫面上</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-card">
-        <SettingRow
-          title="播放器音量"
-          description="YouTube、Twitch VOD 與直接播放影片可調；嵌入式備援播放器僅支援靜音"
-          className="flex-col items-stretch sm:flex-row sm:items-center"
-        >
-          <div className="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
-            <div className="relative w-20 shrink-0">
-              <Input
-                aria-label="播放器音量"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                max={100}
-                value={volumePercent}
-                onChange={event => onVolumeChange?.(event.target.value)}
-                className="w-full pr-7 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-label text-muted-foreground"
-              >
-                %
-              </span>
-            </div>
+        <div className="flex flex-col gap-element">
+          <div className="flex items-end gap-2">
+            <PercentField label="點播音量" value={volumePercent} onChange={onVolumeChange} />
+            <PercentField
+              label="插播音量"
+              value={insertVolumePercent}
+              onChange={onInsertVolumeChange}
+            />
             {onSaveOutput && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -100,7 +127,19 @@ export function OverlayCard({
               </Tooltip>
             )}
           </div>
-        </SettingRow>
+          <p className="text-label text-muted-foreground">
+            嵌入式備援播放器僅支援靜音；插播當背景音樂時通常調小聲
+          </p>
+          {onToggleInsertAudioOnly && (
+            <SettingRow title="插播僅聲音" description="OBS 不顯示插播的直播畫面，只播放聲音">
+              <Switch
+                aria-label="插播僅聲音"
+                checked={insertAudioOnly}
+                onCheckedChange={onToggleInsertAudioOnly}
+              />
+            </SettingRow>
+          )}
+        </div>
 
         <OverlayUrlBlock url={url} />
 

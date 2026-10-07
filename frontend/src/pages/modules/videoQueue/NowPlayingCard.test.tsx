@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import type { VideoQueueEntry } from '@/api/videoQueue'
+import type { VideoQueueEntry, VideoQueueLiveInsert } from '@/api/videoQueue'
 
-import { NowPlayingCard } from './NowPlayingCard'
+import { NowPlayingCard, type PlayComposer } from './NowPlayingCard'
 
 function entry(overrides: Partial<VideoQueueEntry> = {}): VideoQueueEntry {
   return {
@@ -90,5 +90,100 @@ describe('NowPlayingCard thumbnail', () => {
     )
     fireEvent.error(screen.getByRole('presentation'))
     expect(screen.queryByRole('presentation')).toBeNull()
+  })
+})
+
+const liveInsert: VideoQueueLiveInsert = {
+  id: 5,
+  source_type: 'twitch_live',
+  source_id: 'lofistreamer',
+  title: 'beats to relax to',
+  creator_name: 'LofiStreamer',
+  thumbnail_url: null,
+  volume_percent: 30,
+  audio_only: true,
+  started_at: null,
+}
+
+function composer(overrides: Partial<PlayComposer> = {}): PlayComposer {
+  return {
+    url: '',
+    onUrlChange: vi.fn(),
+    onAdd: vi.fn(),
+    onInsert: vi.fn(),
+    busy: null,
+    ...overrides,
+  }
+}
+
+describe('NowPlayingCard live insert and composer', () => {
+  it('shows the insert instead of the queue entry, with stop instead of skip', () => {
+    const onStopInsert = vi.fn()
+    render(
+      <NowPlayingCard
+        current={entry()}
+        insert={liveInsert}
+        onStopInsert={onStopInsert}
+        queueSize={2}
+        totalQueuedDuration={null}
+        onSkip={noop}
+      />
+    )
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
+    expect(screen.getByText('直播插播中，佇列暫停 · 僅聲音')).toBeInTheDocument()
+    expect(screen.getByText('插播結束後')).toBeInTheDocument()
+    expect(screen.queryByText('A video')).toBeNull()
+    expect(screen.queryByRole('button', { name: /跳過/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '在新分頁開啟直播' })).toHaveAttribute(
+      'href',
+      'https://www.twitch.tv/lofistreamer'
+    )
+    fireEvent.click(screen.getByRole('button', { name: /結束插播/ }))
+    expect(onStopInsert).toHaveBeenCalled()
+  })
+
+  it('one input queues on Enter / 加入 and inserts on 插播', () => {
+    const c = composer({ url: 'https://youtu.be/x 1:30-4:00' })
+    render(
+      <NowPlayingCard
+        current={null}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+        composer={c}
+      />
+    )
+    fireEvent.submit(screen.getByLabelText('影片或直播網址'))
+    expect(c.onAdd).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: /插播/ }))
+    expect(c.onInsert).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables both actions while empty or busy, and says 換台 during an insert', () => {
+    const { rerender } = render(
+      <NowPlayingCard
+        current={null}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+        composer={composer()}
+      />
+    )
+    expect(screen.getByRole('button', { name: /加入/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /插播/ })).toBeDisabled()
+
+    rerender(
+      <NowPlayingCard
+        current={null}
+        insert={liveInsert}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+        composer={composer({ url: 'https://www.twitch.tv/other', busy: 'insert' })}
+      />
+    )
+    expect(screen.getByRole('button', { name: /換台/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /加入/ })).toBeDisabled()
   })
 })
