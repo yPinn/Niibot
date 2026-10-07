@@ -172,4 +172,24 @@ export function initClientErrorReporting(): void {
       stack: err?.stack ?? null,
     })
   })
+
+  // CSP violations, enforced and Report-Only alike — this is how the
+  // public/_headers allowlists are confirmed, OBS overlays included.
+  document.addEventListener('securitypolicyviolation', ev => {
+    reportClientError({
+      kind: 'error',
+      message: `csp ${ev.disposition} ${ev.effectiveDirective} ${blockedSource(ev.blockedURI)}`,
+      errorCode: 'CSP.VIOLATION',
+    })
+  })
+}
+
+/** Host only — blocked URLs are often signed playlists / media. Keywords
+ *  such as `inline` / `eval` / `data` pass through unchanged. */
+function blockedSource(blockedURI: string): string {
+  try {
+    return new URL(blockedURI).host || blockedURI
+  } catch {
+    return blockedURI || '?'
+  }
 }
