@@ -84,6 +84,13 @@ _PUBLIC_CATEGORIES: list[_Category] = [
             _Cmd("/bday menu", "生日功能選單（登記 / 訂閱 / 查看）"),
         ],
     ),
+    _Category(
+        "Codex",
+        "OpenAI Codex 額度重置通知",
+        [
+            _Cmd("/codex status", "查看目前重置狀態與統計"),
+        ],
+    ),
 ]
 
 _MOD_CATEGORY = _Category(
@@ -109,6 +116,9 @@ _ADMIN_CATEGORY = _Category(
         _Cmd("/log unset", "取消日誌記錄頻道設定"),
         _Cmd("/food delete <分類>", "刪除整個餐點分類"),
         _Cmd("/bday init", "初始化伺服器的生日功能"),
+        _Cmd("/codex set-channel <頻道>", "設定 Codex 重置通知頻道"),
+        _Cmd("/codex unset-channel", "取消 Codex 重置通知"),
+        _Cmd("/codex watch <開/關>", "開關重置觀察通知（AI 推測）"),
     ],
 )
 
