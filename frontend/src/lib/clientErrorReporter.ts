@@ -65,7 +65,10 @@ function shouldDrop(input: ReportInput): boolean {
   if (sentThisPage >= MAX_PER_PAGE) return true
   // the reporter must never report itself (note: not '.test.ts')
   if (/clientErrorReporter\.[jt]s:/.test(input.stack ?? '')) return true
-  if (input.httpStatus === 401 || input.httpStatus === 403) return true
+  // 401/403 from our own API is the normal auth flow. A third-party 403 (e.g.
+  // Twitch refusing an HLS playlist, reported with kind 'error') is a real fault.
+  const fromOurApi = input.kind === 'api' || input.kind === 'unhandledrejection'
+  if (fromOurApi && (input.httpStatus === 401 || input.httpStatus === 403)) return true
   return false
 }
 
@@ -169,4 +172,24 @@ export function initClientErrorReporting(): void {
       stack: err?.stack ?? null,
     })
   })
+
+  // CSP violations, enforced and Report-Only alike — this is how the
+  // public/_headers allowlists are confirmed, OBS overlays included.
+  document.addEventListener('securitypolicyviolation', ev => {
+    reportClientError({
+      kind: 'error',
+      message: `csp ${ev.disposition} ${ev.effectiveDirective} ${blockedSource(ev.blockedURI)}`,
+      errorCode: 'CSP.VIOLATION',
+    })
+  })
+}
+
+/** Host only — blocked URLs are often signed playlists / media. Keywords
+ *  such as `inline` / `eval` / `data` pass through unchanged. */
+function blockedSource(blockedURI: string): string {
+  try {
+    return new URL(blockedURI).host || blockedURI
+  } catch {
+    return blockedURI || '?'
+  }
 }

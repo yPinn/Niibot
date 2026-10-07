@@ -34,7 +34,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import parse_qs, quote, urlunsplit
+from urllib.parse import parse_qs, quote, urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 import aiohttp
@@ -1054,33 +1054,70 @@ _TWITCH_LIVE_TOKEN_QUERY = (
 _TWITCH_USHER_LIVE_URL = "https://usher.ttvnw.net/api/channel/hls/{id}.m3u8"
 
 
-async def fetch_hls_master_playlist(
+async def fetch_hls_playlist(
     url: str,
     session: aiohttp.ClientSession | None = None,
 ) -> str | None:
-    """Fetch a Twitch master playlist's text, or None on any failure.
+    """Fetch a Twitch HLS playlist's text, or None on any failure.
 
-    Twitch's usher host sends no CORS header, so a browser on our domain can't
-    read the master playlist itself — the API relays just this one small text
-    file. The variant playlists and segments it lists (``*.ttvnw.net``) do send
-    ``Access-Control-Allow-Origin: *`` and are fetched by the overlay directly,
-    so no video bytes pass through Niibot.
+    The overlay can't fetch Twitch's playlists itself, so the API relays them
+    (small text files only):
+
+    - the master playlist (``usher.ttvnw.net``) sends no CORS header;
+    - the variant playlists it lists (``*.playlist.ttvnw.net``) answer any
+      non-Twitch ``Origin`` with 403 (verified 2026-10-08 — a browser always
+      sends ``Origin`` on these requests); a server request sends none.
+
+    The segments a variant lists (``*.hls.ttvnw.net``) accept any origin and
+    are fetched by the overlay directly, so no video bytes pass through Niibot.
     """
     _own_session = session is None
     _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
     try:
         async with _session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
             if resp.status != 200:
-                LOGGER.info("[Twitch usher] master playlist status %s", resp.status)
+                LOGGER.info("[Twitch HLS] playlist status %s", resp.status)
                 return None
             text = await resp.text()
         return text if text.startswith("#EXTM3U") else None
     except Exception as exc:
-        LOGGER.warning("[Twitch usher] master playlist failed: %s", type(exc).__name__)
+        LOGGER.warning("[Twitch HLS] playlist failed: %s", type(exc).__name__)
         return None
     finally:
         if _own_session:
             await _session.close()
+
+
+_TWITCH_VARIANT_HOST_SUFFIX = ".playlist.ttvnw.net"
+
+
+def is_twitch_variant_playlist_url(url: str) -> bool:
+    """True only for an https URL on a Twitch variant-playlist host — the sole
+    kind of URL the variant relay will fetch, so it can't become an open proxy."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    host = parts.hostname or ""
+    return (
+        parts.scheme == "https"
+        and parts.port is None
+        and not parts.username
+        and host.endswith(_TWITCH_VARIANT_HOST_SUFFIX)
+        and host != _TWITCH_VARIANT_HOST_SUFFIX.lstrip(".")
+    )
+
+
+def rewrite_master_variant_urls(master: str, variant_relay_url: str) -> str:
+    """Point every variant URI line of a master playlist at our relay
+    (``{variant_relay_url}?u=<variant>``). Other lines and non-Twitch URIs are
+    left as they are."""
+    lines = []
+    for line in master.splitlines():
+        if not line.startswith("#") and is_twitch_variant_playlist_url(line.strip()):
+            line = f"{variant_relay_url}?u={quote(line.strip(), safe='')}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
 
 
 async def fetch_twitch_live_hls_source(

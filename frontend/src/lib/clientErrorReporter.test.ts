@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/errors'
-import { __resetReporterState, reportClientError, reportSilent } from '@/lib/clientErrorReporter'
+import {
+  __resetReporterState,
+  initClientErrorReporting,
+  reportClientError,
+  reportSilent,
+} from '@/lib/clientErrorReporter'
 
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -64,6 +69,11 @@ describe('reportClientError', () => {
     reportClientError({ kind: 'api', message: 'forbidden', httpStatus: 403 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('still reports a third-party 403 (e.g. Twitch refusing an HLS playlist)', () => {
+    reportClientError({ kind: 'error', message: 'hls twitch_live start', httpStatus: 403 })
+    expect(bodyOf(0)).toMatchObject({ kind: 'error', http_status: 403 })
+  })
 })
 
 describe('reportSilent', () => {
@@ -89,5 +99,24 @@ describe('reportSilent', () => {
     expect(url).toContain('/u/video-queue/overlay')
     expect(url).not.toContain('secret-capability')
     window.history.replaceState(null, '', '/')
+  })
+})
+
+describe('initClientErrorReporting', () => {
+  it('forwards CSP violations with the blocked host only', () => {
+    initClientErrorReporting()
+    // jsdom has no SecurityPolicyViolationEvent; the handler only reads these fields.
+    const ev = Object.assign(new Event('securitypolicyviolation'), {
+      disposition: 'report',
+      effectiveDirective: 'img-src',
+      blockedURI: 'https://cdn.example.test/thumb.jpg?sig=secret',
+    })
+    document.dispatchEvent(ev)
+    expect(bodyOf(0)).toMatchObject({
+      kind: 'error',
+      error_code: 'CSP.VIOLATION',
+      message: 'csp report img-src cdn.example.test',
+    })
+    expect(bodyOf(0).message).not.toContain('secret')
   })
 })

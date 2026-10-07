@@ -188,6 +188,15 @@ Any entry that never starts within the 15 s watchdog also reports
 `VIDEO_QUEUE.STARTUP_TIMEOUT` (with the platform) before advancing as
 `startup_timeout`. Without the report, a stalled player leaves no trace.
 
+The startup watchdog stops once playback is confirmed, so a player that later
+freezes mid-video (a buffering spinner that never clears) is covered by a
+separate **stall watch** (`createStallWatch` in `players/shared.ts`), used by
+YouTube and Twitch VOD. It reads the playhead on each 1 s progress tick, only
+after the first `PLAYING`. The thresholds are deliberately conservative so an
+ordinary rebuffer never trips them: after 30 s without movement it re-seeks to
+the current position and plays once; after 120 s it reports
+`VIDEO_QUEUE.PLAYBACK_STALLED` and advances as `provider_error`.
+
 A VOD is hours long, so Video Queue treats it as a **long clip**:
 
 - `extract_twitch_vod_info()` also parses the URL's `?t=1h2m3s` into
@@ -256,21 +265,31 @@ length rejects as out of range.
 ## Twitch HLS in the overlay (CORS)
 
 Twitch live playback plays HLS with hls.js (VODs can't; see Twitch VOD above).
-Only the **master playlist** host (`usher.ttvnw.net`) sends no CORS header (checked
-2026-10-07). The variant playlists (`*.playlist.ttvnw.net`) and segments
-(`*.hls.ttvnw.net`) send `Access-Control-Allow-Origin: *`. The API therefore
-relays just the master playlist, a few KB of text fetched once per start or
-retry (`fetch_hls_master_playlist`, served as
-`application/vnd.apple.mpegurl`, `no-store`). Every variant and segment URL in
-it is absolute, so hls.js fetches those straight from Twitch and no video bytes
-pass through Niibot. The overlay CSP's `connect-src https://*.ttvnw.net` covers
-them.
+A browser can read neither playlist level itself (verified 2026-10-08 from the
+production overlay in OBS):
 
-**Unverified:** the backend fetches the master playlist from the server's IP,
-while OBS fetches the variants from the streamer's IP. Locally these are the
-same machine. Whether Twitch ties variant URLs to the requesting IP has to be
-checked on staging/production. If it does, the variant playlists need relaying
-too (still text only).
+- the **master playlist** host (`usher.ttvnw.net`) sends no CORS header;
+- the **variant playlists** (`*.playlist.ttvnw.net`) answer any non-Twitch
+  `Origin` with 403 — and a browser always sends `Origin`. Requests with no
+  `Origin` (the server) or a twitch.tv one get 200. It is not IP-bound: a
+  master fetched by the server and a variant fetched from the streamer's IP work
+  together.
+
+So the API relays both, text only (`fetch_hls_playlist`, served as
+`application/vnd.apple.mpegurl`, `no-store`). The master relay rewrites each
+variant URL to `GET /api/video-queue/public/{u}/insert/variant.m3u8?u=…`, which
+fetches only `https://*.playlist.ttvnw.net` URLs and only while the channel has
+a Twitch live insert. hls.js re-polls a variant every ~2 s, so the rewritten URL
+points at `API_DIRECT_URL` to stay off the Pages Functions quota (the one
+direct-API exception, see
+[cloudflare-pages.md](../guides/cloudflare-pages.md)). The **segments**
+(`*.hls.ttvnw.net`) accept any origin and stay absolute, so hls.js fetches them
+straight from Twitch and no video bytes pass through Niibot. The overlay CSP's
+`connect-src` lists `https://*.ttvnw.net` and both direct API hosts.
+
+Before this was found, every live insert silently fell back to the Twitch
+embed: stuck on a play button in OBS and showing Twitch's client-side ads.
+The failure never reached Monitor because the reporter dropped all 403s.
 
 ## Live playback (直播播放)
 
@@ -665,7 +684,10 @@ back to a placeholder. The card also renders the placeholder on an `<img>`
 `<img>` sends `referrerpolicy="no-referrer"`; if a host still blocks it the
 error handler covers it. The dashboard CSP `img-src` (`frontend/public/_headers`)
 allows `i.ytimg.com`, `*.hdslb.com`, `clips-media-assets2.twitch.tv`,
-`static-cdn.jtvnw.net`, and `*.cdninstagram.com`.
+`static-cdn.jtvnw.net`, `*.cdninstagram.com`, and `*.fbcdn.net`. The dashboard
+(global) CSP is still Report-Only; its violations land in Monitor → Errors as
+`CSP.VIOLATION`, which is how a missing thumbnail host shows up. The overlay CSP
+is enforced and lists the same hosts for the posters behind vertical videos.
 
 ## Creator identity
 

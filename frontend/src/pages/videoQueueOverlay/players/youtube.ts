@@ -1,6 +1,6 @@
 import { reportVideoMetadata } from '@/api/videoQueue'
 
-import { makeMountDiv, mountPosterSidePanels } from './shared'
+import { createStallWatch, makeMountDiv, mountPosterSidePanels } from './shared'
 import type { MountContext, PlayerStrategy, YTPlayer } from './types'
 
 let _ytReadyPromise: Promise<void> | null = null
@@ -52,6 +52,25 @@ function mount(ctx: MountContext): () => void {
   let readyCount = 0
   let allStarted = false
   let fallbackTimer = 0 as ReturnType<typeof setTimeout>
+  // Armed on the first PLAYING; before that the startup watchdog owns a slow start.
+  let playbackConfirmed = false
+  const stallWatch = createStallWatch('youtube', {
+    recover: () => {
+      const player = playerRef.current
+      if (!player) return
+      try {
+        player.seekTo(player.getCurrentTime(), true)
+        player.playVideo()
+      } catch {
+        /* ignore */
+      }
+    },
+    giveUp: () => {
+      clearInterval(progressRef.current ?? undefined)
+      progressRef.current = null
+      handleVideoEnd(currentId, 'provider_error')
+    },
+  })
 
   function startAll() {
     if (allStarted) return
@@ -98,7 +117,9 @@ function mount(ctx: MountContext): () => void {
         clearInterval(progressRef.current ?? undefined)
         progressRef.current = null
         handleVideoEnd(currentId)
+        return
       }
+      if (playbackConfirmed) stallWatch(t)
     }, 1000)
   }
 
@@ -146,6 +167,7 @@ function mount(ctx: MountContext): () => void {
       },
       onStateChange: event => {
         if (event.data === 1) {
+          playbackConfirmed = true
           notifyPlaybackStarted('confirmed')
         }
         if (event.data === 0) handleVideoEnd(currentId) // YT.PlayerState.ENDED

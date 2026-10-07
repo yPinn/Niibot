@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { reportVideoMetadata } from '@/api/videoQueue'
+import { reportClientError } from '@/lib/clientErrorReporter'
 
+import { STALL_RECOVER_SECONDS, STALL_SKIP_SECONDS } from './shared'
 import type { MountContext, YTPlayer, YTPlayerOptions } from './types'
 import { youtubeStrategy } from './youtube'
 
 vi.mock('@/api/videoQueue', () => ({ reportVideoMetadata: vi.fn(() => Promise.resolve()) }))
+vi.mock('@/lib/clientErrorReporter', () => ({ reportClientError: vi.fn() }))
 
 function makePlayer(currentTime = 0, duration = 300) {
   return {
@@ -133,5 +136,70 @@ describe('youtubeStrategy segments', () => {
     youtubeStrategy.mount(ctx({ duration_seconds: null }))
     ready(player)
     expect(reportVideoMetadata).toHaveBeenCalledWith('streamer', 7, 210, expect.any(String))
+  })
+})
+
+describe('youtubeStrategy mid-playback stall', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.mocked(reportClientError).mockClear()
+  })
+
+  /** Mounted, ready and confirmed PLAYING, with the playhead frozen at 100. */
+  function playing() {
+    const player = makePlayer(100)
+    installYouTube(player)
+    const context = ctx()
+    youtubeStrategy.mount(context)
+    ready(player)
+    options?.events?.onStateChange?.({ target: player as unknown as YTPlayer, data: 1 })
+    player.seekTo.mockClear()
+    player.playVideo.mockClear()
+    return { player, context }
+  }
+
+  it('leaves an ordinary rebuffer alone', () => {
+    const { player, context } = playing()
+    vi.advanceTimersByTime((STALL_RECOVER_SECONDS - 1) * 1000)
+    player.getCurrentTime.mockReturnValue(101)
+    vi.advanceTimersByTime((STALL_RECOVER_SECONDS - 1) * 1000)
+    expect(player.seekTo).not.toHaveBeenCalled()
+    expect(context.handleVideoEnd).not.toHaveBeenCalled()
+  })
+
+  it('re-seeks and plays once a freeze lasts long enough', () => {
+    const { player, context } = playing()
+    vi.advanceTimersByTime((STALL_RECOVER_SECONDS + 1) * 1000)
+    expect(player.seekTo).toHaveBeenCalledTimes(1)
+    expect(player.seekTo).toHaveBeenCalledWith(100, true)
+    expect(player.playVideo).toHaveBeenCalledTimes(1)
+
+    // Recovered: the playhead moves again, nothing is skipped.
+    player.getCurrentTime.mockReturnValue(110)
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS - 10) * 1000)
+    expect(context.handleVideoEnd).not.toHaveBeenCalled()
+  })
+
+  it('skips as a provider error and reports when the freeze never clears', () => {
+    const { context } = playing()
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS + 5) * 1000)
+    expect(context.handleVideoEnd).toHaveBeenCalledTimes(1)
+    expect(context.handleVideoEnd).toHaveBeenCalledWith(7, 'provider_error')
+    expect(reportClientError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'VIDEO_QUEUE.PLAYBACK_STALLED' })
+    )
+  })
+
+  it('is not armed before playback is confirmed', () => {
+    const player = makePlayer(100)
+    installYouTube(player)
+    const context = ctx()
+    youtubeStrategy.mount(context)
+    ready(player)
+    player.seekTo.mockClear()
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS + 1) * 1000)
+    expect(player.seekTo).not.toHaveBeenCalled()
+    expect(context.handleVideoEnd).not.toHaveBeenCalled()
   })
 })

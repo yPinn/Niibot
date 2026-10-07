@@ -14,6 +14,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import quote
 from uuid import UUID
 
 import pytest
@@ -1776,10 +1777,13 @@ class TestLiveInsert:
         )
 
 
+_VARIANT = "https://aps13.playlist.ttvnw.net/v1/playlist/abc.m3u8"
+
+
 class TestLiveInsertPlaylist:
     URL = "/api/video-queue/public/testuser/insert/playlist.m3u8"
 
-    def test_relays_the_master_playlist_of_the_active_twitch_insert(self, _no_live_insert):
+    def _get(self, _no_live_insert) -> tuple:
         _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
         with (
             patch(
@@ -1787,16 +1791,33 @@ class TestLiveInsertPlaylist:
                 AsyncMock(return_value="https://usher.ttvnw.net/x.m3u8"),
             ) as resolve,
             patch(
-                "routers.video_queue_router.fetch_hls_master_playlist",
-                AsyncMock(return_value="#EXTM3U\nhttps://aps13.playlist.ttvnw.net/v1/x.m3u8\n"),
+                "routers.video_queue_router.fetch_hls_playlist",
+                AsyncMock(return_value=f"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n{_VARIANT}\n"),
             ),
         ):
-            r = _make_public_client(_twitch_api_found()).get(self.URL)
+            return _make_public_client(_twitch_api_found()).get(self.URL), resolve
+
+    def test_relays_the_master_playlist_of_the_active_twitch_insert(self, _no_live_insert):
+        r, resolve = self._get(_no_live_insert)
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("application/vnd.apple.mpegurl")
         assert r.headers["cache-control"] == "no-store"
         assert r.text.startswith("#EXTM3U")
         resolve.assert_awaited_once_with("lofistreamer")
+
+    def test_variants_point_at_the_relay_relative_by_default(self, _no_live_insert):
+        r, _ = self._get(_no_live_insert)
+        assert f"variant.m3u8?u={quote(_VARIANT, safe='')}" in r.text.splitlines()
+        assert _VARIANT not in r.text.splitlines()
+
+    def test_variants_point_at_the_direct_api_when_configured(self, _no_live_insert, monkeypatch):
+        # Variant polling bypasses the Pages proxy (docs/guides/cloudflare-pages.md).
+        monkeypatch.setenv("API_DIRECT_URL", "https://api-direct.example/")
+        r, _ = self._get(_no_live_insert)
+        assert (
+            "https://api-direct.example/api/video-queue/public/testuser/insert/variant.m3u8"
+            f"?u={quote(_VARIANT, safe='')}"
+        ) in r.text.splitlines()
 
     def test_404_without_a_twitch_insert(self, _no_live_insert):
         assert _make_public_client(_twitch_api_found()).get(self.URL).status_code == 404
@@ -1813,11 +1834,57 @@ class TestLiveInsertPlaylist:
                 AsyncMock(return_value="https://usher.ttvnw.net/x.m3u8"),
             ),
             patch(
-                "routers.video_queue_router.fetch_hls_master_playlist",
+                "routers.video_queue_router.fetch_hls_playlist",
                 AsyncMock(return_value=None),
             ),
         ):
             assert _make_public_client(_twitch_api_found()).get(self.URL).status_code == 404
+
+
+class TestLiveInsertVariant:
+    URL = "/api/video-queue/public/testuser/insert/variant.m3u8"
+
+    def test_relays_a_variant_of_the_active_twitch_insert(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        media = "#EXTM3U\n#EXTINF:2.000,live\nhttps://x.hls.ttvnw.net/seg.ts\n"
+        with patch(
+            "routers.video_queue_router.fetch_hls_playlist", AsyncMock(return_value=media)
+        ) as fetch:
+            r = _make_public_client(_twitch_api_found()).get(self.URL, params={"u": _VARIANT})
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-store"
+        assert r.text == media  # segments stay absolute → fetched straight from Twitch's CDN
+        fetch.assert_awaited_once_with(_VARIANT)
+
+    @pytest.mark.parametrize(
+        "u",
+        [
+            "https://evil.example/v1/playlist/abc.m3u8",
+            "http://aps13.playlist.ttvnw.net/v1/playlist/abc.m3u8",
+            "https://aps13.playlist.ttvnw.net.evil.example/x.m3u8",
+            "https://usher.ttvnw.net/api/channel/hls/x.m3u8",
+            "https://aps13.playlist.ttvnw.net:8443/x.m3u8",
+            "https://user@aps13.playlist.ttvnw.net/x.m3u8",
+        ],
+    )
+    def test_refuses_anything_but_a_twitch_variant_url(self, _no_live_insert, u):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with patch("routers.video_queue_router.fetch_hls_playlist", AsyncMock()) as fetch:
+            r = _make_public_client(_twitch_api_found()).get(self.URL, params={"u": u})
+        assert r.status_code == 400
+        fetch.assert_not_awaited()
+
+    def test_404_without_a_twitch_insert(self, _no_live_insert):
+        with patch("routers.video_queue_router.fetch_hls_playlist", AsyncMock()) as fetch:
+            r = _make_public_client(_twitch_api_found()).get(self.URL, params={"u": _VARIANT})
+        assert r.status_code == 404
+        fetch.assert_not_awaited()
+
+    def test_404_when_twitch_refuses_the_variant(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with patch("routers.video_queue_router.fetch_hls_playlist", AsyncMock(return_value=None)):
+            r = _make_public_client(_twitch_api_found()).get(self.URL, params={"u": _VARIANT})
+        assert r.status_code == 404
 
 
 def test_dashboard_live_url_as_a_video_points_at_live_mode():
