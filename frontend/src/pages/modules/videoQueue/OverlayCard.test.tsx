@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -23,22 +23,24 @@ const CURRENT = {
 describe('OverlayCard capability controls', () => {
   it('keeps the capability fragment after the preview query', async () => {
     render(<OverlayCard url={URL} current={null} onOpenGuide={vi.fn()} />)
-    await userEvent.click(screen.getByRole('button', { name: '載入同步預覽' }))
+    await userEvent.click(screen.getByRole('button', { name: '載入預覽' }))
 
-    expect(screen.getByTitle('Overlay 預覽')).toHaveAttribute(
+    expect(screen.getByTitle('畫面預覽')).toHaveAttribute(
       'src',
       'https://example.test/streamer/video-queue/overlay?preview=1#key=11111111-1111-4111-8111-111111111111'
     )
-    expect(screen.getByText('跟隨正式 Overlay · 靜音 · 唯讀')).toBeInTheDocument()
+    expect(screen.getByText('同步預覽 · 靜音')).toBeInTheDocument()
   })
 
   it('confirms before invalidating the current OBS URL', async () => {
     const onRotateUrl = vi.fn()
     render(<OverlayCard url={URL} current={null} onOpenGuide={vi.fn()} onRotateUrl={onRotateUrl} />)
 
-    await userEvent.click(screen.getByRole('button', { name: '重設 OBS 網址' }))
-    expect(onRotateUrl).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: '重設網址' }))
+    expect(onRotateUrl).not.toHaveBeenCalled()
+    await userEvent.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: '重設網址' })
+    )
     expect(onRotateUrl).toHaveBeenCalledOnce()
   })
 
@@ -50,9 +52,9 @@ describe('OverlayCard capability controls', () => {
         onOpenGuide={vi.fn()}
       />
     )
-    await userEvent.click(screen.getByRole('button', { name: '載入同步預覽' }))
+    await userEvent.click(screen.getByRole('button', { name: '載入預覽' }))
 
-    expect(screen.getByTitle('Overlay 預覽')).toHaveAttribute(
+    expect(screen.getByTitle('畫面預覽')).toHaveAttribute(
       'src',
       'https://example.test/streamer/video-queue/overlay?mode=test&preview=1'
     )
@@ -69,7 +71,7 @@ describe('OverlayCard capability controls', () => {
       />
     )
 
-    expect(screen.getByText('跟隨目前項目；嵌入備援可能從頭開始')).toBeInTheDocument()
+    expect(screen.getByText('與 OBS 同步，靜音')).toBeInTheDocument()
     expect(container.querySelector('img[alt=""]')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '儲存播放設定' })).toBeDisabled()
   })
@@ -88,7 +90,7 @@ describe('OverlayCard capability controls', () => {
       />
     )
 
-    const input = screen.getByRole('spinbutton', { name: '點播音量' })
+    const input = screen.getByRole('spinbutton', { name: '播放音量' })
     expect(input).toHaveValue(35)
     expect(input).toHaveAttribute('inputmode', 'numeric')
     expect(input).toHaveAttribute('min', '0')
@@ -103,32 +105,28 @@ describe('OverlayCard capability controls', () => {
     const save = screen.getByRole('button', { name: '儲存播放設定' })
     expect(save).toHaveClass('size-9')
     expect(save).not.toHaveTextContent('儲存播放設定')
-    expect(save.parentElement).toHaveClass('items-end') // same row as the volume fields
+    // save sits beside the volume input, in the same control group
+    expect(save.parentElement).toContainElement(input)
     await userEvent.click(save)
     expect(onSaveOutput).toHaveBeenCalledOnce()
   })
 
-  it('keeps the insert volume and audio-only next to the queue volume', async () => {
-    const onInsertVolumeChange = vi.fn()
+  it('one shared volume, plus the live audio-only switch', () => {
     const onToggleInsertAudioOnly = vi.fn()
     render(
       <OverlayCard
         url={URL}
         current={null}
-        insertVolumePercent="30"
-        onInsertVolumeChange={onInsertVolumeChange}
         insertAudioOnly={false}
         onToggleInsertAudioOnly={onToggleInsertAudioOnly}
         onSaveOutput={vi.fn()}
         onOpenGuide={vi.fn()}
       />
     )
-    const input = screen.getByRole('spinbutton', { name: '插播音量' })
-    expect(input).toHaveValue(30)
-    fireEvent.change(input, { target: { value: '15' } })
-    expect(onInsertVolumeChange).toHaveBeenLastCalledWith('15')
-
-    fireEvent.click(screen.getByRole('switch', { name: '插播僅聲音' }))
+    expect(screen.getAllByRole('spinbutton')).toHaveLength(1)
+    expect(screen.getByRole('spinbutton', { name: '播放音量' })).toHaveValue(50)
+    expect(screen.getByText('影片與直播共用')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('switch', { name: '直播僅聲音' }))
     expect(onToggleInsertAudioOnly).toHaveBeenCalledWith(true)
   })
 })

@@ -60,8 +60,11 @@ Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cl
 
 # Instagram Reels (instagramReel.ts) play the same way but have no iframe fallback — cdninstagram.com
 # and fbcdn.net are wildcard-subdomain CDN hosts observed serving the resolved InstaFix mp4 URL.
+# Twitch live inserts (liveInsert.ts) play the signed HLS playlist via hls.js: playlist + segments
+# are fetched (connect-src) from usher.ttvnw.net / *.hls.ttvnw.net, and MediaSource needs media-src
+# blob:. On a miss hls.js errors before playing and the overlay falls back to the embed player.
 
-Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com https://*.cdninstagram.com data:; media-src https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' https://www.youtube.com https://player.twitch.tv https://embed.twitch.tv https://static.cloudflareinsights.com; frame-src https://www.youtube.com https://player.twitch.tv https://clips.twitch.tv https://www.bilibili.com https://player.bilibili.com; frame-ancestors \*; img-src 'self' https://static-cdn.jtvnw.net https://cdn.discordapp.com https://*.cdninstagram.com data:; media-src blob: https://*.twitchcdn.net https://clips-media-assets2.twitch.tv https://*.cdninstagram.com https://*.fbcdn.net; connect-src 'self' https://niibot-api.llazypilot.com https://cloudflareinsights.com https://*.ttvnw.net; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'
 
 /\*/game-queue/overlay
 

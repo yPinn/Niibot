@@ -36,10 +36,6 @@ SEGMENT_VIDEO_TYPES = frozenset({"youtube", "twitch_vod", "bilibili"})
 
 MIN_SEGMENT_SECONDS = 10
 
-# A VOD is hours long: with no end point, play a window of at most this many
-# seconds from the start point.
-TWITCH_VOD_WINDOW_SECONDS = 600
-
 SegmentErrorCode = Literal["format", "order", "out_of_range", "too_short"]
 
 
@@ -135,9 +131,9 @@ def plan_segment(
     """Resolve what to play from the video length, the URL's ``?t=`` and a typed range.
 
     A typed range wins over ``url_start`` entirely (``-4:00`` plays from 0).
-    ``window_cap`` (the submission's length limit, 0 = none) narrows the
-    default Twitch VOD window so a VOD without an end point is not rejected
-    just because the window is longer than the limit.
+    ``window_cap`` (the submission's length limit, 0 = none): a Twitch VOD
+    with no end point plays a window of that length from its start point
+    instead of being rejected as too long; with no limit it plays to the end.
 
     Raises ``SegmentError`` for a range outside the video or shorter than
     ``MIN_SEGMENT_SECONDS``.
@@ -156,10 +152,12 @@ def plan_segment(
     ):
         raise SegmentError("out_of_range")
 
-    if video_type == "twitch_vod" and end is None:
-        window = min(TWITCH_VOD_WINDOW_SECONDS, window_cap or TWITCH_VOD_WINDOW_SECONDS)
+    if video_type == "twitch_vod" and end is None and window_cap > 0:
+        # A VOD link usually points at a moment in hours of footage: under a
+        # length limit, play a limit-sized window from there instead of
+        # rejecting. With no limit it plays to the end, like any other video.
         length: int | None = (
-            min(window, video_seconds - start) if video_seconds is not None else window
+            min(window_cap, video_seconds - start) if video_seconds is not None else window_cap
         )
     elif end is not None:
         length = end - start

@@ -76,7 +76,6 @@ def _make_settings(**kw) -> MagicMock:
     s.max_duration_seconds = kw.get("max_duration_seconds", 0)
     s.replay_cooldown_hours = kw.get("replay_cooldown_hours", 0)
     s.volume_percent = kw.get("volume_percent", 100)
-    s.insert_volume_percent = kw.get("insert_volume_percent", 30)
     s.insert_audio_only = kw.get("insert_audio_only", False)
     s.overlay_key = UUID(kw.get("overlay_key", OVERLAY_KEY))
     return s
@@ -1656,7 +1655,7 @@ class TestStreamPublicVideoQueue:
         assert hub.subscriber_count == 0
 
 
-# ── Live insert (直播插播) ─────────────────────────────────────────────────────
+# ── Live insert (直播播放) ─────────────────────────────────────────────────────
 
 
 def _make_insert(**kw):
@@ -1760,11 +1759,95 @@ class TestLiveInsert:
             sr.return_value.update_settings = AsyncMock(return_value=_make_settings())
             r = _make_auth_client().put(
                 "/api/video-queue/settings",
-                json={"insert_volume_percent": 20, "insert_audio_only": True},
+                json={"volume_percent": 20, "insert_audio_only": True},
             )
         assert r.status_code == 200
         kwargs = sr.return_value.update_settings.await_args.kwargs
-        assert (kwargs["insert_volume_percent"], kwargs["insert_audio_only"]) == (20, True)
+        assert (kwargs["volume_percent"], kwargs["insert_audio_only"]) == (20, True)
         _no_live_insert.return_value.update_playback.assert_awaited_once_with(
             CHANNEL_ID, volume_percent=20, audio_only=True
         )
+
+
+class TestLiveInsertPlaylist:
+    URL = "/api/video-queue/public/testuser/insert/playlist.m3u8"
+
+    def test_relays_the_master_playlist_of_the_active_twitch_insert(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with (
+            patch(
+                "routers.video_queue_router.fetch_twitch_live_hls_source",
+                AsyncMock(return_value="https://usher.ttvnw.net/x.m3u8"),
+            ) as resolve,
+            patch(
+                "routers.video_queue_router.fetch_hls_master_playlist",
+                AsyncMock(return_value="#EXTM3U\nhttps://aps13.playlist.ttvnw.net/v1/x.m3u8\n"),
+            ),
+        ):
+            r = _make_public_client(_twitch_api_found()).get(self.URL)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("application/vnd.apple.mpegurl")
+        assert r.headers["cache-control"] == "no-store"
+        assert r.text.startswith("#EXTM3U")
+        resolve.assert_awaited_once_with("lofistreamer")
+
+    def test_404_without_a_twitch_insert(self, _no_live_insert):
+        assert _make_public_client(_twitch_api_found()).get(self.URL).status_code == 404
+        _no_live_insert.return_value.get_active = AsyncMock(
+            return_value=_make_insert(source_type="youtube_live", source_id="jfKfPfyJRdk")
+        )
+        assert _make_public_client(_twitch_api_found()).get(self.URL).status_code == 404
+
+    def test_404_when_twitch_will_not_hand_out_a_playlist(self, _no_live_insert):
+        _no_live_insert.return_value.get_active = AsyncMock(return_value=_make_insert())
+        with (
+            patch(
+                "routers.video_queue_router.fetch_twitch_live_hls_source",
+                AsyncMock(return_value="https://usher.ttvnw.net/x.m3u8"),
+            ),
+            patch(
+                "routers.video_queue_router.fetch_hls_master_playlist",
+                AsyncMock(return_value=None),
+            ),
+        ):
+            assert _make_public_client(_twitch_api_found()).get(self.URL).status_code == 404
+
+
+def test_dashboard_live_url_as_a_video_points_at_live_mode():
+    with (
+        patch(
+            "routers.video_queue_router.resolve_video_url",
+            AsyncMock(return_value=ResolvedVideo("youtube", "vid123", False)),
+        ),
+        patch(
+            "routers.video_queue_router.fetch_video_metadata",
+            AsyncMock(
+                return_value=VideoMetadata(
+                    "Live", None, 10, False, playable=False, unplayable_reason="live"
+                )
+            ),
+        ),
+        patch("routers.video_queue_router.VideoQueueRepository") as vqr,
+        patch("routers.video_queue_router.VideoQueueSettingsRepository") as sr,
+    ):
+        vqr.return_value.video_is_active = AsyncMock(return_value=False)
+        sr.return_value.get_or_create = AsyncMock(return_value=_make_settings())
+        r = _make_auth_client().post(
+            "/api/video-queue/entries", json={"url": "https://youtu.be/vid123"}
+        )
+    assert r.status_code == 422
+    assert "這是進行中的直播，請切換到「直播」播放" in r.text
+
+
+def test_dashboard_video_url_as_live_points_at_video_mode():
+    from shared.services.video_queue_insert import InsertReason, InsertRejected
+
+    with patch(
+        "routers.video_queue_router.VideoQueueInsertService.start",
+        AsyncMock(side_effect=InsertRejected(InsertReason.IS_VIDEO)),
+    ):
+        r = _make_auth_client().post(
+            "/api/video-queue/insert", json={"url": "https://youtu.be/vid123"}
+        )
+    assert r.status_code == 422
+    assert "這是一般影片，請切換到「影片」加入" in r.text

@@ -430,3 +430,36 @@ async def test_twitch_channel_link_is_rejected_with_a_vod_hint():
         )
     assert exc_info.value.reason is AdmissionReason.INVALID_URL
     assert exc_info.value.details == {"hint": "twitch_channel"}
+
+
+@pytest.mark.asyncio
+async def test_youtube_with_no_data_is_rejected_even_without_a_length_limit():
+    """API failure / quota: live status is unknown, and a live stream let in
+    plays forever. The dashboard (no limit) used to let this through."""
+    service, queue, _ = _service()
+
+    async def nothing(_resolved: ResolvedVideo):
+        return VideoMetadata(None, None, None, False)
+
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await service.admit(
+            channel_id="ch1",
+            url="https://youtu.be/dQw4w9WgXcQ",
+            requested_by="viewer",
+            source="dashboard",
+            resolve=_resolve,
+            fetch_metadata=nothing,
+        )
+    assert exc_info.value.reason is AdmissionReason.METADATA_UNVERIFIABLE
+    assert exc_info.value.details == {"field": "youtube"}
+    queue.add.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_blocked_rejection_carries_the_rule_kind():
+    service, _, blocklist = _service()
+    blocklist.check = AsyncMock(return_value=SimpleNamespace(kind="creator"))
+    with pytest.raises(AdmissionRejected) as exc_info:
+        await _admit_youtube(service, "https://youtu.be/dQw4w9WgXcQ")
+    assert exc_info.value.reason is AdmissionReason.BLOCKED
+    assert exc_info.value.details == {"blocked_kind": "creator"}

@@ -56,10 +56,17 @@ from shared.services.video_queue_admission import (
     VideoQueueAdmissionService,
 )
 from shared.services.video_queue_insert import InsertRejected, VideoQueueInsertService
-from shared.video_queue_messages import insert_rejection_message, segment_error_message
+from shared.video_queue_messages import (
+    IS_LIVE_HINT,
+    insert_rejection_message,
+    segment_error_message,
+)
 from shared.video_sources import (
+    UNPLAYABLE_LIVE,
     VideoType,
+    fetch_hls_master_playlist,
     fetch_twitch_clip_source,
+    fetch_twitch_live_hls_source,
     fetch_twitch_live_stream,
     fetch_video_metadata,
     fetch_yt_info,
@@ -125,13 +132,13 @@ class VideoBlockedError(InvalidInputError):
 
 class VideoQueueInsertActiveError(ConflictError):
     code = "VIDEO_QUEUE.INSERT_ACTIVE"
-    user_message = "插播中，請先結束插播"
+    user_message = "直播播放中，請先結束直播"
 
 
 class LiveInsertRejectedError(InvalidInputError):
     code = "VIDEO_QUEUE.INSERT_REJECTED"
     http_status = 422
-    user_message = "無法插播這個直播"
+    user_message = "無法播放這個直播"
 
 
 class VideoQueueOverlayNotFoundError(NotFoundError):
@@ -154,7 +161,7 @@ class VideoEntryResponse(BaseModel):
 
 
 class LiveInsertResponse(BaseModel):
-    """Active live insert (直播插播); the overlay plays it instead of the queue."""
+    """Active live insert (直播播放); the overlay plays it instead of the queue."""
 
     id: int
     source_type: str  # 'twitch_live' | 'youtube_live'
@@ -206,8 +213,7 @@ class VideoQueueSettingsResponse(BaseModel):
     max_per_user: int
     max_duration_seconds: int  # global length cap for every source; 0 = no limit
     replay_cooldown_hours: int  # 0 = no limit
-    volume_percent: int
-    insert_volume_percent: int
+    volume_percent: int  # shared by queue videos and live streams
     insert_audio_only: bool
 
 
@@ -222,7 +228,6 @@ class VideoQueueSettingsUpdate(BaseModel):
     max_duration_seconds: int | None = Field(default=None, ge=0, le=86400)
     replay_cooldown_hours: int | None = Field(default=None, ge=0, le=168)
     volume_percent: int | None = Field(default=None, ge=0, le=100)
-    insert_volume_percent: int | None = Field(default=None, ge=0, le=100)
     insert_audio_only: bool | None = None
 
 
@@ -331,7 +336,9 @@ def _raise_dashboard_admission_error(error: AdmissionRejected) -> None:
         raise VideoAlreadyQueuedError() from error
     if error.reason is AdmissionReason.NOT_PLAYABLE:
         reason = str(error.details.get("unplayable_reason") or "")
-        raise VideoNotPlayableError(user_message=unplayable_message(reason)) from error
+        # A live stream pasted as a video: point at the URL box's 直播 mode.
+        message = IS_LIVE_HINT["dashboard"] if reason == UNPLAYABLE_LIVE else None
+        raise VideoNotPlayableError(user_message=message or unplayable_message(reason)) from error
     if error.reason is AdmissionReason.METADATA_UNVERIFIABLE:
         raise VideoMetadataUnverifiableError() from error
     if error.reason is AdmissionReason.INVALID_SEGMENT:
@@ -715,6 +722,49 @@ async def get_clip_source(
         raise HTTPException(status_code=500, detail="Failed to resolve clip source") from None
 
 
+_HLS_MEDIA_TYPE = "application/vnd.apple.mpegurl"
+
+
+def _playlist_response(playlist: str) -> Response:
+    # Signed and short-lived: never cache it, never leak it via Referer.
+    return Response(
+        content=playlist,
+        media_type=_HLS_MEDIA_TYPE,
+        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+    )
+
+
+@router.get("/public/{username}/insert/playlist.m3u8")
+async def get_live_insert_playlist(
+    request: Request,
+    username: str,
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> Response:
+    """Unauthenticated, like clip-source — the HLS master playlist of the
+    channel's active Twitch live stream. Relayed because Twitch's usher host
+    sends no CORS header; see fetch_hls_master_playlist. 404s → the overlay falls back to the embed player (or,
+    mid-stream, keeps retrying within its offline grace).
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _clip_source_limiter.require(client_host)
+    try:
+        channel_id = await _resolve_channel_id(username, twitch_api)
+        insert = await VideoQueueInsertRepository(pool).get_active(channel_id)
+        if insert is None or insert.source_type != "twitch_live":
+            raise HTTPException(status_code=404, detail="No Twitch live insert")
+        url = await fetch_twitch_live_hls_source(insert.source_id)
+        playlist = await fetch_hls_master_playlist(url) if url else None
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Live source unavailable")
+        return _playlist_response(playlist)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to resolve live insert playlist")
+        raise HTTPException(status_code=500, detail="Failed to resolve live source") from None
+
+
 class ReelSourceResponse(BaseModel):
     url: str
 
@@ -811,7 +861,6 @@ def _settings_response(s: VideoQueueSettings) -> VideoQueueSettingsResponse:
         max_duration_seconds=s.max_duration_seconds,
         replay_cooldown_hours=s.replay_cooldown_hours,
         volume_percent=s.volume_percent,
-        insert_volume_percent=s.insert_volume_percent,
         insert_audio_only=s.insert_audio_only,
     )
 
@@ -859,14 +908,13 @@ async def update_video_queue_settings(
             max_duration_seconds=body.max_duration_seconds,
             replay_cooldown_hours=body.replay_cooldown_hours,
             volume_percent=body.volume_percent,
-            insert_volume_percent=body.insert_volume_percent,
             insert_audio_only=body.insert_audio_only,
         )
-        # The defaults also apply to the insert playing now (the overlay reads
-        # them from the insert row, which wakes its stream).
+        # Volume and audio-only also apply to a live stream playing now (the
+        # overlay reads them from the live row, which wakes its stream).
         await VideoQueueInsertRepository(pool).update_playback(
             channel_id,
-            volume_percent=body.insert_volume_percent,
+            volume_percent=body.volume_percent,
             audio_only=body.insert_audio_only,
         )
         LOGGER.info("Channel %s updated video queue settings", channel_id)
@@ -1260,7 +1308,7 @@ async def add_video_entry(
 
 
 # ---------------------------------------------------------------------------
-# Live insert (直播插播) — broadcaster-only, see shared.services.video_queue_insert
+# Live insert (直播播放) — broadcaster-only, see shared.services.video_queue_insert
 # ---------------------------------------------------------------------------
 
 
@@ -1290,7 +1338,7 @@ async def start_live_insert(
             )
         except InsertRejected as error:
             raise LiveInsertRejectedError(
-                user_message=insert_rejection_message(error.reason)
+                user_message=insert_rejection_message(error.reason, surface="dashboard")
             ) from error
         LOGGER.info("Channel %s started a %s live insert", channel_id, insert.source_type)
         return await _build_public_state(channel_id, repo, settings_repo)

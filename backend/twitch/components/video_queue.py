@@ -57,6 +57,7 @@ from shared.video_queue_messages import (
     INSERT_NONE,
     INSERT_STOPPED,
     INSERT_USAGE,
+    IS_LIVE_HINT,
     NO_OWN_REQUEST,
     NOT_OWN_REQUEST,
     NOTHING_PLAYING,
@@ -77,6 +78,7 @@ from shared.video_queue_messages import (
     usage_message,
 )
 from shared.video_sources import (
+    UNPLAYABLE_LIVE,
     fetch_twitch_live_stream,
     fetch_video_metadata,
     fetch_yt_info,
@@ -230,7 +232,11 @@ class VideoQueueComponent(BotComponent):
                 ),
             )
         except AdmissionRejected as error:
-            await self._ctx_reply(ctx, rejection_message(error.reason, error.details))
+            message = rejection_message(error.reason, error.details)
+            # Only the broadcaster can play a live stream — tell them how.
+            if actor == "broadcaster" and error.details.get("unplayable_reason") == UNPLAYABLE_LIVE:
+                message = IS_LIVE_HINT["chat"]
+            await self._ctx_reply(ctx, message)
             return
 
         inserting = await self.vq_insert_repo.get_active(channel_id) is not None
@@ -334,7 +340,7 @@ class VideoQueueComponent(BotComponent):
 
     @vq.command(name="live")
     async def vq_live(self, ctx: commands.Context[Bot], *, args: str | None = None) -> None:
-        """!vq live <URL> 插播直播 | !vq live stop 結束插播（限實況主）"""
+        """!vq live <URL> 播放直播 | !vq live stop 結束直播（限實況主）"""
         if not ctx.chatter.broadcaster:  # type: ignore[attr-defined]
             return  # silent, like every other command a role can't use
         channel_id = ctx.channel.id

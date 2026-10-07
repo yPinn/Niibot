@@ -2,6 +2,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/api/errors'
 import {
   advanceVideoQueue,
   fetchTwitchClipSource,
@@ -10,6 +11,7 @@ import {
   reportPlaybackStarted,
 } from '@/api/videoQueue'
 import { openVideoQueueStream } from '@/api/videoQueueStream'
+import { reportClientError } from '@/lib/clientErrorReporter'
 
 import VideoQueueOverlay from './VideoQueueOverlay'
 
@@ -20,11 +22,22 @@ vi.mock('@/api/videoQueue', () => ({
   fetchTwitchClipSource: vi.fn().mockResolvedValue(null),
   getPublicVideoQueueState: vi.fn(),
   reportLiveInsertEnded: vi.fn().mockResolvedValue(undefined),
+  // null → the Twitch insert uses its embed fallback (scriptable in jsdom).
+  liveInsertPlaylistUrl: vi.fn(() => ''),
 }))
 vi.mock('@/api/videoQueueStream', () => ({ openVideoQueueStream: vi.fn() }))
+vi.mock('@/lib/clientErrorReporter', () => ({ reportClientError: vi.fn() }))
 
 const USERNAME = 'teststreamer'
 const OVERLAY_KEY = '11111111-1111-4111-8111-111111111111'
+
+/** Render and let the playback settings load — queue players wait for the
+ *  volume before mounting (VideoQueueOverlay). */
+async function renderReady(location = `#key=${OVERLAY_KEY}`) {
+  const result = renderOverlay(location)
+  await act(async () => undefined)
+  return result
+}
 
 function renderOverlay(location = `#key=${OVERLAY_KEY}`) {
   return render(
@@ -155,7 +168,7 @@ describe('VideoQueueOverlay stream renderer', () => {
         total_queued_duration: null,
       })
 
-      renderOverlay()
+      await renderReady()
       const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
       act(() => {
         options.onMessage({
@@ -210,7 +223,7 @@ describe('VideoQueueOverlay stream renderer', () => {
           total_queued_duration: null,
         })
 
-      renderOverlay()
+      await renderReady()
       const options = vi.mocked(openVideoQueueStream).mock.calls[0][0]
       act(() => {
         options.onMessage({
@@ -319,9 +332,42 @@ describe('VideoQueueOverlay player strategy selection', () => {
   // flush that microtask so the <video> / fallback iframe is in the DOM.
   const flush = () => act(async () => undefined)
 
-  it('mounts the Bilibili iframe immediately since its strategy needs no external API', () => {
-    const entry = bilibiliEntry(1, 'viewer')
+  it('waits for the playback volume before mounting, so nothing plays at a wrong gain', async () => {
+    let resolveSettings: (
+      value: Awaited<ReturnType<typeof getPublicVideoQueueState>>
+    ) => void = () => {}
+    vi.mocked(getPublicVideoQueueState).mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveSettings = resolve
+      })
+    )
     const { container } = renderOverlay()
+    pushCurrent(bilibiliEntry(1, 'viewer'))
+    expect(container.querySelector('iframe')).toBeNull()
+
+    await act(async () =>
+      resolveSettings({
+        enabled: true,
+        volume_percent: 35,
+        current: null,
+        queue: [],
+        queue_size: 0,
+        total_queued_duration: null,
+      })
+    )
+    expect(container.querySelector('iframe')).not.toBeNull()
+  })
+
+  it('falls back to the default volume when the settings cannot load', async () => {
+    vi.mocked(getPublicVideoQueueState).mockRejectedValueOnce(new Error('offline'))
+    const { container } = await renderReady()
+    pushCurrent(bilibiliEntry(1, 'viewer'))
+    expect(container.querySelector('iframe')).not.toBeNull()
+  })
+
+  it('mounts the Bilibili iframe immediately since its strategy needs no external API', async () => {
+    const entry = bilibiliEntry(1, 'viewer')
+    const { container } = await renderReady()
     pushCurrent(entry)
 
     const iframe = container.querySelector('iframe')
@@ -408,14 +454,14 @@ describe('VideoQueueOverlay player strategy selection', () => {
     expect(container.querySelector('iframe')?.getAttribute('src')).toContain('muted=true')
   })
 
-  it('mutes the Bilibili preview with an explicit muted=1 param', () => {
-    const { container } = renderOverlay(`?preview=1#key=${OVERLAY_KEY}`)
+  it('mutes the Bilibili preview with an explicit muted=1 param', async () => {
+    const { container } = await renderReady(`?preview=1#key=${OVERLAY_KEY}`)
     pushCurrent(bilibiliEntry(1, 'viewer'))
     expect(container.querySelector('iframe')?.getAttribute('src')).toContain('muted=1')
   })
 
-  it('follows authoritative current-item stream changes without mutating the queue', () => {
-    const { container } = renderOverlay(`?preview=1#key=${OVERLAY_KEY}`)
+  it('follows authoritative current-item stream changes without mutating the queue', async () => {
+    const { container } = await renderReady(`?preview=1#key=${OVERLAY_KEY}`)
     const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
 
     act(() => {
@@ -467,25 +513,19 @@ describe('VideoQueueOverlay player strategy selection', () => {
         queue_size: 0,
         total_queued_duration: null,
       })
-      renderOverlay()
+      await renderReady()
       pushCurrent(youtubeEntry(44, 'viewer'))
 
       await act(async () => vi.advanceTimersByTimeAsync(15_000 + 600))
       await act(async () => Promise.resolve())
 
       expect(advanceVideoQueue).toHaveBeenCalledWith(USERNAME, 44, OVERLAY_KEY, 'startup_timeout')
+      expect(reportClientError).toHaveBeenCalledWith(
+        expect.objectContaining({ errorCode: 'VIDEO_QUEUE.STARTUP_TIMEOUT' })
+      )
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('never mounts a Twitch VOD while twitchReady is false (its strategy requires the embed API)', () => {
-    const { container } = renderOverlay()
-    pushCurrent(twitchVodEntry(1234, 'viewer'))
-    // jsdom never runs the injected embed/v1.js, so window.Twitch stays
-    // undefined and the effect must bail before `new Twitch.Player(...)`.
-    expect(container.querySelector('iframe')).toBeNull()
-    expect(container.querySelector('video')).toBeNull()
   })
 
   it('advances via the fallback ceiling when an entry has no duration', async () => {
@@ -586,6 +626,10 @@ describe('VideoQueueOverlay live insert', () => {
     fire = event => listeners[event]?.()
   })
 
+  async function settle() {
+    for (let i = 0; i < 10; i++) await act(async () => undefined)
+  }
+
   function push(message: Record<string, unknown>) {
     const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
     act(() => {
@@ -603,17 +647,19 @@ describe('VideoQueueOverlay live insert', () => {
   it('plays the insert instead of the queue and never kickstarts the queue', async () => {
     const { container } = renderOverlay()
     push({ insert, queue: [bilibiliEntry(1, 'viewer')], queue_size: 1 })
-    await act(async () => undefined)
+    await settle()
 
-    expect(screen.getByText('LIVE · LofiStreamer')).toBeInTheDocument()
+    // Title bar: the channel on the left, a red-dot LIVE where the countdown goes.
+    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
     expect(container.querySelector('iframe[src*="bilibili"]')).toBeNull()
     expect(advanceVideoQueue).not.toHaveBeenCalled()
   })
 
-  it('reports the end once and hides the insert right away', async () => {
-    renderOverlay()
+  it('reports the end once, then plays the exit animation before hiding', async () => {
+    const { container } = renderOverlay()
     push({ insert })
-    await act(async () => undefined)
+    await settle()
 
     act(() => {
       fire('ended')
@@ -621,21 +667,267 @@ describe('VideoQueueOverlay live insert', () => {
     })
     expect(reportLiveInsertEnded).toHaveBeenCalledTimes(1)
     expect(reportLiveInsertEnded).toHaveBeenCalledWith(USERNAME, 5, 'ended', OVERLAY_KEY)
-    expect(screen.queryByText('LIVE · LofiStreamer')).toBeNull()
+    // Still on screen, shrinking out with its last title…
+    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
+    expect(container.querySelector('[class*="overlayExiting"]')).not.toBeNull()
+    // …and gone once the exit animation has run.
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 700))
+    })
+    expect(screen.queryByText('LofiStreamer')).toBeNull()
+  })
+
+  it('a stream-driven removal also exits smoothly instead of vanishing', async () => {
+    const { container } = renderOverlay()
+    push({ current: bilibiliEntry(1, 'viewer'), queue: [], queue_size: 0 } as never)
+    await settle()
+    expect(screen.getByText('@ viewer')).toBeInTheDocument()
+
+    push({ current: null, queue: [], queue_size: 0 })
+    expect(screen.getByText('@ viewer')).toBeInTheDocument()
+    expect(container.querySelector('[class*="overlayExiting"]')).not.toBeNull()
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 700))
+    })
+    expect(screen.queryByText('@ viewer')).toBeNull()
   })
 
   it('keeps the dashboard preview read-only', async () => {
     renderOverlay(`?preview=1#key=${OVERLAY_KEY}`)
     push({ insert })
-    await act(async () => undefined)
+    await settle()
     act(() => fire('ended'))
     expect(reportLiveInsertEnded).not.toHaveBeenCalled()
   })
 
-  it('hides the picture of an audio-only insert in OBS', async () => {
-    renderOverlay()
+  it('audio-only leaves and returns with the same exit / entrance animation', async () => {
+    const { container } = renderOverlay()
     push({ insert: { ...insert, audio_only: true } })
-    await act(async () => undefined)
-    expect(screen.getByTestId('live-insert')).toHaveStyle({ opacity: '0' })
+    await settle()
+    // Still mounted (the audio keeps playing), just animated out.
+    expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
+    expect(container.querySelector('[class*="overlayExiting"]')).not.toBeNull()
+
+    push({ insert: { ...insert, audio_only: false } })
+    await settle()
+    expect(container.querySelector('[class*="overlayExiting"]')).toBeNull()
+  })
+
+  it('keeps an audio-only preview faintly visible instead', async () => {
+    renderOverlay(`?preview=1#key=${OVERLAY_KEY}`)
+    push({ insert: { ...insert, audio_only: true } })
+    await settle()
+    expect(screen.getByTestId('live-insert')).toHaveStyle({ opacity: '0.35' })
+  })
+})
+
+describe('VideoQueueOverlay live insert → queue handover', () => {
+  const entry = bilibiliEntry(9, 'viewer')
+  const insert = {
+    id: 5,
+    source_type: 'twitch_live' as const,
+    source_id: 'x',
+    title: 't',
+    creator_name: 'X',
+    thumbnail_url: null,
+    volume_percent: 30,
+    audio_only: false,
+    started_at: null,
+  }
+
+  beforeEach(() => {
+    vi.mocked(openVideoQueueStream).mockReset()
+    vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(advanceVideoQueue).mockReset()
+    vi.mocked(advanceVideoQueue).mockResolvedValue({
+      enabled: true,
+      volume_percent: 50,
+      current: { ...entry, started_at: new Date().toISOString() },
+      queue: [],
+      queue_size: 0,
+      total_queued_duration: null,
+    })
+    vi.mocked(getPublicVideoQueueState).mockResolvedValue({
+      enabled: true,
+      volume_percent: 50,
+      current: null,
+      queue: [],
+      queue_size: 0,
+      total_queued_duration: null,
+    })
+  })
+
+  async function setupStream() {
+    await renderReady()
+    const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
+    return (message: Record<string, unknown>) =>
+      act(() => {
+        options.onMessage({
+          type: 'update',
+          current: null,
+          queue: [],
+          queue_size: 0,
+          total_queued_duration: null,
+          ...message,
+        } as never)
+      })
+  }
+
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await act(async () => undefined)
+  }
+
+  it('never kickstarts during the insert, then resumes once it is stopped', async () => {
+    const push = await setupStream()
+    push({ insert, queue: [entry], queue_size: 1 })
+    await settle()
+    expect(advanceVideoQueue).not.toHaveBeenCalled()
+    push({ insert: null, queue: [entry], queue_size: 1 })
+    await settle()
+    expect(advanceVideoQueue).toHaveBeenCalledWith(USERNAME, null, OVERLAY_KEY)
+  })
+
+  it('retries the kickstart when the server only drops the insert after refusing one', async () => {
+    const listeners: Record<string, () => void> = {}
+    const player = {
+      play: vi.fn(),
+      setVolume: vi.fn(),
+      setMuted: vi.fn(),
+      destroy: vi.fn(),
+      addEventListener: (event: string, cb: () => void) => {
+        listeners[event] = cb
+      },
+    }
+    ;(window as unknown as { Twitch: unknown }).Twitch = {
+      Player: Object.assign(
+        vi.fn(function () {
+          return player
+        }),
+        { ENDED: 'ended', PLAYING: 'playing', PAUSE: 'pause', OFFLINE: 'offline', ONLINE: 'online' }
+      ),
+    }
+    // The overlay's kickstart lands before its end report deletes the insert.
+    vi.mocked(advanceVideoQueue).mockResolvedValueOnce({
+      enabled: true,
+      volume_percent: 50,
+      current: null,
+      queue: [entry],
+      queue_size: 1,
+      total_queued_duration: null,
+      insert,
+    })
+    const push = await setupStream()
+    push({ insert, queue: [entry], queue_size: 1 })
+    await settle()
+    act(() => listeners.ended?.())
+    await settle()
+    expect(advanceVideoQueue).toHaveBeenCalledTimes(1)
+
+    push({ insert: null, queue: [entry], queue_size: 1 })
+    await settle()
+    expect(advanceVideoQueue).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('VideoQueueOverlay rotated overlay key', () => {
+  beforeEach(() => {
+    vi.mocked(openVideoQueueStream).mockReset()
+    vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(advanceVideoQueue).mockReset()
+    vi.mocked(getPublicVideoQueueState).mockResolvedValue({
+      enabled: true,
+      volume_percent: 50,
+      current: null,
+      queue: [],
+      queue_size: 0,
+      total_queued_duration: null,
+    })
+  })
+
+  it('stops retrying and tells the streamer when the key was rotated away', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(advanceVideoQueue).mockRejectedValue(
+        new ApiError({ message: 'x', status: 404, code: 'VIDEO_QUEUE.OVERLAY_NOT_FOUND' })
+      )
+      renderOverlay()
+      await act(async () => undefined)
+      const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
+      act(() => {
+        options.onMessage({
+          type: 'snapshot',
+          current: null,
+          queue: [bilibiliEntry(1, 'viewer')],
+          queue_size: 1,
+          total_queued_duration: 200,
+        })
+      })
+      await act(async () => vi.advanceTimersByTimeAsync(20_000))
+      expect(advanceVideoQueue).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('OBS 網址已失效，請到後台重新加入畫面')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('VideoQueueOverlay Twitch VOD mount', () => {
+  beforeEach(() => {
+    vi.mocked(openVideoQueueStream).mockReset()
+    vi.mocked(openVideoQueueStream).mockImplementation(() => new Promise(() => undefined))
+    vi.mocked(advanceVideoQueue).mockReset()
+    vi.mocked(getPublicVideoQueueState).mockResolvedValue({
+      enabled: true,
+      volume_percent: 50,
+      current: null,
+      queue: [],
+      queue_size: 0,
+      total_queued_duration: null,
+    })
+  })
+
+  it('keeps the VOD player it just mounted (no late re-render tears it down)', async () => {
+    const player = {
+      play: vi.fn(),
+      pause: vi.fn(),
+      seek: vi.fn(),
+      setMuted: vi.fn(),
+      setVolume: vi.fn(),
+      getCurrentTime: vi.fn(() => 0),
+      getDuration: vi.fn(() => 0),
+      getEnded: vi.fn(() => false),
+      getVideo: vi.fn(() => 'v1234'),
+      addEventListener: vi.fn(),
+      destroy: vi.fn(),
+    }
+    ;(window as unknown as { Twitch: unknown }).Twitch = {
+      Player: Object.assign(
+        vi.fn(function () {
+          return player
+        }),
+        { ENDED: 'ended', PLAYING: 'playing', PAUSE: 'pause' }
+      ),
+    }
+    try {
+      await renderReady()
+      const options = vi.mocked(openVideoQueueStream).mock.calls.at(-1)![0]
+      act(() => {
+        options.onMessage({
+          type: 'snapshot',
+          current: twitchVodEntry(1234, 'viewer', { started_at: new Date().toISOString() }),
+          queue: [],
+          queue_size: 0,
+          total_queued_duration: null,
+        })
+      })
+      // No playlist in this test → the embed fallback mounts, then must stay.
+      for (let i = 0; i < 20; i++) await act(async () => undefined)
+      const Player = (window as unknown as { Twitch: { Player: ReturnType<typeof vi.fn> } }).Twitch
+        .Player
+      expect(Player).toHaveBeenCalledTimes(1)
+      expect(player.destroy).not.toHaveBeenCalled()
+    } finally {
+      delete (window as unknown as { Twitch?: unknown }).Twitch
+    }
   })
 })

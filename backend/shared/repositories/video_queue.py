@@ -74,7 +74,7 @@ _SETTINGS_COLUMNS = (
     "max_duration_redemption, max_queue_size, "
     "min_view_count, user_cooldown_seconds, max_per_user, "
     "max_duration_seconds, replay_cooldown_hours, volume_percent, "
-    "insert_volume_percent, insert_audio_only, "
+    "insert_audio_only, "
     "created_at, updated_at"
 )
 
@@ -977,7 +977,7 @@ class VideoQueueRepository:
 
 
 class VideoQueueInsertRepository:
-    """Live insert (直播插播) state — one active insert per channel (migration 155)."""
+    """Live insert (直播播放) state — one active insert per channel (migration 155)."""
 
     def __init__(self, pool: asyncpg.Pool) -> None:
         self.pool = pool
@@ -1048,16 +1048,37 @@ class VideoQueueInsertRepository:
 
         Expired rows (past INSERT_MAX_HOURS) are removed too but report False:
         nothing was actually playing.
+
+        The queue resumes in the same transaction: the next queued entry is
+        promoted here rather than left to an overlay kickstart, which could
+        reach the server before this delete and be refused (an insert still
+        active) — leaving the overlay waiting on a queue nobody restarts.
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "DELETE FROM video_queue_inserts "
-                "WHERE channel_id = $1 AND ($2::bigint IS NULL OR id = $2) "
-                "RETURNING started_at > NOW() - make_interval(hours => $3) AS was_active",
-                channel_id,
-                expected_id,
-                INSERT_MAX_HOURS,
-            )
+            async with conn.transaction():
+                row = await conn.fetchrow(
+                    "DELETE FROM video_queue_inserts "
+                    "WHERE channel_id = $1 AND ($2::bigint IS NULL OR id = $2) "
+                    "RETURNING started_at > NOW() - make_interval(hours => $3) AS was_active",
+                    channel_id,
+                    expected_id,
+                    INSERT_MAX_HOURS,
+                )
+                if row is not None:
+                    await conn.execute(
+                        "UPDATE video_queue "
+                        "SET status = 'playing', started_at = NOW() "
+                        "WHERE id = ("
+                        "    SELECT id FROM video_queue "
+                        "    WHERE channel_id = $1 AND status = 'queued' "
+                        "    AND NOT EXISTS ("
+                        "        SELECT 1 FROM video_queue "
+                        "        WHERE channel_id = $1 AND status = 'playing'"
+                        "    ) "
+                        "    ORDER BY priority DESC, created_at ASC LIMIT 1"
+                        ")",
+                        channel_id,
+                    )
         return bool(row and row["was_active"])
 
     async def update_playback(
@@ -1133,7 +1154,6 @@ class VideoQueueSettingsRepository:
         max_duration_seconds: int | None = None,
         replay_cooldown_hours: int | None = None,
         volume_percent: int | None = None,
-        insert_volume_percent: int | None = None,
         insert_audio_only: bool | None = None,
     ) -> VideoQueueSettings:
         """Update settings. Only provided keyword args are applied."""
@@ -1153,8 +1173,7 @@ class VideoQueueSettingsRepository:
                     max_duration_seconds     = COALESCE($9, video_queue_settings.max_duration_seconds),
                     replay_cooldown_hours    = COALESCE($10, video_queue_settings.replay_cooldown_hours),
                     volume_percent           = COALESCE($11, video_queue_settings.volume_percent),
-                    insert_volume_percent    = COALESCE($12, video_queue_settings.insert_volume_percent),
-                    insert_audio_only        = COALESCE($13, video_queue_settings.insert_audio_only)
+                    insert_audio_only        = COALESCE($12, video_queue_settings.insert_audio_only)
                 RETURNING {_SETTINGS_COLUMNS}
                 """,
                 channel_id,
@@ -1168,7 +1187,6 @@ class VideoQueueSettingsRepository:
                 max_duration_seconds,
                 replay_cooldown_hours,
                 volume_percent,
-                insert_volume_percent,
                 insert_audio_only,
             )
             result = VideoQueueSettings(**dict(row))

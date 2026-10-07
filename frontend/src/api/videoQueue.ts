@@ -20,7 +20,7 @@ export interface VideoQueueEntry {
   started_at: string | null
 }
 
-/** Active live insert (直播插播): an ongoing live stream the broadcaster plays
+/** Active live insert (直播播放): an ongoing live stream the broadcaster plays
  *  open-ended instead of the queue (background music, watch-along). */
 export interface VideoQueueLiveInsert {
   id: number
@@ -98,7 +98,6 @@ export interface VideoQueueSettings {
   max_duration_seconds: number
   replay_cooldown_hours: number
   volume_percent: number
-  insert_volume_percent: number
   insert_audio_only: boolean
 }
 
@@ -124,7 +123,6 @@ export interface VideoQueueSettingsUpdate {
   max_duration_seconds?: number
   replay_cooldown_hours?: number
   volume_percent?: number
-  insert_volume_percent?: number
   insert_audio_only?: boolean
 }
 
@@ -349,7 +347,7 @@ export async function getVideoQueueBlocklist(): Promise<BlocklistEntry[]> {
   return response.json()
 }
 
-// ---- Live insert (直播插播) ----
+// ---- Live insert (直播播放) ----
 
 export async function startLiveInsert(url: string): Promise<PublicVideoQueueState> {
   const response = await apiFetch(API_ENDPOINTS.videoQueue.insert, {
@@ -358,7 +356,7 @@ export async function startLiveInsert(url: string): Promise<PublicVideoQueueStat
     credentials: 'include',
     body: JSON.stringify({ url }),
   })
-  if (!response.ok) throw await parseApiError(response, '插播失敗')
+  if (!response.ok) throw await parseApiError(response, '播放直播失敗')
   return response.json()
 }
 
@@ -367,8 +365,15 @@ export async function stopLiveInsert(): Promise<PublicVideoQueueState> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!response.ok) throw await parseApiError(response, '結束插播失敗')
+  if (!response.ok) throw await parseApiError(response, '結束直播失敗')
   return response.json()
+}
+
+/** The HLS master playlist of the channel's active Twitch live stream, relayed
+ *  by the API: Twitch's usher host sends no CORS header, while the variant
+ *  playlists and segments it lists (live hosts) do. */
+export function liveInsertPlaylistUrl(username: string): string {
+  return API_ENDPOINTS.videoQueue.insertPlaylist(username)
 }
 
 /** Overlay: the live stream ended. Conditional on `insertId`; send once, never retry in a loop. */

@@ -379,7 +379,7 @@ export default function GameQueue() {
                   </span>
                 )}
               </div>
-              <OverlayUrlBlock url={overlayUrl} />
+              <OverlayUrlBlock url={overlayUrl} obsSource={{ name: 'Niibot Game Queue' }} />
             </CardContent>
           </Card>
         </div>

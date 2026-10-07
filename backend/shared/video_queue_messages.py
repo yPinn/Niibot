@@ -14,15 +14,20 @@ would get no reply at all.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Literal
 
 from shared.models.video_queue import VideoQueueEntry, VideoQueueInsert, VideoQueueSettings
 from shared.services.video_queue_admission import AdmissionReason
 from shared.services.video_queue_insert import InsertReason
 from shared.video_segments import MIN_SEGMENT_SECONDS, SegmentErrorCode
 from shared.video_sources import (
+    UNPLAYABLE_AGE_RESTRICTED,
     UNPLAYABLE_INVALID_PAGE,
     UNPLAYABLE_LIVE,
+    UNPLAYABLE_NOT_EMBEDDABLE,
     UNPLAYABLE_NOT_VIDEO,
+    UNPLAYABLE_PRIVATE,
+    UNPLAYABLE_REMOVED,
     build_watch_url,
 )
 
@@ -41,14 +46,26 @@ PAUSED = "目前暫停點播"
 
 _SORRY = "抱歉，這部影片無法點播"
 
-# Unplayable reasons the requester can act on keep their own line; the rest
-# (private, age-restricted, not embeddable, removed, …) collapse into one —
-# the viewer can't fix them, so the cause is noise. The dashboard keeps the
-# detailed wording from shared.video_sources.unplayable_message.
+# Why a video can't play, said plainly: a viewer who spent points deserves to
+# know it's the video (or the streamer's choice), not a glitch worth retrying.
+# Anything unrecognised stays the generic _SORRY.
 _UNPLAYABLE: dict[str, str] = {
     UNPLAYABLE_INVALID_PAGE: "找不到指定的分P，請確認連結",
     UNPLAYABLE_NOT_VIDEO: "這則貼文不是影片，請確認連結",
     UNPLAYABLE_LIVE: "直播進行中無法點播，結束後可點播重播",
+    UNPLAYABLE_NOT_EMBEDDABLE: "影片擁有者不允許外部播放",
+    UNPLAYABLE_AGE_RESTRICTED: "這部影片有年齡限制，無法在實況中播放",
+    UNPLAYABLE_PRIVATE: "這是私人影片，無法播放",
+    UNPLAYABLE_REMOVED: "這部影片已被移除或無法觀看",
+}
+
+# Blocklist matches name the rule's kind, never its value (the keyword itself
+# stays private). A blocked *requester* is deliberately not told — it invites
+# arguments and alt accounts — and gets the generic _SORRY.
+_BLOCKED: dict[str, str] = {
+    "video": "這部影片已被實況主設為不開放點播",
+    "creator": "這位創作者的影片不開放點播",
+    "keyword": "影片標題含有不開放點播的關鍵字",
 }
 
 
@@ -134,9 +151,7 @@ def rejection_message(reason: AdmissionReason, details: Mapping[str, int | str])
     if reason is AdmissionReason.NOT_PLAYABLE:
         return _UNPLAYABLE.get(str(details.get("unplayable_reason") or ""), _SORRY)
     if reason is AdmissionReason.BLOCKED:
-        # Deliberately neutral: never reveal which rule matched (e.g. that the
-        # requester themselves is blocked).
-        return _SORRY
+        return _BLOCKED.get(str(details.get("blocked_kind") or ""), _SORRY)
     # METADATA_UNVERIFIABLE, QUEUE_CHANGED: transient, retrying is the fix.
     return UNAVAILABLE
 
@@ -147,7 +162,7 @@ def accepted_message(
     place = f"，第 {position} 首" if position else ""
     # A live insert pauses the queue for an open-ended time: say so, or a
     # viewer who just paid points thinks the request vanished.
-    paused = "（目前插播中，結束後播放）" if inserting else ""
+    paused = "（直播結束後播放）" if inserting else ""
     return _fit(f"「{_clean_title(title, video_id)}」已加入待播{place}{paused} SeemsGood")
 
 
@@ -167,7 +182,7 @@ def queue_list_message(
         return QUEUE_EMPTY
     parts: list[str] = []
     if insert is not None:
-        parts.append(f"插播中：{_insert_name(insert, LIST_TITLE_MAX)}")
+        parts.append(f"直播中：{_insert_name(insert, LIST_TITLE_MAX)}")
     if current is not None:
         parts.append(f"▶ {_entry_title(current, LIST_TITLE_MAX)}")
     if queued:
@@ -183,19 +198,19 @@ def queue_list_message(
 
 
 # ---------------------------------------------------------------------------
-# Live insert (直播插播) — broadcaster-only, see shared.services.video_queue_insert
+# Live insert (直播播放) — broadcaster-only, see shared.services.video_queue_insert
 # ---------------------------------------------------------------------------
 
-INSERT_NONE = "目前沒有插播"
-INSERT_STOPPED = "已結束插播，恢復播放佇列"
+INSERT_NONE = "目前沒有播放直播"
+INSERT_STOPPED = "已結束直播，恢復播放佇列"
 INSERT_USAGE = "用法：!vq live <Twitch 頻道或 YouTube 直播網址> | !vq live stop"
 
 _INSERT_REJECTIONS: dict[InsertReason, str] = {
-    InsertReason.INVALID_URL: "插播只支援 Twitch 頻道或 YouTube 直播網址",
+    InsertReason.INVALID_URL: "直播只支援 Twitch 頻道或 YouTube 直播網址",
     InsertReason.NOT_LIVE: "目前沒有進行中的直播",
-    InsertReason.OWN_CHANNEL: "不能插播自己的直播",
+    InsertReason.OWN_CHANNEL: "不能播放自己的直播",
     InsertReason.NOT_PLAYABLE: "這個直播不開放外部播放",
-    InsertReason.UNVERIFIABLE: UNAVAILABLE,
+    InsertReason.UNVERIFIABLE: "暫時無法播放這個直播，請稍後再試",
 }
 
 
@@ -209,17 +224,33 @@ def _insert_name(insert: VideoQueueInsert, limit: int = TITLE_MAX) -> str:
     return _clean_title(insert.creator_name, insert.source_id, limit)
 
 
-def insert_rejection_message(reason: InsertReason) -> str:
+# Where a wrong-kind URL should go instead: chat names the command, the
+# dashboard names the 影片 / 直播 mode of its single URL box.
+IS_LIVE_HINT = {
+    "chat": "這是進行中的直播，請用 !vq live <網址> 播放",
+    "dashboard": "這是進行中的直播，請切換到「直播」播放",
+}
+_IS_VIDEO_HINT = {
+    "chat": "這是一般影片，請用 !vq <網址> 點播",
+    "dashboard": "這是一般影片，請切換到「影片」加入",
+}
+
+
+def insert_rejection_message(
+    reason: InsertReason, *, surface: Literal["chat", "dashboard"] = "chat"
+) -> str:
+    if reason is InsertReason.IS_VIDEO:
+        return _IS_VIDEO_HINT[surface]
     return _INSERT_REJECTIONS.get(reason, UNAVAILABLE)
 
 
 def insert_started_message(insert: VideoQueueInsert) -> str:
-    return _fit(f"開始插播 {_insert_name(insert)} 的直播，佇列暫停")
+    return _fit(f"開始播放 {_insert_name(insert)} 的直播，佇列暫停")
 
 
 def insert_now_playing_message(insert: VideoQueueInsert) -> str:
     title = f"「{_clean_title(insert.title, '', TITLE_MAX)}」" if insert.title else ""
-    return _fit(f"插播中：{_insert_name(insert)}{title} {insert_watch_url(insert)}")
+    return _fit(f"直播中：{_insert_name(insert)}{title} {insert_watch_url(insert)}")
 
 
 def removed_message(entry: VideoQueueEntry) -> str:

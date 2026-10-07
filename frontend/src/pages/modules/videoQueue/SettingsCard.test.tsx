@@ -31,7 +31,7 @@ describe('SettingsCard information architecture', () => {
     expect(screen.getByRole('tab', { name: '加入來源' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: '通用規則' })).toBeInTheDocument()
 
-    const points = screen.getByRole('heading', { name: '頻道點數' })
+    const points = screen.getByRole('heading', { name: '忠誠點數' })
     const donate = screen.getByRole('heading', { name: 'Donate' })
     expect(points.compareDocumentPosition(donate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('影片最長')).not.toBeInTheDocument()
@@ -53,7 +53,7 @@ describe('SettingsCard information architecture', () => {
     await user.click(screen.getByRole('tab', { name: '通用規則' }))
 
     expect(screen.getByText('影片最長')).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '頻道點數' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '忠誠點數' })).not.toBeInTheDocument()
     expect(container.querySelectorAll('[data-slot="card"]')).toHaveLength(1)
   })
 

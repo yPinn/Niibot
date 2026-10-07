@@ -125,7 +125,7 @@ export function QueueTable({
                           <Icon icon="fa-solid fa-arrow-up-to-line" className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">排到最前面</TooltipContent>
+                      <TooltipContent side="left">排到下一首</TooltipContent>
                     </Tooltip>
                   )}
                   {onPlayNow && (
@@ -135,7 +135,7 @@ export function QueueTable({
                           <Icon icon="fa-solid fa-play" className="size-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent side="left">馬上播這部</TooltipContent>
+                      <TooltipContent side="left">立即播放</TooltipContent>
                     </Tooltip>
                   )}
                   {onRemove && (

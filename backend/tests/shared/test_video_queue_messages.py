@@ -56,13 +56,13 @@ EXPECTED_REJECTIONS = {
     AdmissionReason.QUEUE_FULL: "待播已滿，請稍後再試",
     AdmissionReason.USER_LIMIT: "每人最多點 3 首，請等播完再點",
     AdmissionReason.USER_COOLDOWN: "請於 1:30 後再點播",
-    AdmissionReason.NOT_PLAYABLE: "抱歉，這部影片無法點播",
+    AdmissionReason.NOT_PLAYABLE: "這是私人影片，無法播放",
     AdmissionReason.INVALID_SEGMENT: "時間格式錯誤，例：1:30-4:00",
     AdmissionReason.METADATA_UNVERIFIABLE: "暫時無法點播，請稍後再試",
     AdmissionReason.MIN_VIEWS: "影片觀看數需達 5,000 以上",
     AdmissionReason.TOO_LONG: "影片長度請在 10 分鐘內",
     AdmissionReason.REPLAY_COOLDOWN: "這部影片 6 小時內播過了，請換一部",
-    AdmissionReason.BLOCKED: "抱歉，這部影片無法點播",
+    AdmissionReason.BLOCKED: "抱歉，這部影片無法點播",  # no kind → generic
     AdmissionReason.QUEUE_CHANGED: "暫時無法點播，請稍後再試",
 }
 
@@ -90,8 +90,11 @@ def test_rejections_carry_no_emote_or_counts_viewers_dont_need():
         ("invalid_page", "找不到指定的分P，請確認連結"),
         ("not_video", "這則貼文不是影片，請確認連結"),
         ("live", "直播進行中無法點播，結束後可點播重播"),
-        ("age_restricted", "抱歉，這部影片無法點播"),
-        ("not_embeddable", "抱歉，這部影片無法點播"),
+        ("age_restricted", "這部影片有年齡限制，無法在實況中播放"),
+        ("not_embeddable", "影片擁有者不允許外部播放"),
+        ("private", "這是私人影片，無法播放"),
+        ("removed", "這部影片已被移除或無法觀看"),
+        ("something_new", "抱歉，這部影片無法點播"),
         ("", "抱歉，這部影片無法點播"),
     ],
 )
@@ -253,16 +256,45 @@ def test_insert_copy():
         title="lofi radio",
         creator_name="Lofi Girl",
     )
-    assert insert_started_message(insert) == "開始插播 Lofi Girl 的直播，佇列暫停"
+    assert insert_started_message(insert) == "開始播放 Lofi Girl 的直播，佇列暫停"
     assert insert_now_playing_message(insert) == (
-        "插播中：Lofi Girl「lofi radio」 https://youtu.be/jfKfPfyJRdk"
+        "直播中：Lofi Girl「lofi radio」 https://youtu.be/jfKfPfyJRdk"
     )
-    assert queue_list_message(None, [], insert) == "插播中：Lofi Girl"
+    assert queue_list_message(None, [], insert) == "直播中：Lofi Girl"
     assert accepted_message("Song", "vid", 2, inserting=True) == (
-        "「Song」已加入待播，第 2 首（目前插播中，結束後播放） SeemsGood"
+        "「Song」已加入待播，第 2 首（直播結束後播放） SeemsGood"
     )
     assert {insert_rejection_message(reason) for reason in InsertReason} >= {
-        "插播只支援 Twitch 頻道或 YouTube 直播網址",
+        "直播只支援 Twitch 頻道或 YouTube 直播網址",
         "目前沒有進行中的直播",
-        "不能插播自己的直播",
+        "不能播放自己的直播",
+    }
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected"),
+    [
+        ("video", "這部影片已被實況主設為不開放點播"),
+        ("creator", "這位創作者的影片不開放點播"),
+        ("keyword", "影片標題含有不開放點播的關鍵字"),
+        # A blocked requester is deliberately not told.
+        ("user", "抱歉，這部影片無法點播"),
+    ],
+)
+def test_blocked_names_the_rule_kind_but_never_a_blocked_requester(kind, expected):
+    assert rejection_message(AdmissionReason.BLOCKED, {"blocked_kind": kind}) == expected
+
+
+def test_wrong_kind_hints_name_the_right_entry_point():
+    from shared.services.video_queue_insert import InsertReason
+    from shared.video_queue_messages import IS_LIVE_HINT, insert_rejection_message
+
+    assert insert_rejection_message(InsertReason.IS_VIDEO) == "這是一般影片，請用 !vq <網址> 點播"
+    assert (
+        insert_rejection_message(InsertReason.IS_VIDEO, surface="dashboard")
+        == "這是一般影片，請切換到「影片」加入"
+    )
+    assert IS_LIVE_HINT == {
+        "chat": "這是進行中的直播，請用 !vq live <網址> 播放",
+        "dashboard": "這是進行中的直播，請切換到「直播」播放",
     }

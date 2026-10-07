@@ -185,18 +185,24 @@ def test_unknown_length_keeps_what_can_be_known():
 
 
 class TestTwitchVodWindow:
-    def test_window_is_capped_from_the_start_point(self):
-        # 2h VOD, start 1h50m in → 10 min remains, capped at the 600s window.
-        assert plan_segment("twitch_vod", 7200, url_start=6600).duration_seconds == 600
+    def test_no_limit_plays_to_the_end_like_any_video(self):
+        # 2h VOD from 1h01m01s, no length limit → the remaining 58m59s.
+        assert plan_segment("twitch_vod", 7200, url_start=3661).duration_seconds == 3539
 
-    def test_shorter_remainder_wins_over_the_cap(self):
-        assert plan_segment("twitch_vod", 7200, url_start=7100).duration_seconds == 100
+    def test_a_limit_plays_a_limit_sized_window_from_the_start_point(self):
+        # Instead of rejecting a VOD link that points into hours of footage.
+        assert plan_segment("twitch_vod", 7200, url_start=6600, window_cap=600) == PlaybackSegment(
+            6600, 600, trimmed=True
+        )
 
-    def test_unknown_length_falls_back_to_the_window(self):
-        assert plan_segment("twitch_vod", None) == PlaybackSegment(0, 600, trimmed=False)
+    def test_shorter_remainder_wins_over_the_limit(self):
+        assert (
+            plan_segment("twitch_vod", 7200, url_start=7100, window_cap=600).duration_seconds == 100
+        )
 
-    def test_window_narrows_to_the_length_limit(self):
-        assert plan_segment("twitch_vod", 7200, window_cap=300).duration_seconds == 300
+    def test_unknown_length(self):
+        assert plan_segment("twitch_vod", None, window_cap=300).duration_seconds == 300
+        assert plan_segment("twitch_vod", None).duration_seconds is None
 
     def test_typed_end_replaces_the_window(self):
         assert plan_segment("twitch_vod", 7200, requested=TimeRange(60, 1260)) == PlaybackSegment(

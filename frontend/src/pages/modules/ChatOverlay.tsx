@@ -110,10 +110,7 @@ export default function ChatOverlayModule() {
 
   return (
     <PageMain>
-      <PageHeader
-        title="Chat Overlay"
-        description="自訂 Twitch 聊天室樣式，貼入 OBS Browser Source"
-      >
+      <PageHeader title="Chat Overlay" description="自訂 Twitch 聊天室樣式，加入 OBS 瀏覽器來源">
         <Button
           variant="ghost"
           size="icon"
@@ -184,7 +181,12 @@ export default function ChatOverlayModule() {
                   <ChatPreview s={settings} />
                 </div>
               </div>
-              {twitchUrl && <OverlayUrlBlock url={twitchUrl} />}
+              {twitchUrl && (
+                <OverlayUrlBlock
+                  url={twitchUrl}
+                  obsSource={{ name: 'Niibot Chat Overlay', width: 360, height: 640 }}
+                />
+              )}
             </>
           ) : (
             <div className="h-[462px] overflow-auto rounded-lg border bg-muted p-4">

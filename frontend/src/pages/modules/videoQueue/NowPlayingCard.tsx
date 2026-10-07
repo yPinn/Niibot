@@ -12,6 +12,9 @@ import {
   CardTitle,
   Input,
   Progress,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from '@/components/ui'
 
 import { PlatformBadge, SourceBadge } from './QueueTable'
@@ -48,57 +51,80 @@ function Thumb({ entry, className }: { entry: VideoQueueEntry; className?: strin
 export interface PlayComposer {
   url: string
   onUrlChange: (value: string) => void
+  /** 影片 mode: add the URL to the queue. */
   onAdd: () => void
-  onInsert: () => void
-  busy: 'add' | 'insert' | null
+  /** 直播 mode: play the live stream now; the queue waits. */
+  onPlayLive: () => void
+  busy: 'add' | 'live' | null
 }
 
-function ComposerBar({ composer, inserting }: { composer: PlayComposer; inserting: boolean }) {
-  const { url, onUrlChange, onAdd, onInsert, busy } = composer
+type ComposerMode = 'video' | 'live'
+
+const COMPOSER_MODES: Record<ComposerMode, { label: string; placeholder: string; icon: string }> = {
+  video: {
+    label: '影片網址',
+    placeholder: '貼上影片網址，可加時間，例：1:30-4:00',
+    icon: 'fa-solid fa-plus',
+  },
+  live: {
+    label: '直播網址',
+    placeholder: '貼上 Twitch 頻道或 YouTube 直播網址',
+    icon: 'fa-solid fa-tower-broadcast',
+  },
+}
+
+/**
+ * The one place to put something on screen. The mode is chosen first so each
+ * mode has exactly one action: a queue request and a live stream are
+ * different things, and the backend rejects the wrong kind either way.
+ */
+function ComposerBar({ composer, liveActive }: { composer: PlayComposer; liveActive: boolean }) {
+  const { url, onUrlChange, onAdd, onPlayLive, busy } = composer
+  const [mode, setMode] = useState<ComposerMode>('video')
+  const config = COMPOSER_MODES[mode]
   const empty = !url.trim()
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (!empty && !busy) onAdd()
+    if (empty || busy) return
+    if (mode === 'video') onAdd()
+    else onPlayLive()
   }
+  const actionLabel = mode === 'video' ? '加入' : liveActive ? '換台' : '播放直播'
   return (
-    <form className="flex items-center gap-element border-t pt-card" onSubmit={submit}>
-      <div className="relative flex-1">
-        <Icon
-          icon="fa-solid fa-link"
-          className="text-sub text-muted-foreground"
-          wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
-        />
-        <Input
-          aria-label="影片或直播網址"
-          placeholder="貼上網址，可加時間，例：1:30-4:00"
-          value={url}
-          onChange={event => onUrlChange(event.target.value)}
-          className="pl-8"
-        />
+    <form
+      className="flex flex-col gap-element border-t pt-card sm:flex-row sm:items-center"
+      onSubmit={submit}
+    >
+      <Tabs value={mode} onValueChange={value => setMode(value as ComposerMode)}>
+        <TabsList aria-label="加入方式">
+          <TabsTrigger value="video">影片</TabsTrigger>
+          <TabsTrigger value="live">直播</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <div className="flex flex-1 items-center gap-element">
+        <div className="relative flex-1">
+          <Icon
+            icon="fa-solid fa-link"
+            className="text-sub text-muted-foreground"
+            wrapperClassName="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+          />
+          <Input
+            aria-label={config.label}
+            placeholder={config.placeholder}
+            value={url}
+            onChange={event => onUrlChange(event.target.value)}
+            className="pl-8"
+          />
+        </div>
+        <Button type="submit" disabled={empty || busy !== null}>
+          {busy ? (
+            <Spinner className="mr-1.5" />
+          ) : (
+            <Icon icon={config.icon} wrapperClassName="mr-1.5 size-3" />
+          )}
+          {actionLabel}
+        </Button>
       </div>
-      <Button type="submit" size="sm" disabled={empty || busy !== null}>
-        {busy === 'add' ? (
-          <Spinner className="mr-1.5" />
-        ) : (
-          <Icon icon="fa-solid fa-plus" wrapperClassName="mr-1.5 size-3" />
-        )}
-        加入
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        title="以直播網址插播，期間佇列暫停"
-        disabled={empty || busy !== null}
-        onClick={onInsert}
-      >
-        {busy === 'insert' ? (
-          <Spinner className="mr-1.5" />
-        ) : (
-          <Icon icon="fa-solid fa-tower-broadcast" wrapperClassName="mr-1.5 size-3" />
-        )}
-        {inserting ? '換台' : '插播'}
-      </Button>
     </form>
   )
 }
@@ -145,7 +171,7 @@ export function NowPlayingCard({
   const upNext = (
     <div className="flex min-w-0 flex-col gap-element border-t pt-card lg:w-80 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-card">
       <p className="text-label font-medium text-muted-foreground">
-        {insert ? '插播結束後' : '接下來'}
+        {insert ? '直播結束後' : '接下來'}
       </p>
       {next ? (
         <div className="flex items-center gap-element min-w-0">
@@ -180,10 +206,10 @@ export function NowPlayingCard({
     )
     action = (
       <>
-        <OpenLink href={liveWatchUrl(insert)} label="在新分頁開啟直播" />
+        <OpenLink href={liveWatchUrl(insert)} label="開啟直播" />
         <Button size="sm" variant="outline" onClick={onStopInsert}>
           <Icon icon="fa-solid fa-stop" className="mr-1.5 size-3" />
-          結束插播
+          結束直播
         </Button>
       </>
     )
@@ -204,7 +230,7 @@ export function NowPlayingCard({
             </span>
           )}
           <span className="text-label text-muted-foreground">
-            直播插播中，佇列暫停{insert.audio_only ? ' · 僅聲音' : ''}
+            直播播放中，佇列暫停{insert.audio_only ? ' · 僅聲音' : ''}
           </span>
         </div>
         {upNext}
@@ -225,7 +251,7 @@ export function NowPlayingCard({
       <>
         <OpenLink
           href={watchUrl(current.video_type, current.video_id, current.start_seconds)}
-          label="在新分頁開啟影片"
+          label="開啟影片"
         />
         <Button size="sm" variant="outline" onClick={onSkip}>
           <Icon icon="fa-solid fa-forward-step" className="mr-1.5 size-3" />
@@ -278,7 +304,7 @@ export function NowPlayingCard({
       <EmptyState
         icon="fa-solid fa-circle-play"
         title="目前沒有播放"
-        description={queueSize > 0 ? '佇列裡有影片，馬上就會開始' : '貼上連結，或等觀眾用點數點播'}
+        description={queueSize > 0 ? '佇列裡有影片，馬上就會開始' : '貼上連結，或等觀眾點播'}
       />
     )
   }
@@ -294,7 +320,7 @@ export function NowPlayingCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-card">
         {body}
-        {composer && <ComposerBar composer={composer} inserting={insert !== null} />}
+        {composer && <ComposerBar composer={composer} liveActive={insert !== null} />}
       </CardContent>
     </Card>
   )

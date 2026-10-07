@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { VideoQueueEntry, VideoQueueLiveInsert } from '@/api/videoQueue'
@@ -35,7 +36,7 @@ describe('NowPlayingCard thumbnail', () => {
       />
     )
 
-    expect(screen.getByRole('link', { name: '在新分頁開啟影片' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '開啟影片' })).toHaveAttribute(
       'href',
       'https://www.twitch.tv/videos/123456?t=90s'
     )
@@ -110,14 +111,14 @@ function composer(overrides: Partial<PlayComposer> = {}): PlayComposer {
     url: '',
     onUrlChange: vi.fn(),
     onAdd: vi.fn(),
-    onInsert: vi.fn(),
+    onPlayLive: vi.fn(),
     busy: null,
     ...overrides,
   }
 }
 
-describe('NowPlayingCard live insert and composer', () => {
-  it('shows the insert instead of the queue entry, with stop instead of skip', () => {
+describe('NowPlayingCard live stream and composer', () => {
+  it('shows the live stream instead of the queue entry, with 結束直播 instead of skip', () => {
     const onStopInsert = vi.fn()
     render(
       <NowPlayingCard
@@ -131,19 +132,19 @@ describe('NowPlayingCard live insert and composer', () => {
     )
     expect(screen.getByText('LIVE')).toBeInTheDocument()
     expect(screen.getByText('LofiStreamer')).toBeInTheDocument()
-    expect(screen.getByText('直播插播中，佇列暫停 · 僅聲音')).toBeInTheDocument()
-    expect(screen.getByText('插播結束後')).toBeInTheDocument()
+    expect(screen.getByText('直播播放中，佇列暫停 · 僅聲音')).toBeInTheDocument()
+    expect(screen.getByText('直播結束後')).toBeInTheDocument()
     expect(screen.queryByText('A video')).toBeNull()
     expect(screen.queryByRole('button', { name: /跳過/ })).toBeNull()
-    expect(screen.getByRole('link', { name: '在新分頁開啟直播' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '開啟直播' })).toHaveAttribute(
       'href',
       'https://www.twitch.tv/lofistreamer'
     )
-    fireEvent.click(screen.getByRole('button', { name: /結束插播/ }))
+    fireEvent.click(screen.getByRole('button', { name: /結束直播/ }))
     expect(onStopInsert).toHaveBeenCalled()
   })
 
-  it('one input queues on Enter / 加入 and inserts on 插播', () => {
+  it('影片 mode (default) queues the URL with one 加入 button', () => {
     const c = composer({ url: 'https://youtu.be/x 1:30-4:00' })
     render(
       <NowPlayingCard
@@ -154,13 +155,50 @@ describe('NowPlayingCard live insert and composer', () => {
         composer={c}
       />
     )
-    fireEvent.submit(screen.getByLabelText('影片或直播網址'))
+    expect(screen.getByLabelText('影片網址')).toHaveAttribute(
+      'placeholder',
+      '貼上影片網址，可加時間，例：1:30-4:00'
+    )
+    expect(screen.queryByRole('button', { name: /播放直播/ })).toBeNull()
+    fireEvent.submit(screen.getByLabelText('影片網址'))
     expect(c.onAdd).toHaveBeenCalledTimes(1)
-    fireEvent.click(screen.getByRole('button', { name: /插播/ }))
-    expect(c.onInsert).toHaveBeenCalledTimes(1)
+    expect(c.onPlayLive).not.toHaveBeenCalled()
   })
 
-  it('disables both actions while empty or busy, and says 換台 during an insert', () => {
+  it('直播 mode plays the live stream instead, and says 換台 while one plays', async () => {
+    const c = composer({ url: 'https://www.twitch.tv/lofistreamer' })
+    const { rerender } = render(
+      <NowPlayingCard
+        current={null}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+        composer={c}
+      />
+    )
+    await userEvent.click(screen.getByRole('tab', { name: '直播' }))
+    expect(screen.getByLabelText('直播網址')).toHaveAttribute(
+      'placeholder',
+      '貼上 Twitch 頻道或 YouTube 直播網址'
+    )
+    await userEvent.click(screen.getByRole('button', { name: /播放直播/ }))
+    expect(c.onPlayLive).toHaveBeenCalledTimes(1)
+    expect(c.onAdd).not.toHaveBeenCalled()
+
+    rerender(
+      <NowPlayingCard
+        current={null}
+        insert={liveInsert}
+        queueSize={0}
+        totalQueuedDuration={null}
+        onSkip={noop}
+        composer={c}
+      />
+    )
+    expect(screen.getByRole('button', { name: /換台/ })).toBeInTheDocument()
+  })
+
+  it('disables the action while empty or busy', () => {
     const { rerender } = render(
       <NowPlayingCard
         current={null}
@@ -171,19 +209,15 @@ describe('NowPlayingCard live insert and composer', () => {
       />
     )
     expect(screen.getByRole('button', { name: /加入/ })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /插播/ })).toBeDisabled()
-
     rerender(
       <NowPlayingCard
         current={null}
-        insert={liveInsert}
         queueSize={0}
         totalQueuedDuration={null}
         onSkip={noop}
-        composer={composer({ url: 'https://www.twitch.tv/other', busy: 'insert' })}
+        composer={composer({ url: 'https://youtu.be/x', busy: 'add' })}
       />
     )
-    expect(screen.getByRole('button', { name: /換台/ })).toBeDisabled()
     expect(screen.getByRole('button', { name: /加入/ })).toBeDisabled()
   })
 })

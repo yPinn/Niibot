@@ -2199,6 +2199,25 @@ class TestVideoQueueInsertRepository:
         assert "id = $2" in sql
         assert (channel_id, expected_id) == ("ch1", 5)
 
+    async def test_stop_resumes_the_queue_in_the_same_transaction(self):
+        """No overlay kickstart race: the next entry is promoted by the stop itself."""
+        from shared.repositories.video_queue import VideoQueueInsertRepository
+
+        pool, conn = _make_pool(fetchrow={"was_active": True})
+        await VideoQueueInsertRepository(pool).stop("ch1")
+        conn.transaction.assert_called_once()
+        promote_sql, channel_id = conn.execute.await_args.args
+        assert "SET status = 'playing'" in promote_sql
+        assert "status = 'queued'" in promote_sql
+        assert channel_id == "ch1"
+
+    async def test_stop_without_an_insert_promotes_nothing(self):
+        from shared.repositories.video_queue import VideoQueueInsertRepository
+
+        pool, conn = _make_pool(fetchrow=None)
+        await VideoQueueInsertRepository(pool).stop("ch1", expected_id=5)
+        conn.execute.assert_not_awaited()
+
     async def test_stop_without_a_row_reports_false(self):
         from shared.repositories.video_queue import VideoQueueInsertRepository
 

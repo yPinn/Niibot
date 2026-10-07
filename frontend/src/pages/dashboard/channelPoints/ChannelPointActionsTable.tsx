@@ -87,7 +87,7 @@ export function ChannelPointActionsTable({
     <Card className="relative w-full max-w-7xl overflow-hidden">
       {!isAffiliate && (
         <AffiliateLockOverlay
-          message="取得 Twitch 實況盟友或合作夥伴資格後即可設定頻道點數動作"
+          message="取得 Twitch 實況盟友或合作夥伴資格後即可設定忠誠點數動作"
           className="rounded-[inherit]"
         />
       )}
@@ -101,7 +101,7 @@ export function ChannelPointActionsTable({
       )}
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
-          頻道點數動作
+          忠誠點數動作
           <Badge variant="secondary">Twitch 管理獎勵</Badge>
         </CardTitle>
         <CardDescription>
@@ -132,7 +132,7 @@ export function ChannelPointActionsTable({
                 <TableEmptyRow
                   colSpan={4}
                   icon="fa-solid fa-coins"
-                  title="尚無頻道點數動作"
+                  title="尚無忠誠點數動作"
                   description="重新載入頁面；若問題持續發生，請檢查頻道連線狀態。"
                 />
               ) : (

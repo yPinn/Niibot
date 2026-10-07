@@ -491,8 +491,8 @@ class TestLiveInsert:
             )
         kwargs = component.vq_insert_repo.start.await_args.kwargs
         assert (kwargs["source_type"], kwargs["source_id"]) == ("twitch_live", "lofistreamer")
-        assert kwargs["volume_percent"] == 30
-        assert _reply(component) == "開始插播 LofiStreamer 的直播，佇列暫停"
+        assert kwargs["volume_percent"] == 50  # the shared volume (default)
+        assert _reply(component) == "開始播放 LofiStreamer 的直播，佇列暫停"
 
     async def test_offline_channel_is_rejected(self):
         component = _component()
@@ -511,10 +511,10 @@ class TestLiveInsert:
         component = _component()
         component.vq_insert_repo.stop = AsyncMock(return_value=True)
         await VideoQueueComponent.vq_live.callback(component, _ctx("broadcaster"), args="STOP")  # type: ignore[attr-defined]
-        assert _reply(component) == "已結束插播，恢復播放佇列"
+        assert _reply(component) == "已結束直播，恢復播放佇列"
         component.vq_insert_repo.stop = AsyncMock(return_value=False)
         await VideoQueueComponent.vq_live.callback(component, _ctx("broadcaster"), args="stop")  # type: ignore[attr-defined]
-        assert _reply(component) == "目前沒有插播"
+        assert _reply(component) == "目前沒有播放直播"
 
     async def test_np_shows_the_insert(self):
         component = _component()
@@ -525,7 +525,7 @@ class TestLiveInsert:
         ):
             await VideoQueueComponent.cmd_np.callback(component, _ctx("viewer"))  # type: ignore[attr-defined]
         assert _reply(component) == (
-            "插播中：LofiStreamer「beats to relax to」 https://www.twitch.tv/lofistreamer"
+            "直播中：LofiStreamer「beats to relax to」 https://www.twitch.tv/lofistreamer"
         )
 
     async def test_requests_during_an_insert_say_when_they_play(self):
@@ -534,4 +534,19 @@ class TestLiveInsert:
         p1, p2 = _patches(_YT, VideoMetadata("YT", 90, 5000, False))
         with p1, p2:
             await component._handle_add_inner(_ctx(), "https://youtu.be/vid123")
-        assert "（目前插播中，結束後播放）" in _reply(component)
+        assert "（直播結束後播放）" in _reply(component)
+
+
+@pytest.mark.asyncio
+async def test_live_url_as_a_request_tells_the_broadcaster_about_vq_live():
+    component = _component()
+    live = VideoMetadata("Live", None, 10, False, playable=False, unplayable_reason="live")
+    p1, p2 = _patches(_YT, live)
+    with p1, p2:
+        await component._handle_add_inner(_ctx("broadcaster"), "https://youtu.be/vid123")
+    assert _reply(component) == "這是進行中的直播，請用 !vq live <網址> 播放"
+
+    # A mod can't play live streams, so the plain rejection stays.
+    with p1, p2:
+        await component._handle_add_inner(_ctx("moderator"), "https://youtu.be/vid123")
+    assert _reply(component) == "直播進行中無法點播，結束後可點播重播"

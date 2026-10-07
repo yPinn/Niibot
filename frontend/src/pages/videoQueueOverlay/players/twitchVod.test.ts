@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { reportClientError } from '@/lib/clientErrorReporter'
+
 import { twitchVodStrategy } from './twitchVod'
 import type { MountContext } from './types'
 
-vi.mock('@/api/videoQueue', () => ({ reportVideoMetadata: vi.fn() }))
+vi.mock('@/lib/clientErrorReporter', () => ({ reportClientError: vi.fn() }))
+
+/** Let the embed API load settle. */
+async function settle() {
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+}
 
 function makePlayer() {
   return {
@@ -18,6 +25,13 @@ function makePlayer() {
     getVideo: vi.fn(() => 'v123456'),
     addEventListener: vi.fn(),
     destroy: vi.fn(),
+  }
+}
+
+/** Invoke the listener the strategy registered for `event`. */
+function fire(player: ReturnType<typeof makePlayer>, event: string) {
+  for (const [name, cb] of player.addEventListener.mock.calls as [string, () => void][]) {
+    if (name === event) cb()
   }
 }
 
@@ -83,43 +97,133 @@ function ctx(overrides: Partial<MountContext> = {}): MountContext {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.mocked(reportClientError).mockClear()
   delete (window as unknown as { Twitch?: unknown }).Twitch
 })
 
 describe('twitchVodStrategy', () => {
-  it('needs the twitch embed API', () => {
-    expect(twitchVodStrategy.requiresApi).toBe('twitch')
+  it('needs no external API up front (the embed loads its own)', () => {
+    expect(twitchVodStrategy.requiresApi).toBeNull()
   })
 
-  it('creates a controls-off Twitch.Player seeked to start + join offset', () => {
+  it('creates a controls-off Twitch.Player seeked to start + join offset', async () => {
     const player = makePlayer()
     const Player = installTwitch(player)
     const c = ctx({ joinElapsed: 10 })
 
     twitchVodStrategy.mount(c)
 
+    await settle()
+
     expect(Player).toHaveBeenCalledTimes(1)
     const opts = Player.mock.calls[0][1] as Record<string, unknown>
-    expect(opts).toMatchObject({ video: '123456', controls: false, autoplay: true, muted: false })
+    // Always muted at first: muted autoplay is what OBS lets through.
+    expect(opts).toMatchObject({ video: '123456', controls: false, autoplay: true, muted: true })
     expect(opts.time).toBe('100s') // start_seconds 90 + joinElapsed 10
     expect(player.addEventListener).toHaveBeenCalledWith('video.ended', expect.any(Function))
     expect(player.addEventListener).toHaveBeenCalledWith('video.blocked', expect.any(Function))
-    expect(player.addEventListener).toHaveBeenCalledWith('video.ready', expect.any(Function))
     expect(player.setVolume).toHaveBeenCalledWith(0.35)
   })
 
-  it('keeps the same joined playback position while muting a dashboard preview', () => {
+  it('keeps the same joined playback position while muting a dashboard preview', async () => {
     const player = makePlayer()
     const Player = installTwitch(player)
 
     twitchVodStrategy.mount(ctx({ joinElapsed: 10, isPreview: true, muted: true }))
 
+    await settle()
+
     const opts = Player.mock.calls[0][1] as Record<string, unknown>
     expect(opts).toMatchObject({ time: '100s', muted: true })
-    expect(player.setMuted).toHaveBeenCalledWith(true)
+    fire(player, 'video.play')
+    expect(player.setMuted).not.toHaveBeenCalledWith(false)
   })
 
-  it('advances when the play window elapses', () => {
+  it('unmutes once playback starts', async () => {
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    twitchVodStrategy.mount(c)
+    await settle()
+
+    fire(player, 'video.play')
+    expect(c.notifyPlaybackStarted).toHaveBeenCalledWith('confirmed')
+    expect(player.setMuted).toHaveBeenLastCalledWith(false)
+    expect(reportClientError).not.toHaveBeenCalled()
+  })
+
+  it('goes back to muted playback and reports when unmuting gets it paused', async () => {
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    twitchVodStrategy.mount(c)
+    await settle()
+
+    fire(player, 'video.play')
+    player.play.mockClear()
+    fire(player, 'video.pause')
+    expect(player.setMuted).toHaveBeenLastCalledWith(true)
+    expect(player.play).toHaveBeenCalled()
+    expect(reportClientError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'VIDEO_QUEUE.TWITCH_VOD_UNMUTE_REFUSED' })
+    )
+    expect(c.handleVideoEnd).not.toHaveBeenCalled()
+
+    // The refusal is final for this entry: a later PLAYING doesn't retry sound.
+    fire(player, 'video.play')
+    expect(player.setMuted).toHaveBeenLastCalledWith(true)
+  })
+
+  it('a pause long after unmuting is an ordinary pause', async () => {
+    vi.useFakeTimers()
+    const player = makePlayer()
+    installTwitch(player)
+    twitchVodStrategy.mount(ctx())
+    await settle()
+
+    fire(player, 'video.play')
+    vi.advanceTimersByTime(5000)
+    fire(player, 'video.pause')
+    expect(reportClientError).not.toHaveBeenCalled()
+  })
+
+  it('a block after unmuting keeps playing muted instead of skipping', async () => {
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    twitchVodStrategy.mount(c)
+    await settle()
+
+    fire(player, 'video.play')
+    fire(player, 'video.blocked')
+    expect(player.setMuted).toHaveBeenLastCalledWith(true)
+    expect(c.handleVideoEnd).not.toHaveBeenCalled()
+  })
+
+  it('a block before playback starts advances as autoplay_blocked', async () => {
+    const player = makePlayer()
+    installTwitch(player)
+    const c = ctx()
+    twitchVodStrategy.mount(c)
+    await settle()
+
+    fire(player, 'video.blocked')
+    expect(c.handleVideoEnd).toHaveBeenCalledWith(7, 'autoplay_blocked')
+  })
+
+  it('advances as a provider error when the embed script fails to load', async () => {
+    const c = ctx()
+    const script = vi.spyOn(document.head, 'appendChild').mockImplementation(node => {
+      queueMicrotask(() => (node as HTMLScriptElement).onerror?.(new Event('error')))
+      return node
+    })
+    twitchVodStrategy.mount(c)
+    await settle()
+    expect(c.handleVideoEnd).toHaveBeenCalledWith(7, 'provider_error')
+    script.mockRestore()
+  })
+
+  it('advances when the play window elapses', async () => {
     vi.useFakeTimers()
     const player = makePlayer()
     installTwitch(player)
@@ -127,19 +231,23 @@ describe('twitchVodStrategy', () => {
     player.getCurrentTime.mockReturnValue(90 + 600) // start + full window
 
     const cleanup = twitchVodStrategy.mount(c)
+
+    await settle()
     vi.advanceTimersByTime(1000)
 
     expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
     if (typeof cleanup === 'function') cleanup()
   })
 
-  it('advances when Twitch autoplays a different VOD after the end', () => {
+  it('advances when Twitch autoplays a different VOD after the end', async () => {
     vi.useFakeTimers()
     const player = makePlayer()
     installTwitch(player)
     const c = ctx()
 
     const cleanup = twitchVodStrategy.mount(c)
+
+    await settle()
     vi.advanceTimersByTime(1000)
     expect(c.handleVideoEnd).not.toHaveBeenCalled()
 
@@ -151,7 +259,7 @@ describe('twitchVodStrategy', () => {
     if (typeof cleanup === 'function') cleanup()
   })
 
-  it('still ends on the window when getVideo is unavailable', () => {
+  it('still ends on the window when getVideo is unavailable', async () => {
     vi.useFakeTimers()
     const player = makePlayer()
     player.getVideo.mockImplementation(() => {
@@ -162,26 +270,30 @@ describe('twitchVodStrategy', () => {
     player.getCurrentTime.mockReturnValue(90 + 600)
 
     const cleanup = twitchVodStrategy.mount(c)
+
+    await settle()
     vi.advanceTimersByTime(1000)
     expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
     if (typeof cleanup === 'function') cleanup()
   })
 
-  it('skips straight to the end when a late join is already past the window', () => {
+  it('skips straight to the end when a late join is already past the window', async () => {
     const player = makePlayer()
     const Player = installTwitch(player)
     const c = ctx({ joinElapsed: 700, current: { ...ctx().current, duration_seconds: 600 } })
 
     twitchVodStrategy.mount(c)
+    await settle()
 
     expect(c.handleVideoEnd).toHaveBeenCalledWith(7)
     expect(Player).not.toHaveBeenCalled()
   })
 
-  it('destroys the player on cleanup', () => {
+  it('destroys the player on cleanup', async () => {
     const player = makePlayer()
     installTwitch(player)
     const cleanup = twitchVodStrategy.mount(ctx())
+    await settle()
     if (typeof cleanup === 'function') cleanup()
     expect(player.destroy).toHaveBeenCalled()
   })

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useParams, useSearchParams } from 'react-router-dom'
 
+import { ApiError } from '@/api/errors'
 import {
   advanceVideoQueue,
   getPublicVideoQueueState,
+  liveInsertPlaylistUrl,
   reportLiveInsertEnded,
   reportPlaybackStarted,
 } from '@/api/videoQueue'
@@ -11,12 +13,12 @@ import { openVideoQueueStream, type VideoQueueStreamState } from '@/api/videoQue
 import { OverlayReconnectingBadge } from '@/components/OverlayReconnectingBadge'
 import { useDocumentTitle } from '@/hooks/useDocumentTitle'
 import { type StreamHelpers, useReconnectingStream } from '@/hooks/useReconnectingStream'
+import { reportClientError } from '@/lib/clientErrorReporter'
 
 import {
   destroyAllPlayers,
   getPlayerStrategy,
   type LiveInsertController,
-  loadTwitchEmbedAPI,
   loadYouTubeAPI,
   mountLiveInsert,
   type YTPlayer,
@@ -29,6 +31,21 @@ import styles from './VideoQueueOverlay.module.css'
 const MAX_REMEMBERED_ADVANCED_IDS = 50
 const ADVANCE_RETRY_MS = 2_000
 const PLAYBACK_START_TIMEOUT_MS = 15_000
+// Settings default for new channels (migration 157); used if they can't load.
+const DEFAULT_VOLUME_PERCENT = 50
+// Matches the overlayExit animation in VideoQueueOverlay.module.css.
+const EXIT_ANIMATION_MS = 600
+
+interface OverlayFrame {
+  kind: 'queue' | 'live'
+  /** Title-bar text; null while a queued item waits to be kickstarted. */
+  title: string | null
+  audioOnly: boolean
+}
+
+function sameFrame(a: OverlayFrame, b: OverlayFrame | null): boolean {
+  return !!b && a.kind === b.kind && a.title === b.title && a.audioOnly === b.audioOnly
+}
 
 function formatRemaining(elapsed: number, duration: number | null): string {
   if (!duration) return '--:--'
@@ -47,16 +64,56 @@ export default function VideoQueueOverlay() {
   const [state, setState] = useState<VideoQueueStreamState | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [ytReady, setYtReady] = useState(false)
-  const [twitchReady, setTwitchReady] = useState(false)
-  const [volumePercent, setVolumePercent] = useState(100)
+  // null until the settings load: queue players wait for it, so nothing plays
+  // at a wrong gain and nothing remounts when the real value arrives.
+  const [volumePercent, setVolumePercent] = useState<number | null>(null)
   const [isExiting, setIsExiting] = useState(false)
-  // Live insert (直播插播): while one is active the overlay plays it instead of
+  // The capability in this URL was rotated away (dashboard 重設網址): advancing
+  // can never succeed again, so stop asking — retrying every 2s would burn
+  // ~43k Cloudflare requests a day — and tell the streamer instead.
+  const [keyRejected, setKeyRejected] = useState(false)
+  const keyRejectedRef = useRef(false)
+  // Live insert (直播播放): while one is active the overlay plays it instead of
   // the queue, and the queue is paused (server-side too). An insert this
   // client saw end is hidden at once, before the stream confirms it is gone.
   const [endedInsertId, setEndedInsertId] = useState<number | null>(null)
   const liveInsert = state?.insert && state.insert.id !== endedInsertId ? state.insert : null
   const insertId = liveInsert?.id ?? null
   const currentVideoType = liveInsert ? undefined : state?.current?.video_type
+
+  // What the window shows; null when there is nothing. The last frame is kept
+  // so a disappearing window plays its exit animation with its old title
+  // instead of vanishing — stream-driven removals (dashboard skip/clear, an
+  // insert ending) never go through handleVideoEnd's exit.
+  const frame: OverlayFrame | null = liveInsert
+    ? {
+        kind: 'live',
+        title: liveInsert.creator_name || liveInsert.source_id,
+        audioOnly: liveInsert.audio_only,
+      }
+    : state?.current
+      ? { kind: 'queue', title: `@ ${state.current.requested_by}`, audioOnly: false }
+      : (state?.queue_size ?? 0) > 0
+        ? { kind: 'queue', title: null, audioOnly: false }
+        : null
+  const [lastFrame, setLastFrame] = useState<OverlayFrame | null>(frame)
+  const [leaving, setLeaving] = useState(false)
+  // Adjusting state while rendering (React's documented pattern for state
+  // derived from a changing input) so the exit starts on this very render.
+  if (frame && !sameFrame(frame, lastFrame)) {
+    setLastFrame(frame)
+    if (leaving) setLeaving(false)
+  } else if (!frame && lastFrame && !leaving) {
+    setLeaving(true)
+  }
+  useEffect(() => {
+    if (!leaving) return
+    const timer = setTimeout(() => {
+      setLeaving(false)
+      setLastFrame(null)
+    }, EXIT_ANIMATION_MS)
+    return () => clearTimeout(timer)
+  }, [leaving])
 
   const playerRef = useRef<YTPlayer | null>(null)
   const leftPlayerRef = useRef<YTPlayer | null>(null)
@@ -110,7 +167,8 @@ export default function VideoQueueOverlay() {
   useDocumentTitle('Video Queue Overlay')
 
   // Fetch the read-only playback configuration separately from the SSE queue
-  // snapshot. A late response remounts the current player once with the right gain.
+  // snapshot. Players mount once it's known; if it can't be fetched, fall back
+  // to the default a fresh channel gets (migration 157).
   useEffect(() => {
     if (!username) return
     let cancelled = false
@@ -118,7 +176,9 @@ export default function VideoQueueOverlay() {
       .then(publicState => {
         if (!cancelled) setVolumePercent(Math.min(100, Math.max(0, publicState.volume_percent)))
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setVolumePercent(DEFAULT_VOLUME_PERCENT)
+      })
     return () => {
       cancelled = true
     }
@@ -134,16 +194,11 @@ export default function VideoQueueOverlay() {
       .catch(() => {}) // onerror resets _ytReadyPromise for retry on next mount
   }, [currentVideoType])
 
-  // Load the Twitch embed API only for VOD entries. Clips use a direct video
-  // or iframe path and do not need this SDK.
-  useEffect(() => {
-    if (currentVideoType !== 'twitch_vod') return
-    loadTwitchEmbedAPI()
-      .then(() => {
-        if (mountedRef.current) setTwitchReady(true)
-      })
-      .catch(() => {})
-  }, [currentVideoType])
+  // No Twitch embed preload: VODs play via hls.js and their embed fallback
+  // loads Twitch's script itself. A preload here used to flip a `twitchReady`
+  // dependency of the player effect right after a VOD mounted — React then ran
+  // the effect's cleanup (destroying the fresh player) and the re-run bailed on
+  // "same entry", leaving an empty window.
 
   // NOTIFY-woken SSE stream, replacing the old fixed-interval poll. No
   // cursor: video queue state is a single current snapshot, not an event
@@ -173,9 +228,16 @@ export default function VideoQueueOverlay() {
     connect,
   })
 
+  const rejectKey = useCallback((error: unknown): boolean => {
+    if (!(error instanceof ApiError) || error.code !== 'VIDEO_QUEUE.OVERLAY_NOT_FOUND') return false
+    keyRejectedRef.current = true
+    setKeyRejected(true)
+    return true
+  }, [])
+
   // Auto-kickstart: if there is no current video but there is a queue, advance
   useEffect(() => {
-    if (!username || !overlayKey || !state || isPreview || insertId !== null) return
+    if (!username || !overlayKey || !state || isPreview || insertId !== null || keyRejected) return
     if (state.current === null && state.queue.length > 0 && !advancingRef.current) {
       advancingRef.current = true
       let cancelled = false
@@ -191,8 +253,8 @@ export default function VideoQueueOverlay() {
             setState(newState)
             advancingRef.current = false
           })
-          .catch(() => {
-            if (cancelled || !mountedRef.current) {
+          .catch(error => {
+            if (cancelled || !mountedRef.current || rejectKey(error)) {
               advancingRef.current = false
               return
             }
@@ -211,8 +273,19 @@ export default function VideoQueueOverlay() {
     }
     // Only react to specific state fields — not the full `state` object —
     // to avoid re-running the advance logic on unrelated state updates.
+    // state?.insert?.id is the server's view, not just insertId: an insert this
+    // overlay already hid locally can still be blocking the server's kickstart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username, overlayKey, isPreview, state?.current?.id, state?.queue.length, insertId])
+  }, [
+    username,
+    overlayKey,
+    isPreview,
+    state?.current?.id,
+    state?.queue.length,
+    insertId,
+    state?.insert?.id,
+    keyRejected,
+  ])
 
   // useCallback with empty deps: all reads are via refs (stable identity), setState/setIsExiting
   // are stable React dispatch functions — no stale closure risk from future refactors.
@@ -224,6 +297,7 @@ export default function VideoQueueOverlay() {
       if (
         isPreviewRef.current ||
         advancingRef.current ||
+        keyRejectedRef.current ||
         !usernameRef.current ||
         !overlayKeyRef.current
       )
@@ -270,14 +344,19 @@ export default function VideoQueueOverlay() {
             setIsExiting(false)
             advancingRef.current = false
           })
-          .catch(() => {
+          .catch(error => {
             if (!mountedRef.current) return
+            if (rejectKey(error)) {
+              setIsExiting(false)
+              advancingRef.current = false
+              return
+            }
             advanceRetryTimerRef.current = setTimeout(requestAdvance, ADVANCE_RETRY_MS)
           })
       }
       advanceRetryTimerRef.current = setTimeout(requestAdvance, 600)
     },
-    []
+    [rejectKey]
   )
 
   // Create / destroy player(s) when current video changes
@@ -299,7 +378,7 @@ export default function VideoQueueOverlay() {
       mountedVolumeRef.current = null
       return
     }
-    if (!containerRef.current) return
+    if (!containerRef.current || volumePercent === null) return
 
     const current = state?.current ?? null
     const newId = current?.id ?? null
@@ -307,6 +386,16 @@ export default function VideoQueueOverlay() {
     if (newId === currentIdRef.current && volumePercent === mountedVolumeRef.current) return
 
     const strategy = current ? getPlayerStrategy(current.video_type) : undefined
+    // A player that never starts leaves no other trace (its own retries can
+    // outlast the watchdog), so say which platform stalled before skipping.
+    const onStartupTimeout = (entry: NonNullable<typeof current>) => {
+      reportClientError({
+        kind: 'error',
+        message: `${entry.video_type}: playback did not start within ${PLAYBACK_START_TIMEOUT_MS / 1000}s`,
+        errorCode: 'VIDEO_QUEUE.STARTUP_TIMEOUT',
+      })
+      handleVideoEnd(entry.id, 'startup_timeout')
+    }
 
     if (playbackStartTimerRef.current) {
       clearTimeout(playbackStartTimerRef.current)
@@ -314,15 +403,14 @@ export default function VideoQueueOverlay() {
     }
     if (current && strategy && !isPreview && overlayKey) {
       playbackStartTimerRef.current = setTimeout(
-        () => handleVideoEnd(current.id, 'startup_timeout'),
+        () => onStartupTimeout(current),
         PLAYBACK_START_TIMEOUT_MS
       )
     }
 
-    // YouTube and Twitch VOD each need an external player API ready before they
-    // can mount; the Twitch clip and Bilibili strategies are plain iframes.
+    // Only YouTube needs an external player API before it can mount; Twitch
+    // VOD (its embed script loads itself), clip and Bilibili don't.
     if (strategy?.requiresApi === 'youtube' && !ytReady) return
-    if (strategy?.requiresApi === 'twitch' && !twitchReady) return
 
     destroyAllPlayers(
       [playerRef, leftPlayerRef, rightPlayerRef],
@@ -341,7 +429,7 @@ export default function VideoQueueOverlay() {
 
     if (current && strategy && !isPreview && overlayKey) {
       playbackStartTimerRef.current = setTimeout(
-        () => handleVideoEnd(current.id, 'startup_timeout'),
+        () => onStartupTimeout(current),
         PLAYBACK_START_TIMEOUT_MS
       )
     }
@@ -393,14 +481,15 @@ export default function VideoQueueOverlay() {
     // Player creation is keyed on video ID — not the full `state` object or `isPreview` —
     // so the player is only rebuilt when the actual video changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ytReady, twitchReady, state?.current?.id, username, handleVideoEnd, volumePercent, insertId])
+  }, [ytReady, state?.current?.id, username, handleVideoEnd, volumePercent, insertId])
 
   // Mount the live insert's player (keyed on the insert, not its settings).
   useEffect(() => {
     if (!liveInsert) return
     const insert = liveInsert
     let done = false
-    const load = insert.source_type === 'twitch_live' ? loadTwitchEmbedAPI() : loadYouTubeAPI()
+    // Twitch plays via hls.js and loads its embed fallback itself.
+    const load = insert.source_type === 'twitch_live' ? Promise.resolve() : loadYouTubeAPI()
     load
       .then(() => {
         if (done || !insertContainerRef.current) return
@@ -408,6 +497,9 @@ export default function VideoQueueOverlay() {
           insert: { ...insert, volume_percent: insertVolumeRef.current },
           container: insertContainerRef.current,
           muted: isPreview,
+          resolveTwitchSource: username
+            ? () => Promise.resolve(liveInsertPlaylistUrl(username))
+            : undefined,
           onEnded: reason => {
             if (done) return
             done = true // report once; never retried in a loop
@@ -455,89 +547,105 @@ export default function VideoQueueOverlay() {
   if (!username) return null
 
   const current = state?.current ?? null
-  const queueCount = state?.queue_size ?? 0
   const progress =
     current?.duration_seconds && current.duration_seconds > 0
       ? Math.min(elapsed / current.duration_seconds, 1)
       : 0
 
-  if (liveInsert) {
-    const name = liveInsert.creator_name || liveInsert.source_id
-    // Audio only: the player keeps its real size (YouTube refuses tiny
-    // players) but is invisible in OBS; the dashboard preview stays faintly
-    // visible so the streamer can tell it's running.
-    const hidden = liveInsert.audio_only ? { opacity: isPreview ? 0.35 : 0 } : undefined
-    return (
-      <div
-        className={styles.overlay}
-        style={{ ...(isPreview ? { width: '100%', height: '100dvh' } : {}), ...hidden }}
-        data-testid="live-insert"
-      >
-        <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
-        <div className={styles.titleBar}>
-          <div className={styles.titleLeft}>
-            <span className={styles.titleName}>LIVE · {name}</span>
-          </div>
-        </div>
-        <div className={styles.videoPanel}>
-          <div ref={insertContainerRef} className={styles.videoContainer} />
-          <div className={styles.sunkenOverlay} />
-        </div>
-      </div>
-    )
+  // Shown in OBS too: only the streamer can fix it, and a frozen window with no
+  // explanation is worse than a short notice.
+  if (keyRejected) {
+    return <div className={styles.keyNotice}>OBS 網址已失效，請到後台重新加入畫面</div>
   }
 
-  // Empty queue and no current → fully transparent (OBS sees nothing), except
-  // in preview mode a streamer testing connectivity should still see the
-  // reconnecting indicator even with nothing queued.
-  if (!current && queueCount === 0) {
+  // Nothing to show and nothing leaving → fully transparent (OBS sees nothing),
+  // except a preview testing connectivity still sees the reconnecting badge.
+  const shown = frame ?? (leaving ? lastFrame : null)
+  if (!shown) {
     return <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
   }
+  // Audio only leaves the same way a finished video does (the exit animation's
+  // `forwards` fill keeps it scaled down and transparent while the player
+  // keeps playing at its real layout size); turning it off plays the entrance.
+  // The dashboard preview skips that and stays faintly visible instead.
+  const audioOnlyHidden = shown.audioOnly && !isPreview
+  const exiting = isExiting || !frame || audioOnlyHidden
+  const isLive = shown.kind === 'live'
+  const playing = isLive ? null : current
 
+  // The preview's faint audio-only look sits on a wrapper: an opacity on the
+  // animated .overlay itself would lose to the animation's `forwards` fill.
   return (
     <div
-      className={`${styles.overlay}${isExiting ? ` ${styles.overlayExiting}` : ''}`}
-      style={isPreview ? { width: '100%', height: '100dvh' } : undefined}
+      style={{
+        ...(isPreview ? { width: '100%', height: '100dvh' } : {}),
+        opacity: shown.audioOnly && isPreview ? 0.35 : 1,
+      }}
+      data-testid={isLive ? 'live-insert' : undefined}
     >
-      <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
-      {current && (
-        <div key={current.id} className={styles.titleBar}>
-          <div className={styles.titleLeft}>
-            <span className={styles.titleName}>@ {current.requested_by}</span>
-          </div>
-          <div className={styles.controls}>
-            {Array.from(formatRemaining(elapsed, current.duration_seconds)).map((char, i) => (
-              <div
-                key={i}
-                className={char === ':' || char === '-' ? styles.charBoxNarrow : styles.charBox}
-              >
-                {char}
+      <div
+        key={shown.kind}
+        className={`${styles.overlay}${exiting ? ` ${styles.overlayExiting}` : ''}`}
+        style={isPreview ? { width: '100%', height: '100%' } : undefined}
+      >
+        <OverlayReconnectingBadge visible={isPreview && streamStatus === 'reconnecting'} />
+        {shown.title !== null && (
+          <div key={`${shown.kind}:${playing?.id ?? ''}`} className={styles.titleBar}>
+            <div className={styles.titleLeft}>
+              <span className={styles.titleName}>{shown.title}</span>
+            </div>
+            {isLive ? (
+              <div className={styles.liveIndicator}>
+                <span className={styles.liveDot} aria-hidden="true" />
+                LIVE
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className={styles.videoPanel}>
-        {current && (
-          <div className={styles.progressBar}>
-            <div className={styles.progressFill} style={{ width: `${progress * 100}%` }} />
-          </div>
-        )}
-        <div ref={containerRef} className={styles.videoContainer} />
-        {current?.is_vertical && (
-          <div className={styles.columnOverlay}>
-            <div className={styles.sidePanel}>
-              <div ref={leftContainerRef} className={styles.sidePlayerContainer} />
-              <div className={styles.sideDarkOverlay} />
-            </div>
-            <div className={styles.centerPanel} />
-            <div className={styles.sidePanel}>
-              <div ref={rightContainerRef} className={styles.sidePlayerContainer} />
-              <div className={styles.sideDarkOverlay} />
-            </div>
+            ) : (
+              playing && (
+                <div className={styles.controls}>
+                  {Array.from(formatRemaining(elapsed, playing.duration_seconds)).map((char, i) => (
+                    <div
+                      key={i}
+                      className={
+                        char === ':' || char === '-' ? styles.charBoxNarrow : styles.charBox
+                      }
+                    >
+                      {char}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
           </div>
         )}
-        <div className={styles.sunkenOverlay} />
+        {isLive ? (
+          <div className={styles.videoPanel}>
+            <div ref={insertContainerRef} className={styles.videoContainer} />
+            <div className={styles.sunkenOverlay} />
+          </div>
+        ) : (
+          <div className={styles.videoPanel}>
+            {playing && (
+              <div className={styles.progressBar}>
+                <div className={styles.progressFill} style={{ width: `${progress * 100}%` }} />
+              </div>
+            )}
+            <div ref={containerRef} className={styles.videoContainer} />
+            {playing?.is_vertical && (
+              <div className={styles.columnOverlay}>
+                <div className={styles.sidePanel}>
+                  <div ref={leftContainerRef} className={styles.sidePlayerContainer} />
+                  <div className={styles.sideDarkOverlay} />
+                </div>
+                <div className={styles.centerPanel} />
+                <div className={styles.sidePanel}>
+                  <div ref={rightContainerRef} className={styles.sidePlayerContainer} />
+                  <div className={styles.sideDarkOverlay} />
+                </div>
+              </div>
+            )}
+            <div className={styles.sunkenOverlay} />
+          </div>
+        )}
       </div>
     </div>
   )
