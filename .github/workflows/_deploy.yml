@@ -460,6 +460,34 @@ jobs:
           [ "$PING" = "pong" ] || { echo "ERROR: GET /ping returned: $PING"; exit 1; }
           echo "GET /ping: OK"
 
+      # The bot never syncs slash commands at runtime (restarts must not write
+      # to Discord), so a redeployed command tree is published here instead.
+      # --if-changed diffs full payloads first: an unchanged tree makes no write.
+      # A failure here fails the job but does not roll back — the bot is healthy,
+      # only its command registration is stale; rerun or use `nb discord sync`.
+      - name: Sync Discord commands
+        id: discordsync
+        if: steps.changes.outputs.discord == 'true'
+        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          SYNC_GUILD_ID: ${{ vars.DISCORD_SYNC_GUILD_ID }}
+        run: |
+          case "$DEPLOY_ENVIRONMENT" in
+            production) SCOPE="--global" ;;
+            staging)
+              if [ -z "$SYNC_GUILD_ID" ]; then
+                echo "DISCORD_SYNC_GUILD_ID not set — skipping staging command sync."
+                exit 0
+              fi
+              SCOPE="--guild $SYNC_GUILD_ID"
+              ;;
+          esac
+
+          docker compose -f compose.yaml -f ${COMPOSE_ENV_FILE} \
+            ${PROJECT_FLAG:-} ${ENV_FILE_FLAG:-} exec -T discord-bot \
+            python -m scripts.discord_ops.commands sync --env "$ENV_ALIAS" $SCOPE --if-changed --yes
+
       - name: Rollback on failure
         if: failure() && (steps.healthcheck.outcome == 'failure' || steps.smoketest.outcome == 'failure')
         working-directory: ${{ env.PROJECT_DIR }}
@@ -508,6 +536,7 @@ jobs:
           [ -z "${WEBHOOK_URL}" ] && { echo "DEPLOY_WEBHOOK_URL not set, skipping."; exit 0; }
           REASON="build or migration error"
           [ "${{ steps.healthcheck.outcome }}" = "failure" ] && REASON="health check failed"
+          [ "${{ steps.discordsync.outcome }}" = "failure" ] && REASON="Discord command sync failed (services are up)"
           export GH_ENV="${{ inputs.environment }}"
           export GH_COMMIT="${{ steps.meta.outputs.commit }}"
           export GH_ACTOR="${{ github.actor }}"

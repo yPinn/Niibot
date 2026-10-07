@@ -9,16 +9,31 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 SEEN_IDS_CAP = 200
+DEFAULT_REMINDER_MINUTES = 30
 
 
 @dataclass
 class GuildConfig:
     channel_id: int
     watch: bool = False
+    # IANA name (e.g. "Asia/Taipei"); None = Discord timestamps in each viewer's zone.
+    timezone: str | None = None
+    # Minutes before an announced scheduled reset to remind; None = off.
+    reminder_minutes: int | None = DEFAULT_REMINDER_MINUTES
+
+    @property
+    def zone(self) -> ZoneInfo | None:
+        if not self.timezone:
+            return None
+        try:
+            return ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
 
 
 @dataclass
@@ -28,6 +43,8 @@ class TrackedPost:
     key: str
     payload: dict[str, Any]
     messages: list[tuple[int, int]] = field(default_factory=list)  # (channel_id, message_id)
+    # Guild ids already reminded about this post (scheduled resets only).
+    reminded: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -47,7 +64,12 @@ class CodexState:
 def _tracked_to_dict(post: TrackedPost | None) -> dict[str, Any] | None:
     if post is None:
         return None
-    return {"key": post.key, "payload": post.payload, "messages": post.messages}
+    return {
+        "key": post.key,
+        "payload": post.payload,
+        "messages": post.messages,
+        "reminded": post.reminded,
+    }
 
 
 def _tracked_from_dict(raw: Any) -> TrackedPost | None:
@@ -57,6 +79,7 @@ def _tracked_from_dict(raw: Any) -> TrackedPost | None:
         key=str(raw["key"]),
         payload=dict(raw["payload"]),
         messages=[(int(c), int(m)) for c, m in raw.get("messages", [])],
+        reminded=[int(g) for g in raw.get("reminded", [])],
     )
 
 
@@ -70,7 +93,12 @@ class StateStore:
                 raw = json.load(f)
             return CodexState(
                 guilds={
-                    int(gid): GuildConfig(int(cfg["channel_id"]), bool(cfg.get("watch", False)))
+                    int(gid): GuildConfig(
+                        int(cfg["channel_id"]),
+                        bool(cfg.get("watch", False)),
+                        cfg.get("timezone") or None,
+                        cfg.get("reminder_minutes", DEFAULT_REMINDER_MINUTES),
+                    )
                     for gid, cfg in raw.get("guilds", {}).items()
                 },
                 seen_ids=raw.get("seen_ids"),
@@ -87,7 +115,12 @@ class StateStore:
         payload = json.dumps(
             {
                 "guilds": {
-                    str(gid): {"channel_id": cfg.channel_id, "watch": cfg.watch}
+                    str(gid): {
+                        "channel_id": cfg.channel_id,
+                        "watch": cfg.watch,
+                        "timezone": cfg.timezone,
+                        "reminder_minutes": cfg.reminder_minutes,
+                    }
                     for gid, cfg in state.guilds.items()
                 },
                 "seen_ids": state.seen_ids,

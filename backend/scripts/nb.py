@@ -142,6 +142,8 @@ def _run_discord(args: argparse.Namespace) -> int:
         command.extend(("--guild", args.guild))
     if args.force_global:
         command.append("--global")
+    if getattr(args, "if_changed", False):
+        command.append("--if-changed")
     if action in {"sync", "rm"}:
         command.append("--yes")
 
@@ -274,6 +276,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--guild", metavar="ID", help="override DISCORD_GUILD_ID")
         p.add_argument("--global", dest="force_global", action="store_true", help="force global")
         p.add_argument("-y", "--yes", action="store_true", help="skip confirmation")
+        if name == "sync":
+            p.add_argument(
+                "--if-changed", action="store_true", help="skip when Discord already matches"
+            )
         p.set_defaults(_handler=_run_discord, dc_action=name)
 
     # check-in ----------------------------------------------------------------
