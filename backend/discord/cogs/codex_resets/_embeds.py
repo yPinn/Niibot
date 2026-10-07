@@ -104,7 +104,7 @@ def build_reset_embed(factory: EmbedFactory, reset: dict[str, Any]) -> discord.E
         if banked:
             lines.append("-# 額度存入帳戶，可自行決定何時使用")
 
-    return factory.build(
+    embed: discord.Embed = factory.build(
         title=title,
         description="\n".join(lines) or None,
         url=_source_url(reset),
@@ -113,6 +113,7 @@ def build_reset_embed(factory: EmbedFactory, reset: dict[str, Any]) -> discord.E
         author=None,
         footer=FOOTER,
     )
+    return embed
 
 
 def build_scheduled_embed(
@@ -139,7 +140,7 @@ def build_scheduled_embed(
     if state == "pending":
         lines.append("-# 實際執行後會另行通知")
 
-    return factory.build(
+    embed: discord.Embed = factory.build(
         title=title,
         description="\n".join(lines),
         url=_source_url(scheduled),
@@ -148,6 +149,7 @@ def build_scheduled_embed(
         author=None,
         footer=FOOTER,
     )
+    return embed
 
 
 def build_watch_embed(
@@ -166,7 +168,7 @@ def build_watch_embed(
         lines.append(f"有效至 {discord.utils.format_dt(parse_dt(watch['expires_at']), 'R')}")
     lines.append("-# AI 推測，非 OpenAI 官方承諾")
 
-    return factory.build(
+    embed: discord.Embed = factory.build(
         title="Codex 重置觀察（已結束）" if ended else "Codex 可能即將重置",
         description="\n".join(lines),
         url=_source_url(watch),
@@ -175,6 +177,7 @@ def build_watch_embed(
         author=None,
         footer=FOOTER,
     )
+    return embed
 
 
 def build_status_embed(factory: EmbedFactory, data: dict[str, Any]) -> discord.Embed:
@@ -217,10 +220,11 @@ def build_status_embed(factory: EmbedFactory, data: dict[str, Any]) -> discord.E
             lines.append(f"依平均推算約 {max(0.0, avg - days_since):.1f} 天後")
             lines.append("-# 推算值，非官方資訊")
 
-    return factory.build(
+    embed: discord.Embed = factory.build(
         title="Codex 重置狀態",
         description="\n".join(lines),
         color=_COLOR_SCHEDULED,
         author=None,
         footer=FOOTER,
     )
+    return embed
