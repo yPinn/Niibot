@@ -153,11 +153,12 @@ Each pack has a ~6000-token budget across all entries (estimated as
 (log channel mappings, in-flight giveaway state, etc.). It is volume-mounted
 per environment so each deployment keeps its own state.
 
-| Path                     | Used by              | Notes                                 |
-| ------------------------ | -------------------- | ------------------------------------- |
-| `log_channels.json`      | discord events cog   | Guild → log channel map               |
-| `log_ignored_roles.json` | discord events cog   | Per-guild roles excluded from logging |
-| `giveaway_state.json`    | discord giveaway cog | Active giveaway snapshots             |
+| Path                     | Used by                  | Notes                                          |
+| ------------------------ | ------------------------ | ---------------------------------------------- |
+| `log_channels.json`      | discord events cog       | Guild → log channel map                        |
+| `log_ignored_roles.json` | discord events cog       | Per-guild roles excluded from logging          |
+| `giveaway_state.json`    | discord giveaway cog     | Active giveaway snapshots                      |
+| `codex_resets.json`      | discord codex_resets cog | Per-guild channel + watch flag, seen reset ids |
 
 ## Conventions
 
