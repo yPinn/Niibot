@@ -65,7 +65,10 @@ function shouldDrop(input: ReportInput): boolean {
   if (sentThisPage >= MAX_PER_PAGE) return true
   // the reporter must never report itself (note: not '.test.ts')
   if (/clientErrorReporter\.[jt]s:/.test(input.stack ?? '')) return true
-  if (input.httpStatus === 401 || input.httpStatus === 403) return true
+  // 401/403 from our own API is the normal auth flow. A third-party 403 (e.g.
+  // Twitch refusing an HLS playlist, reported with kind 'error') is a real fault.
+  const fromOurApi = input.kind === 'api' || input.kind === 'unhandledrejection'
+  if (fromOurApi && (input.httpStatus === 401 || input.httpStatus === 403)) return true
   return false
 }
 

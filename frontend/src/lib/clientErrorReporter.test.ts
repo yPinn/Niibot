@@ -64,6 +64,11 @@ describe('reportClientError', () => {
     reportClientError({ kind: 'api', message: 'forbidden', httpStatus: 403 })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('still reports a third-party 403 (e.g. Twitch refusing an HLS playlist)', () => {
+    reportClientError({ kind: 'error', message: 'hls twitch_live start', httpStatus: 403 })
+    expect(bodyOf(0)).toMatchObject({ kind: 'error', http_status: 403 })
+  })
 })
 
 describe('reportSilent', () => {
