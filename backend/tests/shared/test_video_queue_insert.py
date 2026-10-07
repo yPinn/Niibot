@@ -1,4 +1,4 @@
-"""Live insert (直播插播) source validation — shared.services.video_queue_insert."""
+"""Live insert (直播播放) source validation — shared.services.video_queue_insert."""
 
 from __future__ import annotations
 
@@ -48,11 +48,15 @@ class TestYouTube:
             "youtube_live", "jfKfPfyJRdk", "lofi radio", "UC1", "Lofi Girl", None
         )
 
-    @pytest.mark.parametrize("live_status", ["none", "upcoming"])
-    async def test_not_ongoing_is_rejected(self, live_status):
-        info = YouTubeInfo(title="x", live_status=live_status)
+    async def test_upcoming_is_not_live(self):
+        info = YouTubeInfo(title="x", live_status="upcoming")
         error = await _rejected("https://youtu.be/jfKfPfyJRdk", youtube=info)
         assert error.reason is InsertReason.NOT_LIVE
+
+    async def test_regular_video_points_at_the_queue(self):
+        info = YouTubeInfo(title="x", live_status="none")
+        error = await _rejected("https://youtu.be/jfKfPfyJRdk", youtube=info)
+        assert error.reason is InsertReason.IS_VIDEO
 
     async def test_not_embeddable_live_is_rejected(self):
         info = YouTubeInfo(
@@ -104,9 +108,15 @@ class TestTwitch:
         "https://www.twitch.tv/videos/123",
         "https://clips.twitch.tv/Slug",
         "https://www.bilibili.com/video/BV1xx411c7mD",
-        "not a url",
     ],
 )
+async def test_queueable_videos_point_at_the_queue(url):
+    error = await _rejected(url)
+    assert error.reason is InsertReason.IS_VIDEO
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["not a url", "https://example.com/watch"])
 async def test_other_urls_are_invalid(url):
     error = await _rejected(url)
     assert error.reason is InsertReason.INVALID_URL

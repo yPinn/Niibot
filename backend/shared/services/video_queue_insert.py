@@ -1,4 +1,4 @@
-"""Live insert (直播插播): validate a live URL and start/stop the insert.
+"""Live insert (直播播放): validate a live URL and start/stop the insert.
 
 A live insert is the broadcaster playing someone's ongoing live stream in the
 overlay — background music, a watch-along — until they stop it or the stream
@@ -27,7 +27,10 @@ from shared.video_sources import (
     TwitchLiveLookupError,
     TwitchLiveStream,
     YouTubeInfo,
+    extract_bilibili_bvid,
     extract_twitch_channel_login,
+    extract_twitch_clip_slug,
+    extract_twitch_vod_info,
     extract_youtube_id,
 )
 
@@ -37,6 +40,9 @@ FetchTwitchLive = Callable[[str], Awaitable[TwitchLiveStream | None]]
 
 class InsertReason(StrEnum):
     INVALID_URL = "invalid_url"
+    # A regular, queueable video (YouTube video, Twitch VOD/clip, Bilibili):
+    # the caller should point at the queue instead.
+    IS_VIDEO = "is_video"
     NOT_LIVE = "not_live"
     OWN_CHANNEL = "own_channel"
     NOT_PLAYABLE = "not_playable"
@@ -78,7 +84,9 @@ async def resolve_live_source(
             raise InsertRejected(
                 InsertReason.NOT_PLAYABLE, unplayable_reason=info.unplayable_reason
             )
-        if info.live_status != "live":  # 'upcoming' or an ordinary video
+        if info.live_status == "none":
+            raise InsertRejected(InsertReason.IS_VIDEO)
+        if info.live_status != "live":  # 'upcoming'
             raise InsertRejected(InsertReason.NOT_LIVE)
         return LiveSource(
             source_type="youtube_live",
@@ -109,6 +117,12 @@ async def resolve_live_source(
             thumbnail_url=stream.thumbnail_url,
         )
 
+    if (
+        extract_twitch_vod_info(url)[0]
+        or extract_twitch_clip_slug(url)
+        or extract_bilibili_bvid(url)
+    ):
+        raise InsertRejected(InsertReason.IS_VIDEO)
     raise InsertRejected(InsertReason.INVALID_URL)
 
 
@@ -142,6 +156,6 @@ class VideoQueueInsertService:
             creator_id=source.creator_id,
             creator_name=source.creator_name,
             thumbnail_url=source.thumbnail_url,
-            volume_percent=settings.insert_volume_percent,
+            volume_percent=settings.volume_percent,  # shared with queue videos
             audio_only=settings.insert_audio_only,
         )

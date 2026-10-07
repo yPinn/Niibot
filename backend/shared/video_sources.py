@@ -30,6 +30,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Literal
@@ -1031,6 +1032,110 @@ async def fetch_twitch_clip_source(
         LOGGER.warning(
             "[Twitch GQL] fetch_twitch_clip_source failed for %s: %s", slug, type(exc).__name__
         )
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+# Live insert (直播播放) direct playback — same unofficial GraphQL class as the
+# clip source above, and for the same reason: Twitch's embed player will not
+# autoplay in an OBS Browser Source (confirmed for `channel` playback on
+# staging: it sits on a play button even in OBS "Interact"), while a
+# host-controlled <video> fed by hls.js does. This is the token request
+# streamlink / yt-dlp make (operationName `PlaybackAccessToken_Template`); the
+# playlist URL is Twitch's public HLS "usher" endpoint.
+_TWITCH_LIVE_TOKEN_QUERY = (
+    "query PlaybackAccessToken_Template($login: String!) {"
+    ' streamPlaybackAccessToken(channelName: $login, params: {platform: "web",'
+    ' playerBackend: "mediaplayer", playerType: "embed"}) {'
+    " value signature authorization { isForbidden forbiddenReasonCode } } }"
+)
+_TWITCH_USHER_LIVE_URL = "https://usher.ttvnw.net/api/channel/hls/{id}.m3u8"
+
+
+async def fetch_hls_master_playlist(
+    url: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Fetch a Twitch master playlist's text, or None on any failure.
+
+    Twitch's usher host sends no CORS header, so a browser on our domain can't
+    read the master playlist itself — the API relays just this one small text
+    file. The variant playlists and segments it lists (``*.ttvnw.net``) do send
+    ``Access-Control-Allow-Origin: *`` and are fetched by the overlay directly,
+    so no video bytes pass through Niibot.
+    """
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            if resp.status != 200:
+                LOGGER.info("[Twitch usher] master playlist status %s", resp.status)
+                return None
+            text = await resp.text()
+        return text if text.startswith("#EXTM3U") else None
+    except Exception as exc:
+        LOGGER.warning("[Twitch usher] master playlist failed: %s", type(exc).__name__)
+        return None
+    finally:
+        if _own_session:
+            await _session.close()
+
+
+async def fetch_twitch_live_hls_source(
+    login: str,
+    session: aiohttp.ClientSession | None = None,
+) -> str | None:
+    """Resolve an ongoing Twitch broadcast to a signed HLS master playlist URL.
+
+    UNOFFICIAL — see the clip-source comment above. Returns None on any failure
+    or when Twitch forbids anonymous playback (e.g. geo / sub-only restrictions);
+    the overlay then falls back to the embed player. ``supported_codecs=avc1``
+    keeps the variants H.264, which every OBS (CEF) build can decode.
+    """
+    body = {
+        "operationName": "PlaybackAccessToken_Template",
+        "query": _TWITCH_LIVE_TOKEN_QUERY,
+        "variables": {"login": login},
+    }
+    _own_session = session is None
+    _session: aiohttp.ClientSession = session or aiohttp.ClientSession()
+    try:
+        async with _session.post(
+            _TWITCH_GQL_URL,
+            data=json.dumps(body),
+            headers={
+                "Client-ID": _TWITCH_GQL_CLIENT_ID,
+                "Content-Type": "text/plain;charset=UTF-8",
+            },
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status != 200:
+                LOGGER.warning("[Twitch GQL] live token status %s for %s", resp.status, login)
+                return None
+            data = await resp.json(content_type=None)
+
+        token = ((data or {}).get("data") or {}).get("streamPlaybackAccessToken") or {}
+        signature, value = token.get("signature"), token.get("value")
+        if not signature or not value:
+            return None
+        if (token.get("authorization") or {}).get("isForbidden"):
+            return None
+        params = {
+            "sig": signature,
+            "token": value,
+            "allow_source": "true",
+            "allow_audio_only": "true",
+            "player_backend": "mediaplayer",
+            "playlist_include_framerate": "true",
+            "supported_codecs": "avc1",
+            "p": str(secrets.randbelow(10_000_000)),
+        }
+        query_string = "&".join(f"{k}={quote(v, safe='')}" for k, v in params.items())
+        return f"{_TWITCH_USHER_LIVE_URL.format(id=quote(login, safe=''))}?{query_string}"
+    except Exception as exc:
+        LOGGER.warning("[Twitch GQL] live HLS source failed for %s: %s", login, type(exc).__name__)
         return None
     finally:
         if _own_session:

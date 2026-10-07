@@ -100,4 +100,11 @@ def test_live_insert_migration_wakes_the_queue_stream_and_bounds_the_row():
         in sql
     )
     assert "CHECK (source_type IN ('twitch_live', 'youtube_live'))" in sql
-    assert "CHECK (insert_volume_percent BETWEEN 0 AND 100)" in sql
+
+
+def test_shared_volume_migration_drops_the_live_volume_and_lowers_the_default():
+    sql = (_VERSIONS / "157_video_queue_shared_volume.sql").read_text(encoding="utf-8")
+
+    assert "DROP COLUMN IF EXISTS insert_volume_percent" in sql
+    assert "DROP CONSTRAINT IF EXISTS chk_video_queue_insert_volume_percent" in sql
+    assert "ALTER COLUMN volume_percent SET DEFAULT 50" in sql

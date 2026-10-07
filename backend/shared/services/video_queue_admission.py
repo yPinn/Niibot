@@ -321,6 +321,19 @@ class VideoQueueAdmissionService:
                 details={"unplayable_reason": metadata.unplayable_reason or ""},
             )
 
+        # YouTube with nothing back at all (API failure / quota, or the video
+        # doesn't exist): its live status is unknown too, and a live stream let
+        # in here plays forever and stalls the queue. Unlike other gates, this
+        # one rejects even when no length limit is set.
+        if (
+            resolved.video_type == "youtube"
+            and metadata.title is None
+            and metadata.duration_seconds is None
+        ):
+            raise AdmissionRejected(
+                AdmissionReason.METADATA_UNVERIFIABLE, details={"field": "youtube"}
+            )
+
         duration_limits = [settings.max_duration_seconds]
         if policy.source_duration_field:
             duration_limits.append(int(getattr(settings, policy.source_duration_field)))
@@ -405,7 +418,11 @@ class VideoQueueAdmissionService:
             creator_id=metadata.creator_id,
         )
         if blocked is not None:
-            raise AdmissionRejected(AdmissionReason.BLOCKED, blocked=blocked)
+            raise AdmissionRejected(
+                AdmissionReason.BLOCKED,
+                details={"blocked_kind": blocked.kind},
+                blocked=blocked,
+            )
 
         requester = await get_requester_name()
         if policy.atomic_limited_insert:

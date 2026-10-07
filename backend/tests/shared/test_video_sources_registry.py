@@ -589,3 +589,106 @@ class TestFetchTwitchLiveStream:
 
         with pytest.raises(TwitchLiveLookupError):
             await fetch_twitch_live_stream("lofistreamer", "", "")
+
+
+class _GqlResponse:
+    def __init__(self, status, payload):
+        self.status = status
+        self._payload = payload
+
+    async def json(self, content_type=None):
+        return self._payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+
+def _gql_session(status, payload):
+    from unittest.mock import MagicMock
+
+    session = MagicMock()
+    session.post = MagicMock(return_value=_GqlResponse(status, payload))
+    return session
+
+
+@pytest.mark.asyncio
+class TestFetchTwitchLiveHlsSource:
+    async def test_builds_a_signed_usher_playlist_url(self):
+        from urllib.parse import parse_qs, urlsplit
+
+        from shared.video_sources import fetch_twitch_live_hls_source
+
+        token = {"value": '{"channel":"lofi"}', "signature": "abc123", "authorization": {}}
+        session = _gql_session(200, {"data": {"streamPlaybackAccessToken": token}})
+        url = await fetch_twitch_live_hls_source("lofi", session)
+        assert url is not None
+        parts = urlsplit(url)
+        assert parts.netloc == "usher.ttvnw.net"
+        assert parts.path == "/api/channel/hls/lofi.m3u8"
+        query = parse_qs(parts.query)
+        assert query["sig"] == ["abc123"]
+        assert query["token"] == ['{"channel":"lofi"}']
+        assert query["supported_codecs"] == ["avc1"]
+        sent = session.post.call_args.kwargs
+        assert "PlaybackAccessToken_Template" in sent["data"]
+
+    @pytest.mark.parametrize(
+        ("status", "payload"),
+        [
+            (500, {}),
+            (200, {"data": {"streamPlaybackAccessToken": None}}),
+            (
+                200,
+                {
+                    "data": {
+                        "streamPlaybackAccessToken": {
+                            "value": "v",
+                            "signature": "s",
+                            "authorization": {"isForbidden": True},
+                        }
+                    }
+                },
+            ),
+        ],
+    )
+    async def test_failures_return_none(self, status, payload):
+        from shared.video_sources import fetch_twitch_live_hls_source
+
+        assert await fetch_twitch_live_hls_source("lofi", _gql_session(status, payload)) is None
+
+
+class _TextResponse:
+    def __init__(self, status, text):
+        self.status = status
+        self._text = text
+
+    async def text(self):
+        return self._text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "text", "expected"),
+    [
+        (200, "#EXTM3U\nhttps://x/v.m3u8\n", "#EXTM3U\nhttps://x/v.m3u8\n"),
+        (404, "#EXTM3U\n", None),
+        (200, "<html>blocked</html>", None),
+    ],
+)
+async def test_fetch_hls_master_playlist(status, text, expected):
+    from unittest.mock import MagicMock
+
+    from shared.video_sources import fetch_hls_master_playlist
+
+    session = MagicMock()
+    session.get = MagicMock(return_value=_TextResponse(status, text))
+    assert await fetch_hls_master_playlist("https://usher.ttvnw.net/x.m3u8", session) == expected
