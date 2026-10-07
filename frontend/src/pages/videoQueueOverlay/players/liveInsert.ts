@@ -19,6 +19,11 @@ import type { TwitchPlayerInstance, YTPlayer } from './types'
 // clip embed. So the stream plays in a host-controlled <video> via hls.js from
 // a signed playlist the backend resolves (/insert/playlist.m3u8); the embed stays as
 // the fallback when that can't start. YouTube's player autoplays fine.
+//
+// The backend relays the variant playlists too (Twitch 403s them for any
+// non-Twitch Origin), pointing them at the direct API host so the ~2 s variant
+// polling skips the Pages proxy — see "例外：直播插播 HLS" in
+// docs/guides/cloudflare-pages.md. Segments still come straight from Twitch.
 
 /** Twitch fires OFFLINE on a brief broadcaster disconnect too; only end once it
  *  has stayed offline this long (an ONLINE in between cancels). */

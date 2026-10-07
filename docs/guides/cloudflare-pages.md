@@ -119,6 +119,21 @@ feed，未來只共用 Overlay shell、公開金鑰、theme 與 transport primit
 [docs/architecture/attendance-and-community-overlays.md](../architecture/attendance-and-community-overlays.md)），
 真的要做時才比照 Video Queue 的作法遷移，不要為它現在還沒發生的需求先做抽象。
 
+### 例外：直播插播 HLS 畫質播放清單直連後端
+
+Overlay 一律經 Pages proxy（`/api/*`）連後端，**唯一例外**是直播插播（Twitch live insert）的 HLS
+畫質播放清單：
+
+- Twitch 的畫質播放清單主機（`*.playlist.ttvnw.net`）對任何非 Twitch 的 `Origin` 回 403，瀏覽器又
+  一定會帶 `Origin`，所以後端必須轉送（`GET /api/video-queue/public/{username}/insert/variant.m3u8`）。
+  影片片段（`*.hls.ttvnw.net`）接受任何 origin，仍由 OBS 直接向 Twitch CDN 取得，不經 Niibot。
+- hls.js 播放期間約每 2 秒重抓一次畫質播放清單，插播 1 小時約 1,800 requests；走 Pages proxy 會
+  隨插播時數與同時插播的頻道數線性吃掉 Functions 額度。
+- 因此 API 改寫主播放清單時，畫質播放清單網址指向 `API_DIRECT_URL`（Cloudflare Tunnel 直連網域，
+  不觸發 Functions）。主播放清單本身每次開始／重試才抓一次，仍走 `/api/*`。
+- `API_DIRECT_URL` 未設定（dev）時輸出相對網址，照舊走同一個 origin。
+- 新增任何直連端點前必須在這一節登記；一般請求一律維持 Pages proxy。
+
 ### Live Display stream contract
 
 - Renderer 以 `GET /api/live-display/public/stream` 建立一條 `fetch` stream，

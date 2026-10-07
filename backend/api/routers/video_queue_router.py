@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from asyncpg import Pool
@@ -64,13 +65,15 @@ from shared.video_queue_messages import (
 from shared.video_sources import (
     UNPLAYABLE_LIVE,
     VideoType,
-    fetch_hls_master_playlist,
+    fetch_hls_playlist,
     fetch_twitch_clip_source,
     fetch_twitch_live_hls_source,
     fetch_twitch_live_stream,
     fetch_video_metadata,
     fetch_yt_info,
+    is_twitch_variant_playlist_url,
     resolve_video_url,
+    rewrite_master_variant_urls,
     unplayable_message,
 )
 
@@ -86,6 +89,9 @@ _playback_limiter = RateLimiter(max_calls=60, period=60.0)
 _stream_limiter = RateLimiter(max_calls=30, period=60.0)
 _clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
 _reel_source_limiter = RateLimiter(max_calls=30, period=60.0)
+# hls.js reloads a live variant about once per segment (~2 s → ~30/min); the
+# headroom covers a quality switch and the dashboard preview sharing an IP.
+_variant_relay_limiter = RateLimiter(max_calls=120, period=60.0)
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 
@@ -729,35 +735,93 @@ def _playlist_response(playlist: str) -> Response:
     )
 
 
+def _variant_relay_url(username: str, settings: Settings) -> str:
+    """Where the overlay's hls.js should fetch variant playlists.
+
+    hls.js re-polls the variant every ~2 s for as long as the insert plays,
+    so it goes to API_DIRECT_URL when set — the one documented exception to
+    "overlays reach the API through the Pages proxy" (each proxied request
+    counts against the Pages Functions daily quota; see
+    docs/guides/cloudflare-pages.md, "Overlay request budget"). Unset (dev),
+    a relative URL keeps it on whatever origin served the master playlist.
+    """
+    if not settings.api_direct_url:
+        return "variant.m3u8"
+    return (
+        f"{settings.api_direct_url}/api/video-queue/public/"
+        f"{quote(username, safe='')}/insert/variant.m3u8"
+    )
+
+
+async def _require_twitch_live_insert(
+    username: str, pool: Pool, twitch_api: TwitchAPIClient
+) -> VideoQueueInsert:
+    channel_id = await _resolve_channel_id(username, twitch_api)
+    insert = await VideoQueueInsertRepository(pool).get_active(channel_id)
+    if insert is None or insert.source_type != "twitch_live":
+        raise HTTPException(status_code=404, detail="No Twitch live insert")
+    return insert
+
+
 @router.get("/public/{username}/insert/playlist.m3u8")
 async def get_live_insert_playlist(
     request: Request,
     username: str,
     pool: Pool = Depends(get_db_pool),
     twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
     """Unauthenticated, like clip-source — the HLS master playlist of the
-    channel's active Twitch live stream. Relayed because Twitch's usher host
-    sends no CORS header; see fetch_hls_master_playlist. 404s → the overlay falls back to the embed player (or,
-    mid-stream, keeps retrying within its offline grace).
+    channel's active Twitch live stream, with its variant URLs rewritten to
+    the variant relay below (see fetch_hls_playlist for why both are relayed).
+    404s → the overlay falls back to the embed player (or, mid-stream, keeps
+    retrying within its offline grace).
     """
     client_host = request.client.host if request.client else "unknown"
     _clip_source_limiter.require(client_host)
     try:
-        channel_id = await _resolve_channel_id(username, twitch_api)
-        insert = await VideoQueueInsertRepository(pool).get_active(channel_id)
-        if insert is None or insert.source_type != "twitch_live":
-            raise HTTPException(status_code=404, detail="No Twitch live insert")
+        insert = await _require_twitch_live_insert(username, pool, twitch_api)
         url = await fetch_twitch_live_hls_source(insert.source_id)
-        playlist = await fetch_hls_master_playlist(url) if url else None
+        playlist = await fetch_hls_playlist(url) if url else None
         if not playlist:
             raise HTTPException(status_code=404, detail="Live source unavailable")
-        return _playlist_response(playlist)
+        return _playlist_response(
+            rewrite_master_variant_urls(playlist, _variant_relay_url(username, settings))
+        )
     except HTTPException:
         raise
     except Exception:
         LOGGER.exception("Failed to resolve live insert playlist")
         raise HTTPException(status_code=500, detail="Failed to resolve live source") from None
+
+
+@router.get("/public/{username}/insert/variant.m3u8")
+async def get_live_insert_variant(
+    request: Request,
+    username: str,
+    u: str = Query(..., max_length=4096),
+    pool: Pool = Depends(get_db_pool),
+    twitch_api: TwitchAPIClient = Depends(get_twitch_api),
+) -> Response:
+    """Unauthenticated — relay one variant playlist of the active Twitch live
+    insert. Only fetches ``https://*.playlist.ttvnw.net`` URLs and only while
+    this channel has a Twitch live insert, so it can't serve as an open proxy.
+    """
+    client_host = request.client.host if request.client else "unknown"
+    _variant_relay_limiter.require(client_host)
+    if not is_twitch_variant_playlist_url(u):
+        raise HTTPException(status_code=400, detail="Not a Twitch variant playlist")
+    try:
+        await _require_twitch_live_insert(username, pool, twitch_api)
+        playlist = await fetch_hls_playlist(u)
+        if not playlist:
+            raise HTTPException(status_code=404, detail="Variant unavailable")
+        return _playlist_response(playlist)
+    except HTTPException:
+        raise
+    except Exception:
+        LOGGER.exception("Failed to relay live insert variant playlist")
+        raise HTTPException(status_code=500, detail="Failed to relay variant") from None
 
 
 class ReelSourceResponse(BaseModel):
