@@ -105,11 +105,14 @@ function RateLimitList({ items }: { items: RateLimitSnapshot[] }) {
 export function RateLimitDigest({
   items,
   offline,
+  failed,
   onOpen,
 }: {
-  /** undefined while loading; null when unavailable. */
+  /** undefined while loading; null when the service is offline. */
   items: RateLimitSnapshot[] | null | undefined
   offline?: boolean
+  /** The rate-limit request itself failed and there is no earlier data. */
+  failed?: boolean
   onOpen: () => void
 }) {
   const active = items ? rankByPressure(items).filter(s => severity(s) !== 'idle') : []
@@ -118,10 +121,12 @@ export function RateLimitDigest({
       <Separator className="opacity-40" />
       <FieldRow
         label="rate limits"
-        loading={items === undefined}
+        loading={items === undefined && !failed}
         value={
-          offline || !items ? (
-            <span className="text-muted-foreground">無法取得</span>
+          failed && !items ? (
+            <span className="text-muted-foreground">無法載入</span>
+          ) : offline || !items ? (
+            <span className="text-muted-foreground">服務離線</span>
           ) : active.length === 0 ? (
             <span className="text-muted-foreground">{items.length} 項皆閒置</span>
           ) : (
@@ -140,26 +145,35 @@ export function RateLimitSection({
   title,
   icon,
   items,
+  failed,
 }: {
   title: string
   icon: string
   /** null: the service is offline; undefined: still loading. */
   items: RateLimitSnapshot[] | null | undefined
+  /** The rate-limit request itself failed and there is no earlier data. Not
+   *  the same as the service being offline — never render it as offline. */
+  failed?: boolean
 }) {
+  const loadFailed = failed && items === undefined
   return (
     <MonitorCard
       icon={icon}
       title={title}
-      loading={items === undefined}
+      loading={items === undefined && !failed}
       badge={
-        items === null ? (
+        loadFailed ? (
+          <Badge variant="muted">error</Badge>
+        ) : items === null ? (
           <Badge variant="offline">offline</Badge>
         ) : (
           <SeverityBadge level={worstSeverity(items ?? [])} />
         )
       }
     >
-      {items === undefined ? (
+      {loadFailed ? (
+        <p className="text-sub text-muted-foreground">無法載入限流狀態</p>
+      ) : items === undefined ? (
         <Skeleton className="h-24 w-full" />
       ) : items === null ? (
         <p className="text-sub text-muted-foreground">服務離線，無法取得限流狀態</p>
