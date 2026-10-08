@@ -637,6 +637,29 @@ def create_app() -> FastAPI:
             **gauges,
         }
 
+    if not settings.is_production:
+        # Non-production probe: what the API sees as the caller, and the proxy
+        # headers it arrived with — to settle which source rate limiters can
+        # trust behind Pages Functions + Cloudflare Tunnel. Echoes only the
+        # caller's own request back to it.
+        _probe_headers = (
+            "x-forwarded-for",
+            "x-forwarded-proto",
+            "x-real-ip",
+            "forwarded",
+            "cf-connecting-ip",
+            "true-client-ip",
+            "cf-worker",
+            "cf-ray",
+        )
+
+        @app.get("/api/debug/client-ip")
+        async def debug_client_ip(request: Request):
+            return {
+                "client_host": request.client.host if request.client else None,
+                "headers": {h: request.headers.get(h) for h in _probe_headers},
+            }
+
     # Ping endpoint
     @app.api_route("/ping", methods=["GET", "HEAD"], response_class=PlainTextResponse)
     async def ping():
