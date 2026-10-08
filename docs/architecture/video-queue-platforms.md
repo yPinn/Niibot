@@ -192,10 +192,21 @@ The startup watchdog stops once playback is confirmed, so a player that later
 freezes mid-video (a buffering spinner that never clears) is covered by a
 separate **stall watch** (`createStallWatch` in `players/shared.ts`), used by
 YouTube and Twitch VOD. It reads the playhead on each 1 s progress tick, only
-after the first `PLAYING`. The thresholds are deliberately conservative so an
-ordinary rebuffer never trips them: after 30 s without movement it re-seeks to
-the current position and plays once; after 120 s it reports
-`VIDEO_QUEUE.PLAYBACK_STALLED` and advances as `provider_error`.
+after the first `PLAYING`. After 10 s without movement it re-seeks to the
+current position and plays once (an ordinary rebuffer clears by itself or on
+this nudge); after 90 s it reports `VIDEO_QUEUE.PLAYBACK_STALLED` and advances
+as `provider_error`.
+
+YouTube adds a middle step: after 20 s it reports
+`VIDEO_QUEUE.PLAYBACK_RELOADED`, destroys the iframe and builds a fresh player
+at the frozen position. A wedged OBS (CEF) decoder survives a re-seek but not a
+new player — the same thing a manual Browser Source refresh does, minus the
+lost footage, since a refresh rejoins at the wall-clock position from
+`started_at`. YouTube also counts a tick as frozen when the reported playhead
+runs more than 3 s past the buffered media (`getVideoLoadedFraction()`), which
+a really-playing video can't do. A picture that freezes while the playhead
+stays inside the buffer is still invisible from the parent page — the player
+is a cross-origin iframe.
 
 A VOD is hours long, so Video Queue treats it as a **long clip**:
 

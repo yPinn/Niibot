@@ -1,4 +1,4 @@
-"""Unit tests for core.rate_limit.RateLimiter."""
+"""Unit tests for core.rate_limit (RateLimiter, client_ip)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import time
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
-from core.rate_limit import RateLimiter
+from core.rate_limit import PAGES_WORKER_ZONE, RateLimiter, client_ip
 
 
 class TestRateLimiterAllow:
@@ -103,3 +104,89 @@ class TestRateLimiterSweep:
             rl.allow(f"filler-{i}")
 
         assert "active-key" in rl._log
+
+
+def _request(headers: dict[str, str], peer: str | None = "172.22.0.1") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": (peer, 1234) if peer else None,
+        }
+    )
+
+
+class TestClientIp:
+    def test_pages_function_forwarded_ip_is_trusted(self):
+        req = _request(
+            {
+                "CF-Worker": PAGES_WORKER_ZONE,
+                "X-Niibot-Client-IP": "198.51.100.4",
+                "CF-Connecting-IP": "2a06:98c0:3600::103",
+            }
+        )
+        assert client_ip(req) == "198.51.100.4"
+
+    def test_forwarded_ip_from_another_worker_is_ignored(self):
+        req = _request(
+            {
+                "CF-Worker": "evil.example.com",
+                "X-Niibot-Client-IP": "198.51.100.4",
+                "CF-Connecting-IP": "2a06:98c0:3600::103",
+            }
+        )
+        assert client_ip(req) == "2a06:98c0:3600::103"
+
+    def test_forwarded_ip_without_worker_is_ignored(self):
+        req = _request({"X-Niibot-Client-IP": "198.51.100.4", "CF-Connecting-IP": "203.0.113.9"})
+        assert client_ip(req) == "203.0.113.9"
+
+    def test_pages_without_forwarded_ip_falls_back_to_connecting_ip(self):
+        req = _request({"CF-Worker": PAGES_WORKER_ZONE, "CF-Connecting-IP": "2a06:98c0:3600::103"})
+        assert client_ip(req) == "2a06:98c0:3600::103"
+
+    def test_x_forwarded_for_and_true_client_ip_are_never_used(self):
+        req = _request({"X-Forwarded-For": "6.6.6.6", "True-Client-IP": "8.8.4.4"})
+        assert client_ip(req) == "172.22.0.1"
+
+    def test_no_peer_is_unknown(self):
+        assert client_ip(_request({}, peer=None)) == "unknown"
+
+
+class TestSnapshot:
+    def test_reports_busiest_key_active_keys_and_totals(self):
+        rl = RateLimiter(max_calls=2, period=60.0)
+        rl.allow("a")
+        rl.allow("a")
+        rl.allow("a")  # rejected
+        rl.allow("b")
+        snap = rl.snapshot()
+        assert snap["limit"] == 2
+        assert snap["window_seconds"] == 60.0
+        assert snap["used"] == 2
+        assert snap["keys"] == 2
+        assert snap["allowed"] == 3
+        assert snap["rejected"] == 1
+        assert snap["last_rejected_at"] is not None
+
+    def test_expired_calls_do_not_count(self, monkeypatch: pytest.MonkeyPatch):
+        rl = RateLimiter(max_calls=5, period=10.0)
+        now = [1000.0]
+        monkeypatch.setattr(time, "monotonic", lambda: now[0])
+        rl.allow("a")
+        now[0] += 11
+        snap = rl.snapshot()
+        assert snap["used"] == 0
+        assert snap["keys"] == 0
+
+    def test_only_named_limiters_register(self):
+        from shared import rate_limits
+
+        RateLimiter(max_calls=1, period=1.0)
+        assert "limiter:None" not in rate_limits._providers
+        RateLimiter(max_calls=1, period=1.0, name="test.snapshot")
+        try:
+            names = [s["name"] for s in rate_limits.collect_rate_limits()]
+            assert "test.snapshot" in names
+        finally:
+            rate_limits.unregister("limiter:test.snapshot")

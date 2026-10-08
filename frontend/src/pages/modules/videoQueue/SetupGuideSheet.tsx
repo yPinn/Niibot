@@ -37,6 +37,13 @@ function buildSteps(twitchRewardsUrl: string, onNavigate: () => void): SetupStep
         <>
           混音器設為 <GuideValue>監聽並輸出</GuideValue>
         </>,
+        <>
+          不要勾選 <GuideValue>不可見時關閉來源</GuideValue>，切換場景才不會重新載入、跳過片段
+        </>,
+        <>
+          若影片畫面偶爾卡住：OBS「設定 → 進階」取消 <GuideValue>啟用瀏覽器來源硬體加速</GuideValue>
+          並重開 OBS
+        </>,
       ],
     },
     {

@@ -143,7 +143,7 @@ class Bot(_MessageRouterMixin, _NotifyMixin, commands.AutoBot):
         self._bot_selection_reconcile_lock = asyncio.Lock()
         self._runtime_credentials_ready = asyncio.Event()
         self._runtime_credential_reconcile_requested = asyncio.Event()
-        self.egress = TwitchEgressCoordinator()
+        self.egress = TwitchEgressCoordinator(name="bot")
         # Channels missing one or more BROADCASTER_SCOPES — notified on next stream online
         self._needs_reauth: set[str] = set()
         # Channel IDs where bot has confirmed moderator status

@@ -24,6 +24,9 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 
+from shared import rate_limits
+from shared.rate_limits import ProviderBudget, RateLimitSnapshot
+
 
 def credential_bucket_key(token: str | None) -> str:
     """Return a non-secret, stable in-process key for a Twitch credential."""
@@ -136,6 +139,31 @@ class _PriorityWindowGate:
             if bucket.waiters and not self._closed:
                 self._ensure_worker(key, bucket)
 
+    def snapshot(self, name: str) -> RateLimitSnapshot:
+        """Busiest bucket's grants in the current window, plus queue and pauses."""
+        now = time.monotonic()
+        cutoff = now - self._window
+        used = keys = queued = 0
+        blocked = 0.0
+        for bucket in list(self._buckets.values()):
+            in_window = sum(1 for t in bucket.timestamps if t > cutoff)
+            waiting = sum(1 for w in bucket.waiters if not w.future.done())
+            if in_window or waiting:
+                keys += 1
+            used = max(used, in_window)
+            queued += waiting
+            blocked = max(blocked, bucket.blocked_until - now)
+        return {
+            "name": name,
+            "group": "twitch",
+            "limit": self._limit,
+            "window_seconds": self._window,
+            "used": used,
+            "keys": keys,
+            "queued": queued,
+            "blocked_seconds": round(max(blocked, 0.0), 1),
+        }
+
     async def close(self) -> None:
         self._closed = True
         for bucket in self._buckets.values():
@@ -162,6 +190,7 @@ class TwitchEgressCoordinator:
         chat_sender_limit: int = 18,
         chat_sender_window: float = 30.0,
         chat_channel_interval: float = 1.1,
+        name: str | None = None,
     ) -> None:
         self._helix = _PriorityWindowGate(
             limit=helix_limit,
@@ -177,6 +206,14 @@ class TwitchEgressCoordinator:
             window=max(chat_channel_interval, 0.001),
             min_interval=chat_channel_interval,
         )
+        # Last Ratelimit-* headers Twitch sent, per credential bucket.
+        self._helix_budgets: dict[str, ProviderBudget] = {}
+        self._helix_429 = 0
+        self._chat_defers = 0
+        self._name = name
+        # Named coordinators show up in /status (admin Monitor → 限流).
+        if name:
+            rate_limits.register(f"twitch_egress:{name}", self.snapshots)
 
     async def acquire_helix(
         self,
@@ -201,6 +238,7 @@ class TwitchEgressCoordinator:
 
     def defer_chat(self, sender_id: str, channel_id: str, delay: float) -> None:
         """Defer both chat buckets after a provider-side send limit signal."""
+        self._chat_defers += 1
         self._chat_channel.defer(f"{sender_id}:{channel_id}", delay)
         self._chat_sender.defer(sender_id, delay)
 
@@ -214,6 +252,7 @@ class TwitchEgressCoordinator:
         """Apply provider reset headers and return the imposed delay, if any."""
         normalized = {str(key).lower(): str(value) for key, value in headers.items()}
         delay: float | None = None
+        self._record_helix_budget(bucket_key, status_code, normalized)
 
         retry_after = normalized.get("retry-after")
         if retry_after is not None:
@@ -245,7 +284,52 @@ class TwitchEgressCoordinator:
             return delay
         return None
 
+    def _record_helix_budget(
+        self, bucket_key: str, status_code: int, headers: Mapping[str, str]
+    ) -> None:
+        if status_code == 429:
+            self._helix_429 += 1
+
+        def _number(key: str) -> float | None:
+            try:
+                return float(headers[key])
+            except (KeyError, TypeError, ValueError):
+                return None
+
+        limit = _number("ratelimit-limit")
+        remaining = _number("ratelimit-remaining")
+        if limit is None and remaining is None:
+            return
+        self._helix_budgets[bucket_key] = {
+            "limit": int(limit) if limit is not None else None,
+            "remaining": int(remaining) if remaining is not None else None,
+            "reset_at": _number("ratelimit-reset"),
+        }
+
+    def _tightest_helix_budget(self) -> ProviderBudget | None:
+        """The live (not yet reset) budget with the least left."""
+        now = time.time()
+        live = [
+            b
+            for b in self._helix_budgets.values()
+            if b["remaining"] is not None and (b["reset_at"] is None or b["reset_at"] > now)
+        ]
+        return min(live, key=lambda b: b["remaining"] or 0, default=None)
+
+    def snapshots(self) -> list[RateLimitSnapshot]:
+        name = self._name or "twitch"
+        helix = self._helix.snapshot(f"{name}.helix")
+        helix["rejected"] = self._helix_429
+        helix["provider"] = self._tightest_helix_budget()
+        sender = self._chat_sender.snapshot(f"{name}.chat_sender")
+        sender["rejected"] = self._chat_defers
+        channel = self._chat_channel.snapshot(f"{name}.chat_channel")
+        # Chat gates only matter where chat is sent (the bot); skip them idle.
+        return [helix] + [g for g in (sender, channel) if g["keys"] or g.get("rejected")]
+
     async def close(self) -> None:
+        if self._name:
+            rate_limits.unregister(f"twitch_egress:{self._name}")
         await asyncio.gather(
             self._helix.close(),
             self._chat_sender.close(),

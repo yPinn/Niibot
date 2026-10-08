@@ -126,17 +126,22 @@ export function startTimerBasedEnd(ctx: MountContext, fallbackMaxSeconds: number
   clipTimerRef.current = setTimeout(() => handleVideoEnd(currentId), remaining * 1000 + 500)
 }
 
-// Mid-playback stall thresholds, in seconds the playhead hasn't moved. Kept
-// deliberately conservative: an ordinary rebuffer recovers by itself well within
-// these, so only a real freeze gets a nudge, and only a long one skips the entry.
-export const STALL_RECOVER_SECONDS = 30
-export const STALL_SKIP_SECONDS = 120
+// Mid-playback stall thresholds, in seconds the playhead hasn't moved. An
+// ordinary rebuffer clears within the first; a frozen decoder doesn't clear on
+// a re-seek, but does on a fresh player (what an OBS source refresh does), so
+// the second rebuilds it where it stood; only a freeze outliving both skips.
+export const STALL_RECOVER_SECONDS = 10
+export const STALL_RELOAD_SECONDS = 20
+export const STALL_SKIP_SECONDS = 90
 /** Playhead movement below this between two ticks counts as frozen. */
 const STALL_EPSILON_SECONDS = 0.25
 
 export interface StallWatchHandlers {
   /** Re-seek to the current position and play again — once per freeze. */
   recover: () => void
+  /** Rebuild the player at the current position — once per freeze. Optional:
+   *  a platform without it goes straight from recover to giveUp. */
+  reload?: () => void
   /** The freeze outlasted recovery; move the queue on. Fired once. */
   giveUp: () => void
 }
@@ -145,20 +150,25 @@ export interface StallWatchHandlers {
  * Detects playback that started and then froze mid-video (a buffering spinner
  * that never clears). The startup watchdog only covers the first seconds; after
  * that nothing else advances a frozen player. Feed it the player's position on
- * each 1 s progress tick, only after playback was confirmed. Counting ticks
- * rather than wall time means a throttled timer can only make it slower to fire.
+ * each 1 s progress tick, only after playback was confirmed; pass `frozen` to
+ * count a tick as frozen even though the position moved (the player reports
+ * progress it can't actually be making). Counting ticks rather than wall time
+ * means a throttled timer can only make it slower to fire.
  */
 export function createStallWatch(platform: string, handlers: StallWatchHandlers) {
   let lastTime: number | null = null
   let frozenTicks = 0
   let recovered = false
+  let reloaded = false
   let gaveUp = false
-  return (time: number): void => {
+  return (time: number, frozen = false): void => {
     if (gaveUp) return
-    if (lastTime === null || Math.abs(time - lastTime) > STALL_EPSILON_SECONDS) {
-      lastTime = time
+    const moved = lastTime === null || Math.abs(time - lastTime) > STALL_EPSILON_SECONDS
+    lastTime = time
+    if (moved && !frozen) {
       frozenTicks = 0
       recovered = false
+      reloaded = false
       return
     }
     frozenTicks++
@@ -170,6 +180,14 @@ export function createStallWatch(platform: string, handlers: StallWatchHandlers)
         errorCode: 'VIDEO_QUEUE.PLAYBACK_STALLED',
       })
       handlers.giveUp()
+    } else if (handlers.reload && !reloaded && frozenTicks >= STALL_RELOAD_SECONDS) {
+      reloaded = true
+      reportClientError({
+        kind: 'error',
+        message: `${platform}: playback froze for ${STALL_RELOAD_SECONDS}s, rebuilding the player`,
+        errorCode: 'VIDEO_QUEUE.PLAYBACK_RELOADED',
+      })
+      handlers.reload()
     } else if (!recovered && frozenTicks >= STALL_RECOVER_SECONDS) {
       recovered = true
       handlers.recover()

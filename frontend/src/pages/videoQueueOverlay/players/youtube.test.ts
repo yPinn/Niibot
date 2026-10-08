@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { reportVideoMetadata } from '@/api/videoQueue'
 import { reportClientError } from '@/lib/clientErrorReporter'
 
-import { STALL_RECOVER_SECONDS, STALL_SKIP_SECONDS } from './shared'
+import { STALL_RECOVER_SECONDS, STALL_RELOAD_SECONDS, STALL_SKIP_SECONDS } from './shared'
 import type { MountContext, YTPlayer, YTPlayerOptions } from './types'
 import { youtubeStrategy } from './youtube'
 
@@ -17,6 +17,7 @@ function makePlayer(currentTime = 0, duration = 300) {
     destroy: vi.fn(),
     getCurrentTime: vi.fn(() => currentTime),
     getDuration: vi.fn(() => duration),
+    getVideoLoadedFraction: vi.fn(() => 0),
     seekTo: vi.fn(),
     setVolume: vi.fn(),
     mute: vi.fn(),
@@ -28,12 +29,12 @@ let options: YTPlayerOptions | undefined
 
 function installYouTube(player: ReturnType<typeof makePlayer>) {
   options = undefined
-  ;(window as unknown as { YT: unknown }).YT = {
-    Player: vi.fn(function (_el: unknown, opts: YTPlayerOptions) {
-      options = opts
-      return player
-    }),
-  }
+  const Player = vi.fn(function (_el: unknown, opts: YTPlayerOptions) {
+    options = opts
+    return player
+  })
+  ;(window as unknown as { YT: unknown }).YT = { Player }
+  return Player
 }
 
 function ctx(overrides: Partial<MountContext['current']> = {}, joinElapsed = 0): MountContext {
@@ -189,6 +190,67 @@ describe('youtubeStrategy mid-playback stall', () => {
     expect(reportClientError).toHaveBeenCalledWith(
       expect.objectContaining({ errorCode: 'VIDEO_QUEUE.PLAYBACK_STALLED' })
     )
+  })
+
+  it('rebuilds the player where it froze when a re-seek does not help', () => {
+    const player = makePlayer(100)
+    const Player = installYouTube(player)
+    const context = ctx()
+    youtubeStrategy.mount(context)
+    ready(player)
+    options?.events?.onStateChange?.({ target: player as unknown as YTPlayer, data: 1 })
+    player.seekTo.mockClear()
+    player.playVideo.mockClear()
+
+    vi.advanceTimersByTime((STALL_RELOAD_SECONDS + 1) * 1000)
+    expect(player.destroy).toHaveBeenCalledTimes(1)
+    expect(Player).toHaveBeenCalledTimes(2)
+    expect(options?.playerVars?.start).toBe(100)
+    expect(reportClientError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: 'VIDEO_QUEUE.PLAYBACK_RELOADED' })
+    )
+
+    // The fresh player resumes where the old one stood, re-applying volume.
+    player.seekTo.mockClear()
+    player.setVolume.mockClear()
+    ready(player)
+    expect(player.seekTo).toHaveBeenCalledWith(100, true)
+    expect(player.setVolume).toHaveBeenCalledWith(35)
+
+    let t = 100
+    player.getCurrentTime.mockImplementation(() => (t += 1))
+    vi.advanceTimersByTime(STALL_SKIP_SECONDS * 1000)
+    expect(context.handleVideoEnd).not.toHaveBeenCalled()
+    expect(Player).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps counting toward a skip while a rebuilt player never loads', () => {
+    const { context } = playing()
+    vi.advanceTimersByTime((STALL_RELOAD_SECONDS + 1) * 1000)
+    // No onReady for the rebuilt player.
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS - STALL_RELOAD_SECONDS) * 1000)
+    expect(context.handleVideoEnd).toHaveBeenCalledWith(7, 'provider_error')
+  })
+
+  it('treats a playhead running past the buffered media as frozen', () => {
+    const { player } = playing()
+    // 300s video buffered to 30s, while the reported playhead keeps advancing.
+    player.getVideoLoadedFraction.mockReturnValue(0.1)
+    let t = 100
+    player.getCurrentTime.mockImplementation(() => (t += 1))
+    vi.advanceTimersByTime((STALL_RECOVER_SECONDS + 1) * 1000)
+    expect(player.seekTo).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not treat an unknown buffer level as a freeze', () => {
+    const { player, context } = playing()
+    player.getVideoLoadedFraction.mockReturnValue(0)
+    let t = 100
+    player.getCurrentTime.mockImplementation(() => (t += 1))
+    vi.advanceTimersByTime((STALL_SKIP_SECONDS + 5) * 1000)
+    expect(player.seekTo).not.toHaveBeenCalled()
+    expect(player.destroy).not.toHaveBeenCalled()
+    expect(context.handleVideoEnd).not.toHaveBeenCalled()
   })
 
   it('is not armed before playback is confirmed', () => {

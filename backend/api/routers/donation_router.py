@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from core.config import Settings, get_settings
 from core.dependencies import get_db_pool
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services.payment import CheckoutContext, WebhookResult, get_provider
 from shared.errors import AppError, ChannelNotFoundError, InvalidInputError, NotFoundError
 from shared.models.donation import DonationOrder, PaymentConfig
@@ -43,7 +43,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/donate", tags=["donation"])
 
 # 10 checkout attempts per minute per IP
-_checkout_limiter = RateLimiter(max_calls=10, period=60.0)
+_checkout_limiter = RateLimiter(max_calls=10, period=60.0, name="donation.checkout")
 
 
 class DonationInvalidError(InvalidInputError):
@@ -190,7 +190,7 @@ async def checkout(
     The frontend receives gateway_url + form_params and auto-submits a POST form.
     For PayPal, returns a bare redirect URL (no form, no order row).
     """
-    _checkout_limiter.require(request.client.host if request.client else "unknown")
+    _checkout_limiter.require(client_ip(request))
 
     provider = get_provider(body.platform)
     if provider is None:

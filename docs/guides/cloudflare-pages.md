@@ -134,6 +134,29 @@ Overlay 一律經 Pages proxy（`/api/*`）連後端，**唯一例外**是直播
 - `API_DIRECT_URL` 未設定（dev）時輸出相對網址，照舊走同一個 origin。
 - 新增任何直連端點前必須在這一節登記；一般請求一律維持 Pages proxy。
 
+### Client IP（rate limiter 與 telemetry 的 key）
+
+後端容器看到的連線來源永遠是 Docker gateway，不能拿 `request.client.host` 當呼叫者。2026-10-09 在
+staging 實測（以臨時的 `GET /api/debug/client-ip` 診斷端點量測，驗證後已移除）：
+
+| Header             | 直連 tunnel             | 經 Pages Function                      | 可否偽造                                    |
+| ------------------ | ----------------------- | -------------------------------------- | ------------------------------------------- |
+| `CF-Connecting-IP` | 真實呼叫者              | Workers 共用出口 `2a06:98c0:3600::103` | 否：client 自帶會被 Cloudflare 以 1000 拒絕 |
+| `CF-Worker`        | 無                      | `niibot.pages.dev`                     | 否：client 自帶會被移除                     |
+| `X-Forwarded-For`  | `<client 值>,<真實 IP>` | `<client 值>,<出口 IP>`                | **可**：client 值保留在最左                 |
+| `True-Client-IP`   | client 值               | client 值                              | **可**                                      |
+
+因此：
+
+- Pages proxy 一律以自己收到的 `CF-Connecting-IP` **覆寫** `X-Niibot-Client-IP`（取不到就刪除），
+  不沿用 client 送來的值。
+- 後端 `core.rate_limit.client_ip()`：`CF-Worker == niibot.pages.dev` 時信任 `X-Niibot-Client-IP`，
+  否則用 `CF-Connecting-IP`，都沒有（本機 dev）才退回 `request.client.host`。其他帳號的 Worker 帶的是
+  自己的 zone，無法冒用。
+- 不設定 `FORWARDED_ALLOW_IPS`：信任 `X-Forwarded-For` 等於把 rate limit key 交給 client。
+- Pages project 名稱若改變，同步更新 `PAGES_WORKER_ZONE`，否則經 Pages 的流量會退回共用出口 IP
+  （全站共用一桶）。
+
 ### Live Display stream contract
 
 - Renderer 以 `GET /api/live-display/public/stream` 建立一條 `fetch` stream，

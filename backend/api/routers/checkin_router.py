@@ -61,11 +61,11 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/checkin", tags=["checkin"])
 
 _checkin_import_http = httpx.AsyncClient(timeout=10.0, follow_redirects=False)
-_inspect_rate_limiter = RateLimiter(max_calls=10, period=60.0)
-_preview_rate_limiter = RateLimiter(max_calls=5, period=60.0)
-_apply_rate_limiter = RateLimiter(max_calls=2, period=60.0)
-_data_read_rate_limiter = RateLimiter(max_calls=10, period=60.0)
-_data_clear_rate_limiter = RateLimiter(max_calls=2, period=60.0)
+_inspect_rate_limiter = RateLimiter(max_calls=10, period=60.0, name="checkin.inspect")
+_preview_rate_limiter = RateLimiter(max_calls=5, period=60.0, name="checkin.preview")
+_apply_rate_limiter = RateLimiter(max_calls=2, period=60.0, name="checkin.apply")
+_data_read_rate_limiter = RateLimiter(max_calls=10, period=60.0, name="checkin.data_read")
+_data_clear_rate_limiter = RateLimiter(max_calls=2, period=60.0, name="checkin.data_clear")
 _MAX_UPLOAD_READ = 5 * 1024 * 1024 + 1
 
 

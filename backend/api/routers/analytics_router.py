@@ -24,7 +24,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
 
 # Sync-roles fetches up to 4 full Twitch lists — limit to once per 2 min per channel
-_sync_roles_limiter = RateLimiter(max_calls=1, period=120.0)
+_sync_roles_limiter = RateLimiter(max_calls=1, period=120.0, name="analytics.sync_roles")
 
 
 class SessionNotFoundError(NotFoundError):

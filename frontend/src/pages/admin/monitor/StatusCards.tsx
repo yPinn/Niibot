@@ -2,27 +2,38 @@ import { useState } from 'react'
 
 import type { CacheGauge, DbPoolGauge } from '@/api/bots'
 import { Icon } from '@/components/primitives'
-import { Badge, Separator, Skeleton } from '@/components/ui'
+import {
+  Badge,
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Separator,
+  Skeleton,
+} from '@/components/ui'
+
+import { type Severity, SEVERITY_BAR } from './rateLimits'
 
 const DASH = <span className="text-muted-foreground/40">—</span>
 
 export function StatusBadge({ online, ready }: { online: boolean; ready?: boolean }) {
   if (!online)
     return (
-      <Badge className="border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5">
+      <Badge variant="offline" className="gap-1.5">
         <Icon icon="fa-solid fa-circle-xmark" size="xs" />
         offline
       </Badge>
     )
   if (ready === false)
     return (
-      <Badge className="border-status-loading/20 bg-status-loading/10 text-status-loading gap-1.5">
+      <Badge variant="loading" className="gap-1.5">
         <Icon icon="fa-solid fa-circle-half-stroke" size="xs" />
         starting
       </Badge>
     )
   return (
-    <Badge className="border-status-online/20 bg-status-online/10 text-status-online gap-1.5">
+    <Badge variant="online" className="gap-1.5">
       <Icon icon="fa-solid fa-circle-check" size="xs" />
       online
     </Badge>
@@ -31,13 +42,12 @@ export function StatusBadge({ online, ready }: { online: boolean; ready?: boolea
 
 export function EnvBadge({ env }: { env?: string }) {
   if (!env) return <span className="text-muted-foreground/40">—</span>
-  const cls =
-    env === 'production'
-      ? 'border-status-live/20 bg-status-live/10 text-status-live'
-      : env === 'staging'
-        ? 'border-status-loading/20 bg-status-loading/10 text-status-loading'
-        : 'border-status-info/20 bg-status-info/10 text-status-info'
-  return <Badge className={`font-mono ${cls}`}>{env}</Badge>
+  const variant = env === 'production' ? 'live' : env === 'staging' ? 'loading' : 'info'
+  return (
+    <Badge variant={variant} className="font-mono">
+      {env}
+    </Badge>
+  )
 }
 
 export function VersionText({ version, commit }: { version?: string; commit?: string }) {
@@ -122,6 +132,87 @@ export function GaugeDetails({
         </pre>
       )}
     </>
+  )
+}
+
+/** The Monitor's card frame: icon + title, a status badge (skeleton while
+ *  loading) in the header action slot, then the body. */
+export function MonitorCard({
+  icon,
+  title,
+  badge,
+  loading,
+  children,
+}: {
+  icon: string
+  title: string
+  badge: React.ReactNode
+  loading?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-element">
+          <Icon icon={icon} size="sm" wrapperClassName="text-muted-foreground" />
+          <CardTitle className="text-card-title">{title}</CardTitle>
+        </div>
+        <CardAction>{loading ? <Skeleton className="h-5 w-16 rounded-full" /> : badge}</CardAction>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  )
+}
+
+/** The quiet "→" link at the foot of a Monitor card that jumps to a tab. */
+export function CardLinkButton({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex justify-end pt-element">
+      <button onClick={onClick} className="text-label text-muted-foreground hover:text-foreground">
+        {children} →
+      </button>
+    </div>
+  )
+}
+
+/** One at-a-glance fact in the 總覽 summary strip; clickable when it has a tab. */
+export function SummaryPill({
+  label,
+  value,
+  level,
+  loading,
+  onClick,
+}: {
+  label: string
+  value: React.ReactNode
+  level: Severity
+  loading?: boolean
+  onClick?: () => void
+}) {
+  const body = (
+    <>
+      <span className={`size-1.5 shrink-0 rounded-full ${SEVERITY_BAR[level]}`} aria-hidden />
+      <span className="text-label text-muted-foreground">{label}</span>
+      {loading ? (
+        <Skeleton className="h-4 w-10" />
+      ) : (
+        <span className="font-mono text-sub">{value}</span>
+      )}
+    </>
+  )
+  const cls = 'flex items-center gap-element rounded-full border border-border/50 px-3 py-1'
+  return onClick ? (
+    <button onClick={onClick} className={`${cls} transition-colors hover:bg-accent/50`}>
+      {body}
+    </button>
+  ) : (
+    <div className={cls}>{body}</div>
   )
 }
 
