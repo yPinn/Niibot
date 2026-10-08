@@ -319,6 +319,8 @@ export const API_ENDPOINTS = {
     clientErrors: (qs: string) => join(`/api/admin/client-errors${qs}`),
     clientErrorEvents: (fingerprint: string) =>
       join(`/api/admin/client-errors/${encodeURIComponent(fingerprint)}`),
+    rateLimits: join('/api/admin/rate-limits'),
+    cloudflareUsage: join('/api/admin/cloudflare-usage'),
   },
   releases: {
     list: join('/api/releases'),

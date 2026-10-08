@@ -109,9 +109,10 @@ class SocialPreviewCog(commands.Cog, name="SocialPreview"):  # type: ignore[call
             httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT,
                 headers={"User-Agent": _UA},
-            )
+            ),
+            name="discord_preview",
         )
-        self._twitch_egress = TwitchEgressCoordinator()
+        self._twitch_egress = TwitchEgressCoordinator(name="discord_preview")
         self._twitch_token: str | None = None
         self._twitch_token_exp: float = 0.0
         self._twitch_token_lock = asyncio.Lock()

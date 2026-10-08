@@ -47,12 +47,16 @@ from shared.twitch_scopes import BOT_SCOPES, required_core_scopes
 LOGGER = logging.getLogger(__name__)
 
 router = APIRouter(tags=["bot accounts"])
-_invite_create_limiter = RateLimiter(max_calls=10, period=60.0)
-_public_invite_limiter = RateLimiter(max_calls=60, period=60.0)
-_callback_limiter = RateLimiter(max_calls=30, period=60.0)
-_authorization_check_limiter = RateLimiter(max_calls=10, period=60.0)
-_authorization_remove_limiter = RateLimiter(max_calls=5, period=60.0)
-_selection_limiter = RateLimiter(max_calls=10, period=60.0)
+_invite_create_limiter = RateLimiter(max_calls=10, period=60.0, name="bot_accounts.invite_create")
+_public_invite_limiter = RateLimiter(max_calls=60, period=60.0, name="bot_accounts.public_invite")
+_callback_limiter = RateLimiter(max_calls=30, period=60.0, name="bot_accounts.callback")
+_authorization_check_limiter = RateLimiter(
+    max_calls=10, period=60.0, name="bot_accounts.authorization_check"
+)
+_authorization_remove_limiter = RateLimiter(
+    max_calls=5, period=60.0, name="bot_accounts.authorization_remove"
+)
+_selection_limiter = RateLimiter(max_calls=10, period=60.0, name="bot_accounts.selection")
 _BOT_CALLBACK_PATH = "/api/auth/twitch/bot/callback"
 _PROVIDER_OAUTH_ERROR_REASONS = {
     "access_denied": "authorization_denied",

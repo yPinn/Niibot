@@ -66,6 +66,12 @@ class Settings(BaseServiceSettings):
     releases_github_token: str = Field(
         default="", description="GitHub PAT for reading private repo releases"
     )
+    # Admin Monitor's Cloudflare Workers/Pages Functions quota card. Both optional;
+    # the token only needs Account Analytics: Read.
+    cloudflare_account_id: str = Field(default="", description="Cloudflare account ID")
+    cloudflare_api_token: str = Field(
+        default="", description="Cloudflare API token (Account Analytics: Read)"
+    )
     discord_public_key: str = Field(
         default="", description="Discord application public key for webhook signature verification"
     )

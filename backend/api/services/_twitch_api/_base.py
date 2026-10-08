@@ -47,7 +47,7 @@ class _TwitchAPIBase:
         self._app_token: str | None = None
         self._app_token_expires_at: float = 0.0
         self._app_token_lock = asyncio.Lock()
-        self._egress = TwitchEgressCoordinator()
+        self._egress = TwitchEgressCoordinator(name="api")
 
     async def close(self) -> None:
         """Close the shared HTTP client. Call on app shutdown."""

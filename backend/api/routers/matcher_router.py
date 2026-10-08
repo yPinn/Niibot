@@ -20,7 +20,7 @@ from services import AnalyticsService, TwitchAPIClient
 LOGGER: logging.Logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
 
-_matcher_refresh_limiter = RateLimiter(max_calls=1, period=1800.0)
+_matcher_refresh_limiter = RateLimiter(max_calls=1, period=1800.0, name="matcher.refresh")
 
 router = APIRouter(prefix="/api/analytics/matcher", tags=["matcher"])
 

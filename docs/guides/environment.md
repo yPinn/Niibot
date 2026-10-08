@@ -84,19 +84,21 @@ api、twitch-bot、discord-bot 三服務共用。需要 AI 功能時，完整設
 
 App 憑證走對應環境的 shared env。
 
-| 變數                     | 說明                                       |
-| ------------------------ | ------------------------------------------ |
-| `API_DIRECT_URL`         | 選用：API 直連 URL（不經 Pages Functions） |
-| `API_URL`                | API 公開 URL                               |
-| `DISCORD_PUBLIC_KEY`     | 選用：Discord application public key       |
-| `JWT_ALGORITHM`          | JWT 簽章演算法                             |
-| `JWT_EXPIRE_DAYS`        | JWT 有效天數                               |
-| `JWT_SECRET_KEY`         | JWT 簽章金鑰                               |
-| `NIGHTBOT_CLIENT_ID`     | 選用：Nightbot client ID                   |
-| `NIGHTBOT_CLIENT_SECRET` | 選用：Nightbot client secret               |
-| `PAYMENT_ENCRYPTION_KEY` | 付款憑證 Fernet 金鑰                       |
-| `PORT`                   | API port                                   |
-| `RELEASES_GITHUB_TOKEN`  | 選用：讀取 release 的 GitHub token         |
+| 變數                     | 說明                                         |
+| ------------------------ | -------------------------------------------- |
+| `API_DIRECT_URL`         | 選用：API 直連 URL（不經 Pages Functions）   |
+| `API_URL`                | API 公開 URL                                 |
+| `CLOUDFLARE_ACCOUNT_ID`  | 選用：Cloudflare 帳號 ID（Monitor 用量卡）   |
+| `CLOUDFLARE_API_TOKEN`   | 選用：Cloudflare API token（Monitor 用量卡） |
+| `DISCORD_PUBLIC_KEY`     | 選用：Discord application public key         |
+| `JWT_ALGORITHM`          | JWT 簽章演算法                               |
+| `JWT_EXPIRE_DAYS`        | JWT 有效天數                                 |
+| `JWT_SECRET_KEY`         | JWT 簽章金鑰                                 |
+| `NIGHTBOT_CLIENT_ID`     | 選用：Nightbot client ID                     |
+| `NIGHTBOT_CLIENT_SECRET` | 選用：Nightbot client secret                 |
+| `PAYMENT_ENCRYPTION_KEY` | 付款憑證 Fernet 金鑰                         |
+| `PORT`                   | API port                                     |
+| `RELEASES_GITHUB_TOKEN`  | 選用：讀取 release 的 GitHub token           |
 
 ### `backend/twitch/.env`
 

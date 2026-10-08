@@ -27,9 +27,9 @@ from shared.roleplay.portable import MAX_PORTABLE_ROLEPLAY_BYTES
 
 router = APIRouter(prefix="/api/tenants/{channel_id}", tags=["roleplay"])
 
-_read_limiter = RateLimiter(max_calls=120, period=60.0)
-_mutation_limiter = RateLimiter(max_calls=30, period=60.0)
-_publish_limiter = RateLimiter(max_calls=10, period=60.0)
+_read_limiter = RateLimiter(max_calls=120, period=60.0, name="roleplay.read")
+_mutation_limiter = RateLimiter(max_calls=30, period=60.0, name="roleplay.mutation")
+_publish_limiter = RateLimiter(max_calls=10, period=60.0, name="roleplay.publish")
 
 
 class RoleplayRevisionSummaryResponse(BaseModel):

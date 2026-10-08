@@ -25,6 +25,19 @@ export interface NavigationData {
 }
 
 // Twitch Bot 導航
+// Owner-only admin pages — shared by the Twitch and Discord dashboards' nav.
+const adminNavGroup: NavGroup = {
+  title: 'Admin',
+  url: '#',
+  icon: 'fa-solid fa-shield-halved',
+  ownerOnly: true,
+  items: [
+    { title: 'Overview', url: '/admin' },
+    { title: 'Monitor', url: '/admin/monitor' },
+    { title: 'Modules', url: '/admin/modules' },
+  ],
+}
+
 export const navigationData: NavigationData = {
   navMain: [
     {
@@ -127,17 +140,7 @@ export const navigationData: NavigationData = {
         },
       ],
     },
-    {
-      title: 'Admin',
-      url: '#',
-      icon: 'fa-solid fa-shield-halved',
-      ownerOnly: true,
-      items: [
-        { title: 'Overview', url: '/admin' },
-        { title: 'Monitor', url: '/admin/monitor' },
-        { title: 'Modules', url: '/admin/modules' },
-      ],
-    },
+    adminNavGroup,
   ],
   navSecondary: [
     {
@@ -184,17 +187,7 @@ export const discordNavigationData: NavigationData = {
         },
       ],
     },
-    {
-      title: 'Admin',
-      url: '#',
-      icon: 'fa-solid fa-shield-halved',
-      ownerOnly: true,
-      items: [
-        { title: 'Overview', url: '/admin' },
-        { title: 'Monitor', url: '/admin/monitor' },
-        { title: 'Modules', url: '/admin/modules' },
-      ],
-    },
+    adminNavGroup,
   ],
   navSecondary: [
     {

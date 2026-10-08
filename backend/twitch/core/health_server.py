@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from shared.assistant.health import primary_model_label
 from shared.gauges import collect_runtime_gauges
 from shared.health_server_base import BaseHealthServer
+from shared.rate_limits import collect_rate_limits
 
 from .config import get_settings
 
@@ -63,4 +64,6 @@ class HealthCheckServer(BaseHealthServer):
             **gauges,
             "ai_model": primary_model_label(ai_status),
             "ai_status": ai_status,
+            # Internal only: the API's owner-only /api/admin/rate-limits relays it.
+            "rate_limits": collect_rate_limits(),
         }

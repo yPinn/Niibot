@@ -15,6 +15,14 @@ const badgeVariants = cva(
         destructive:
           'border-transparent bg-destructive text-white [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
         outline: 'text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
+        // Status tones — tinted pills on the status-* tokens.
+        online: 'border-status-online/20 bg-status-online/10 text-status-online',
+        offline: 'border-status-offline/20 bg-status-offline/10 text-status-offline',
+        warning: 'border-status-warning/20 bg-status-warning/10 text-status-warning',
+        loading: 'border-status-loading/20 bg-status-loading/10 text-status-loading',
+        info: 'border-status-info/20 bg-status-info/10 text-status-info',
+        live: 'border-status-live/20 bg-status-live/10 text-status-live',
+        muted: 'border-border bg-muted text-muted-foreground',
       },
     },
     defaultVariants: {

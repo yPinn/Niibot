@@ -1,24 +1,27 @@
 import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import {
+  type CloudflareUsage,
   getClientErrorGroups,
+  getCloudflareUsage,
   getContainerLogs,
   getLogContainers,
+  getRateLimits,
   type LogContainer,
   type LogRecord,
+  type RateLimits,
 } from '@/api/admin'
 import { PageMain } from '@/components/layout/PageMain'
 import { Icon, Spinner } from '@/components/primitives'
 import {
   Badge,
   Button,
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Separator,
-  Skeleton,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -40,7 +43,23 @@ import {
   levelPillClass,
 } from './monitor/logParsers'
 import { LogRecordRow } from './monitor/LogRecordRow'
-import { EnvBadge, FieldRow, GaugeDetails, StatusBadge, VersionText } from './monitor/StatusCards'
+import {
+  cloudflareRatio,
+  cloudflareSeverity,
+  type Severity,
+  worstSeverity,
+} from './monitor/rateLimits'
+import { CloudflareQuotaCard, RateLimitDigest, RateLimitSection } from './monitor/RateLimitViews'
+import {
+  CardLinkButton,
+  EnvBadge,
+  FieldRow,
+  GaugeDetails,
+  MonitorCard,
+  StatusBadge,
+  SummaryPill,
+  VersionText,
+} from './monitor/StatusCards'
 
 // ── Fetch state ───────────────────────────────────────────────────────────────
 
@@ -61,6 +80,19 @@ function fetchReducer(state: FetchState, action: FetchAction): FetchState {
 
 const DASH = <span className="text-muted-foreground/40">—</span>
 
+type Mode = '__status__' | '__limits__' | '__errors__' | '__db__' | '__logs__'
+
+const MODES: { value: Mode; label: string; icon: string }[] = [
+  { value: '__status__', label: '總覽', icon: 'fa-solid fa-gauge' },
+  { value: '__limits__', label: '限流', icon: 'fa-solid fa-gauge-high' },
+  { value: '__errors__', label: '錯誤', icon: 'fa-solid fa-triangle-exclamation' },
+  { value: '__db__', label: 'DB', icon: 'fa-solid fa-database' },
+  { value: '__logs__', label: 'Logs', icon: 'fa-solid fa-terminal' },
+]
+
+const RATE_LIMIT_POLL_MS = 10_000
+const CLOUDFLARE_POLL_MS = 60_000
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdminMonitor() {
@@ -70,7 +102,9 @@ export default function AdminMonitor() {
 
   // ── Logs state ──────────────────────────────────────────────────────────────
   const [containers, setContainers] = useState<LogContainer[]>([])
-  const [selected, setSelected] = useState('__status__')
+  const [selected, setSelected] = useState<Mode>('__status__')
+  // The container the Logs tab shows; defaults to the API's once the list loads.
+  const [container, setContainer] = useState<string | null>(null)
   const tail = 200
   const followRef = useRef(true)
   const [isFollowing, setIsFollowing] = useState(true)
@@ -92,17 +126,24 @@ export default function AdminMonitor() {
   useEffect(() => {
     const token = newToken()
     getLogContainers()
-      .then(cs => guard(token, () => setContainers(cs)))
+      .then(cs =>
+        guard(token, () => {
+          setContainers(cs)
+          setContainer(
+            prev => prev ?? (cs.find(c => isApiContainer(c.name)) ?? cs[0])?.name ?? null
+          )
+        })
+      )
       .catch(() => {})
   }, [guard, newToken])
 
   const query = { tail, level: levelFilter, q: debouncedSearch || undefined }
 
   useEffect(() => {
-    if (selected === '__db__' || selected === '__status__' || selected === '__errors__') return
+    if (selected !== '__logs__' || !container) return
     let cancelled = false
     dispatch({ type: 'start' })
-    getContainerLogs(selected, query)
+    getContainerLogs(container, query)
       .then(data => {
         if (!cancelled) dispatch({ type: 'done', records: data.records })
       })
@@ -114,26 +155,27 @@ export default function AdminMonitor() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, tail, levelFilter, debouncedSearch])
+  }, [selected, container, tail, levelFilter, debouncedSearch])
 
   const pollFetch = useCallback(async () => {
-    if (selected === '__db__' || selected === '__status__' || selected === '__errors__') return
+    if (selected !== '__logs__' || !container) return
     try {
-      const data = await getContainerLogs(selected, query)
+      const data = await getContainerLogs(container, query)
       dispatch({ type: 'done', records: data.records })
     } catch {
       // silent — don't disrupt the view on transient poll failure
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, tail, levelFilter, debouncedSearch])
+  }, [selected, container, tail, levelFilter, debouncedSearch])
 
   const isDbMode = selected === '__db__'
   const isStatusMode = selected === '__status__'
   const isErrorsMode = selected === '__errors__'
-  const isLogMode = !isDbMode && !isStatusMode && !isErrorsMode
+  const isLimitsMode = selected === '__limits__'
+  const isLogMode = selected === '__logs__'
 
   const filtersActive = levelFilter !== 'INFO' || search !== ''
-  const refreshBusy = isLogMode ? loading : isStatusMode ? false : panelLoading
+  const refreshBusy = isLogMode ? loading : isStatusMode || isLimitsMode ? false : panelLoading
 
   usePolling({ fetchFn: pollFetch, intervalMs: 5_000, enabled: isLogMode, skipInitialCall: true })
 
@@ -144,9 +186,10 @@ export default function AdminMonitor() {
   }, [records, isFollowing])
 
   const handleRefresh = () => {
+    if (!container) return
     const token = newToken()
     dispatch({ type: 'start' })
-    getContainerLogs(selected, query)
+    getContainerLogs(container, query)
       .then(data => guard(token, () => dispatch({ type: 'done', records: data.records })))
       .catch(e =>
         guard(token, () =>
@@ -178,7 +221,8 @@ export default function AdminMonitor() {
     (requestId: string) => {
       const api = containers.find(c => isApiContainer(c.name))
       if (!api) return
-      setSelected(api.name)
+      setSelected('__logs__')
+      setContainer(api.name)
       setLevelFilter('ALL')
       setSearch(requestId)
       followRef.current = false
@@ -211,15 +255,44 @@ export default function AdminMonitor() {
     loadErrSummary()
   }, [loadErrSummary])
 
+  // ── Rate limits + Cloudflare quota (總覽 digests and the 限流 tab) ──────────
+  // undefined = not loaded yet; a failed load keeps the last data and flags it.
+  const [rateLimits, setRateLimits] = useState<RateLimits | undefined>(undefined)
+  const [rateLimitsFailed, setRateLimitsFailed] = useState(false)
+  const [cfUsage, setCfUsage] = useState<CloudflareUsage | undefined>(undefined)
+  const [cfFailed, setCfFailed] = useState(false)
+  const showsLimits = isStatusMode || isLimitsMode
+
+  const loadRateLimits = useCallback(async () => {
+    try {
+      setRateLimits(await getRateLimits())
+      setRateLimitsFailed(false)
+    } catch {
+      setRateLimitsFailed(true)
+    }
+  }, [])
+  const loadCfUsage = useCallback(async () => {
+    try {
+      setCfUsage(await getCloudflareUsage())
+      setCfFailed(false)
+    } catch {
+      setCfFailed(true)
+    }
+  }, [])
+  usePolling({ fetchFn: loadRateLimits, intervalMs: RATE_LIMIT_POLL_MS, enabled: showsLimits })
+  usePolling({ fetchFn: loadCfUsage, intervalMs: CLOUDFLARE_POLL_MS, enabled: showsLimits })
+
   const refreshStatusAll = useCallback(() => {
     refreshStatus()
     loadErrSummary()
-  }, [refreshStatus, loadErrSummary])
+    void loadRateLimits()
+    void loadCfUsage()
+  }, [refreshStatus, loadErrSummary, loadRateLimits, loadCfUsage])
 
   /** One refresh button for every tab: live logs re-fetch, Status re-polls,
    *  DB / Errors panels reload via a bumped nonce. */
   const handleUnifiedRefresh = () => {
-    if (isStatusMode) refreshStatusAll()
+    if (isStatusMode || isLimitsMode) refreshStatusAll()
     else if (isLogMode) handleRefresh()
     else setReloadNonce(n => n + 1)
   }
@@ -227,7 +300,7 @@ export default function AdminMonitor() {
   const services = useMemo(
     () => [
       {
-        key: 'api',
+        key: 'api' as const,
         name: 'API Server',
         icon: 'fa-solid fa-server',
         online: api.online,
@@ -257,7 +330,7 @@ export default function AdminMonitor() {
         ],
       },
       {
-        key: 'twitch',
+        key: 'twitch' as const,
         name: 'Twitch Bot',
         icon: 'fa-brands fa-twitch',
         online: twitch.online,
@@ -279,7 +352,7 @@ export default function AdminMonitor() {
         ],
       },
       {
-        key: 'discord',
+        key: 'discord' as const,
         name: 'Discord Bot',
         icon: 'fa-brands fa-discord',
         online: discord.online,
@@ -307,6 +380,14 @@ export default function AdminMonitor() {
     [twitch, discord, api]
   )
 
+  const limitsLevel: Severity = rateLimits
+    ? worstSeverity([
+        ...rateLimits.api,
+        ...(rateLimits.twitch ?? []),
+        ...(rateLimits.discord ?? []),
+      ])
+    : 'idle'
+
   return (
     <PageMain className="gap-0 p-0 lg:p-0 overflow-hidden">
       <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -316,41 +397,26 @@ export default function AdminMonitor() {
             <Tabs
               value={selected}
               onValueChange={v => {
-                setSelected(v)
+                setSelected(v as Mode)
                 setLevelFilter('INFO')
                 setPanelLoading(false)
                 followRef.current = true
                 setIsFollowing(true)
-                if (v === '__status__') refreshStatusAll()
+                if (v === '__status__' || v === '__limits__') refreshStatusAll()
               }}
             >
               <TabsList variant="line" className="h-11 bg-transparent gap-0">
-                <TabsTrigger value="__status__" className="text-content px-3">
-                  <Icon icon="fa-solid fa-gauge" size="sm" />
-                  Status
-                </TabsTrigger>
-                <TabsTrigger value="__errors__" className="text-content px-3">
-                  <Icon icon="fa-solid fa-triangle-exclamation" size="sm" />
-                  Errors
-                </TabsTrigger>
-                <TabsTrigger value="__db__" className="text-content px-3">
-                  <Icon icon="fa-solid fa-database" size="sm" />
-                  DB
-                </TabsTrigger>
-                <div className="mx-2 my-2 w-px shrink-0 bg-border/50" aria-hidden />
-                {containers.map(c => (
-                  <TabsTrigger key={c.name} value={c.name} className="text-content px-3">
-                    <span
-                      className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
-                    />
-                    {c.label}
+                {MODES.map(m => (
+                  <TabsTrigger key={m.value} value={m.value} className="text-content px-3">
+                    <Icon icon={m.icon} size="sm" />
+                    {m.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
             </Tabs>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {isStatusMode && (
+            {(isStatusMode || isLimitsMode) && (
               <span className="text-label text-muted-foreground font-mono">
                 {lastUpdate.toLocaleTimeString('zh-TW', { hour12: false })}
               </span>
@@ -374,6 +440,21 @@ export default function AdminMonitor() {
         {/* Filter row — level pills + server-side search */}
         {isLogMode && (
           <div className="flex items-center gap-2 px-page py-1.5 border-b border-border/30 overflow-x-auto shrink-0">
+            <Select value={container ?? undefined} onValueChange={setContainer}>
+              <SelectTrigger size="sm" className="w-40 shrink-0" aria-label="容器">
+                <SelectValue placeholder="選擇容器" />
+              </SelectTrigger>
+              <SelectContent>
+                {containers.map(c => (
+                  <SelectItem key={c.name} value={c.name}>
+                    <span
+                      className={`size-1.5 rounded-full shrink-0 ${c.running ? 'bg-status-online' : 'bg-muted-foreground/50'}`}
+                    />
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {LEVEL_FILTER_OPTS.map(lvl => (
               <button
                 key={lvl}
@@ -406,104 +487,137 @@ export default function AdminMonitor() {
         {/* Content */}
         {isStatusMode ? (
           <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="flex flex-wrap gap-element px-page pt-page lg:px-page-lg lg:pt-page-lg">
+              <SummaryPill
+                label="服務"
+                value={`${services.filter(sv => sv.online).length}/${services.length} online`}
+                level={services.every(sv => sv.online) ? 'ok' : 'hot'}
+                loading={initialLoading}
+              />
+              <SummaryPill
+                label="前端錯誤 24h"
+                value={errSummary && errSummary !== 'error' ? `${errSummary.total} 筆` : '—'}
+                level={errSummary === 'error' ? 'idle' : errSummary?.total ? 'warn' : 'ok'}
+                loading={errSummary === null}
+                onClick={() => setSelected('__errors__')}
+              />
+              <SummaryPill
+                label="限流"
+                value={limitsLevel === 'hot' ? '觸發中' : limitsLevel === 'warn' ? '繁忙' : '正常'}
+                level={limitsLevel}
+                loading={rateLimits === undefined && !rateLimitsFailed}
+                onClick={() => setSelected('__limits__')}
+              />
+              <SummaryPill
+                label="Cloudflare 今日"
+                value={
+                  cfUsage && cloudflareRatio(cfUsage) !== null
+                    ? `${Math.round((cloudflareRatio(cfUsage) ?? 0) * 100)}%`
+                    : cfUsage && !cfUsage.configured
+                      ? '未設定'
+                      : '—'
+                }
+                level={cfUsage ? cloudflareSeverity(cfUsage) : 'idle'}
+                loading={cfUsage === undefined && !cfFailed}
+                onClick={() => setSelected('__limits__')}
+              />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-section p-page lg:p-page-lg">
               {services.map(service => (
-                <Card key={service.key}>
-                  <CardHeader>
-                    <div className="flex items-center gap-2">
-                      <Icon
-                        icon={service.icon}
-                        size="sm"
-                        wrapperClassName="text-muted-foreground"
+                <MonitorCard
+                  key={service.key}
+                  icon={service.icon}
+                  title={service.name}
+                  loading={initialLoading}
+                  badge={<StatusBadge online={service.online} ready={service.ready} />}
+                >
+                  {service.fields.map((field, idx) => (
+                    <div key={field.label}>
+                      {idx > 0 && <Separator className="opacity-40" />}
+                      <FieldRow
+                        label={field.label}
+                        value={field.value}
+                        loading={initialLoading}
+                        offline={!service.online}
                       />
-                      <CardTitle className="text-card-title">{service.name}</CardTitle>
                     </div>
-                    <CardAction>
-                      {initialLoading ? (
-                        <Skeleton className="h-5 w-16 rounded-full" />
-                      ) : (
-                        <StatusBadge online={service.online} ready={service.ready} />
-                      )}
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent>
-                    {service.fields.map((field, idx) => (
-                      <div key={field.label}>
-                        {idx > 0 && <Separator className="opacity-40" />}
-                        <FieldRow
-                          label={field.label}
-                          value={field.value}
-                          loading={initialLoading}
-                          offline={!service.online}
-                        />
-                      </div>
-                    ))}
-                    {!initialLoading && service.online && (
-                      <GaugeDetails
-                        dbPool={service.dbPool}
-                        caches={service.caches}
-                        memory={service.memory}
-                      />
-                    )}
-                  </CardContent>
-                </Card>
+                  ))}
+                  {!initialLoading && service.online && (
+                    <GaugeDetails
+                      dbPool={service.dbPool}
+                      caches={service.caches}
+                      memory={service.memory}
+                    />
+                  )}
+                  <RateLimitDigest
+                    items={rateLimitsFailed ? null : rateLimits?.[service.key]}
+                    offline={!initialLoading && !service.online}
+                    onOpen={() => setSelected('__limits__')}
+                  />
+                </MonitorCard>
               ))}
 
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Icon
-                      icon="fa-solid fa-bug"
-                      size="sm"
-                      wrapperClassName="text-muted-foreground"
-                    />
-                    <CardTitle className="text-card-title">前端錯誤</CardTitle>
-                  </div>
-                  <CardAction>
-                    {errSummary === null ? (
-                      <Skeleton className="h-5 w-16 rounded-full" />
-                    ) : errSummary === 'error' ? (
-                      <Badge className="border-status-offline/20 bg-status-offline/10 text-status-offline gap-1.5">
-                        <Icon icon="fa-solid fa-circle-xmark" size="xs" />
-                        offline
-                      </Badge>
-                    ) : errSummary.total === 0 ? (
-                      <Badge className="border-status-online/20 bg-status-online/10 text-status-online gap-1.5">
-                        <Icon icon="fa-solid fa-circle-check" size="xs" />
-                        clean
-                      </Badge>
-                    ) : (
-                      <Badge className="border-status-warning/20 bg-status-warning/10 text-status-warning gap-1.5">
-                        <Icon icon="fa-solid fa-triangle-exclamation" size="xs" />
-                        {errSummary.total} 筆
-                      </Badge>
-                    )}
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  <FieldRow
-                    label="近 24 小時"
-                    loading={errSummary === null}
-                    offline={errSummary === 'error'}
-                    value={errSummary && errSummary !== 'error' ? `${errSummary.total} 筆` : null}
-                  />
-                  <Separator className="opacity-40" />
-                  <FieldRow
-                    label="種類"
-                    loading={errSummary === null}
-                    offline={errSummary === 'error'}
-                    value={errSummary && errSummary !== 'error' ? `${errSummary.kinds} 種` : null}
-                  />
-                  <div className="flex justify-end pt-2">
-                    <button
-                      onClick={() => setSelected('__errors__')}
-                      className="text-label text-muted-foreground hover:text-foreground"
-                    >
-                      查看詳情 →
-                    </button>
-                  </div>
-                </CardContent>
-              </Card>
+              <MonitorCard
+                icon="fa-solid fa-bug"
+                title="前端錯誤"
+                loading={errSummary === null}
+                badge={
+                  errSummary === 'error' ? (
+                    <Badge variant="offline" className="gap-1.5">
+                      <Icon icon="fa-solid fa-circle-xmark" size="xs" />
+                      offline
+                    </Badge>
+                  ) : errSummary?.total === 0 ? (
+                    <Badge variant="online" className="gap-1.5">
+                      <Icon icon="fa-solid fa-circle-check" size="xs" />
+                      clean
+                    </Badge>
+                  ) : (
+                    <Badge variant="warning" className="gap-1.5">
+                      <Icon icon="fa-solid fa-triangle-exclamation" size="xs" />
+                      {errSummary?.total} 筆
+                    </Badge>
+                  )
+                }
+              >
+                <FieldRow
+                  label="近 24 小時"
+                  loading={errSummary === null}
+                  offline={errSummary === 'error'}
+                  value={errSummary && errSummary !== 'error' ? `${errSummary.total} 筆` : null}
+                />
+                <Separator className="opacity-40" />
+                <FieldRow
+                  label="種類"
+                  loading={errSummary === null}
+                  offline={errSummary === 'error'}
+                  value={errSummary && errSummary !== 'error' ? `${errSummary.kinds} 種` : null}
+                />
+                <CardLinkButton onClick={() => setSelected('__errors__')}>查看詳情</CardLinkButton>
+              </MonitorCard>
+
+              <CloudflareQuotaCard usage={cfUsage} failed={cfFailed} />
+            </div>
+          </div>
+        ) : isLimitsMode ? (
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-section p-page lg:p-page-lg">
+              <CloudflareQuotaCard usage={cfUsage} failed={cfFailed} />
+              <RateLimitSection
+                title="API Server"
+                icon="fa-solid fa-server"
+                items={rateLimitsFailed ? null : rateLimits?.api}
+              />
+              <RateLimitSection
+                title="Twitch Bot"
+                icon="fa-brands fa-twitch"
+                items={rateLimitsFailed ? null : rateLimits?.twitch}
+              />
+              <RateLimitSection
+                title="Discord Bot"
+                icon="fa-brands fa-discord"
+                items={rateLimitsFailed ? null : rateLimits?.discord}
+              />
             </div>
           </div>
         ) : isDbMode ? (

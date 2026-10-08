@@ -20,6 +20,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from shared import rate_limits
+from shared.rate_limits import RateLimitSnapshot
+
 _Sleep = Callable[[float], Awaitable[None]]
 _Clock = Callable[[], float]
 _TRANSIENT_STATUSES = frozenset({408, 425, 429})
@@ -50,6 +53,7 @@ class _HostState:
     open_until: float = 0.0
     blocked_until: float = 0.0
     half_open_probe: bool = False
+    rate_limited: int = 0  # 429s seen from this host
 
 
 class HostEgressClient:
@@ -68,6 +72,7 @@ class HostEgressClient:
         monotonic: _Clock = time.monotonic,
         wall_clock: _Clock = time.time,
         sleep: _Sleep = asyncio.sleep,
+        name: str | None = None,
     ) -> None:
         if max_concurrency_per_host <= 0:
             raise ValueError("max_concurrency_per_host must be positive")
@@ -92,6 +97,42 @@ class HostEgressClient:
         self._sleep = sleep
         self._hosts: OrderedDict[str, _HostState] = OrderedDict()
         self._closed = False
+        self._name = name
+        # Named clients show up in /status (admin Monitor → 限流).
+        if name:
+            rate_limits.register(f"http_egress:{name}", self.snapshots)
+
+    def snapshots(self) -> list[RateLimitSnapshot]:
+        """Host-slot usage, plus one entry per host that is throttling us."""
+        name = self._name or "http"
+        now = self._monotonic()
+        entries: list[RateLimitSnapshot] = [
+            {
+                "name": f"{name}.hosts",
+                "group": "egress",
+                "limit": self._max_hosts,
+                "window_seconds": None,
+                "used": len(self._hosts),
+                "keys": len(self._hosts),
+            }
+        ]
+        for host, state in list(self._hosts.items()):
+            paused = max(state.open_until, state.blocked_until) - now
+            if not state.rate_limited and paused <= 0:
+                continue
+            entries.append(
+                {
+                    "name": f"{name}.{host}",
+                    "group": "egress",
+                    "limit": self._max_concurrency_per_host,
+                    "window_seconds": None,
+                    "used": state.references,
+                    "keys": 1,
+                    "rejected": state.rate_limited,
+                    "blocked_seconds": round(max(paused, 0.0), 1),
+                }
+            )
+        return entries
 
     async def request(
         self,
@@ -172,6 +213,8 @@ class HostEgressClient:
             self._checkin(host_key, state)
 
     async def aclose(self) -> None:
+        if self._name:
+            rate_limits.unregister(f"http_egress:{self._name}")
         if self._closed:
             return
         self._closed = True
@@ -250,6 +293,8 @@ class HostEgressClient:
         *,
         allow_defer: bool,
     ) -> None:
+        if status_code == 429:
+            state.rate_limited += 1
         if status_code in _TRANSIENT_STATUSES or status_code >= 500:
             delay = self._retry_delay(headers) if status_code == 429 and allow_defer else None
             await self._record_transient_failure(state, delay=delay)
