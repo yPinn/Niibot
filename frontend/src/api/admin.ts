@@ -360,3 +360,58 @@ export async function getClientErrorEvents(fingerprint: string): Promise<ClientE
   if (!response.ok) throw await parseApiError(response, '載入錯誤明細失敗')
   return response.json()
 }
+
+// ── Rate limits (Monitor → 限流) ──────────────────────────────────────────────
+
+export type RateLimitGroup = 'inbound' | 'twitch' | 'discord' | 'egress'
+
+/** One throttle's state, same shape from every service (backend shared/rate_limits.py). */
+export interface RateLimitSnapshot {
+  name: string
+  group: RateLimitGroup
+  /** Calls allowed per window, per key; null when the throttle has no fixed cap. */
+  limit: number | null
+  window_seconds: number | null
+  /** The busiest key's calls in the current window. */
+  used: number
+  keys: number
+  queued?: number
+  blocked_seconds?: number
+  limited?: boolean
+  allowed?: number
+  rejected?: number
+  /** Epoch seconds. */
+  last_rejected_at?: number | null
+  provider?: { limit: number | null; remaining: number | null; reset_at: number | null } | null
+}
+
+/** A bot that is offline comes back as null. */
+export interface RateLimits {
+  api: RateLimitSnapshot[]
+  twitch: RateLimitSnapshot[] | null
+  discord: RateLimitSnapshot[] | null
+}
+
+export interface CloudflareUsage {
+  configured: boolean
+  limit: number
+  day_start: string | null
+  reset_at: string | null
+  workers_requests: number | null
+  pages_requests: number | null
+  total_requests: number | null
+  errors: string[]
+  fetched_at: string | null
+}
+
+export async function getRateLimits(): Promise<RateLimits> {
+  const response = await apiFetch(API_ENDPOINTS.admin.rateLimits, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入限流狀態失敗')
+  return response.json()
+}
+
+export async function getCloudflareUsage(): Promise<CloudflareUsage> {
+  const response = await apiFetch(API_ENDPOINTS.admin.cloudflareUsage, { credentials: 'include' })
+  if (!response.ok) throw await parseApiError(response, '載入 Cloudflare 用量失敗')
+  return response.json()
+}
