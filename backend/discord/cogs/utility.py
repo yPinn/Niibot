@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import BOT_NAME, BOT_VERSION, GIT_COMMIT, EmbedFactory, UserBoundView
+from core import BOT_NAME, BOT_VERSION, GIT_COMMIT, EmbedFactory, UserBoundView, guild_group
 
 
 class _Cmd(NamedTuple):
@@ -88,7 +88,7 @@ _PUBLIC_CATEGORIES: list[_Category] = [
         "Codex",
         "OpenAI Codex 額度重置通知",
         [
-            _Cmd("/codex status", "查看目前重置狀態與統計"),
+            _Cmd("/codex", "查看 Codex 重置狀態與下次預估"),
         ],
     ),
 ]
@@ -109,17 +109,17 @@ _MOD_CATEGORY = _Category(
 )
 
 _ADMIN_CATEGORY = _Category(
-    "管理員",
-    "需要伺服器管理員權限的指令",
+    "伺服器設定",
+    "需要「管理伺服器」權限的指令",
     [
         _Cmd("/log set <頻道>", "設定日誌記錄頻道"),
         _Cmd("/log unset", "取消日誌記錄頻道設定"),
-        _Cmd("/food delete <分類>", "刪除整個餐點分類"),
+        _Cmd("/food delete <分類>", "刪除整個餐點分類（administrator）"),
         _Cmd("/bday init", "初始化伺服器的生日功能"),
-        _Cmd("/codex set-channel <頻道> [時區]", "設定 Codex 重置通知頻道與顯示時區"),
-        _Cmd("/codex unset-channel", "取消 Codex 重置通知"),
-        _Cmd("/codex watch <開/關>", "開關重置觀察通知（AI 推測）"),
-        _Cmd("/codex reminder <時間>", "官方預告重置前的提醒時間（預設 30 分鐘）"),
+        _Cmd("/codex-config channel <頻道> [時區]", "設定 Codex 通知頻道與對照時區"),
+        _Cmd("/codex-config disable", "停用 Codex 重置通知"),
+        _Cmd("/codex-config forecast <開/關>", "開關 AI 重置預測通知"),
+        _Cmd("/codex-config reminder <時間>", "設定官方預告的提前提醒（預設 30 分鐘）"),
     ],
 )
 
@@ -238,7 +238,7 @@ class UtilityCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    info = app_commands.Group(name="info", description="資訊查詢")
+    info = guild_group("info", "資訊查詢")
 
     @info.command(name="server", description="伺服器資訊")
     async def info_server(self, interaction: discord.Interaction) -> None:
@@ -326,7 +326,7 @@ class UtilityCog(commands.Cog):
                 )
             ):
                 categories.append(_MOD_CATEGORY)
-            if perms.administrator:
+            if perms.manage_guild:  # administrators have it implicitly
                 categories.append(_ADMIN_CATEGORY)
 
         if interaction.user.id == self.bot.owner_id:

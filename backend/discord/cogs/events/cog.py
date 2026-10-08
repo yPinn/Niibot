@@ -11,7 +11,7 @@ from cachetools import LRUCache, TTLCache
 from discord import app_commands
 from discord.ext import commands
 
-from core import EmbedFactory, render_message_image
+from core import EmbedFactory, guild_group, render_message_image
 
 from . import _embeds
 from ._audit import _find_audit_entry, _find_deleter
@@ -71,11 +71,10 @@ class EventsCog(commands.Cog):
 
     # ── Slash command group ──────────────────────────────────────────────────
 
-    log = app_commands.Group(name="log", description="日誌頻道設定")
+    log = guild_group("log", "日誌頻道設定", permissions=discord.Permissions(manage_guild=True))
 
     @log.command(name="set", description="設定日誌頻道")
     @app_commands.describe(channel="要設定為日誌頻道的文字頻道")
-    @app_commands.checks.has_permissions(administrator=True)
     async def log_set(self, interaction: discord.Interaction, channel: discord.TextChannel) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
@@ -94,7 +93,6 @@ class EventsCog(commands.Cog):
         )
 
     @log.command(name="unset", description="取消日誌頻道")
-    @app_commands.checks.has_permissions(administrator=True)
     async def log_unset(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)
@@ -130,7 +128,6 @@ class EventsCog(commands.Cog):
 
     @log.command(name="ignore-role", description="切換：將身分組排除/納入成員更新日誌")
     @app_commands.describe(role="要切換忽略狀態的身分組")
-    @app_commands.checks.has_permissions(administrator=True)
     async def log_ignore_role(self, interaction: discord.Interaction, role: discord.Role) -> None:
         if not interaction.guild:
             await interaction.response.send_message("此指令只能在伺服器中使用", ephemeral=True)

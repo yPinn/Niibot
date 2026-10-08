@@ -22,6 +22,7 @@ from .embed_factory import EmbedFactory
 from .health_server import HealthCheckServer
 from .logging_setup import setup_logging
 from .message_image import close_session, render_message_image
+from .slash import GUILD_ONLY, guild_group
 from .views import UserBoundView
 
 
@@ -35,6 +36,9 @@ def load_json(path: Path, default: dict | list | None = None) -> Any:
 
 
 __all__ = [
+    # Slash-command conventions
+    "GUILD_ONLY",
+    "guild_group",
     # Config
     "BotConfig",
     "get_settings",

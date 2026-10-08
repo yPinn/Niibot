@@ -27,7 +27,7 @@ import httpx
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core import RUNTIME_DIR, EmbedFactory
+from core import RUNTIME_DIR, EmbedFactory, guild_group
 
 from ._embeds import (
     Link,
@@ -97,13 +97,13 @@ def _reminder_label(minutes: int | None) -> str:
 
 
 def _settings_summary(cfg: GuildConfig) -> str:
-    """Current settings plus where to change each (shown after set-channel)."""
-    zone = f"`{cfg.timezone}`" if cfg.timezone else "跟隨每位使用者的裝置"
+    """Current settings plus where to change each (shown after /codex-config channel)."""
+    zone = f"`{cfg.timezone}`" if cfg.timezone else "太平洋時間（預設）"
     return "\n".join(
         (
-            f"時區：{zone}",
-            f"官方預告提醒：{_reminder_label(cfg.reminder_minutes)}（`/codex reminder`）",
-            f"AI 觀察通知：{'開啟' if cfg.watch else '關閉'}（`/codex watch`）",
+            f"對照時區：{zone}（時間會先依每位成員的 Discord 時區顯示）",
+            f"官方預告提醒：{_reminder_label(cfg.reminder_minutes)}（`/codex-config reminder`）",
+            f"AI 重置預測通知：{'開啟' if cfg.watch else '關閉'}（`/codex-config forecast`）",
         )
     )
 
@@ -116,7 +116,6 @@ def _payload_changed(post: TrackedPost, payload: dict[str, Any]) -> bool:
     return json.dumps(post.payload, sort_keys=True) != json.dumps(payload, sort_keys=True)
 
 
-@app_commands.guild_only()
 class CodexResetsCog(commands.Cog):
     def __init__(self, bot: commands.Bot, store: StateStore | None = None) -> None:
         self.bot = bot
@@ -375,22 +374,27 @@ class CodexResetsCog(commands.Cog):
                 LOGGER.warning("CodexResets: edit failed message=%d: %s", message_id, exc)
 
     # ── Slash commands ──────────────────────────────────────────────────────
+    # /codex is the public read; /codex-config holds every setting. Discord hides
+    # /codex-config from members without Manage Server (server admins can adjust
+    # who sees it under Server Settings → Integrations), so there is no runtime
+    # permission check. Both are guild-only: every setting is per guild.
 
-    codex = app_commands.Group(name="codex", description="Codex 重置通知")
+    config = guild_group(
+        "codex-config", "Codex 重置通知設定", permissions=discord.Permissions(manage_guild=True)
+    )
 
-    @codex.command(name="set-channel", description="設定 Codex 重置通知頻道與時區")
+    @config.command(name="channel", description="設定通知頻道與對照時區")
     @app_commands.describe(
         channel="接收通知的文字頻道",
-        timezone="時間顯示的時區（例如 Asia/Taipei）；不填則沿用目前設定",
+        timezone="對照時區，預設太平洋時間（例如 Asia/Taipei）",
     )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_channel(
+    async def config_channel(
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
         timezone: str | None = None,
     ) -> None:
-        assert interaction.guild is not None
+        assert interaction.guild is not None  # guild_only
         if timezone is not None:
             try:
                 ZoneInfo(timezone)
@@ -407,7 +411,7 @@ class CodexResetsCog(commands.Cog):
             )
             return
 
-        # Keep the guild's other settings (watch / reminder) when re-pointing.
+        # Keep the guild's other settings (forecast / reminder) when re-pointing.
         cfg = self._state.guilds.setdefault(interaction.guild.id, GuildConfig(channel.id))
         cfg.channel_id = channel.id
         if timezone is not None:
@@ -418,40 +422,41 @@ class CodexResetsCog(commands.Cog):
             ephemeral=True,
         )
 
-    @set_channel.autocomplete("timezone")
+    @config_channel.autocomplete("timezone")
     async def _timezone_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
         return [app_commands.Choice(name=tz, value=tz) for tz in timezone_matches(current)]
 
-    @codex.command(name="unset-channel", description="取消 Codex 重置通知")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def unset_channel(self, interaction: discord.Interaction) -> None:
-        assert interaction.guild_id is not None
+    @config.command(name="disable", description="停用 Codex 重置通知")
+    async def config_disable(self, interaction: discord.Interaction) -> None:
+        assert interaction.guild_id is not None  # guild_only
         if self._state.guilds.pop(interaction.guild_id, None) is None:
             await interaction.response.send_message("尚未設定通知頻道", ephemeral=True)
             return
         self._store.save(self._state)
-        await interaction.response.send_message("已取消 Codex 重置通知", ephemeral=True)
+        await interaction.response.send_message("已停用 Codex 重置通知", ephemeral=True)
 
-    @codex.command(name="watch", description="開關重置觀察通知（AI 推測，較頻繁）")
-    @app_commands.describe(enabled="是否接收重置觀察通知")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_watch(self, interaction: discord.Interaction, enabled: bool) -> None:
-        assert interaction.guild_id is not None
-        cfg = self._state.guilds.get(interaction.guild_id)
+    async def _require_config(self, interaction: discord.Interaction) -> GuildConfig | None:
+        cfg = self._state.guilds.get(interaction.guild_id or 0)
         if cfg is None:
             await interaction.response.send_message(
-                "請先用 `/codex set-channel` 設定通知頻道", ephemeral=True
+                "請先用 `/codex-config channel` 設定通知頻道", ephemeral=True
             )
+        return cfg
+
+    @config.command(name="forecast", description="開關 AI 重置預測通知")
+    @app_commands.describe(enabled="是否接收 AI 重置預測通知")
+    async def config_forecast(self, interaction: discord.Interaction, enabled: bool) -> None:
+        if (cfg := await self._require_config(interaction)) is None:
             return
         cfg.watch = enabled
         self._store.save(self._state)
         await interaction.response.send_message(
-            f"重置觀察通知已{'開啟' if enabled else '關閉'}", ephemeral=True
+            f"AI 重置預測通知已{'開啟' if enabled else '關閉'}", ephemeral=True
         )
 
-    @codex.command(name="reminder", description="官方預告重置前多久提醒")
+    @config.command(name="reminder", description="設定官方預告的提前提醒")
     @app_commands.describe(minutes="提前提醒的時間")
     @app_commands.choices(
         minutes=[
@@ -465,16 +470,10 @@ class CodexResetsCog(commands.Cog):
             )
         ]
     )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def set_reminder(
+    async def config_reminder(
         self, interaction: discord.Interaction, minutes: app_commands.Choice[int]
     ) -> None:
-        assert interaction.guild_id is not None
-        cfg = self._state.guilds.get(interaction.guild_id)
-        if cfg is None:
-            await interaction.response.send_message(
-                "請先用 `/codex set-channel` 設定通知頻道", ephemeral=True
-            )
+        if (cfg := await self._require_config(interaction)) is None:
             return
         cfg.reminder_minutes = minutes.value or None
         self._store.save(self._state)
@@ -482,8 +481,9 @@ class CodexResetsCog(commands.Cog):
             f"官方預告提醒：{_reminder_label(cfg.reminder_minutes)}", ephemeral=True
         )
 
-    @codex.command(name="status", description="查看目前 Codex 重置狀態")
-    async def status(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="codex", description="查看 Codex 重置狀態")
+    @app_commands.guild_only()
+    async def codex(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer()
         try:
             body = await self._fetch("/api/v1/status")
