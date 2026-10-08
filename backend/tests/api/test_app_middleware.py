@@ -122,6 +122,7 @@ class TestClientIpProbe:
         assert r.status_code == 200
         body = r.json()
         assert body["client_host"] == "testclient"
+        assert body["client_ip"] == "testclient"
         assert body["headers"]["x-forwarded-for"] == "203.0.113.7"
         assert body["headers"]["cf-connecting-ip"] is None
 

@@ -24,7 +24,7 @@ from core.dependencies import (
     require_tenant_access,
     require_tenant_owner,
 )
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services.bot_account_service import (
     BotAccountService,
     BotAccountSummary,
@@ -215,10 +215,6 @@ async def _resolve_public_twitch_identity(
     )
 
 
-def _request_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def _capability_rate_key(public_token: str) -> str:
     return hashlib.sha256(public_token.encode()).hexdigest()[:16]
 
@@ -329,9 +325,7 @@ async def update_bot_account_selection(
     tenant: TenantContext = Depends(require_tenant_access),
     selection: BotSelectionService = Depends(get_bot_selection_service),
 ) -> BotSelectionResponse:
-    _selection_limiter.require(
-        f"bot-selection:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
-    )
+    _selection_limiter.require(f"bot-selection:{tenant.user_id}:{channel_id}:{client_ip(request)}")
     state = await selection.request_selection(
         channel_id=channel_id,
         bot_user_id=body.bot_user_id,
@@ -371,7 +365,7 @@ async def check_bot_authorization(
 ) -> AuthorizationHealthResponse:
     """Manually recheck a bot credential visible to this tenant."""
     _authorization_check_limiter.require(
-        f"bot-check:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+        f"bot-check:{tenant.user_id}:{channel_id}:{client_ip(request)}"
     )
     await bot_accounts.assert_available_to_tenant(channel_id=channel_id, bot_user_id=bot_user_id)
     health = await authorization.check_credential(
@@ -396,7 +390,7 @@ async def unlink_bot_account(
 ) -> AuthorizationRemovalResponse:
     """Remove only this tenant mapping; revoke the token only after its last mapping."""
     _authorization_remove_limiter.require(
-        f"bot-unlink:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+        f"bot-unlink:{tenant.user_id}:{channel_id}:{client_ip(request)}"
     )
     result = await authorization.unlink_bot_from_tenant(
         channel_id=channel_id,
@@ -470,7 +464,7 @@ async def check_broadcaster_authorization(
     authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
 ) -> AuthorizationHealthResponse:
     _authorization_check_limiter.require(
-        f"broadcaster-check:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+        f"broadcaster-check:{tenant.user_id}:{channel_id}:{client_ip(request)}"
     )
     health = await authorization.check_credential(
         user_id=channel_id,
@@ -493,7 +487,7 @@ async def disconnect_broadcaster_authorization(
     authorization: TwitchAuthorizationService = Depends(get_twitch_authorization_service),
 ) -> AuthorizationRemovalResponse:
     _authorization_remove_limiter.require(
-        f"broadcaster-disconnect:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+        f"broadcaster-disconnect:{tenant.user_id}:{channel_id}:{client_ip(request)}"
     )
     result = await authorization.disconnect_broadcaster(
         channel_id=channel_id, owner_user_id=tenant.user_id
@@ -522,7 +516,7 @@ async def create_bot_invite(
     settings: Settings = Depends(get_settings),
 ) -> BotInviteCreateResponse:
     """Create a tenant-owner-only, 30-minute bot credential invitation."""
-    _invite_create_limiter.require(f"{tenant.user_id}:{channel_id}:{_request_ip(request)}")
+    _invite_create_limiter.require(f"{tenant.user_id}:{channel_id}:{client_ip(request)}")
     created = await service.create_invite(
         channel_id=channel_id,
         creator_user_id=tenant.user_id,
@@ -546,7 +540,7 @@ async def create_system_bot_reset_invite(
     """Replace local-script token reset with an expected-account web invite."""
     if not settings.bot_id:
         raise SystemBotNotConfiguredError()
-    _invite_create_limiter.require(f"system:{creator_user_id}:{_request_ip(request)}")
+    _invite_create_limiter.require(f"system:{creator_user_id}:{client_ip(request)}")
     created = await service.create_invite(
         channel_id=owner_channel_id,
         creator_user_id=creator_user_id,
@@ -572,7 +566,7 @@ async def create_bot_reauthorization_invite(
 ) -> BotInviteCreateResponse:
     """Reset a custom credential only after proving it belongs to this tenant."""
     _invite_create_limiter.require(
-        f"reauthorize:{tenant.user_id}:{channel_id}:{_request_ip(request)}"
+        f"reauthorize:{tenant.user_id}:{channel_id}:{client_ip(request)}"
     )
     created = await service.create_invite(
         channel_id=channel_id,
@@ -626,7 +620,7 @@ async def get_public_bot_invite(
 ) -> PublicBotInviteResponse:
     """Return the minimal consent-page contract for the invite holder."""
     _set_sensitive_response_headers(response)
-    _public_invite_limiter.require(f"{_request_ip(request)}:{_capability_rate_key(public_token)}")
+    _public_invite_limiter.require(f"{client_ip(request)}:{_capability_rate_key(public_token)}")
     invite = await service.get_public_invite(
         public_token=public_token,
         state_nonce=nonce,
@@ -675,7 +669,7 @@ async def decline_public_bot_invite(
 ) -> DeclineResponse:
     _set_sensitive_response_headers(response)
     _public_invite_limiter.require(
-        f"decline:{_request_ip(request)}:{_capability_rate_key(public_token)}"
+        f"decline:{client_ip(request)}:{_capability_rate_key(public_token)}"
     )
     await service.decline_invite(public_token=public_token, state_nonce=nonce)
     return DeclineResponse(status="declined")
@@ -692,7 +686,7 @@ async def bot_oauth_callback(
     settings: Settings = Depends(get_settings),
 ) -> RedirectResponse:
     """Persist a bot credential without creating a User, tenant, or session."""
-    _callback_limiter.require(_request_ip(request))
+    _callback_limiter.require(client_ip(request))
     error_url = _result_redirect(settings, status_value="error", reason="authorization_failed")
     if error or not code:
         reason = _provider_oauth_failure_reason(error)

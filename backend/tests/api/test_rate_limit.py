@@ -1,4 +1,4 @@
-"""Unit tests for core.rate_limit.RateLimiter."""
+"""Unit tests for core.rate_limit (RateLimiter, client_ip)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import time
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
-from core.rate_limit import RateLimiter
+from core.rate_limit import PAGES_WORKER_ZONE, RateLimiter, client_ip
 
 
 class TestRateLimiterAllow:
@@ -103,3 +104,50 @@ class TestRateLimiterSweep:
             rl.allow(f"filler-{i}")
 
         assert "active-key" in rl._log
+
+
+def _request(headers: dict[str, str], peer: str | None = "172.22.0.1") -> Request:
+    return Request(
+        {
+            "type": "http",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+            "client": (peer, 1234) if peer else None,
+        }
+    )
+
+
+class TestClientIp:
+    def test_pages_function_forwarded_ip_is_trusted(self):
+        req = _request(
+            {
+                "CF-Worker": PAGES_WORKER_ZONE,
+                "X-Niibot-Client-IP": "198.51.100.4",
+                "CF-Connecting-IP": "2a06:98c0:3600::103",
+            }
+        )
+        assert client_ip(req) == "198.51.100.4"
+
+    def test_forwarded_ip_from_another_worker_is_ignored(self):
+        req = _request(
+            {
+                "CF-Worker": "evil.example.com",
+                "X-Niibot-Client-IP": "198.51.100.4",
+                "CF-Connecting-IP": "2a06:98c0:3600::103",
+            }
+        )
+        assert client_ip(req) == "2a06:98c0:3600::103"
+
+    def test_forwarded_ip_without_worker_is_ignored(self):
+        req = _request({"X-Niibot-Client-IP": "198.51.100.4", "CF-Connecting-IP": "203.0.113.9"})
+        assert client_ip(req) == "203.0.113.9"
+
+    def test_pages_without_forwarded_ip_falls_back_to_connecting_ip(self):
+        req = _request({"CF-Worker": PAGES_WORKER_ZONE, "CF-Connecting-IP": "2a06:98c0:3600::103"})
+        assert client_ip(req) == "2a06:98c0:3600::103"
+
+    def test_x_forwarded_for_and_true_client_ip_are_never_used(self):
+        req = _request({"X-Forwarded-For": "6.6.6.6", "True-Client-IP": "8.8.4.4"})
+        assert client_ip(req) == "172.22.0.1"
+
+    def test_no_peer_is_unknown(self):
+        assert client_ip(_request({}, peer=None)) == "unknown"

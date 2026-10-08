@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from core.dependencies import get_roleplay_service, require_tenant_access
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services.roleplay_service import (
     RoleplayImportInvalidError,
     RoleplayImportOutcome,
@@ -170,8 +170,7 @@ def _set_response(roleplay_set: RoleplaySet) -> RoleplaySetResponse:
 
 
 def _rate_key(request: Request, tenant: TenantContext) -> str:
-    client_ip = request.client.host if request.client else "unknown"
-    return f"{tenant.user_id}:{tenant.channel_id}:{client_ip}"
+    return f"{tenant.user_id}:{tenant.channel_id}:{client_ip(request)}"
 
 
 def _import_response(outcome: RoleplayImportOutcome) -> RoleplayImportResponse:
