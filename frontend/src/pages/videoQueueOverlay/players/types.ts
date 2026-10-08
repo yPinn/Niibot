@@ -8,6 +8,8 @@ export interface YTPlayer {
   destroy(): void
   getCurrentTime(): number
   getDuration(): number
+  /** 0..1, how far the buffered media reaches; 0 while nothing is known yet. */
+  getVideoLoadedFraction(): number
   seekTo(seconds: number, allowSeekAhead?: boolean): void
   setVolume(volume: number): void
   mute(): void
