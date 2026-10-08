@@ -108,3 +108,32 @@ describe('CloudflareQuotaCard', () => {
     expect(screen.getByText('3,000 / 100,000')).toBeInTheDocument()
   })
 })
+
+describe('load failure is not an outage', () => {
+  it('section says the data failed to load, not that the service is offline', () => {
+    render(
+      <RateLimitSection title="API Server" icon="fa-solid fa-server" items={undefined} failed />
+    )
+    expect(screen.getByText('無法載入限流狀態')).toBeInTheDocument()
+    expect(screen.getByText('error')).toBeInTheDocument()
+    expect(screen.queryByText('offline')).toBeNull()
+  })
+
+  it('section keeps showing earlier data when a later poll fails', () => {
+    render(
+      <RateLimitSection
+        title="API Server"
+        icon="fa-solid fa-server"
+        items={[snap({ name: 'kept', used: 1, keys: 1 })]}
+        failed
+      />
+    )
+    expect(screen.getByText('kept')).toBeInTheDocument()
+  })
+
+  it('digest says it could not load instead of offline', () => {
+    render(<RateLimitDigest items={undefined} failed onOpen={() => {}} />)
+    expect(screen.getByText('無法載入')).toBeInTheDocument()
+    expect(screen.queryByText('服務離線')).toBeNull()
+  })
+})

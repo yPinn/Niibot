@@ -503,7 +503,15 @@ export default function AdminMonitor() {
               />
               <SummaryPill
                 label="限流"
-                value={limitsLevel === 'hot' ? '觸發中' : limitsLevel === 'warn' ? '繁忙' : '正常'}
+                value={
+                  !rateLimits
+                    ? '無法載入'
+                    : limitsLevel === 'hot'
+                      ? '觸發中'
+                      : limitsLevel === 'warn'
+                        ? '繁忙'
+                        : '正常'
+                }
                 level={limitsLevel}
                 loading={rateLimits === undefined && !rateLimitsFailed}
                 onClick={() => setSelected('__limits__')}
@@ -550,7 +558,8 @@ export default function AdminMonitor() {
                     />
                   )}
                   <RateLimitDigest
-                    items={rateLimitsFailed ? null : rateLimits?.[service.key]}
+                    items={rateLimits?.[service.key]}
+                    failed={rateLimitsFailed}
                     offline={!initialLoading && !service.online}
                     onOpen={() => setSelected('__limits__')}
                   />
@@ -606,17 +615,20 @@ export default function AdminMonitor() {
               <RateLimitSection
                 title="API Server"
                 icon="fa-solid fa-server"
-                items={rateLimitsFailed ? null : rateLimits?.api}
+                items={rateLimits?.api}
+                failed={rateLimitsFailed}
               />
               <RateLimitSection
                 title="Twitch Bot"
                 icon="fa-brands fa-twitch"
-                items={rateLimitsFailed ? null : rateLimits?.twitch}
+                items={rateLimits?.twitch}
+                failed={rateLimitsFailed}
               />
               <RateLimitSection
                 title="Discord Bot"
                 icon="fa-brands fa-discord"
-                items={rateLimitsFailed ? null : rateLimits?.discord}
+                items={rateLimits?.discord}
+                failed={rateLimitsFailed}
               />
             </div>
           </div>
