@@ -115,29 +115,6 @@ class TestBuildStatus:
         assert r.json()["git_commit"] == "test-build-commit"
 
 
-class TestClientIpProbe:
-    def test_echoes_caller_and_proxy_headers_outside_production(self, client: TestClient):
-        r = client.get("/api/debug/client-ip", headers={"X-Forwarded-For": "203.0.113.7"})
-
-        assert r.status_code == 200
-        body = r.json()
-        assert body["client_host"] == "testclient"
-        assert body["client_ip"] == "testclient"
-        assert body["headers"]["x-forwarded-for"] == "203.0.113.7"
-        assert body["headers"]["cf-connecting-ip"] is None
-
-    def test_not_registered_in_production(self):
-        production = get_settings().model_copy(update={"environment": "production"})
-        with (
-            patch("app.lifespan", _no_lifespan),
-            patch("app.setup_logging"),
-            patch("app.get_settings", return_value=production),
-        ):
-            test_app = create_app()
-        with TestClient(test_app) as c:
-            assert c.get("/api/debug/client-ip").status_code == 404
-
-
 # ── Request ID middleware ─────────────────────────────────────────────────────
 
 

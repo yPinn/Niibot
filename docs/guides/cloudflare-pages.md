@@ -137,7 +137,7 @@ Overlay 一律經 Pages proxy（`/api/*`）連後端，**唯一例外**是直播
 ### Client IP（rate limiter 與 telemetry 的 key）
 
 後端容器看到的連線來源永遠是 Docker gateway，不能拿 `request.client.host` 當呼叫者。2026-10-09 在
-staging 實測（`GET /api/debug/client-ip`，僅非 production 註冊）：
+staging 實測（以臨時的 `GET /api/debug/client-ip` 診斷端點量測，驗證後已移除）：
 
 | Header             | 直連 tunnel             | 經 Pages Function                      | 可否偽造                                    |
 | ------------------ | ----------------------- | -------------------------------------- | ------------------------------------------- |

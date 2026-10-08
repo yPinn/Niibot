@@ -24,7 +24,6 @@ from core.dependencies import (
 )
 from core.error_handlers import log_request_failure, register_exception_handlers
 from core.logging_setup import setup_logging
-from core.rate_limit import CLIENT_IP_HEADER, client_ip
 from routers import (
     admin_router,
     ai_settings_router,
@@ -637,31 +636,6 @@ def create_app() -> FastAPI:
             "db_connected": db_ok,
             **gauges,
         }
-
-    if not settings.is_production:
-        # Non-production probe: what the API sees as the caller, and the proxy
-        # headers it arrived with — to settle which source rate limiters can
-        # trust behind Pages Functions + Cloudflare Tunnel. Echoes only the
-        # caller's own request back to it.
-        _probe_headers = (
-            "x-forwarded-for",
-            "x-forwarded-proto",
-            "x-real-ip",
-            "forwarded",
-            "cf-connecting-ip",
-            "true-client-ip",
-            "cf-worker",
-            "cf-ray",
-            CLIENT_IP_HEADER,
-        )
-
-        @app.get("/api/debug/client-ip")
-        async def debug_client_ip(request: Request):
-            return {
-                "client_host": request.client.host if request.client else None,
-                "client_ip": client_ip(request),
-                "headers": {h: request.headers.get(h) for h in _probe_headers},
-            }
 
     # Ping endpoint
     @app.api_route("/ping", methods=["GET", "HEAD"], response_class=PlainTextResponse)
