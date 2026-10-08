@@ -96,6 +96,9 @@ Bot 啟動與 reconnect 都不會同步 commands；同步由 CD 在部署後執�
 - production 同步 global；staging 只有設定 GitHub Variable `DISCORD_SYNC_GUILD_ID`（nonprod
   測試 guild）才同步，未設定則跳過。
 - 同步失敗會讓 workflow 失敗並通知，但不 rollback（服務正常，只是指令未更新）；可重跑或手動同步。
+- 同步是對單一 scope 整批覆蓋：同 scope 內改名或刪除的指令會被移除，但另一個 scope 的舊指令不受
+  影響（global 同步不會清 guild 指令，反之亦然），會造成重複或殘留。`sync` 每次都會檢查另一個
+  scope，有殘留時輸出 `::warning::` 與對應的 `nb discord rm` 指令；只警告、不自動刪除。
 
 手動檢查與同步（diff 會列出 `+` 新增、`-` 移除、`~` 內容變更）：
 
