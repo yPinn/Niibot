@@ -3,7 +3,9 @@
 The Workers Free plan allows 100,000 requests per account per UTC day, shared
 by Workers and Pages Functions (docs/guides/cloudflare-pages.md). Both datasets
 come from the GraphQL Analytics API; each is queried on its own so one schema
-or permission problem leaves the other number usable.
+or permission problem leaves the other number usable. Verified 2026-10-09 with
+an Account Analytics: Read token: both queries below succeed, and the Workers
+dataset excludes Pages Functions (60 vs 7,063 the same day), so the two add up.
 
 Results are cached for a few minutes: the Monitor polls, the analytics API is
 itself delayed by minutes, and the owner should not be able to turn a refresh
@@ -35,7 +37,6 @@ query ($account: string!, $start: Time!, $end: Time!) {
         filter: {datetime_geq: $start, datetime_lt: $end}
       ) {
         sum { requests }
-        dimensions { scriptName }
       }
     }
   }
