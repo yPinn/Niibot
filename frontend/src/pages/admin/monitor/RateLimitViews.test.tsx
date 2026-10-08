@@ -137,3 +137,36 @@ describe('load failure is not an outage', () => {
     expect(screen.queryByText('服務離線')).toBeNull()
   })
 })
+
+describe('idle throttles fold away', () => {
+  it('shows active rows and folds idle ones behind a toggle', () => {
+    render(
+      <RateLimitSection
+        title="API Server"
+        icon="fa-solid fa-server"
+        items={[
+          snap({ name: 'busy', used: 5, keys: 1 }),
+          snap({ name: 'quiet-1' }),
+          snap({ name: 'quiet-2' }),
+        ]}
+      />
+    )
+    expect(screen.getAllByTestId('rate-limit-row')).toHaveLength(1)
+    fireEvent.click(screen.getByText('2 項 展開'))
+    expect(screen.getAllByTestId('rate-limit-row')).toHaveLength(3)
+    fireEvent.click(screen.getByText('2 項 收起'))
+    expect(screen.getAllByTestId('rate-limit-row')).toHaveLength(1)
+  })
+
+  it('folds everything when the whole service is idle', () => {
+    render(
+      <RateLimitSection
+        title="API Server"
+        icon="fa-solid fa-server"
+        items={[snap(), snap({ name: 'y' })]}
+      />
+    )
+    expect(screen.queryAllByTestId('rate-limit-row')).toHaveLength(0)
+    expect(screen.getByText('2 項 展開')).toBeInTheDocument()
+  })
+})

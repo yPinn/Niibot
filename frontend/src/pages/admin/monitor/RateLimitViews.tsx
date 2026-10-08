@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useState } from 'react'
 
 import type { CloudflareUsage, RateLimitSnapshot } from '@/api/admin'
 import { Icon } from '@/components/primitives'
@@ -180,9 +180,45 @@ export function RateLimitSection({
       ) : items.length === 0 ? (
         <p className="text-sub text-muted-foreground">沒有登記的限流</p>
       ) : (
-        <RateLimitList items={rankByPressure(items)} />
+        <SectionBody items={items} />
       )}
     </MonitorCard>
+  )
+}
+
+/** Active throttles first; idle ones (nothing in the window, never rejected)
+ *  fold behind the same 展開/收起 row GaugeDetails uses for caches. */
+function SectionBody({ items }: { items: RateLimitSnapshot[] }) {
+  const [showIdle, setShowIdle] = useState(false)
+  const ranked = rankByPressure(items)
+  const active = ranked.filter(s => severity(s) !== 'idle')
+  const idle = ranked.filter(s => severity(s) === 'idle')
+  return (
+    <>
+      {active.length > 0 && <RateLimitList items={active} />}
+      {idle.length > 0 && (
+        <>
+          {active.length > 0 && <Separator className="opacity-40" />}
+          <FieldRow
+            label="閒置"
+            value={
+              <button
+                onClick={() => setShowIdle(o => !o)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {idle.length} 項 {showIdle ? '收起' : '展開'}
+              </button>
+            }
+          />
+          {showIdle && (
+            <>
+              <Separator className="opacity-40" />
+              <RateLimitList items={idle} />
+            </>
+          )}
+        </>
+      )}
+    </>
   )
 }
 
