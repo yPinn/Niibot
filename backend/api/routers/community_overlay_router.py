@@ -33,11 +33,13 @@ from shared.models.attendance import (
 from shared.services.community_overlay import CommunityOverlayService
 
 router = APIRouter(prefix="/api/live-display", tags=["live-display"])
-_feed_limiter = RateLimiter(max_calls=240, period=60.0)
-_public_theme_limiter = RateLimiter(max_calls=120, period=60.0)
-_public_ip_limiter = RateLimiter(max_calls=600, period=60.0)
-_preview_limiter = RateLimiter(max_calls=10, period=60.0)
-_stream_limiter = RateLimiter(max_calls=30, period=60.0)
+_feed_limiter = RateLimiter(max_calls=240, period=60.0, name="community_overlay.feed")
+_public_theme_limiter = RateLimiter(
+    max_calls=120, period=60.0, name="community_overlay.public_theme"
+)
+_public_ip_limiter = RateLimiter(max_calls=600, period=60.0, name="community_overlay.public_ip")
+_preview_limiter = RateLimiter(max_calls=10, period=60.0, name="community_overlay.preview")
+_stream_limiter = RateLimiter(max_calls=30, period=60.0, name="community_overlay.stream")
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 

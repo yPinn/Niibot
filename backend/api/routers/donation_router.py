@@ -43,7 +43,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/donate", tags=["donation"])
 
 # 10 checkout attempts per minute per IP
-_checkout_limiter = RateLimiter(max_calls=10, period=60.0)
+_checkout_limiter = RateLimiter(max_calls=10, period=60.0, name="donation.checkout")
 
 
 class DonationInvalidError(InvalidInputError):

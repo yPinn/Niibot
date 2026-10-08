@@ -151,3 +151,42 @@ class TestClientIp:
 
     def test_no_peer_is_unknown(self):
         assert client_ip(_request({}, peer=None)) == "unknown"
+
+
+class TestSnapshot:
+    def test_reports_busiest_key_active_keys_and_totals(self):
+        rl = RateLimiter(max_calls=2, period=60.0)
+        rl.allow("a")
+        rl.allow("a")
+        rl.allow("a")  # rejected
+        rl.allow("b")
+        snap = rl.snapshot()
+        assert snap["limit"] == 2
+        assert snap["window_seconds"] == 60.0
+        assert snap["used"] == 2
+        assert snap["keys"] == 2
+        assert snap["allowed"] == 3
+        assert snap["rejected"] == 1
+        assert snap["last_rejected_at"] is not None
+
+    def test_expired_calls_do_not_count(self, monkeypatch: pytest.MonkeyPatch):
+        rl = RateLimiter(max_calls=5, period=10.0)
+        now = [1000.0]
+        monkeypatch.setattr(time, "monotonic", lambda: now[0])
+        rl.allow("a")
+        now[0] += 11
+        snap = rl.snapshot()
+        assert snap["used"] == 0
+        assert snap["keys"] == 0
+
+    def test_only_named_limiters_register(self):
+        from shared import rate_limits
+
+        RateLimiter(max_calls=1, period=1.0)
+        assert "limiter:None" not in rate_limits._providers
+        RateLimiter(max_calls=1, period=1.0, name="test.snapshot")
+        try:
+            names = [s["name"] for s in rate_limits.collect_rate_limits()]
+            assert "test.snapshot" in names
+        finally:
+            rate_limits.unregister("limiter:test.snapshot")

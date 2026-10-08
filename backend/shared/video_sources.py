@@ -574,7 +574,7 @@ _app_token_locks: WeakKeyDictionary[
     asyncio.AbstractEventLoop,
     dict[tuple[str, str], asyncio.Lock],
 ] = WeakKeyDictionary()
-_twitch_media_egress = TwitchEgressCoordinator()
+_twitch_media_egress = TwitchEgressCoordinator(name="media")
 
 
 def _app_token_lock(cache_key: tuple[str, str]) -> asyncio.Lock:

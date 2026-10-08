@@ -5,6 +5,9 @@ from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request
 
+from shared import rate_limits
+from shared.rate_limits import RateLimitSnapshot
+
 # Behind Cloudflare Tunnel the socket peer is always the Docker gateway, so the
 # caller has to come from headers — only ones Cloudflare itself controls
 # (measured on staging; see docs/guides/cloudflare-pages.md):
@@ -40,11 +43,18 @@ class RateLimiter:
 
     _SWEEP_INTERVAL = 500  # calls between idle-key eviction sweeps
 
-    def __init__(self, max_calls: int, period: float) -> None:
+    def __init__(self, max_calls: int, period: float, *, name: str | None = None) -> None:
         self._max = max_calls
         self._period = period
         self._log: dict[str, deque[float]] = defaultdict(deque)
         self._calls_since_sweep = 0
+        self.name = name
+        self._allowed = 0
+        self._rejected = 0
+        self._last_rejected_at: float | None = None
+        # Named limiters show up in /status (admin Monitor → 限流).
+        if name:
+            rate_limits.register(f"limiter:{name}", lambda: [self.snapshot()])
 
     def allow(self, key: str) -> bool:
         """Record attempt. Returns True if within limit, False if exceeded."""
@@ -56,8 +66,29 @@ class RateLimiter:
         allowed = len(log) < self._max
         if allowed:
             log.append(now)
+            self._allowed += 1
+        else:
+            self._rejected += 1
+            self._last_rejected_at = time.time()
         self._maybe_sweep(now)
         return allowed
+
+    def snapshot(self) -> RateLimitSnapshot:
+        """Current-window usage. Read-only: expired entries are skipped, not pruned."""
+        cutoff = time.monotonic() - self._period
+        counts = [sum(1 for t in log if t >= cutoff) for log in list(self._log.values())]
+        active = [c for c in counts if c]
+        return {
+            "name": self.name or "unnamed",
+            "group": "inbound",
+            "limit": self._max,
+            "window_seconds": self._period,
+            "used": max(active, default=0),
+            "keys": len(active),
+            "allowed": self._allowed,
+            "rejected": self._rejected,
+            "last_rejected_at": self._last_rejected_at,
+        }
 
     def _maybe_sweep(self, now: float) -> None:
         """Evict keys whose window has fully expired, bounding dict growth.

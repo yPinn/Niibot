@@ -39,7 +39,7 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
 # 5 OTP attempts per 10-minute window per user
-_otp_rate_limiter = RateLimiter(max_calls=5, period=600.0)
+_otp_rate_limiter = RateLimiter(max_calls=5, period=600.0, name="auth.otp")
 
 router = APIRouter(prefix="/api", tags=["authentication"])
 

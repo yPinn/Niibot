@@ -83,15 +83,15 @@ router = APIRouter(prefix="/api/video-queue", tags=["video-queue"])
 # Keyed on client_host alone, never client_host:username — _resolve_channel_id
 # hits the Twitch API on a cache miss, so keying by (attacker-chosen) username
 # would hand out a fresh rate-limit bucket per guessed name for free.
-_advance_limiter = RateLimiter(max_calls=30, period=60.0)
-_metadata_limiter = RateLimiter(max_calls=30, period=60.0)
-_playback_limiter = RateLimiter(max_calls=60, period=60.0)
-_stream_limiter = RateLimiter(max_calls=30, period=60.0)
-_clip_source_limiter = RateLimiter(max_calls=30, period=60.0)
-_reel_source_limiter = RateLimiter(max_calls=30, period=60.0)
+_advance_limiter = RateLimiter(max_calls=30, period=60.0, name="video_queue.advance")
+_metadata_limiter = RateLimiter(max_calls=30, period=60.0, name="video_queue.metadata")
+_playback_limiter = RateLimiter(max_calls=60, period=60.0, name="video_queue.playback")
+_stream_limiter = RateLimiter(max_calls=30, period=60.0, name="video_queue.stream")
+_clip_source_limiter = RateLimiter(max_calls=30, period=60.0, name="video_queue.clip_source")
+_reel_source_limiter = RateLimiter(max_calls=30, period=60.0, name="video_queue.reel_source")
 # hls.js reloads a live variant about once per segment (~2 s → ~30/min); the
 # headroom covers a quality switch and the dashboard preview sharing an IP.
-_variant_relay_limiter = RateLimiter(max_calls=120, period=60.0)
+_variant_relay_limiter = RateLimiter(max_calls=120, period=60.0, name="video_queue.variant_relay")
 _STREAM_HEARTBEAT_SECONDS = 15.0
 _STREAM_LEASE_SECONDS = 5 * 60.0
 

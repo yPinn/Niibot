@@ -24,6 +24,7 @@ from core import (  # noqa: E402
     HealthCheckServer,
     close_session,
     get_settings,
+    rate_limit_tracker,
     setup_logging,
 )
 from shared.database import DatabaseManager, PoolConfig, pool_heartbeat_loop  # noqa: E402
@@ -242,6 +243,7 @@ async def main() -> None:
 
     async with NiibotClient() as bot:
         health_server.bot = bot
+        rate_limit_tracker.install(bot)
         try:
             await bot.setup_database()
 

@@ -33,8 +33,8 @@ LOGGER: logging.Logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/client-errors", tags=["telemetry"])
 
 _MAX_BODY_BYTES = 32_768
-_per_ip = RateLimiter(max_calls=20, period=60.0)
-_per_fingerprint = RateLimiter(max_calls=3, period=300.0)
+_per_ip = RateLimiter(max_calls=20, period=60.0, name="client_errors.per_ip")
+_per_fingerprint = RateLimiter(max_calls=3, period=300.0, name="client_errors.per_fingerprint")
 
 
 class ClientErrorIn(BaseModel):

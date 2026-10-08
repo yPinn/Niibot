@@ -27,6 +27,7 @@ from routers.admin.db import router as _db_router
 from routers.admin.logs import _parse_docker_stream  # noqa: F401  re-exported for tests
 from routers.admin.logs import router as _logs_router
 from routers.admin.modules import router as _modules_router
+from routers.admin.rate_limits import router as _rate_limits_router
 from services import AdmissionService, ChannelService, TwitchAPIClient
 from services.emote_sync import (
     EmoteItem,
@@ -72,6 +73,7 @@ router.include_router(_logs_router)
 router.include_router(_db_router)
 router.include_router(_modules_router)
 router.include_router(_client_errors_router)
+router.include_router(_rate_limits_router)
 
 
 def _scope_diff(stored_str: str | None, required: list[str]) -> tuple[list[str], list[str]]:
