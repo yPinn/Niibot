@@ -24,7 +24,7 @@ from fastapi import APIRouter, Cookie, Depends, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from core.dependencies import get_auth_service, get_db_pool
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services.auth_service import AuthService
 from shared.repositories.client_error import ClientErrorRepository
 
@@ -52,7 +52,7 @@ class ClientErrorIn(BaseModel):
 
 
 def _ip_hash(request: Request) -> str:
-    ip = request.client.host if request.client else "unknown"
+    ip = client_ip(request)
     return hashlib.sha256(f"{ip}|{date.today().isoformat()}".encode()).hexdigest()
 
 
@@ -91,7 +91,7 @@ async def report_client_error(
         except ValidationError:
             return response
 
-        ip = request.client.host if request.client else "unknown"
+        ip = client_ip(request)
         if not _per_ip.allow(ip) or not _per_fingerprint.allow(f"{ip}|{data.fingerprint}"):
             return response
 

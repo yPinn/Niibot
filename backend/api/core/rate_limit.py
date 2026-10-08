@@ -3,7 +3,32 @@
 import time
 from collections import defaultdict, deque
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+
+# Behind Cloudflare Tunnel the socket peer is always the Docker gateway, so the
+# caller has to come from headers — only ones Cloudflare itself controls
+# (measured on staging; see docs/guides/cloudflare-pages.md):
+# - CF-Connecting-IP: a client-sent value is refused (error 1000). Real caller on
+#   the direct tunnel host; the shared Workers egress IP when Pages proxies.
+# - CF-Worker: names the zone of the Worker that made the subrequest; stripped when
+#   a client sends it. Ours means the Pages Function wrote CLIENT_IP_HEADER from its
+#   own incoming CF-Connecting-IP. Another account's Worker carries its own zone.
+# X-Forwarded-For and True-Client-IP keep client-supplied values: never trusted.
+PAGES_WORKER_ZONE = "niibot.pages.dev"
+CLIENT_IP_HEADER = "x-niibot-client-ip"
+
+
+def client_ip(request: Request) -> str:
+    """The caller's IP for per-client keys (rate limits, telemetry hashes)."""
+    headers = request.headers
+    if headers.get("cf-worker") == PAGES_WORKER_ZONE:
+        forwarded = headers.get(CLIENT_IP_HEADER)
+        if forwarded:
+            return forwarded
+    connecting = headers.get("cf-connecting-ip")
+    if connecting:
+        return connecting
+    return request.client.host if request.client else "unknown"
 
 
 class RateLimiter:

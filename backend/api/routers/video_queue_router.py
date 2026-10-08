@@ -25,7 +25,7 @@ from core.dependencies import (
     require_activated,
 )
 from core.error_handlers import log_request_failure
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services import TwitchAPIClient
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from shared.cache import AsyncTTLCache
@@ -368,7 +368,7 @@ async def _require_overlay_capability(
     settings_repo: VideoQueueSettingsRepository,
     limiter: RateLimiter,
 ) -> None:
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     limiter.require(client_host)
     try:
         overlay_key = UUID(raw_key) if raw_key is not None else None
@@ -519,7 +519,7 @@ async def stream_public_video_queue(
     here: video queue state is a single current snapshot, so a reconnect just
     gets the latest one.
     """
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _stream_limiter.require(client_host)
 
     channel_id = await _resolve_channel_id(username, twitch_api)
@@ -705,7 +705,7 @@ async def get_clip_source(
     See shared.video_sources.fetch_twitch_clip_source — this is an unofficial,
     best-effort Twitch dependency.
     """
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _clip_source_limiter.require(client_host)
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)
@@ -777,7 +777,7 @@ async def get_live_insert_playlist(
     404s → the overlay falls back to the embed player (or, mid-stream, keeps
     retrying within its offline grace).
     """
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _clip_source_limiter.require(client_host)
     try:
         insert = await _require_twitch_live_insert(username, pool, twitch_api)
@@ -807,7 +807,7 @@ async def get_live_insert_variant(
     insert. Only fetches ``https://*.playlist.ttvnw.net`` URLs and only while
     this channel has a Twitch live insert, so it can't serve as an open proxy.
     """
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _variant_relay_limiter.require(client_host)
     if not is_twitch_variant_playlist_url(u):
         raise HTTPException(status_code=400, detail="Not a Twitch variant playlist")
@@ -846,7 +846,7 @@ async def get_reel_source(
     See shared.instafix_client.fetch_instagram_reel_source — this is an
     unofficial, best-effort dependency on the self-hosted InstaFix proxy.
     """
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _reel_source_limiter.require(client_host)
     try:
         channel_id = await _resolve_channel_id(username, twitch_api)

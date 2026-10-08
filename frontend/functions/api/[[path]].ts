@@ -4,6 +4,7 @@ interface Env {
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
 const OVERLAY_STREAM_LEASE_MS = 5 * 60 * 1000
+const CLIENT_IP_HEADER = 'X-Niibot-Client-IP'
 
 // Anchored so a path segment cannot smuggle in an extra "/stream" suffix or
 // traverse past the intended route — exact-equality for the flat Live
@@ -24,6 +25,13 @@ export const onRequest: PagesFunction<Env> = async context => {
   try {
     const headers = new Headers(context.request.headers)
     headers.delete('host')
+    // The subrequest's CF-Connecting-IP is Cloudflare's shared Workers egress,
+    // so hand the API the caller's real one. Always overwrite: a client-sent
+    // value must never reach the backend, which trusts this header only when
+    // CF-Worker names this project (backend/api/core/rate_limit.py).
+    const callerIp = context.request.headers.get('CF-Connecting-IP')
+    if (callerIp) headers.set(CLIENT_IP_HEADER, callerIp)
+    else headers.delete(CLIENT_IP_HEADER)
 
     const init: RequestInit = {
       method: context.request.method,

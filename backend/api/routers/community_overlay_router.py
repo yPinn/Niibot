@@ -20,7 +20,7 @@ from core.dependencies import (
     require_self_tenant_access,
 )
 from core.error_handlers import log_request_failure
-from core.rate_limit import RateLimiter
+from core.rate_limit import RateLimiter, client_ip
 from services.notify_stream import NotifyWakeHub, StreamCapacityError, encode_sse
 from services.tenant_service import TenantContext
 from shared.community_overlay_blocks import get_community_overlay_block
@@ -147,7 +147,7 @@ def _published_theme_response(
 
 
 def _public_key_from_header(request: Request, raw_key: str) -> UUID:
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _public_ip_limiter.require(client_host)
     try:
         return UUID(raw_key)
@@ -184,7 +184,7 @@ async def get_public_feed(
 ) -> OverlayFeedResponse:
     """Read an ordered, reconnect-safe event page using a rotatable public key."""
     public_key = _public_key_from_header(request, overlay_key)
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _feed_limiter.require(f"{client_host}:{public_key}")
     feed = await service.get_feed(public_key, after_id=after_id, limit=limit)
     if feed is None:
@@ -207,7 +207,7 @@ async def get_public_theme(
 ) -> OverlayThemePublishedResponse:
     """Return only the published renderer snapshot for a valid capability key."""
     public_key = _public_key_from_header(request, overlay_key)
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     selected_block = _require_theme_block(block_type)
     _public_theme_limiter.require(f"{client_host}:{public_key}:{selected_block}")
     published = await service.get_public_theme(public_key, selected_block)
@@ -228,7 +228,7 @@ async def stream_public_overlay(
 ) -> StreamingResponse:
     """Stream replay-safe Live Display snapshots over one long-lived request."""
     public_key = _public_key_from_header(request, overlay_key)
-    client_host = request.client.host if request.client else "unknown"
+    client_host = client_ip(request)
     _stream_limiter.require(f"{client_host}:{public_key}")
 
     channel_id = await service.resolve_public_channel(public_key)

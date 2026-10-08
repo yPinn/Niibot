@@ -2,14 +2,43 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { onRequest } from './[[path]]'
 
-function context(path: string, signal: AbortSignal) {
+function context(path: string, signal: AbortSignal, headers: Record<string, string> = {}) {
   return {
     env: { API_BACKEND: 'https://api.example.test' },
-    request: new Request(`https://niibot.example${path}`, { signal }),
+    request: new Request(`https://niibot.example${path}`, { signal, headers }),
   } as Parameters<typeof onRequest>[0]
 }
 
+function upstreamHeaders(fetchMock: { mock: { calls: unknown[][] } }): Headers {
+  return (fetchMock.mock.calls[0][1] as RequestInit).headers as Headers
+}
+
 describe('Pages API proxy', () => {
+  it("forwards the caller's CF-Connecting-IP over any client-sent client IP", async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true }))
+
+    await onRequest(
+      context('/api/channels', new AbortController().signal, {
+        'CF-Connecting-IP': '198.51.100.4',
+        'X-Niibot-Client-IP': '6.6.6.6',
+      })
+    )
+
+    expect(upstreamHeaders(fetchMock).get('X-Niibot-Client-IP')).toBe('198.51.100.4')
+    fetchMock.mockRestore()
+  })
+
+  it('drops a client-sent client IP when the caller IP is unknown', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true }))
+
+    await onRequest(
+      context('/api/channels', new AbortController().signal, { 'X-Niibot-Client-IP': '6.6.6.6' })
+    )
+
+    expect(upstreamHeaders(fetchMock).has('X-Niibot-Client-IP')).toBe(false)
+    fetchMock.mockRestore()
+  })
+
   it('keeps the exact GET stream connected to the caller with a bounded lease', async () => {
     const controller = new AbortController()
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('stream'))
