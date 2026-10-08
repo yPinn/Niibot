@@ -49,7 +49,7 @@ _COLOR_BANKED = discord.Color.gold()  # banked reset — credit to spend later
 _COLOR_SCHEDULED = discord.Color.blurple()  # announced, not yet executed
 _COLOR_REMINDER = discord.Color.red()  # announced reset is minutes away
 _COLOR_WATCH = discord.Color.purple()  # AI forecast — speculative
-_COLOR_STATUS = discord.Color.teal()  # /codex status
+_COLOR_STATUS = discord.Color.teal()  # /codex
 _COLOR_ENDED = discord.Color.light_grey()  # superseded / historical
 
 _WATCH_LEVEL = {"elevated": "升高", "strong": "強烈"}
@@ -196,7 +196,7 @@ def _when(value: str, *, relative: bool = True) -> str:
 def _reference(value: str, tz: ZoneInfo | None) -> str:
     """Description's last line: the key time in one reference zone.
 
-    The guild's chosen zone (`/codex set-channel timezone`), defaulting to
+    The guild's chosen zone (`/codex-config channel timezone`), defaulting to
     Pacific — the zone the announcements themselves speak in.
     """
     zone = format_zone(parse_dt(value), tz) if tz is not None else _pacific(value)
@@ -378,12 +378,12 @@ def build_watch_embed(
 ) -> discord.Embed:
     chance = watch.get("reset_chance_percent")
     if ended:
-        title = "Codex 重置觀察已結束"
+        title = "Codex 重置預測已結束"
     elif chance is not None:
         title = f"Codex 近期重置機率約 {chance}%"
     else:
         title = "Codex 近期重置的跡象升高"
-    facts = [("觀察等級", _watch_level(watch))]
+    facts = [("預測等級", _watch_level(watch))]
     if window := watch.get("forecast_window"):
         facts.append(("預估時段", limit_markdown(str(window))))
     expires = None if ended else watch.get("expires_at")
@@ -431,7 +431,7 @@ def _next_reset(data: dict[str, Any], median: tuple[float, int] | None) -> tuple
     if watch:
         chance = watch.get("reset_chance_percent")
         odds = f"機率約 {chance}%" if chance is not None else _watch_level(watch)
-        return f"### AI 觀察中：近期重置{odds}", "-# Codex Resets 的 AI 推測，並非官方資訊"
+        return f"### AI 預測：近期重置{odds}", "-# Codex Resets 的 AI 推測，並非官方資訊"
     if median is None or days_since is None:
         return "### 目前沒有重置預告", None
     gap, count = median
@@ -500,7 +500,7 @@ def reminder_links(scheduled: dict[str, Any]) -> list[Link]:
 
 
 def watch_links(watch: dict[str, Any]) -> list[Link]:
-    return _links(("觀察依據", _source_url(watch)), _SITE_LINK)
+    return _links(("預測依據", _source_url(watch)), _SITE_LINK)
 
 
 def status_links(data: dict[str, Any]) -> list[Link]:

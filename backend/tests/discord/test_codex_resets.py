@@ -294,8 +294,8 @@ class TestWatchEmbed:
             "-# Codex Resets 的 AI 推測，並非 OpenAI 官方承諾\n\n-# 2026/10/07 5:00 PM PDT"
         )
         fields = _fields(embed)
-        assert list(fields) == ["觀察等級", "預估時段", "有效至"]
-        assert fields["觀察等級"] == "升高"  # AI forecast: non-official → Chinese only
+        assert list(fields) == ["預測等級", "預估時段", "有效至"]
+        assert fields["預測等級"] == "升高"  # AI forecast: non-official → Chinese only
         assert fields["預估時段"] == "next 24h"
         assert "\n" not in fields["有效至"]
         assert embed.color == discord.Color.purple()
@@ -306,7 +306,7 @@ class TestWatchEmbed:
 
     def test_ended(self):
         embed = build_watch_embed(FACTORY, _watch(), ended=True)
-        assert embed.title == "Codex 重置觀察已結束"
+        assert embed.title == "Codex 重置預測已結束"
         assert "有效至" not in _fields(embed)
         assert embed.description == "-# Codex Resets 的 AI 推測，並非 OpenAI 官方承諾"
         assert embed.color == discord.Color.light_grey()
@@ -425,7 +425,7 @@ class TestLinks:
 
     def test_watch_reminder_and_status_links(self):
         sched = {**_reset("5"), "scheduled_for": None}
-        assert [label for label, _ in watch_links(_watch())] == ["觀察依據", "Codex Resets"]
+        assert [label for label, _ in watch_links(_watch())] == ["預測依據", "Codex Resets"]
         assert [label for label, _ in reminder_links(sched)] == ["查看公告", "Codex Resets"]
         assert status_links(_status()) == [CODEX, SITE]
 
@@ -523,10 +523,10 @@ async def test_watch_goes_to_opted_in_guilds_and_ends(cog: CodexResetsCog):
     assert cog._send.await_args.kwargs == {"watch_only": True}
 
     await cog.process(_status(watch=_watch(level="strong")), [])
-    assert _fields(cog._edit.await_args.args[1](None))["觀察等級"] == "強烈"
+    assert _fields(cog._edit.await_args.args[1](None))["預測等級"] == "強烈"
 
     await cog.process(_status(), [])
-    assert cog._edit.await_args.args[1](None).title == "Codex 重置觀察已結束"
+    assert cog._edit.await_args.args[1](None).title == "Codex 重置預測已結束"
     assert cog._state.watch is None
 
 
@@ -604,9 +604,26 @@ def test_settings_summary_lists_next_steps():
     summary = _settings_summary(GuildConfig(10, timezone="Asia/Taipei", reminder_minutes=60))
     assert summary == (
         "對照時區：`Asia/Taipei`（時間會先依每位成員的 Discord 時區顯示）\n"
-        "官方預告提醒：提前 1 小時（`/codex reminder`）\n"
-        "AI 觀察通知：關閉（`/codex watch`）"
+        "官方預告提醒：提前 1 小時（`/codex-config reminder`）\n"
+        "AI 重置預測通知：關閉（`/codex-config forecast`）"
     )
     default = _settings_summary(GuildConfig(10, reminder_minutes=None)).splitlines()
     assert default[0].startswith("對照時區：太平洋時間（預設）")
     assert "關閉" in default[1]
+
+
+# ── command surface ────────────────────────────────────────────────────────
+
+
+def test_public_read_and_hidden_guild_only_config():
+    status = CodexResetsCog.codex
+    assert status.name == "codex"
+    assert status.guild_only
+    assert status.default_permissions is None  # everyone sees /codex
+
+    config = CodexResetsCog.config
+    assert config.name == "codex-config"
+    assert config.default_permissions == discord.Permissions(manage_guild=True)
+    assert config.allowed_contexts is not None
+    assert config.allowed_contexts.guild and not config.allowed_contexts.dm_channel
+    assert sorted(c.name for c in config.commands) == ["channel", "disable", "forecast", "reminder"]
