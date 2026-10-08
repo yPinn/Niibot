@@ -1,16 +1,20 @@
 """Embed builders for Codex Resets notifications.
 
-Layout
-------
-- author row: who said it (the X poster) or Codex Resets itself, linked
-- description: the quoted announcement, then a `-#` note as its own section
-- fields: at most three inline facts so they render as a single row
-- no thumbnail: it would squeeze the field row, and the avatar already sits in
-  the author row
-
-Absolute times use the guild's configured timezone (`/codex set-channel`) when
-set; otherwise Discord timestamps, which follow each viewer's device. The
-relative countdown is always a Discord timestamp.
+Layout, most important first
+----------------------------
+- colour: the notification kind (see _COLOR_*), readable before any text
+- title: the short notification itself (plain text — no link)
+- author: always Codex Resets, the data source (no link)
+- description: countdown / `-#` note when needed (titles cannot render
+  timestamps), then the attributed original — 4096 chars, so the excerpt
+  stays near-complete
+- fields: the facts, full-width, one line each, `English（中文）`; times are
+  Discord timestamps so every viewer sees their own timezone
+- 原文: the poster's words, verbatim, last — the only untranslated content;
+  everything else is Niibot's Chinese summary
+- no footer: it repeated the author row
+- buttons: the only CTAs — the post, Open Codex once quota is usable, and
+  always the site
 """
 
 from __future__ import annotations
@@ -26,29 +30,27 @@ from discord.utils import TimestampStyle
 
 from core import EmbedFactory
 
-FOOTER = "Data from Codex Resets"
-# Long-form X posts exceed 280; the description itself allows 4096.
-TEXT_LIMIT = 600
+# The original shares the 4096-char description with the headline and facts.
+TEXT_LIMIT = 3500
 
 SITE_URL = "https://codex-resets.com"
-# The site's own favicon — the account that announces nearly every reset.
+# The site's own favicon (Tibo, who announces nearly every reset).
 _SITE_ICON = f"{SITE_URL}/thsottiaux-avatar.jpg"
-_SITE_ICON_AUTHOR = "thsottiaux"
-_SITE_AUTHOR: dict[str, str | None] = {
-    "name": "Codex Resets",
-    "url": SITE_URL,
-    "icon_url": _SITE_ICON,
-}
+# Names the data source; no link — the buttons are the only CTAs.
+_SITE_AUTHOR: dict[str, str | None] = {"name": "Codex Resets", "icon_url": _SITE_ICON}
 CODEX_URL = "https://chatgpt.com/codex"
 
 # (label, url) pairs rendered as link buttons under a notification.
 Link = tuple[str, str]
 
-_COLOR_REGULAR = discord.Color.green()
-_COLOR_BANKED = discord.Color.gold()
-_COLOR_SCHEDULED = discord.Color.blurple()
-_COLOR_WATCH = discord.Color.orange()
-_COLOR_ENDED = discord.Color.light_grey()
+# One colour per notification kind, so the kind reads before any text does.
+_COLOR_REGULAR = discord.Color.green()  # full reset — quota usable now
+_COLOR_BANKED = discord.Color.gold()  # banked reset — credit to spend later
+_COLOR_SCHEDULED = discord.Color.blurple()  # announced, not yet executed
+_COLOR_REMINDER = discord.Color.red()  # announced reset is minutes away
+_COLOR_WATCH = discord.Color.purple()  # AI forecast — speculative
+_COLOR_STATUS = discord.Color.teal()  # /codex status
+_COLOR_ENDED = discord.Color.light_grey()  # superseded / historical
 
 _WATCH_LEVEL = {"elevated": "升高", "strong": "強烈"}
 
@@ -98,17 +100,41 @@ def limit_markdown(text: str) -> str:
     return _balance(text)
 
 
+_PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
+# Where a cut still reads as a whole thought: paragraph end, else sentence end.
+_SENTENCE_END = re.compile(r"[.!?。！？](?=\s|$)")
+
+
+def _cut(text: str, limit: int) -> str:
+    """Trim to `limit` at the last paragraph, else sentence, boundary in the back half."""
+    head = text[:limit]
+    floor = limit // 2
+    if (para := head.rfind("\n\n")) >= floor:
+        return head[:para]
+    ends = [m.end() for m in _SENTENCE_END.finditer(head) if m.end() >= floor]
+    return head[: ends[-1]] if ends else head.rstrip()
+
+
 def clean_text(text: str, limit: int = TEXT_LIMIT) -> str:
+    """Post text with its paragraphs intact; long posts end on a whole paragraph/sentence."""
     text = _TRAILING_TCO.sub("", text or "").strip()
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    text = "\n".join(lines)
+    paragraphs = [
+        "\n".join(line.strip() for line in block.splitlines() if line.strip())
+        for block in _PARAGRAPH_BREAK.split(text)
+    ]
+    text = "\n\n".join(p for p in paragraphs if p)
     truncated = len(text) > limit
-    text = limit_markdown(text[:limit].rstrip() if truncated else text)
-    return text + "…" if truncated else text
+    text = limit_markdown(_cut(text, limit).rstrip() if truncated else text)
+    return text + " …" if truncated else text
 
 
 def quote(text: str) -> str:
-    return "\n".join(f"> {line}" for line in text.splitlines())
+    """Per-line `> ` quote; a bare `> ` keeps paragraph gaps inside the block.
+
+    Not `>>>`: that quotes to the end of the description, and the reference
+    time line has to follow the quote unquoted.
+    """
+    return "\n".join(f"> {line}" for line in text.split("\n"))
 
 
 def _source_url(item: dict[str, Any]) -> str | None:
@@ -119,47 +145,127 @@ def _is_observed(item: dict[str, Any]) -> bool:
     return (item.get("source") or {}).get("type") == "observed"
 
 
-def _author(item: dict[str, Any]) -> dict[str, str | None]:
-    """Author row: the X poster for a post, otherwise Codex Resets itself."""
-    source = item.get("source") or {}
-    handle = source.get("author")
-    if source.get("type") != "x_post" or not handle:
-        return _SITE_AUTHOR
-    icon = _SITE_ICON if handle.lower() == _SITE_ICON_AUTHOR else None
-    return {"name": f"@{handle}", "url": f"https://x.com/{handle}", "icon_url": icon}
+# Known X handles → display name, so the quote reads "Tibo (@thsottiaux)".
+_POSTER_NAMES = {"thsottiaux": "Tibo"}
+
+
+def _clock(local: datetime) -> str:
+    """`2026/10/08 3:00 PM` — plain English 12-hour clock for the reference line."""
+    half = "AM" if local.hour < 12 else "PM"
+    return f"{local:%Y/%m/%d} {local.hour % 12 or 12}:{local:%M} {half}"
 
 
 def format_zone(dt: datetime, tz: ZoneInfo) -> str:
-    """`2026-10-08 15:00 (UTC+8)` — an offset, not an ambiguous abbreviation like CST."""
+    """`2026/10/08 3:00 PM UTC+8` — an offset, not an ambiguous abbreviation."""
     local = dt.astimezone(tz)
     offset = local.utcoffset()
     minutes = int(offset.total_seconds() // 60) if offset else 0
     sign, minutes = ("+" if minutes >= 0 else "-"), abs(minutes)
     hours, rest = divmod(minutes, 60)
     label = f"UTC{sign}{hours}" + (f":{rest:02d}" if rest else "")
-    return f"{local:%Y-%m-%d %H:%M} ({label})"
+    return f"{_clock(local)} {label}"
 
 
-def _when(value: str, tz: ZoneInfo | None = None, style: TimestampStyle = "f") -> str:
-    """Absolute time (guild timezone if set) with a relative countdown underneath."""
-    dt = parse_dt(value)
-    absolute = format_zone(dt, tz) if tz else discord.utils.format_dt(dt, style)
-    return f"{absolute}\n-# {discord.utils.format_dt(dt, 'R')}"
+def _ts(value: str, style: TimestampStyle) -> str:
+    return discord.utils.format_dt(parse_dt(value), style)
 
 
-def _kind(item: dict[str, Any]) -> str:
-    return "儲存額度" if item.get("reset_type") == "banked" else "全面重置"
+# Layout:
+#   description — `###` headline about now / next, optional `-#` note, then the
+#                 attributed original as `>>>` (last: it quotes to the end). The
+#                 description holds 4096 chars, so the original stays near-complete.
+#   fields      — the facts: full-width (inline=False), ONE line each, never
+#                 relying on a narrow column to wrap.
+# Language: terms from an official announcement (Tibo / OpenAI on X) keep the
+# English original — `Banked Reset（儲存額度）`; anything non-official (Codex
+# Resets observations, its AI forecast, Niibot's own estimates) is Chinese only.
 
 
-def _odds(watch: dict[str, Any]) -> str:
-    level = _WATCH_LEVEL.get(watch.get("level", ""), watch.get("level") or "—")
-    chance = watch.get("reset_chance_percent")
-    return f"**{level}**" + ("" if chance is None else f" · {chance}%")
+def _bi(en: str, zh: str) -> str:
+    return f"{en}（{zh}）"
 
 
-def _sections(*blocks: str | None) -> str | None:
-    """Join non-empty description blocks with a blank line between them."""
-    return "\n\n".join(b for b in blocks if b) or None
+def _when(value: str, *, relative: bool = True) -> str:
+    """Field value, one line: the viewer's local time (Discord timestamps).
+
+    Pass relative=False when the headline already counts down.
+    """
+    return _local(value, relative=relative)
+
+
+def _reference(value: str, tz: ZoneInfo | None) -> str:
+    """Description's last line: the key time in one reference zone.
+
+    The guild's chosen zone (`/codex set-channel timezone`), defaulting to
+    Pacific — the zone the announcements themselves speak in.
+    """
+    zone = format_zone(parse_dt(value), tz) if tz is not None else _pacific(value)
+    return f"-# {zone}"
+
+
+def _local(value: str, *, relative: bool = True) -> str:
+    """`2026/10/08 15:00 · in 9 hours` in the viewer's own timezone (Discord timestamps)."""
+    parts = [f"{_ts(value, 'd')} {_ts(value, 't')}"]
+    if relative:
+        parts.append(_ts(value, "R"))
+    return " · ".join(parts)
+
+
+# Tibo / OpenAI announce in Pacific time ("by EOD PST"): the default reference zone.
+_PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+def _pacific(value: str) -> str:
+    """`2026/10/08 12:00 AM PDT` — %Z follows DST (PDT / PST)."""
+    local = parse_dt(value).astimezone(_PACIFIC)
+    return f"{_clock(local)} {local:%Z}"
+
+
+_RESET_TYPE = {"regular": ("Full Reset", "全面重置"), "banked": ("Banked Reset", "儲存額度")}
+
+
+def _type(item: dict[str, Any]) -> str:
+    """Official post: `Banked Reset（儲存額度）`; observed (non-official): `儲存額度（觀測）`."""
+    en, zh = _RESET_TYPE["banked" if item.get("reset_type") == "banked" else "regular"]
+    return f"{zh}（觀測）" if _is_observed(item) else _bi(en, zh)
+
+
+def _watch_level(watch: dict[str, Any]) -> str:
+    level = str(watch.get("level") or "")
+    return _WATCH_LEVEL.get(level, level or "—")  # AI forecast: non-official, Chinese only
+
+
+def _original(item: dict[str, Any]) -> str | None:
+    """The poster's own words, untranslated, with who said it and where.
+
+    Everything else in the embed is Niibot's Chinese summary of Codex Resets
+    data; this block is the only verbatim content. Observed resets carry an
+    unrelated reply as text, so they get none. The trailing t.co link (nearly
+    always a quoted post) is dropped without a marker; 查看公告 has the rest.
+    """
+    if _is_observed(item):
+        return None
+    text = clean_text(item.get("text", ""))
+    if not text:
+        return None
+    # One quiet line naming the poster; a quote reads as a quote.
+    handle = (item.get("source") or {}).get("author")
+    if not handle:
+        return quote(text)
+    name = _POSTER_NAMES.get(handle.lower())
+    who = f"{name} (@{handle})" if name else f"@{handle}"
+    return f"-# {who}\n{quote(text)}"
+
+
+def _description(
+    lead: str | None = None,
+    note: str | None = None,
+    original: str | None = None,
+    reference: str | None = None,
+) -> str | None:
+    """lead + note / original / reference time — blocks separated by blank lines."""
+    top = "\n".join(part for part in (lead, note) if part)
+    return "\n\n".join(part for part in (top, original, reference) if part) or None
 
 
 def _base(
@@ -167,20 +273,24 @@ def _base(
     *,
     title: str,
     color: discord.Color,
-    author: dict[str, str | None],
-    description: str | None = None,
-    url: str | None = None,
-    timestamp: str | None = None,
+    description: str | None,
+    facts: list[tuple[str, str]],
 ) -> discord.Embed:
+    """Shared chrome; `facts` become one-line full-width fields, in order.
+
+    No title / author links and no footer: the link buttons below are the only
+    CTAs, and the author row already names the source. The author is always
+    Codex Resets, so it never reads as if the poster wrote the Chinese summary.
+    """
     embed: discord.Embed = factory.build(
         title=title,
         description=description,
-        url=url,
         color=color,
-        timestamp=parse_dt(timestamp) if timestamp else None,
-        author=author,
-        footer=FOOTER,
+        author=_SITE_AUTHOR,
+        footer=None,
     )
+    for name, value in facts:
+        embed.add_field(name=name, value=value, inline=False)
     return embed
 
 
@@ -188,31 +298,31 @@ def build_reset_embed(
     factory: EmbedFactory, reset: dict[str, Any], tz: ZoneInfo | None = None
 ) -> discord.Embed:
     banked = reset.get("reset_type") == "banked"
-    observed = _is_observed(reset)
-
-    title = "Codex 儲存額度已發放" if banked else "Codex 額度已重置"
-    body: str | None
-    note: str | None
-    if observed:
-        title += "（觀測）"
-        body, note = None, "-# 無正式公告，由 Codex Resets 觀測"
-    else:
-        text = clean_text(reset.get("text", ""))
-        body = quote(text) if text else None
-        note = "-# 額度存入帳戶，可自行決定何時使用" if banked else None
-
-    embed = _base(
+    return _base(
         factory,
-        title=title,
-        author=_SITE_AUTHOR if observed else _author(reset),
-        description=_sections(body, note),
-        url=None if observed else _source_url(reset),
+        title=(
+            "Codex 儲存額度已入帳，可自行決定何時使用"
+            if banked
+            else "Codex 額度已重置，現在就能使用"
+        ),
+        description=_description(
+            note="-# 無正式公告，由 Codex Resets 觀測" if _is_observed(reset) else None,
+            original=_original(reset),
+            reference=_reference(reset["announced_at"], tz),
+        ),
+        facts=[("類型", _type(reset)), ("生效時間", _when(reset["announced_at"]))],
         color=_COLOR_BANKED if banked else _COLOR_REGULAR,
-        timestamp=reset["announced_at"],
     )
-    embed.add_field(name="類型", value=f"**{_kind(reset)}**", inline=True)
-    embed.add_field(name="公告時間", value=_when(reset["announced_at"], tz), inline=True)
-    return embed
+
+
+# state: (title, color). Title and colour already say the state, so there is no
+# status field. A settled announcement is history — grey; the green "reset"
+# notice sent alongside `done` is the one that matters now.
+_SCHEDULED_STATE: dict[str, tuple[str, discord.Color]] = {
+    "pending": ("Codex 重置預告", _COLOR_SCHEDULED),
+    "done": ("Codex 預告的重置已執行", _COLOR_ENDED),
+    "ended": ("Codex 重置預告已取消或過期", _COLOR_ENDED),
+}
 
 
 def build_scheduled_embed(
@@ -221,31 +331,42 @@ def build_scheduled_embed(
     state: ScheduledState = "pending",
     tz: ZoneInfo | None = None,
 ) -> discord.Embed:
-    title, color, status = {
-        "pending": ("Codex 重置預告", _COLOR_SCHEDULED, "等待執行"),
-        "done": ("Codex 重置預告（已執行）", _COLOR_REGULAR, "已執行"),
-        "ended": ("Codex 重置預告（已結束）", _COLOR_ENDED, "已取消或過期"),
-    }[state]
-
-    text = clean_text(scheduled.get("text", ""))
-    note = "-# 實際執行後會另行通知" if state == "pending" else None
-    embed = _base(
+    title, color = _SCHEDULED_STATE[state]
+    due = scheduled.get("scheduled_for")
+    pending = state == "pending"
+    lead = note = None
+    if pending:
+        # Titles cannot render timestamps, so the countdown leads the description.
+        lead = f"### 預計 {_ts(due, 'R')} 重置" if due else "### 時間尚未公布"
+        note = "-# 實際執行後會再通知"
+    when = _when(due, relative=not pending) if due else "未公布"
+    return _base(
         factory,
         title=title,
-        author=_author(scheduled),
-        description=_sections(quote(text) if text else None, note),
-        url=_source_url(scheduled),
+        description=_description(
+            lead, note, _original(scheduled), _reference(due, tz) if due else None
+        ),
+        facts=[("預定時間", when), ("類型", _type(scheduled))],
         color=color,
-        timestamp=scheduled["announced_at"],
     )
 
-    scheduled_for = scheduled.get("scheduled_for")
-    embed.add_field(
-        name="預定時間", value=_when(scheduled_for, tz) if scheduled_for else "未公布", inline=True
+
+def build_reminder_embed(
+    factory: EmbedFactory, scheduled: dict[str, Any], minutes: int, tz: ZoneInfo | None = None
+) -> discord.Embed:
+    """Heads-up shortly before an officially announced reset time."""
+    due = scheduled["scheduled_for"]
+    return _base(
+        factory,
+        title="Codex 即將重置",
+        description=_description(
+            f"### 預計 {_ts(due, 'R')} 重置",
+            f"-# 依官方預告，提前 {minutes} 分鐘提醒",
+            reference=_reference(due, tz),
+        ),
+        facts=[("預定時間", _when(due, relative=False)), ("類型", _type(scheduled))],
+        color=_COLOR_REMINDER,
     )
-    embed.add_field(name="類型", value=_kind(scheduled), inline=True)
-    embed.add_field(name="狀態", value=f"**{status}**", inline=True)
-    return embed
 
 
 def build_watch_embed(
@@ -255,40 +376,29 @@ def build_watch_embed(
     ended: bool = False,
     tz: ZoneInfo | None = None,
 ) -> discord.Embed:
-    embed = _base(
-        factory,
-        title="Codex 重置觀察（已結束）" if ended else "Codex 可能即將重置",
-        author=_SITE_AUTHOR,
-        description="-# AI 推測，非 OpenAI 官方承諾",
-        url=_source_url(watch),
-        color=_COLOR_ENDED if ended else _COLOR_WATCH,
-        timestamp=watch["observed_at"],
-    )
-
-    embed.add_field(name="觀察等級", value=_odds(watch), inline=True)
+    chance = watch.get("reset_chance_percent")
+    if ended:
+        title = "Codex 重置觀察已結束"
+    elif chance is not None:
+        title = f"Codex 近期重置機率約 {chance}%"
+    else:
+        title = "Codex 近期重置的跡象升高"
+    facts = [("觀察等級", _watch_level(watch))]
     if window := watch.get("forecast_window"):
-        embed.add_field(name="預估時段", value=limit_markdown(str(window)), inline=True)
-    if not ended and watch.get("expires_at"):
-        embed.add_field(name="有效至", value=_when(watch["expires_at"], tz), inline=True)
-    return embed
-
-
-def build_reminder_embed(
-    factory: EmbedFactory, scheduled: dict[str, Any], minutes: int, tz: ZoneInfo | None = None
-) -> discord.Embed:
-    """Heads-up shortly before an officially announced reset time."""
-    due = discord.utils.format_dt(parse_dt(scheduled["scheduled_for"]), "R")
-    embed = _base(
+        facts.append(("預估時段", limit_markdown(str(window))))
+    expires = None if ended else watch.get("expires_at")
+    if expires:
+        facts.append(("有效至", _when(expires)))
+    return _base(
         factory,
-        title="Codex 重置即將執行",
-        author=_author(scheduled),
-        description=_sections(f"官方預告的重置預計 **{due}** 執行", f"-# 提前 {minutes} 分鐘提醒"),
-        url=_source_url(scheduled),
-        color=_COLOR_SCHEDULED,
+        title=title,
+        description=_description(
+            note="-# Codex Resets 的 AI 推測，並非 OpenAI 官方承諾",
+            reference=_reference(expires, tz) if expires else None,
+        ),
+        facts=facts,
+        color=_COLOR_ENDED if ended else _COLOR_WATCH,
     )
-    embed.add_field(name="預定時間", value=_when(scheduled["scheduled_for"], tz), inline=True)
-    embed.add_field(name="類型", value=_kind(scheduled), inline=True)
-    return embed
 
 
 def recent_median_gap(recent: list[dict[str, Any]] | None) -> tuple[float, int] | None:
@@ -304,30 +414,29 @@ def recent_median_gap(recent: list[dict[str, Any]] | None) -> tuple[float, int] 
     return statistics.median(gaps), len(gaps)
 
 
-def _next_reset(
-    data: dict[str, Any], tz: ZoneInfo | None, median: tuple[float, int] | None
-) -> str | None:
-    """Value for the status embed's 「下一次」 field, or None if unknown."""
+def _next_reset(data: dict[str, Any], median: tuple[float, int] | None) -> tuple[str, str | None]:
+    """(headline, note) for what happens next — the status embed's lead."""
     scheduled = data.get("scheduled_reset")
     watch = data.get("active_watch")
     days_since = (data.get("stats") or {}).get("days_since_last")
 
     if scheduled:
-        when = (
-            _when(scheduled["scheduled_for"], tz)
-            if scheduled.get("scheduled_for")
-            else "時間未公布"
+        due = scheduled.get("scheduled_for")
+        if not due:
+            return "### 官方已預告重置，時間未定", f"-# {_type(scheduled)}"
+        return (
+            f"### 官方預告 {_ts(due, 'R')} 重置",
+            f"-# {_local(due, relative=False)} · {_type(scheduled)}",
         )
-        return f"**官方預告**\n{when}"
     if watch:
-        return f"觀察中 {_odds(watch)}\n-# AI 推測，非官方資訊"
-
+        chance = watch.get("reset_chance_percent")
+        odds = f"機率約 {chance}%" if chance is not None else _watch_level(watch)
+        return f"### AI 觀察中：近期重置{odds}", "-# Codex Resets 的 AI 推測，並非官方資訊"
     if median is None or days_since is None:
-        return None
+        return "### 目前沒有重置預告", None
     gap, count = median
-    if days_since < gap:
-        return f"約 **{gap - days_since:.1f}** 天內\n-# 依近 {count} 次間隔中位數推算，非官方資訊"
-    return f"已超過近期中位數\n-# 近 {count} 次中位數 {gap:.1f} 天，隨時可能重置"
+    head = f"### 預估約 {gap - days_since:.1f} 天內重置" if days_since < gap else "### 隨時可能重置"
+    return head, f"-# 尚無官方預告，依近 {count} 次重置間隔的中位數（{gap:.1f} 天）推算"
 
 
 def build_status_embed(
@@ -340,41 +449,35 @@ def build_status_embed(
     stats = data.get("stats") or {}
     median = recent_median_gap(recent)
 
-    embed = _base(
+    facts: list[tuple[str, str]] = []
+    if latest:
+        facts.append(("上次重置", f"{_type(latest)} · {_ts(latest['announced_at'], 'R')}"))
+    if total := stats.get("total"):
+        parts = [f"累計 {total} 次"]
+        if median is not None:
+            parts.append(f"近期約 {median[0]:.1f} 天一次")
+        elif (avg := stats.get("avg_interval_days")) is not None:
+            parts.append(f"平均約 {avg:.1f} 天一次")
+        facts.append(("統計", " · ".join(parts)))
+
+    headline, note = _next_reset(data, median)
+    due = (data.get("scheduled_reset") or {}).get("scheduled_for")
+    return _base(
         factory,
         title="Codex 重置狀態",
-        author=_SITE_AUTHOR,
-        description=None if latest else "尚無重置紀錄",
-        url=SITE_URL,
-        color=_COLOR_SCHEDULED,
+        description=_description(headline, note, reference=_reference(due, tz) if due else None),
+        facts=facts,
+        color=_COLOR_STATUS,
     )
-
-    if latest:
-        kind = _kind(latest)
-        label = f"[{kind}]({url})" if (url := _source_url(latest)) else kind
-        embed.add_field(
-            name="上次重置", value=f"**{label}**\n{_when(latest['announced_at'], tz)}", inline=True
-        )
-
-    if upcoming := _next_reset(data, tz, median):
-        embed.add_field(name="下一次", value=upcoming, inline=True)
-
-    total, avg = stats.get("total"), stats.get("avg_interval_days")
-    if total:
-        lines = [f"累計 **{total}** 次"]
-        if median is not None:
-            lines.append(f"近期約 **{median[0]:.1f}** 天一次")
-        elif avg is not None:
-            lines.append(f"平均 **{avg:.1f}** 天一次")
-        if (days_since := stats.get("days_since_last")) is not None:
-            lines.append(f"-# 距上次 {days_since:.1f} 天")
-        embed.add_field(name="統計", value="\n".join(lines), inline=True)
-    return embed
 
 
 # ── Link buttons ─────────────────────────────────────────────────────────────
 # Pure (label, url) lists so they are testable without an event loop; the cog
-# wraps them with link_view() at send / edit time.
+# wraps them with link_view() at send / edit time. Every message carries the
+# Codex Resets site; the post link first, Open Codex only once quota is usable.
+
+_SITE_LINK = ("Codex Resets", SITE_URL)
+_CODEX_LINK = ("開啟 Codex", CODEX_URL)
 
 
 def _links(*pairs: tuple[str, str | None]) -> list[Link]:
@@ -383,29 +486,26 @@ def _links(*pairs: tuple[str, str | None]) -> list[Link]:
 
 def reset_links(reset: dict[str, Any]) -> list[Link]:
     # An observed reset's source is an unrelated reply, hidden like its text.
-    if _is_observed(reset):
-        return _links(("開啟 Codex", CODEX_URL), ("Codex Resets", SITE_URL))
-    return _links(("查看公告", _source_url(reset)), ("開啟 Codex", CODEX_URL))
+    post = None if _is_observed(reset) else _source_url(reset)
+    return _links(("查看公告", post), _CODEX_LINK, _SITE_LINK)
 
 
 def scheduled_links(scheduled: dict[str, Any], state: ScheduledState = "pending") -> list[Link]:
-    follow_up = {"pending": ("Codex Resets", SITE_URL), "done": ("開啟 Codex", CODEX_URL)}
-    return _links(("查看公告", _source_url(scheduled)), follow_up.get(state, ("", None)))
+    codex = _CODEX_LINK if state == "done" else ("", None)
+    return _links(("查看公告", _source_url(scheduled)), codex, _SITE_LINK)
 
 
 def reminder_links(scheduled: dict[str, Any]) -> list[Link]:
-    return _links(("查看公告", _source_url(scheduled)), ("Codex Resets", SITE_URL))
+    return _links(("查看公告", _source_url(scheduled)), _SITE_LINK)
 
 
 def watch_links(watch: dict[str, Any]) -> list[Link]:
-    return _links(("觀察依據", _source_url(watch)), ("Codex Resets", SITE_URL))
+    return _links(("觀察依據", _source_url(watch)), _SITE_LINK)
 
 
 def status_links(data: dict[str, Any]) -> list[Link]:
     latest = data.get("latest_reset") or {}
-    return _links(
-        ("上次公告", _source_url(latest)), ("開啟 Codex", CODEX_URL), ("Codex Resets", SITE_URL)
-    )
+    return _links(("上次公告", _source_url(latest)), _CODEX_LINK, _SITE_LINK)
 
 
 def link_view(links: list[Link]) -> discord.ui.View | None:

@@ -86,15 +86,26 @@ def _status(scheduled=None, watch=None) -> dict:
 
 
 class TestCleanText:
-    def test_strips_trailing_media_links_and_blank_lines(self):
-        assert clean_text("Hi.\n\nIt is done. https://t.co/x https://t.co/y") == "Hi.\nIt is done."
+    def test_keeps_paragraphs_and_strips_trailing_media(self):
+        raw = "Hi.\n\n\nIt is done. https://t.co/x https://t.co/y"
+        assert clean_text(raw) == "Hi.\n\nIt is done."
 
-    def test_truncates_long_text(self):
-        out = clean_text("a" * 500, limit=10)
-        assert out == "a" * 10 + "…"
+    def test_trims_lines_inside_a_paragraph(self):
+        assert clean_text(" a \n b ") == "a\nb"
 
     def test_keeps_inline_links(self):
         assert clean_text("see https://t.co/x now") == "see https://t.co/x now"
+
+    def test_hard_cut_without_any_boundary(self):
+        assert clean_text("a" * 500, limit=10) == "a" * 10 + " …"
+
+    def test_cuts_at_paragraph_end(self):
+        text = "A" * 30 + "\n\n" + "B" * 40
+        assert clean_text(text, limit=50) == "A" * 30 + " …"
+
+    def test_cuts_at_sentence_end(self):
+        text = "One. Two three four. Five six seven eight nine"
+        assert clean_text(text, limit=30) == "One. Two three four. …"
 
 
 class TestLimitMarkdown:
@@ -128,157 +139,219 @@ class TestLimitMarkdown:
 
     def test_truncation_drops_unpaired_bold(self):
         out = clean_text("we have **reset rate limits and more", limit=20)
-        assert out == "we have reset rate…"
+        assert out == "we have reset rate …"
 
     def test_unpaired_single_star_escaped(self):
         assert limit_markdown("a *b") == r"a \*b"
 
 
-class TestResetEmbed:
-    def test_regular_quotes_text_without_emoji_chrome(self):
+class TestChrome:
+    def test_no_links_or_footer_only_buttons(self):
         embed = build_reset_embed(FACTORY, _reset("1"))
-        assert embed.title == "Codex 額度已重置"
-        assert embed.description == "> Reset all propagated. Enjoy."
-        assert embed.url == "https://x.com/t/status/1"
-        assert embed.footer.text == "Data from Codex Resets"
-        assert embed.thumbnail.url is None
-
-    def test_poster_is_the_author_row(self):
-        embed = build_reset_embed(FACTORY, _reset("1"))
-        assert embed.author.name == "@thsottiaux"
-        assert embed.author.url == "https://x.com/thsottiaux"
-        assert embed.author.icon_url == "https://codex-resets.com/thsottiaux-avatar.jpg"
-
-    def test_other_poster_has_no_borrowed_avatar(self):
-        reset = _reset("1", source={"type": "x_post", "author": "OpenAI", "url": "https://x"})
-        embed = build_reset_embed(FACTORY, reset)
-        assert embed.author.name == "@OpenAI"
-        assert embed.author.icon_url is None
-
-    def test_facts_fit_one_inline_row(self):
-        embed = build_reset_embed(FACTORY, _reset("1"))
-        fields = _fields(embed)
-        assert list(fields) == ["類型", "公告時間"]
-        assert all(f.inline for f in embed.fields)
-        assert fields["類型"] == "**全面重置**"
-        assert ":f>\n-# <t:" in fields["公告時間"] and fields["公告時間"].endswith(":R>")
-
-    def test_guild_timezone_renders_absolute_time(self):
-        reset = {**_reset("1"), "announced_at": "2026-10-07T03:35:09.000Z"}
-        embed = build_reset_embed(FACTORY, reset, ZoneInfo("Asia/Taipei"))
-        assert _fields(embed)["公告時間"].startswith("2026-10-07 11:35 (UTC+8)\n-# <t:")
-
-    def test_banked_hint_is_a_separate_section(self):
-        embed = build_reset_embed(FACTORY, _reset("1", kind="banked"))
-        assert embed.title == "Codex 儲存額度已發放"
-        assert embed.description == (
-            "> Reset all propagated. Enjoy.\n\n-# 額度存入帳戶，可自行決定何時使用"
-        )
-        assert _fields(embed)["類型"] == "**儲存額度**"
-
-    def test_observed_hides_reply_snippet(self):
-        reset = _reset("observed-1", text="@theo Shhhhhh", source={"type": "observed"})
-        embed = build_reset_embed(FACTORY, reset)
-        assert embed.title == "Codex 額度已重置（觀測）"
-        assert "Shhhhhh" not in (embed.description or "")
         assert embed.url is None
         assert embed.author.name == "Codex Resets"
+        assert embed.author.url is None
+        assert embed.author.icon_url == "https://codex-resets.com/thsottiaux-avatar.jpg"
+        assert embed.footer.text is None
+        assert embed.timestamp is None
+        assert embed.thumbnail.url is None
+
+    def test_facts_are_full_width_fields(self):
+        embed = build_reset_embed(FACTORY, _reset("1"))
+        assert [f.inline for f in embed.fields] == [False, False]
+
+
+def _desc_lines(embed) -> list[str]:
+    return (embed.description or "").split("\n")
+
+
+class TestResetEmbed:
+    def test_title_is_the_notice_and_description_the_original(self):
+        reset = {**_reset("1"), "announced_at": "2026-10-07T03:35:09.000Z"}
+        embed = build_reset_embed(FACTORY, reset)
+        assert embed.title == "Codex 額度已重置，現在就能使用"
+        assert embed.description == (
+            "-# Tibo (@thsottiaux)\n> Reset all propagated. Enjoy.\n\n-# 2026/10/06 8:35 PM PDT"
+        )
+        assert embed.color == discord.Color.green()
+
+    def test_banked(self):
+        embed = build_reset_embed(FACTORY, _reset("1", kind="banked"))
+        assert embed.title == "Codex 儲存額度已入帳，可自行決定何時使用"
+        assert _fields(embed)["類型"] == "Banked Reset（儲存額度）"
+        assert embed.color == discord.Color.gold()
+
+    def test_unknown_poster_is_credited_by_handle(self):
+        reset = _reset("1", source={"type": "x_post", "author": "OpenAI", "url": "https://x"})
+        assert _desc_lines(build_reset_embed(FACTORY, reset))[0] == "-# @OpenAI"
+
+    def test_paragraphs_survive_in_the_quote(self):
+        embed = build_reset_embed(FACTORY, _reset("1", text="First.\n\nSecond."))
+        assert _desc_lines(embed)[1:4] == ["> First.", "> ", "> Second."]
+
+    def test_observed_is_non_official_so_chinese_and_explained(self):
+        reset = {
+            **_reset("observed-1", text="@theo Shhhhhh", source={"type": "observed"}),
+            "announced_at": "2026-09-29T19:00:00.000Z",
+        }
+        embed = build_reset_embed(FACTORY, reset)
+        assert embed.description == (
+            "-# 無正式公告，由 Codex Resets 觀測\n\n-# 2026/09/29 12:00 PM PDT"
+        )
+        assert _fields(embed)["類型"] == "全面重置（觀測）"
+
+    def test_time_field_is_one_line_viewer_local(self):
+        reset = {**_reset("1"), "announced_at": "2026-10-07T03:35:09.000Z"}
+        value = _fields(build_reset_embed(FACTORY, reset))["生效時間"]
+        assert value == "<t:1791344109:d> <t:1791344109:t> · <t:1791344109:R>"
+
+    def test_guild_zone_replaces_the_reference_line(self):
+        reset = {**_reset("1"), "announced_at": "2026-10-07T03:35:09.000Z"}
+        embed = build_reset_embed(FACTORY, reset, ZoneInfo("Asia/Taipei"))
+        assert _desc_lines(embed)[-1] == "-# 2026/10/07 11:35 AM UTC+8"
+
+    def test_pacific_label_follows_dst(self):
+        reset = {**_reset("1"), "announced_at": "2026-01-15T12:00:00Z"}
+        assert _desc_lines(build_reset_embed(FACTORY, reset))[-1] == "-# 2026/01/15 4:00 AM PST"
 
 
 class TestFormatZone:
     @pytest.mark.parametrize(
         ("zone", "expected"),
         [
-            ("UTC", "2026-01-15 12:00 (UTC+0)"),
-            ("Asia/Kolkata", "2026-01-15 17:30 (UTC+5:30)"),
-            ("America/Los_Angeles", "2026-01-15 04:00 (UTC-8)"),
+            ("UTC", "2026/01/15 12:00 PM UTC+0"),
+            ("Asia/Kolkata", "2026/01/15 5:30 PM UTC+5:30"),
+            ("America/Los_Angeles", "2026/01/15 4:00 AM UTC-8"),
         ],
     )
-    def test_offset_label(self, zone: str, expected: str):
+    def test_date_time_then_offset(self, zone: str, expected: str):
         dt = datetime(2026, 1, 15, 12, tzinfo=UTC)
         assert format_zone(dt, ZoneInfo(zone)) == expected
 
     def test_dst_offset(self):
         dt = datetime(2026, 7, 15, 12, tzinfo=UTC)
-        assert format_zone(dt, ZoneInfo("America/Los_Angeles")) == "2026-07-15 05:00 (UTC-7)"
+        assert format_zone(dt, ZoneInfo("America/Los_Angeles")) == "2026/07/15 5:00 AM UTC-7"
 
 
-class TestOtherEmbeds:
-    def test_scheduled_fields_fill_one_row(self):
+class TestScheduledEmbed:
+    def test_pending_without_time(self):
         sched = {**_reset("5", kind="banked"), "status": "scheduled", "scheduled_for": None}
-        pending = build_scheduled_embed(FACTORY, sched)
-        assert _fields(pending) == {
-            "預定時間": "未公布",
-            "類型": "儲存額度",
-            "狀態": "**等待執行**",
-        }
-        assert (pending.description or "").endswith("\n\n-# 實際執行後會另行通知")
+        embed = build_scheduled_embed(FACTORY, sched)
+        assert embed.title == "Codex 重置預告"
+        assert _desc_lines(embed)[:4] == [
+            "### 時間尚未公布",
+            "-# 實際執行後會再通知",
+            "",
+            "-# Tibo (@thsottiaux)",
+        ]
+        assert _fields(embed) == {"預定時間": "未公布", "類型": "Banked Reset（儲存額度）"}
+        assert embed.color == discord.Color.blurple()
 
-        done = build_scheduled_embed(FACTORY, sched, "done")
-        assert done.title == "Codex 重置預告（已執行）"
-        assert _fields(done)["狀態"] == "**已執行**"
-        assert "另行通知" not in (done.description or "")
-
-    def test_scheduled_time_uses_guild_zone(self):
+    def test_pending_counts_down_in_the_description_only(self):
         sched = {**_reset("5"), "scheduled_for": "2026-10-08T07:00:00Z"}
-        embed = build_scheduled_embed(FACTORY, sched, tz=ZoneInfo("Asia/Tokyo"))
-        assert _fields(embed)["預定時間"].startswith("2026-10-08 16:00 (UTC+9)")
+        embed = build_scheduled_embed(FACTORY, sched)
+        lines = _desc_lines(embed)
+        assert lines[0] == "### 預計 <t:1791442800:R> 重置"
+        assert lines[-1] == "-# 2026/10/08 12:00 AM PDT"
+        assert _fields(embed)["預定時間"] == "<t:1791442800:d> <t:1791442800:t>"
 
-    def test_watch_fields(self):
+    @pytest.mark.parametrize(
+        ("state", "title"),
+        [("done", "Codex 預告的重置已執行"), ("ended", "Codex 重置預告已取消或過期")],
+    )
+    def test_settled_states_are_grey_history(self, state: str, title: str):
+        sched = {**_reset("5"), "scheduled_for": "2026-10-08T07:00:00Z"}
+        embed = build_scheduled_embed(FACTORY, sched, state)  # type: ignore[arg-type]
+        assert embed.title == title
+        assert embed.color == discord.Color.light_grey()
+        assert list(_fields(embed)) == ["預定時間", "類型"]
+        assert "###" not in (embed.description or "")
+
+
+class TestReminderEmbed:
+    def test_layout(self):
+        sched = {**_reset("5", kind="banked"), "scheduled_for": "2026-10-08T07:00:00Z"}
+        embed = build_reminder_embed(FACTORY, sched, 30, ZoneInfo("Asia/Taipei"))
+        assert embed.title == "Codex 即將重置"
+        assert embed.description == (
+            "### 預計 <t:1791442800:R> 重置\n"
+            "-# 依官方預告，提前 30 分鐘提醒\n"
+            "\n"
+            "-# 2026/10/08 3:00 PM UTC+8"
+        )
+        assert _fields(embed) == {
+            "預定時間": "<t:1791442800:d> <t:1791442800:t>",
+            "類型": "Banked Reset（儲存額度）",
+        }
+        assert embed.color == discord.Color.red()
+
+
+class TestWatchEmbed:
+    def test_fields(self):
         embed = build_watch_embed(FACTORY, _watch())
+        assert embed.title == "Codex 近期重置機率約 60%"
+        assert embed.description == (
+            "-# Codex Resets 的 AI 推測，並非 OpenAI 官方承諾\n\n-# 2026/10/07 5:00 PM PDT"
+        )
         fields = _fields(embed)
         assert list(fields) == ["觀察等級", "預估時段", "有效至"]
-        assert fields["觀察等級"] == "**升高** · 60%"
+        assert fields["觀察等級"] == "升高"  # AI forecast: non-official → Chinese only
         assert fields["預估時段"] == "next 24h"
-        assert embed.author.name == "Codex Resets"
+        assert "\n" not in fields["有效至"]
+        assert embed.color == discord.Color.purple()
 
-    def test_watch_with_null_chance(self):
+    def test_null_chance(self):
         embed = build_watch_embed(FACTORY, _watch(reset_chance_percent=None))
-        assert _fields(embed)["觀察等級"] == "**升高**"
+        assert embed.title == "Codex 近期重置的跡象升高"
 
-    def test_ended_watch_drops_expiry(self):
-        assert "有效至" not in _fields(build_watch_embed(FACTORY, _watch(), ended=True))
+    def test_ended(self):
+        embed = build_watch_embed(FACTORY, _watch(), ended=True)
+        assert embed.title == "Codex 重置觀察已結束"
+        assert "有效至" not in _fields(embed)
+        assert embed.description == "-# Codex Resets 的 AI 推測，並非 OpenAI 官方承諾"
+        assert embed.color == discord.Color.light_grey()
 
-    def test_status_tolerates_null_stats(self):
+
+class TestStatusEmbed:
+    def test_tolerates_null_stats(self):
         embed = build_status_embed(FACTORY, _status())
-        assert embed.description == "尚無重置紀錄"
+        assert embed.title == "Codex 重置狀態"
+        assert embed.description == "### 目前沒有重置預告"
         assert embed.fields == []
 
-    def test_status_sections(self):
-        data = _status(scheduled={**_reset("5"), "scheduled_for": _iso(-timedelta(hours=2))})
+    def test_scheduled_leads(self):
+        data = _status(scheduled={**_reset("5"), "scheduled_for": "2026-10-08T07:00:00Z"})
         data["latest_reset"] = _reset("4", kind="banked", ago=timedelta(days=3))
         data["stats"] = {"total": 12, "avg_interval_days": 9.0, "days_since_last": 3.0}
         embed = build_status_embed(FACTORY, data)
 
+        assert _desc_lines(embed) == [
+            "### 官方預告 <t:1791442800:R> 重置",
+            "-# <t:1791442800:d> <t:1791442800:t> · Full Reset（全面重置）",
+            "",
+            "-# 2026/10/08 12:00 AM PDT",
+        ]
         fields = _fields(embed)
-        assert list(fields) == ["上次重置", "下一次", "統計"]
-        assert all(f.inline for f in embed.fields)
-        assert fields["上次重置"].startswith("**[儲存額度](https://x.com/t/status/4)**\n<t:")
-        assert fields["下一次"].startswith("**官方預告**\n<t:")
-        assert fields["統計"] == "累計 **12** 次\n平均 **9.0** 天一次\n-# 距上次 3.0 天"
-        assert embed.description is None
-        assert embed.url == "https://codex-resets.com"
+        assert fields["上次重置"].startswith("Banked Reset（儲存額度） · <t:")
+        assert fields["統計"] == "累計 12 次 · 平均約 9.0 天一次"
 
-    def test_status_has_no_estimate_without_recent_history(self):
-        data = _status()
-        data["stats"] = {"total": 3, "avg_interval_days": 10.0, "days_since_last": 4.0}
-        assert "下一次" not in _fields(build_status_embed(FACTORY, data))
-
-    def test_status_estimate_uses_recent_median(self):
+    def test_estimate_uses_recent_median(self):
         # Gaps 1, 3, 3, 30 days: mean 9.25 would mislead, median is 3.
         recent = [_reset(str(i), ago=timedelta(days=d)) for i, d in enumerate((1, 2, 5, 8, 38))]
         data = _status()
         data["stats"] = {"total": 5, "avg_interval_days": 9.25, "days_since_last": 1.0}
-        fields = _fields(build_status_embed(FACTORY, data, recent=recent))
-        assert fields["下一次"] == "約 **2.0** 天內\n-# 依近 4 次間隔中位數推算，非官方資訊"
-        assert "近期約 **3.0** 天一次" in fields["統計"]
+        embed = build_status_embed(FACTORY, data, recent=recent)
+        assert embed.description == (
+            "### 預估約 2.0 天內重置\n-# 尚無官方預告，依近 4 次重置間隔的中位數（3.0 天）推算"
+        )
+        assert _fields(embed)["統計"] == "累計 5 次 · 近期約 3.0 天一次"
 
-    def test_status_overdue_against_median(self):
+    def test_overdue_against_median(self):
         recent = [_reset(str(i), ago=timedelta(days=d)) for i, d in enumerate((5, 6, 7, 8))]
         data = _status()
         data["stats"] = {"total": 4, "days_since_last": 5.0}
-        assert _fields(build_status_embed(FACTORY, data, recent=recent))["下一次"].startswith(
-            "已超過近期中位數\n-# 近 3 次中位數 1.0 天"
+        assert (build_status_embed(FACTORY, data, recent=recent).description or "").startswith(
+            "### 隨時可能重置\n-# 尚無官方預告，依近 3 次重置間隔的中位數（1.0 天）"
         )
 
 
@@ -290,19 +363,6 @@ class TestRecentMedianGap:
     def test_order_independent(self):
         recent = [_reset(str(d), ago=timedelta(days=d)) for d in (0, 4, 1, 2)]
         assert recent_median_gap(recent) == pytest.approx((1.0, 3))
-
-
-class TestReminderEmbed:
-    def test_layout(self):
-        sched = {**_reset("5", kind="banked"), "scheduled_for": "2026-10-08T07:00:00Z"}
-        embed = build_reminder_embed(FACTORY, sched, 30, ZoneInfo("Asia/Taipei"))
-        assert embed.title == "Codex 重置即將執行"
-        assert embed.author.name == "@thsottiaux"
-        assert (embed.description or "").endswith("\n\n-# 提前 30 分鐘提醒")
-        fields = _fields(embed)
-        assert fields["預定時間"].startswith("2026-10-08 15:00 (UTC+8)")
-        assert fields["類型"] == "儲存額度"
-        assert [label for label, _ in reminder_links(sched)] == ["查看公告", "Codex Resets"]
 
 
 class TestTimezoneMatches:
@@ -326,36 +386,51 @@ def test_guild_zone_ignores_invalid_names():
 
 # ── link buttons ───────────────────────────────────────────────────────────
 
+SITE = ("Codex Resets", SITE_URL)
+CODEX = ("開啟 Codex", CODEX_URL)
+
 
 class TestLinks:
-    def test_reset_links_to_post_and_codex(self):
-        assert reset_links(_reset("1")) == [
-            ("查看公告", "https://x.com/t/status/1"),
-            ("開啟 Codex", CODEX_URL),
-        ]
+    def test_every_message_links_the_site(self):
+        sched = {**_reset("5"), "scheduled_for": None}
+        for links in (
+            reset_links(_reset("1")),
+            scheduled_links(sched),
+            scheduled_links(sched, "done"),
+            scheduled_links(sched, "ended"),
+            reminder_links(sched),
+            watch_links(_watch()),
+            status_links(_status()),
+        ):
+            assert links[-1] == SITE
+
+    def test_reset_links(self):
+        assert reset_links(_reset("1")) == [("查看公告", "https://x.com/t/status/1"), CODEX, SITE]
 
     def test_observed_reset_hides_unrelated_reply(self):
         reset = _reset("o", source={"type": "observed", "url": "https://x.com/reply"})
-        assert reset_links(reset) == [("開啟 Codex", CODEX_URL), ("Codex Resets", SITE_URL)]
+        assert reset_links(reset) == [CODEX, SITE]
 
     @pytest.mark.parametrize(
         ("state", "labels"),
         [
             ("pending", ["查看公告", "Codex Resets"]),
-            ("done", ["查看公告", "開啟 Codex"]),
-            ("ended", ["查看公告"]),
+            ("done", ["查看公告", "開啟 Codex", "Codex Resets"]),
+            ("ended", ["查看公告", "Codex Resets"]),
         ],
     )
-    def test_scheduled_cta_follows_state(self, state: str, labels: list[str]):
+    def test_open_codex_only_once_usable(self, state: str, labels: list[str]):
         links = scheduled_links({**_reset("5"), "scheduled_for": None}, state)  # type: ignore[arg-type]
         assert [label for label, _ in links] == labels
 
-    def test_watch_and_status_links(self):
+    def test_watch_reminder_and_status_links(self):
+        sched = {**_reset("5"), "scheduled_for": None}
         assert [label for label, _ in watch_links(_watch())] == ["觀察依據", "Codex Resets"]
-        assert [label for label, _ in status_links(_status())] == ["開啟 Codex", "Codex Resets"]
+        assert [label for label, _ in reminder_links(sched)] == ["查看公告", "Codex Resets"]
+        assert status_links(_status()) == [CODEX, SITE]
 
     async def test_link_view_is_link_buttons_only(self):
-        view = link_view([("查看公告", "https://x"), ("開啟 Codex", CODEX_URL)])
+        view = link_view([("查看公告", "https://x"), CODEX])
         assert view is not None
         assert [(b.label, b.url, b.style) for b in view.children] == [  # type: ignore[attr-defined]
             ("查看公告", "https://x", discord.ButtonStyle.link),
@@ -418,7 +493,7 @@ async def test_new_reset_is_announced_once(cog: CodexResetsCog):
     await cog.process(_status(), recent)
     await cog.process(_status(), recent)
     assert cog._send.await_count == 1
-    assert cog._send.await_args.args[0](None).title == "Codex 額度已重置"
+    assert cog._send.await_args.args[0](None).title == "Codex 額度已重置，現在就能使用"
 
 
 async def test_late_backfill_is_recorded_silently(cog: CodexResetsCog):
@@ -436,9 +511,9 @@ async def test_scheduled_then_executed(cog: CodexResetsCog):
 
     await cog.process(_status(), [_reset("5")])
     edit_build, edit_links = cog._edit.await_args.args[1:]
-    assert edit_build(None).title == "Codex 重置預告（已執行）"
-    assert [label for label, _ in edit_links] == ["查看公告", "開啟 Codex"]
-    assert cog._send.await_args.args[0](None).title == "Codex 額度已重置"
+    assert edit_build(None).title == "Codex 預告的重置已執行"
+    assert [label for label, _ in edit_links] == ["查看公告", "開啟 Codex", "Codex Resets"]
+    assert cog._send.await_args.args[0](None).title == "Codex 額度已重置，現在就能使用"
     assert cog._state.scheduled is None
 
 
@@ -448,10 +523,10 @@ async def test_watch_goes_to_opted_in_guilds_and_ends(cog: CodexResetsCog):
     assert cog._send.await_args.kwargs == {"watch_only": True}
 
     await cog.process(_status(watch=_watch(level="strong")), [])
-    assert _fields(cog._edit.await_args.args[1](None))["觀察等級"].startswith("**強烈**")
+    assert _fields(cog._edit.await_args.args[1](None))["觀察等級"] == "強烈"
 
     await cog.process(_status(), [])
-    assert cog._edit.await_args.args[1](None).title == "Codex 重置觀察（已結束）"
+    assert cog._edit.await_args.args[1](None).title == "Codex 重置觀察已結束"
     assert cog._state.watch is None
 
 
@@ -475,7 +550,7 @@ async def test_reminder_replies_once_per_guild(cog: CodexResetsCog):
     assert cog._post.await_count == 1
     guild_id, cfg, embed, view, reference = cog._post.await_args.args
     assert (guild_id, cfg.channel_id) == (1, 10)
-    assert embed.title == "Codex 重置即將執行"
+    assert embed.title == "Codex 即將重置"
     assert (reference.message_id, reference.channel_id) == (100, 10)
     assert cog._state.scheduled.reminded == [1]
 
@@ -528,8 +603,10 @@ async def test_rescheduled_time_rearms_reminders(cog: CodexResetsCog):
 def test_settings_summary_lists_next_steps():
     summary = _settings_summary(GuildConfig(10, timezone="Asia/Taipei", reminder_minutes=60))
     assert summary == (
-        "時區：`Asia/Taipei`\n"
+        "對照時區：`Asia/Taipei`（時間會先依每位成員的 Discord 時區顯示）\n"
         "官方預告提醒：提前 1 小時（`/codex reminder`）\n"
         "AI 觀察通知：關閉（`/codex watch`）"
     )
-    assert "關閉" in _settings_summary(GuildConfig(10, reminder_minutes=None)).splitlines()[1]
+    default = _settings_summary(GuildConfig(10, reminder_minutes=None)).splitlines()
+    assert default[0].startswith("對照時區：太平洋時間（預設）")
+    assert "關閉" in default[1]

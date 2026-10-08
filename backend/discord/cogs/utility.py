@@ -116,7 +116,7 @@ _ADMIN_CATEGORY = _Category(
         _Cmd("/log unset", "取消日誌記錄頻道設定"),
         _Cmd("/food delete <分類>", "刪除整個餐點分類"),
         _Cmd("/bday init", "初始化伺服器的生日功能"),
-        _Cmd("/codex set-channel <頻道> [時區]", "設定 Codex 重置通知頻道與顯示時區"),
+        _Cmd("/codex set-channel <頻道> [時區]", "設定 Codex 重置通知頻道與對照時區"),
         _Cmd("/codex unset-channel", "取消 Codex 重置通知"),
         _Cmd("/codex watch <開/關>", "開關重置觀察通知（AI 推測）"),
         _Cmd("/codex reminder <時間>", "官方預告重置前的提醒時間（預設 30 分鐘）"),

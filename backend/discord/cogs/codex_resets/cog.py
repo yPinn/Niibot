@@ -98,10 +98,10 @@ def _reminder_label(minutes: int | None) -> str:
 
 def _settings_summary(cfg: GuildConfig) -> str:
     """Current settings plus where to change each (shown after set-channel)."""
-    zone = f"`{cfg.timezone}`" if cfg.timezone else "跟隨每位使用者的裝置"
+    zone = f"`{cfg.timezone}`" if cfg.timezone else "太平洋時間（預設）"
     return "\n".join(
         (
-            f"時區：{zone}",
+            f"對照時區：{zone}（時間會先依每位成員的 Discord 時區顯示）",
             f"官方預告提醒：{_reminder_label(cfg.reminder_minutes)}（`/codex reminder`）",
             f"AI 觀察通知：{'開啟' if cfg.watch else '關閉'}（`/codex watch`）",
         )
@@ -378,10 +378,10 @@ class CodexResetsCog(commands.Cog):
 
     codex = app_commands.Group(name="codex", description="Codex 重置通知")
 
-    @codex.command(name="set-channel", description="設定 Codex 重置通知頻道與時區")
+    @codex.command(name="set-channel", description="設定 Codex 重置通知頻道與對照時區")
     @app_commands.describe(
         channel="接收通知的文字頻道",
-        timezone="時間顯示的時區（例如 Asia/Taipei）；不填則沿用目前設定",
+        timezone="時間下方的對照時區（預設太平洋時間，例如 Asia/Taipei）；不填則沿用目前設定",
     )
     @app_commands.checks.has_permissions(administrator=True)
     async def set_channel(
