@@ -76,6 +76,8 @@ def _discover_extensions() -> list[str]:
 _IGNORED_KEYS = frozenset({"id", "application_id", "version", "guild_id", "dm_permission"})
 # Discord fills these in server-side when unset, so compare only when both sides have them.
 _SERVER_DEFAULTED_KEYS = ("contexts", "integration_types")
+# A global sync scans this many guilds for stale guild-scope commands.
+STRAY_SCAN_GUILD_LIMIT = 200
 _FALSY_DEFAULTS = {"required": False, "autocomplete": False, "nsfw": False}
 
 
@@ -149,11 +151,14 @@ class _Runner(commands.Bot):
     ``sync``/``diff`` can load the full cog set without a database or gateway.
     """
 
-    def __init__(self, action: str, guild_id: str | None, *, if_changed: bool = False) -> None:
+    def __init__(
+        self, action: str, guild_id: str | None, *, if_changed: bool = False, env: str = "dev"
+    ) -> None:
         super().__init__(command_prefix="!", intents=discord.Intents.default())
         self.action = action
         self.guild_id = guild_id
         self.if_changed = if_changed
+        self.env = env
         self.exit_code = 0
         # Shim so every cog loads identically to production (no DB needed).
         self.db_pool = None
@@ -272,15 +277,52 @@ class _Runner(commands.Bot):
             return
         if self.if_changed and not any(await self._compare()):
             print("\nSkipping sync — Discord already matches the local tree.")
-            return
-        guild = self._guild_obj()
-        if guild:
-            self.tree.copy_global_to(guild=guild)
-            synced = await self.tree.sync(guild=guild)
-            print(f"\nSynced {len(synced)} commands to guild {self.guild_id}.")
         else:
-            synced = await self.tree.sync()
-            print(f"\nSynced {len(synced)} commands globally (Discord read-repair enabled).")
+            guild = self._guild_obj()
+            if guild:
+                self.tree.copy_global_to(guild=guild)
+                synced = await self.tree.sync(guild=guild)
+                print(f"\nSynced {len(synced)} commands to guild {self.guild_id}.")
+            else:
+                synced = await self.tree.sync()
+                print(f"\nSynced {len(synced)} commands globally (Discord read-repair enabled).")
+        # Leftovers in the other scope survive any sync, changed or not.
+        await self._warn_other_scope()
+
+    async def _warn_other_scope(self) -> None:
+        """Warn (never delete) about commands registered in the scope not being synced.
+
+        A sync is a bulk overwrite of ONE scope: renamed or removed commands vanish
+        from that scope, but a stale guild set survives a global sync (members see
+        duplicates) and stale global commands survive a guild sync. Clearing the
+        wrong scope is costly, so this only reports, as a GitHub annotation in CD.
+        """
+        strays: list[tuple[str, str, list[str]]] = []  # (scope label, rm flag, names)
+        if self.guild_id:
+            names = [c.name for c in await self.tree.fetch_commands()]
+            if names:
+                strays.append(("global", "--global", names))
+        else:
+            async for g in self.fetch_guilds(limit=STRAY_SCAN_GUILD_LIMIT):
+                try:
+                    cmds = await self.tree.fetch_commands(guild=discord.Object(id=g.id))
+                except discord.HTTPException:
+                    continue  # no applications.commands scope there — nothing registered
+                if cmds:
+                    strays.append(
+                        (f"guild {g.id} ({g.name})", f"--guild {g.id}", [c.name for c in cmds])
+                    )
+
+        if not strays:
+            print("No stale commands in the other scope.")
+            return
+        for scope, flag, names in strays:
+            listed = ", ".join(f"/{n}" for n in sorted(names))
+            print(
+                f"::warning title=Stale Discord commands::{scope} still has {len(names)} "
+                f"command(s) outside this sync ({listed}). Clear with: "
+                f"npm run nb -- discord rm --env {self.env} {flag}"
+            )
 
     async def _diff(self) -> None:
         if not await self._load_tree():
@@ -297,6 +339,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(required=True)
 
     p_ls = sub.add_parser("ls", parents=[common], help="List registered commands")
+    # Accepted like every other action: `nb discord ... --global` forwards it to all.
+    p_ls.add_argument("--global", dest="force_global", action="store_true", help="Global only")
     p_ls.set_defaults(action="ls")
 
     p_diff = sub.add_parser("diff", parents=[common], help="Preview what sync would change")
@@ -351,7 +395,7 @@ async def _run(args: argparse.Namespace) -> int:
         print("Aborted.")
         return 0
 
-    bot = _Runner(action, guild_id, if_changed=getattr(args, "if_changed", False))
+    bot = _Runner(action, guild_id, if_changed=getattr(args, "if_changed", False), env=args.env)
     async with bot:
         await bot.start(token)
     return bot.exit_code
