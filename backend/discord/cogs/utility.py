@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import BOT_NAME, BOT_VERSION, GIT_COMMIT, EmbedFactory, UserBoundView
+from core import BOT_NAME, BOT_VERSION, GIT_COMMIT, EmbedFactory, UserBoundView, guild_group
 
 
 class _Cmd(NamedTuple):
@@ -109,12 +109,12 @@ _MOD_CATEGORY = _Category(
 )
 
 _ADMIN_CATEGORY = _Category(
-    "管理員",
-    "需要伺服器管理員權限的指令",
+    "伺服器設定",
+    "需要「管理伺服器」權限的指令",
     [
         _Cmd("/log set <頻道>", "設定日誌記錄頻道"),
         _Cmd("/log unset", "取消日誌記錄頻道設定"),
-        _Cmd("/food delete <分類>", "刪除整個餐點分類"),
+        _Cmd("/food delete <分類>", "刪除整個餐點分類（administrator）"),
         _Cmd("/bday init", "初始化伺服器的生日功能"),
         _Cmd("/codex-config channel <頻道> [時區]", "設定 Codex 通知頻道與對照時區"),
         _Cmd("/codex-config disable", "停用 Codex 重置通知"),
@@ -238,7 +238,7 @@ class UtilityCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    info = app_commands.Group(name="info", description="資訊查詢")
+    info = guild_group("info", "資訊查詢")
 
     @info.command(name="server", description="伺服器資訊")
     async def info_server(self, interaction: discord.Interaction) -> None:
@@ -326,7 +326,7 @@ class UtilityCog(commands.Cog):
                 )
             ):
                 categories.append(_MOD_CATEGORY)
-            if perms.administrator:
+            if perms.manage_guild:  # administrators have it implicitly
                 categories.append(_ADMIN_CATEGORY)
 
         if interaction.user.id == self.bot.owner_id:

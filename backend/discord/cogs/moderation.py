@@ -7,6 +7,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from core import guild_group
+
 LOGGER: logging.Logger = logging.getLogger(__name__)
 
 
@@ -15,12 +17,13 @@ def _check_hierarchy(issuer: discord.Member, target: discord.Member) -> bool:
     return issuer.top_role > target.top_role
 
 
-@app_commands.guild_only()
 class ModerationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    mod = app_commands.Group(name="mod", description="管理指令")
+    # Hidden from members without Manage Messages (the baseline moderator
+    # permission); each subcommand still checks its own, stricter permission.
+    mod = guild_group("mod", "管理指令", permissions=discord.Permissions(manage_messages=True))
 
     @mod.command(name="clear", description="清除訊息")
     @app_commands.describe(amount="要清除的訊息數量")

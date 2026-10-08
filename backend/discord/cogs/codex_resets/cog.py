@@ -27,7 +27,7 @@ import httpx
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core import RUNTIME_DIR, EmbedFactory
+from core import RUNTIME_DIR, EmbedFactory, guild_group
 
 from ._embeds import (
     Link,
@@ -379,12 +379,8 @@ class CodexResetsCog(commands.Cog):
     # who sees it under Server Settings → Integrations), so there is no runtime
     # permission check. Both are guild-only: every setting is per guild.
 
-    config = app_commands.Group(
-        name="codex-config",
-        description="Codex 重置通知設定",
-        guild_only=True,  # legacy dm_permission=False
-        allowed_contexts=app_commands.AppCommandContext(guild=True),  # contexts=[0]
-        default_permissions=discord.Permissions(manage_guild=True),
+    config = guild_group(
+        "codex-config", "Codex 重置通知設定", permissions=discord.Permissions(manage_guild=True)
     )
 
     @config.command(name="channel", description="設定通知頻道與對照時區")

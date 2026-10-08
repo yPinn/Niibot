@@ -66,6 +66,26 @@ Members intent 供加入／離開、role、生日與 moderation；Message Conten
 `VITE_DISCORD_BOT_INVITE_URL` 是公開值，分別放在 Cloudflare Pages Production 與 Preview
 環境。Discord token 放 GitHub environment Secret，不放 Cloudflare、不加引號。
 
+## 指令慣例
+
+新增或修改 slash command 時遵守下列規則；共用實作在
+`backend/discord/core/slash.py`（`guild_group()`），`tests/discord/test_slash_conventions.py`
+鎖住各群組的設定。
+
+- 名稱：英文小寫，多字以 `-` 連接（`codex-config`、`ignore-role`），精簡直觀；說明一律繁體中文。
+  不建立雙語重複指令，也不使用 Discord localization。
+- 使用位置：需要伺服器資料、伺服器權限或成員的指令一律限伺服器內使用（`contexts=[0]`，並保留
+  legacy `dm_permission=False`）。Portal 只開 Guild Install 只決定「怎麼安裝」，已安裝的指令仍可在
+  與 bot 的私訊中使用，所以使用位置必須由指令本身限制。不需伺服器的指令（`/ai`、`/eat`、`/tarot`
+  等）不限制。
+- 權限：
+  - 整個群組都需權限時，以 `default_member_permissions` 隱藏，不做執行期檢查；伺服器管理員可在
+    「伺服器設定 → 整合」重新授權。設定類用「管理伺服器」（`/codex-config`、`/log`），管理類以
+    「管理訊息」為基準（`/mod`，子指令另保留更嚴格的執行期檢查）。
+  - 公開與管理子指令混合的群組（`/bday`、`/food`）無法隱藏（Discord 只對頂層指令套用權限），
+    管理子指令保留 `app_commands.checks.has_permissions`。
+- 公開查詢與設定分開：常用的查詢做成頂層指令（`/codex`），設定集中在可隱藏的 `-config` 群組。
+
 ## 指令發布
 
 Bot 啟動與 reconnect 都不會同步 commands；同步由 CD 在部署後執行：

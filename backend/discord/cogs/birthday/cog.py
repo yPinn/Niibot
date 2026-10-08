@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from core import EmbedFactory
+from core import EmbedFactory, guild_group
 from shared.repositories.birthday import BirthdayRepository
 
 from ._views import DashboardView, InitSetupView, UpdateSettingsView
@@ -256,7 +256,7 @@ class BirthdayCog(commands.Cog):
 
     # ==================== Commands ====================
 
-    bday_group = app_commands.Group(name="bday", description="生日相關指令")
+    bday_group = guild_group("bday", "生日相關指令")
 
     @bday_group.command(name="menu", description="生日功能選單")
     async def bday_menu(self, interaction: discord.Interaction) -> None:

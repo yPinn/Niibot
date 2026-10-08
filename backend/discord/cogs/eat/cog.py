@@ -13,7 +13,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from core import DATA_DIR, EmbedFactory
+from core import DATA_DIR, EmbedFactory, guild_group
 
 from ._views import CategoryButtonsView, ItemListView, RecommendationView
 from .constants import EAT_COLOR, EAT_THUMBNAIL
@@ -242,7 +242,7 @@ class EatCog(commands.Cog):
 
     # ==================== Management Commands ====================
 
-    food_group = app_commands.Group(name="food", description="餐點管理指令")
+    food_group = guild_group("food", "餐點管理指令")
 
     @food_group.command(name="cat", description="列出所有分類")
     async def food_cat(self, interaction: discord.Interaction) -> None:
